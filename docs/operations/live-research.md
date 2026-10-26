@@ -74,3 +74,13 @@ Official source policies and references:
 - SEC [Webmaster FAQ](https://www.sec.gov/about/webmaster-frequently-asked-questions): EDGAR access/reuse guidance, declared User-Agent and current request ceiling. Project limits are lower.
 
 Machine quality checks do not verify semantic accuracy, naturalness, or all reuse rights. Human review remains required and `publish_ready` stays false.
+
+### Rechecking saved article quality
+
+The Phase 3.8-C2 command reads the immutable Phase 3.8-C1 evaluation batch, checks the saved versions against the current deterministic rules, and inserts new evaluation/audit rows:
+
+```powershell
+.venv/Scripts/python scripts/recheck_article_quality.py
+```
+
+It does not call the model or external sources. If an old failed attempt has no response artifact/version, it is reported as not replayable. Future local JSON/schema errors can be retried once with a different seed; the raw response excerpt is capped at 16 KiB, stored only in the local immutable DB table, and never emitted to ordinary logs.

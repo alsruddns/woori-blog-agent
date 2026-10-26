@@ -824,6 +824,71 @@ def test_article_gate_holds_unsupported_access_claims_and_internal_seo_ids() -> 
     assert not result["machine_passed"]
 
 
+def test_complete_article_quality_blocks_internal_uuid_and_obvious_script_mixing() -> None:
+    from woori.article_quality import evaluate
+
+    source = {
+        "id": "source-1",
+        "url": "https://example.test/report",
+        "source_name": "Federal Reserve Board",
+        "evidence": "Federal Reserve Board published an official notice for readers.",
+        "rights": "Official source, cite it.",
+        "valid_until": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
+    }
+    cyrillic = "\u0424\u0435\u0434\u0435\u0440\u0430\u043b\u044c\u043d\u044b\u0439 \u0441\u043e\u0432\u0435\u0442"
+    draft = Draft(
+        title="Federal Reserve Board notice",
+        body=("## Notice\n\nFederal Reserve Board published an official notice for readers. "
+              f"{cyrillic} published a notice. [source:source-1]"),
+        summary="Federal Reserve Board notice summary.",
+        keywords=["Federal Reserve Board"],
+        source_ids=["source-1"],
+    )
+    result = evaluate(draft, [source], "en", datetime.now(UTC).date().isoformat(), 1)
+    assert not result["checks"]["no_forbidden_foreign_script_mixing"]
+
+    internal = draft.model_copy(update={
+        "body": "## Notice\n\nFederal Reserve Board published an official notice for readers. "
+        "[source:source-1] 123e4567-e89b-12d3-a456-426614174000",
+    })
+    internal_result = evaluate(internal, [source], "en", datetime.now(UTC).date().isoformat(), 1)
+    assert not internal_result["checks"]["no_internal_ids_in_user_text"]
+
+
+def test_structured_output_retry_is_limited_to_one_seeded_retry() -> None:
+    from woori.inference_failures import generate_with_bounded_json_retry
+
+    valid = Draft(
+        title="Federal Reserve Board notice",
+        body="## Notice\n\nA short notice.",
+        summary="A short sourced notice.",
+        keywords=["notice"],
+        source_ids=["source-1"],
+    )
+
+    class Provider:
+        def __init__(self) -> None:
+            self.seeds: list[int] = []
+
+        def generate(self, context: dict[str, Any], policy: dict[str, Any]) -> Draft:
+            self.seeds.append(policy["seed"])
+            if len(self.seeds) == 1:
+                raise EngineFailure(
+                    "local_model_output_schema_invalid",
+                    failure_artifact={"raw_response": "{broken"},
+                )
+            return valid
+
+    provider = Provider()
+    archived: list[str] = []
+    result, attempts = generate_with_bounded_json_retry(
+        provider, {}, {"seed": 35}, archive=lambda exc: archived.append(exc.category)
+    )
+    assert result == valid and attempts == 2
+    assert provider.seeds == [35, 36]
+    assert archived == ["local_model_output_schema_invalid"]
+
+
 def test_collection_durable_retry_and_idempotency(
     lab: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

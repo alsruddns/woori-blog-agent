@@ -16,6 +16,7 @@ from woori import collection
 from woori.ai import EngineFailure
 from woori.article_quality import evaluate
 from woori.db import connection
+from woori.inference_failures import archive_parse_failure, generate_with_bounded_json_retry
 from woori.local_inference import LlamaCppProvider, runtime
 from woori.localization import EXTRACTOR_VERSION, fact_ledger
 
@@ -168,7 +169,7 @@ def save_article(
             conn.execute(
                 """INSERT INTO article_quality_evaluations(batch_id,topic_key,topic,language_code,title,source_ids,fact_ids,
                     model,prompt_version,metrics,checks,machine_passed,status,error_category,elapsed_ms,ai_calls)
-                VALUES (%s,%s,%s,%s,'',%s,%s,%s,%s,%s,%s,false,'failed',%s,%s,1)""",
+                VALUES (%s,%s,%s,%s,'',%s,%s,%s,%s,%s,%s,false,'failed',%s,%s,%s)""",
                 (
                     batch_id,
                     topic_key,
@@ -182,6 +183,7 @@ def save_article(
                     Jsonb({}),
                     result.get("error_category"),
                     result["elapsed_ms"],
+                    result.get("ai_calls", 1),
                 ),
             )
             evaluation_id = conn.execute(
@@ -195,7 +197,7 @@ def save_article(
                 "status": "failed",
                 "error_category": result.get("error_category"),
                 "elapsed_ms": result["elapsed_ms"],
-                "ai_calls": 1,
+                "ai_calls": result.get("ai_calls", 1),
                 "publish_ready": False,
             }
 
@@ -228,7 +230,7 @@ def save_article(
         conn.execute(
             """INSERT INTO article_quality_evaluations(batch_id,topic_key,topic,language_code,content_version_id,title,
                 source_ids,fact_ids,summary,keywords,model,prompt_version,metrics,checks,machine_passed,status,elapsed_ms,ai_calls)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,1)""",
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (
                 batch_id,
                 topic_key,
@@ -247,6 +249,7 @@ def save_article(
                 bool(quality["machine_passed"]),
                 "machine_passed_review_required" if quality["machine_passed"] else "quality_held",
                 result["elapsed_ms"],
+                result.get("ai_calls", 1),
             ),
         )
         conn.execute(
@@ -365,6 +368,8 @@ def main() -> None:
             started = time.monotonic()
             context = {
                 "keyword": source["keyword"],
+                "_batch_id": str(batch_id),
+                "_topic_key": topic_key,
                 "language_code": language,
                 "target_country": "",
                 "as_of": as_of,
@@ -395,7 +400,6 @@ def main() -> None:
                             "url",
                             "evidence",
                             "published_at",
-                            "valid_until",
                             "rights",
                         )
                     }
@@ -413,7 +417,8 @@ def main() -> None:
             }
             result: dict[str, object]
             try:
-                draft = LlamaCppProvider().generate(
+                draft, ai_calls = generate_with_bounded_json_retry(
+                    LlamaCppProvider(),
                     context,
                     {
                         "model": EXPECTED_MODEL,
@@ -423,6 +428,14 @@ def main() -> None:
                         "timeout_seconds": 120,
                         "max_tokens": 650,
                     },
+                    archive=lambda failure, topic=topic_key, lang=language: archive_parse_failure(
+                        failure,
+                        batch_id=batch_id,
+                        topic_key=topic,
+                        language_code=lang,
+                        model=EXPECTED_MODEL,
+                        prompt_version=PROMPT_VERSION,
+                    ),
                 )
                 quality = evaluate(draft, [source], language, as_of, len(facts))
                 metrics = {
@@ -431,7 +444,7 @@ def main() -> None:
                     "source_retrieved_at": str(source["retrieved_at"]),
                     "source_published_at": str(source.get("published_at")),
                     "fact_spans": len(facts),
-                    "model_calls": 1,
+                    "model_calls": ai_calls,
                     "cpu_model": psutil.cpu_count(logical=False),
                     "available_ram_mib_before": round(psutil.virtual_memory().available / 2**20),
                 }
@@ -442,6 +455,7 @@ def main() -> None:
                     "elapsed_ms": metrics["pipeline_elapsed_ms"],
                     "group_id": group_id,
                     "parent_version_id": en_version_id,
+                    "ai_calls": ai_calls,
                 }
             except (EngineFailure, ValueError, RuntimeError) as exc:
                 result = {
@@ -452,6 +466,7 @@ def main() -> None:
                     "error_category": exc.category
                     if isinstance(exc, EngineFailure)
                     else "article_generation_invalid",
+                    "ai_calls": getattr(exc, "attempts", 1),
                 }
             stored = save_article(batch_id, topic_key, source, facts, language, result)
             if language == "en" and stored.get("version_id"):

@@ -72,6 +72,33 @@ def evaluate(
     )
     source_rights_claims_supported = all(phrase in source_text for phrase in legal_access_phrases)
     source_overlap = longest_source_overlap(draft.body, sources)
+    user_text = "\n".join((draft.title, draft.summary, draft.body, *draft.keywords))
+    user_text_without_citations = re.sub(r"\[source:[^\]]+\]", "", user_text)
+    no_internal_ids = not re.search(
+        r"\b[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b",
+        user_text_without_citations,
+        re.IGNORECASE,
+    )
+    scripts = {
+        "hangul": len(re.findall(r"[\uac00-\ud7af]", user_text)),
+        "kana": len(re.findall(r"[\u3040-\u30ff]", user_text)),
+        "cyrillic": len(re.findall(r"[\u0400-\u04ff]", user_text)),
+        "arabic": len(re.findall(r"[\u0600-\u06ff]", user_text)),
+    }
+    forbidden_script = (
+        scripts["cyrillic"] > 0 or scripts["arabic"] > 0
+        or (language == "ko" and scripts["kana"] > 0)
+        or (language.startswith("zh") and (scripts["hangul"] > 0 or scripts["kana"] > 0))
+        or (language == "ja" and scripts["hangul"] > 0)
+        or (language == "en" and any(scripts[key] > 0 for key in ("hangul", "kana")))
+    )
+    target_script_present = (
+        scripts["hangul"] > 0 if language == "ko"
+        else scripts["kana"] > 0 if language == "ja"
+        else bool(re.search(r"[\u3400-\u9fff]", user_text)) if language.startswith("zh")
+        else bool(re.search(r"[A-Za-z]", user_text)) if language == "en"
+        else True
+    )
     # Adapt length to available evidence. Narrow filing metadata is not padded
     # to a generic SEO word target; sections and support still have to be present.
     threshold = 3 if fact_count >= 4 else 2
@@ -81,6 +108,15 @@ def evaluate(
         "title_body_alignment": bool(title_tokens & body_tokens) if title_tokens else False,
         "keyword_search_intent_coverage": keyword_coverage,
         "keywords_are_search_terms_not_internal_ids": keyword_metadata_clean,
+        "no_internal_ids_in_user_text": no_internal_ids,
+        "keyword_list_is_bounded_and_unique": (
+            1 <= len(draft.keywords) <= 6
+            and len({" ".join(keyword.casefold().split()) for keyword in draft.keywords})
+            == len(draft.keywords)
+            and all(1 <= len(keyword.strip()) <= 80 for keyword in draft.keywords)
+        ),
+        "no_forbidden_foreign_script_mixing": not forbidden_script,
+        "target_writing_system_present": target_script_present,
         "legal_access_claims_grounded_in_supplied_source": source_rights_claims_supported,
         "no_mass_direct_quote": source_overlap < 25,
     }
@@ -109,5 +145,6 @@ def evaluate(
         "paragraph_count": len(paragraphs),
         "source_overlap_words_max": source_overlap,
         "fact_count": fact_count,
+        "script_counts": scripts,
         "search_intent": "Summarize and explain the supplied official filing/release; not investment advice",
     }

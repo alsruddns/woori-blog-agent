@@ -1,5 +1,9 @@
 # Changelog
 
+## Phase 3.8-C2
+- Added append-only deterministic re-evaluation of the eight Phase 3.8-C1 outcomes, preserving the original content versions and recording one prior schema failure as not replayable because its raw output had not been retained.
+- Added bounded structured-output retry (one new seed only for JSON/schema errors), immutable capped parse-failure artifacts, stronger internal-ID/script/keyword checks, and regression coverage for prior false positives.
+
 ## Phase 3.8-C1
 - Added a zero-cost SEC EDGAR submissions/XBRL collector alongside the bounded Federal Reserve collector, with filing-linked facts, exact retrieval timestamps, source policy metadata and append-only completed-article evaluations.
 - Added local Qwen full-article evaluation for active language profiles, separate source-grounding/SEO checks, saved localized versions and dashboard previews. All articles require human review; publication remains disabled.

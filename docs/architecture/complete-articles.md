@@ -17,3 +17,9 @@ Each topic/language evaluation is append-only in `article_quality_evaluations`; 
 ## Limits
 
 The current evaluation is deliberately narrow: one Federal Reserve release and one Apple SEC 10-Q. It is not representative of all seven topic categories or all markets. Qwen output is variable and this run did not pass the machine quality gate. A schema-valid or machine-passing result would still require a human editor. Search ranking and investment utility are not measured. No real Blogger write or paid service is used.
+
+## Deterministic rechecks and structured-output failures
+
+`scripts/recheck_article_quality.py` reevaluates an existing batch from saved content versions and source records. It creates a new batch and immutable evaluation rows; it never changes the source rows. A historical model failure without a saved version or response is recorded as not replayable. This avoids claiming that a current parser can explain an output that no longer exists.
+
+For future llama.cpp JSON/schema parse failures, the provider may retry once using the same schema and a different fixed seed. It does not fill missing values or repair factual output. Failed raw responses are stored in a local immutable table with a 16 KiB excerpt limit and SHA-256 of the complete response; audit payloads contain the hash and sanitized identifiers only. Script and keyword checks, grouped-number normalization, internal UUID checks and obvious foreign-script checks are separate gates. These remain heuristics; Japanese Han text, semantic equivalence and naturalness still need editorial review.

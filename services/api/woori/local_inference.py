@@ -1,5 +1,6 @@
 """Streaming, cancellable, measured project-local llama.cpp inference. No remote endpoint."""
 
+import hashlib
 import json
 import re
 import subprocess
@@ -276,7 +277,7 @@ class LlamaCppProvider:
                         "stream": True,
                         "stream_options": {"include_usage": True},
                         "temperature": 0.2,
-                        "seed": 35,
+                        "seed": int(policy.get("seed", 35)),
                         "max_tokens": policy.get("max_tokens", 1536),
                         "chat_template_kwargs": {"enable_thinking": False},
                         "response_format": {
@@ -343,9 +344,27 @@ class LlamaCppProvider:
                 raise EngineFailure("local_model_request_rejected") from None
             raise EngineFailure("local_model_http_error") from None
         except ValidationError:
-            raise EngineFailure("local_model_output_schema_invalid") from None
+            raise EngineFailure(
+                "local_model_output_schema_invalid",
+                failure_artifact={
+                    "batch_id": str(context.get("_batch_id", "")),
+                    "topic_key": str(context.get("_topic_key", "")),
+                    "language_code": str(context.get("language_code", "und")),
+                    "raw_response": text,
+                    "response_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+                },
+            ) from None
         except ValueError:
-            raise EngineFailure("local_model_json_invalid") from None
+            raise EngineFailure(
+                "local_model_json_invalid",
+                failure_artifact={
+                    "batch_id": str(context.get("_batch_id", "")),
+                    "topic_key": str(context.get("_topic_key", "")),
+                    "language_code": str(context.get("language_code", "und")),
+                    "raw_response": text,
+                    "response_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+                },
+            ) from None
         except KeyError:
             raise EngineFailure("local_model_response_missing_field") from None
         except TypeError:
