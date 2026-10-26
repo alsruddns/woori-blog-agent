@@ -6,13 +6,13 @@ import shutil
 from pathlib import Path
 from zipfile import ZipFile
 
-import httpx
+from woori.external_policy import client as external_client
 
 root = Path(__file__).resolve().parents[1] / ".local"
 root.mkdir(exist_ok=True)
 if shutil.disk_usage(root).free < 20 * 1024**3:
     raise SystemExit("At least 20 GiB free required; no model download attempted")
-with httpx.Client(timeout=120, follow_redirects=True, trust_env=False) as client:
+with external_client("artifact_setup", "artifact_download", timeout=120, follow_redirects=True) as client:
     release = client.get(
         "https://api.github.com/repos/ggml-org/llama.cpp/releases/tags/b11889"
     ).json()

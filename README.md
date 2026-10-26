@@ -103,3 +103,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1
 ```
 
 [실제 추론 아키텍처](docs/architecture/live-research.md), [소스·권리·설치·운영](docs/operations/live-research.md), [Phase 3.5 개발 기록](docs/development/P3-5-001.md)을 참조한다. setup은 최소 20GiB 여유를 요구하며 기존 리스너·PATH·다른 프로젝트를 변경하지 않는다.
+
+## Zero additional cost
+All external requests pass through the closed provider allowlist in `services/api/woori/external_policy.py`. Paid AI, metered services, paid data, proxies, hosting and cloud services are blocked. Free quotas are hard stops; a 429 never triggers retries or provider fallback. The authenticated research state reports policy status and suspicious credential variable names only. See [the cost and provider review](docs/operations/zero-cost-policy.md).

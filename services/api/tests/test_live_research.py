@@ -10,10 +10,74 @@ import pytest
 from test_pipeline import lab as shared_lab
 
 lab = shared_lab
-from woori import collection
+from woori import collection, external_policy
 from woori.ai import Draft, EngineFailure
 from woori.grounding import inspect
 from woori.local_inference import LlamaCppProvider
+
+
+def test_external_policy_closed_allowlist_and_zero_cost_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with pytest.raises(external_policy.ExternalCallBlocked, match="provider_not_allowlisted"):
+        external_policy.client("unknown_provider", "anything")
+    with pytest.raises(external_policy.ExternalCallBlocked, match="provider_not_allowlisted"):
+        external_policy.client("google_blogger_read", "post_write")
+
+    monkeypatch.setattr(external_policy, "billing_credential_names", lambda: ["OPENAI_API_KEY"])
+    monkeypatch.setattr(external_policy, "_audit", lambda *args, **kwargs: None)
+    assert external_policy.status()["external_calls_allowed"] is False
+    assert external_policy.status()["blocked_credential_names"] == ["OPENAI_API_KEY"]
+    with pytest.raises(
+        external_policy.ExternalCallBlocked,
+        match="potentially_billable_credentials_detected",
+    ):
+        external_policy._authorize(
+            "federal_reserve", "source_collection", httpx.Request(
+                "GET", "https://www.federalreserve.gov/feeds/press_all.xml"
+            )
+        )
+
+
+def test_external_policy_blocks_unlisted_destination(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(external_policy, "_audit", lambda *args, **kwargs: None)
+    with pytest.raises(
+        external_policy.ExternalCallBlocked, match="destination_or_method_not_allowlisted"
+    ):
+        external_policy._authorize(
+            "google_blogger_read", "blogger_read",
+            httpx.Request("GET", "https://example.com/blogger/v3/blogs/1"),
+        )
+    with pytest.raises(
+        external_policy.ExternalCallBlocked, match="destination_or_method_not_allowlisted"
+    ):
+        external_policy._authorize(
+            "artifact_setup", "artifact_download",
+            httpx.Request("GET", "https://api.github.com/repos/other/project/releases"),
+        )
+
+
+@pytest.mark.parametrize("status", [429, 403])
+def test_external_policy_quota_is_a_hard_stop(
+    monkeypatch: pytest.MonkeyPatch, status: int
+) -> None:
+    monkeypatch.setattr(external_policy, "_audit", lambda *args, **kwargs: None)
+    if status == 429:
+        handler = lambda request: httpx.Response(429, request=request)
+    else:
+        handler = lambda request: httpx.Response(
+            403,
+            json={"error": {"errors": [{"reason": "quotaExceeded"}]}},
+            request=request,
+        )
+    transport = external_policy.guarded_transport(
+        "wikidata", "source_collection", httpx.MockTransport(handler)
+    )
+    with (
+        httpx.Client(transport=transport) as client,
+        pytest.raises(external_policy.FreeQuotaExceeded),
+    ):
+        client.get("https://www.wikidata.org/w/api.php")
 
 
 def test_grounding_rejects_numbers_urls_and_wrong_language() -> None:
@@ -49,7 +113,8 @@ def test_collection_bounded_and_no_arbitrary_endpoint(monkeypatch: pytest.Monkey
 
     base = httpx.Client
     monkeypatch.setattr(
-        httpx, "Client", lambda **kw: base(transport=httpx.MockTransport(handler), **kw)
+        collection, "external_client",
+        lambda provider, operation, **kw: base(transport=httpx.MockTransport(handler), **kw),
     )
     with pytest.raises(EngineFailure, match="unsafe_feed"):
         collection.retrieve({"adapter": "fed_rss", "endpoint": collection.ENDPOINTS["fed_rss"]}, [])

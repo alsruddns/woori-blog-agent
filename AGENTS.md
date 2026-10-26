@@ -59,3 +59,12 @@ OAuth 토큰·API Key·비밀번호를 코드에 저장하지 않는다. .env �
 - 검증되지 않은 모델·언어의 일반 자동 처리는 차단한다. 명시적인 evaluation_only 작업은 품질 검증 선언 없이 시험할 수 있으며 결과는 quality_held로 보존하고 publish_ready=false를 유지한다.
 - 모델별 동일 자료·프롬프트 조건의 측정과 실패를 보존한다. JSON 생성 성공, 언어 규칙 통과, 자연스러움과 사실 충실도를 구분한다. 측정하지 못한 GPU 이용률이나 처리 속도를 만들어내지 않는다.
 - 스트리밍 취소는 해당 연결을 닫으며 전역 모델 프로세스나 다른 프로젝트를 임의 종료하지 않는다. 출처 개정 중 생성은 근거 재검사로 차단하고 재시도한다.
+
+## Zero additional cost policy (permanent)
+- The project must incur zero additional currency cost for external services or AI. No paid AI/API, metered API, paid data service, proxy, hosting, or cloud service may be called. An API key or paid account setting never grants permission.
+- Every remote HTTP request must pass through the shared `woori.external_policy` provider/operation/host/method/path allowlist. Unknown or unreviewed providers fail closed; no environment switch may bypass the gate. Local loopback inference is separate and must use reviewed free licenses.
+- Free provider quotas and local request caps are hard ceilings. On HTTP 429, quota exhaustion, terms/pricing change, or expired review, stop the task. Do not retry a quota response, switch providers, or upgrade tiers.
+- Before each remote call, check for potentially billable credentials and billing/payment/proxy settings. If found, stop external execution and report variable names only; never expose values.
+- Record every service's price basis, usage caps, terms, commercial-use conditions, license, and review date in `docs/operations/zero-cost-policy.md`. If price or terms are unclear, block by default. Re-review before monetized use or after provider terms change.
+- Audit external calls with provider/operation/status/usage metadata only. Never log URL query strings, headers, bodies, tokens, credentials, or secret values.
+- Add automated tests that prove paid/unknown providers, billable credentials, quota exhaustion, and paid fallback paths are blocked. Update the development record and cost policy when changing any integration.

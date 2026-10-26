@@ -16,6 +16,8 @@ import httpx
 
 from .ai import EngineFailure
 from .db import connection
+from .external_policy import FreeQuotaExceeded
+from .external_policy import client as external_client
 from .pipeline import emit, enqueue, normalized, required
 
 ENDPOINTS = {
@@ -81,6 +83,8 @@ def fetch(client: httpx.Client, url: str, params: dict[str, Any] | None = None) 
                 if len(result) > 1024 * 1024 or time.monotonic() - started > 20:
                     raise EngineFailure("collection_response_limit")
             return result
+    except FreeQuotaExceeded:
+        raise EngineFailure("free_quota_exceeded") from None
     except httpx.HTTPError:
         raise EngineFailure("collection_network_error", True) from None
 
@@ -89,8 +93,9 @@ def retrieve(source: dict[str, Any], topics: list[dict[str, Any]]) -> list[dict[
     if ENDPOINTS.get(source["adapter"]) != source["endpoint"]:
         raise EngineFailure("collection_endpoint_not_approved")
     results = []
-    with httpx.Client(
-        timeout=15, trust_env=False, follow_redirects=False, headers={"User-Agent": USER_AGENT}
+    provider = "federal_reserve" if source["adapter"] == "fed_rss" else "wikidata"
+    with external_client(
+        provider, "source_collection", timeout=15, headers={"User-Agent": USER_AGENT}
     ) as client:
         if source["adapter"] == "fed_rss":
             data = fetch(client, source["endpoint"])

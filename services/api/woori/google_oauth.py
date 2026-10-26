@@ -15,7 +15,13 @@ from psycopg.types.json import Jsonb
 
 from .config import settings
 from .db import connection
-from .google_http import READ_SCOPE, REVOKE_URL, TOKEN_URL, GoogleFailure, client
+from .external_policy import FreeQuotaExceeded
+from .external_policy import client as external_client
+from .google_http import READ_SCOPE, REVOKE_URL, TOKEN_URL, GoogleFailure
+
+
+def client() -> httpx.Client:
+    return external_client("google_oauth", "oauth")
 
 
 def cipher() -> Fernet:
@@ -105,6 +111,8 @@ def exchange(data: dict[str, str], transport: httpx.Client) -> dict[str, Any]:
     }
     try:
         response = transport.post(TOKEN_URL, data=data)
+    except FreeQuotaExceeded:
+        raise GoogleFailure("free_quota_exceeded") from None
     except httpx.TransportError:
         raise GoogleFailure("oauth_network") from None
     try:

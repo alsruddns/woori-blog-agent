@@ -274,8 +274,8 @@ def test_real_protocol_reads_and_dynamic_configuration(
     [
         (401, "", "unauthorized"),
         (403, "forbidden", "permission_denied"),
-        (403, "rateLimitExceeded", "rate_limit"),
-        (429, "", "rate_limit"),
+        (403, "rateLimitExceeded", "free_quota_exceeded"),
+        (429, "", "free_quota_exceeded"),
         (503, "", "unavailable"),
         (404, "", "not_found"),
     ],
@@ -287,7 +287,7 @@ def test_error_classification(status: int, reason: str, expected: str) -> None:
     )
 
 
-def test_bounded_read_retries() -> None:
+def test_bounded_read_stops_on_free_quota_limit() -> None:
     statuses = iter([503, 429, 200])
     attempts = []
     pauses = []
@@ -299,9 +299,10 @@ def test_bounded_read_retries() -> None:
         reader = BloggerReader(
             transport, lambda: "never-logged", lambda *args: attempts.append(args), pauses.append
         )
-        assert reader.blog("1001")["id"] == "1001"
-    assert len([a for a in attempts if a[2] == "requested"]) == 3
-    assert len(pauses) == 2 and max(pauses) <= 5
+        with pytest.raises(GoogleFailure, match="free_quota_exceeded"):
+            reader.blog("1001")
+    assert len([a for a in attempts if a[2] == "requested"]) == 2
+    assert len(pauses) == 1 and max(pauses) <= 5
 
 
 def test_mock_writes_idempotency_and_ambiguous_failure(

@@ -42,3 +42,9 @@
 - Add normalized localizations, publishing/SEO/metrics schemas, reference guards and configuration audit triggers.
 - Add local configuration UI/API, category/glossary/schedule settings and fail-closed readiness reporting.
 - Preserve legacy content/audit history and summary language-code response compatibility.
+## [Unreleased] - 2026-10-26
+### Added
+- Enforced a zero additional cost policy through a shared outbound provider allowlist, billing-credential tripwire, request audit metadata, and hard stop on provider quota responses.
+- Added administrator visibility for cost policy status and credential variable names, plus reviewed provider cost/usage/license records.
+### Changed
+- Blogger read requests now stop immediately on 429 or quota exhaustion instead of retrying.

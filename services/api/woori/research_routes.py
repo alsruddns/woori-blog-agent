@@ -200,6 +200,8 @@ def local_status() -> dict[str, Any]:
 
 @router.get("/state")
 def state() -> dict[str, Any]:
+    from .external_policy import status as external_policy_status
+
     with connection() as conn:
         result: dict[str, Any] = {
             name: conn.execute(query).fetchall()
@@ -220,6 +222,7 @@ def state() -> dict[str, Any]:
                 "measurements": "SELECT * FROM model_measurements ORDER BY created_at DESC LIMIT 50",
             }.items()
         }
+        result["cost_policy"] = external_policy_status()
         result["controls"] = conn.execute("SELECT * FROM pipeline_controls").fetchone()
         result["events"] = conn.execute(
             "SELECT id,run_id,event_type,payload,created_at FROM audit_events WHERE event_type LIKE 'research.%' ORDER BY id DESC LIMIT 100"

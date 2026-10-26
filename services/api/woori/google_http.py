@@ -7,6 +7,9 @@ from typing import Any
 
 import httpx
 
+from .external_policy import FreeQuotaExceeded
+from .external_policy import client as external_client
+
 BASE = "https://www.googleapis.com/blogger/v3"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 REVOKE_URL = "https://oauth2.googleapis.com/revoke"
@@ -25,7 +28,7 @@ def classify(response: httpx.Response) -> str:
     if response.status_code == 404:
         return "not_found"
     if response.status_code == 429:
-        return "rate_limit"
+        return "free_quota_exceeded"
     if response.status_code >= 500:
         return "unavailable"
     if response.status_code == 403:
@@ -33,19 +36,15 @@ def classify(response: httpx.Response) -> str:
             reasons = [e.get("reason") for e in response.json().get("error", {}).get("errors", [])]
         except (ValueError, AttributeError, TypeError):
             reasons = []
-        return (
-            "rate_limit"
-            if any(
-                r in ("rateLimitExceeded", "userRateLimitExceeded", "quotaExceeded")
-                for r in reasons
-            )
-            else "permission_denied"
-        )
+        return "free_quota_exceeded" if any(
+            r in ("rateLimitExceeded", "userRateLimitExceeded", "quotaExceeded")
+            for r in reasons
+        ) else "permission_denied"
     return "invalid_request"
 
 
 def client() -> httpx.Client:
-    return httpx.Client(timeout=15, follow_redirects=False, trust_env=False)
+    return external_client("google_blogger_read", "blogger_read", timeout=15)
 
 
 class BloggerReader:
@@ -76,6 +75,9 @@ class BloggerReader:
             except GoogleFailure as exc:
                 self.audit(operation, attempt, "failed", exc.status, exc.category)
                 raise
+            except FreeQuotaExceeded:
+                self.audit(operation, attempt, "failed", None, "free_quota_exceeded")
+                raise GoogleFailure("free_quota_exceeded") from None
             except httpx.TransportError:
                 category, status = "network", None
             else:
@@ -93,7 +95,7 @@ class BloggerReader:
                     return value
                 category, status = classify(response), response.status_code
             self.audit(operation, attempt, "failed", status, category)
-            if category not in ("rate_limit", "unavailable", "network") or attempt == 3:
+            if category not in ("unavailable", "network") or attempt == 3:
                 raise GoogleFailure(category, status)
             self.audit(operation, attempt, "retry", status, category)
             retry_after = response.headers.get("Retry-After", "0") if status is not None else "0"

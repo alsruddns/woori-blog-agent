@@ -5,7 +5,7 @@ type Row = Record<string, unknown>;
 export type State = {
   profiles: Row[]; categories: Row[]; keywords: Row[]; sources: Row[]; jobs: Row[];
   versions: Row[]; settings: Row[]; prompts: Row[]; controls: Row; schedules: Row[];
-  attempts: Row[]; events: Row[]; dispatches: Row[]; collection_sources: Row[];
+  attempts: Row[]; events: Row[]; dispatches: Row[]; collection_sources: Row[]; cost_policy?: Row;
   collection_jobs: Row[]; measurements: Row[];
 };
 type Field = { name: string; label: string; type?: string; optional?: boolean; options?: { value: string; label: string }[] };
@@ -57,6 +57,7 @@ export default function Research({ initial }: { initial: State }) {
   const categoryField: Field = { name: "category_id", label: "카테고리", options: categories };
   const versions = [data.versions.find(v => v.id === left), data.versions.find(v => v.id === right)];
   return <>
+    <section><h2>Zero additional cost policy</h2><p>External calls: {data.cost_policy?.external_calls_allowed ? "allowed by reviewed allowlist" : "blocked; review credential names below"}</p><p>Paid fallback and automatic paid upgrades are disabled.</p><pre>{JSON.stringify(data.cost_policy?.blocked_credential_names ?? [], null, 2)}</pre></section>
     <p role="status">{message}</p><button disabled={busy} onClick={() => refresh().catch(() => setMessage("조회 실패"))}>새로 고침</button>
     <section><h2>실제 로컬 AI 상태·성능 측정</h2>
       <p>연결 상태: {local.available ? "정상" : "미연결 또는 로딩 중"} · 현재 모델: {str(local, "model") || "확인 전"}</p>
