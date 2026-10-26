@@ -8,6 +8,7 @@ from typing import Any
 
 import langcodes
 
+from .article_quality import longest_source_overlap
 from .grounding import numbers, proper_names, repeated_sentences
 
 EXTRACTOR_VERSION = "fact-ledger-v1"
@@ -122,6 +123,9 @@ def localize_fact(
     fraction = _script_fraction(localized, target_language)
     threshold = 0.06 if langcodes.Language.get(target_language).maximize().script == "Jpan" else 0.12
     language_ok = fraction > threshold
+    source_overlap = longest_source_overlap(
+        localized, [{"evidence": str(fact.get("source_excerpt", ""))}]
+    )
     checks = {
         "language_matches": language_ok,
         "numbers_preserved": source_numbers.issubset(target_numbers) and no_new_numbers,
@@ -131,6 +135,7 @@ def localize_fact(
         "no_added_urls": no_added_urls,
         "no_unapproved_translation_asserted": not unapproved_terms_used,
         "no_repeated_sentences": not repeated_sentences(localized),
+        "no_mass_direct_quote": source_overlap < 25,
     }
     return {
         "text": localized, "source_language": fact["source_language"],
@@ -139,6 +144,7 @@ def localize_fact(
         "checks": checks, "script_fraction": round(fraction, 3), "ai_calls": calls,
         "missing_entities": missing_entities,
         "unverified_entities": unexpected_entities,
+        "longest_source_overlap_words": source_overlap,
         "elapsed_ms": round((time.monotonic() - started) * 1000),
         "human_review_required": True, "semantic_accuracy": "human_review_required",
         "naturalness": "human_review_required", "publish_ready": False,

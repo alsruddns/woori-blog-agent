@@ -503,6 +503,53 @@ def test_fact_ledger_and_localization_separate_source_language_and_expression() 
     assert localized["human_review_required"] and not localized["publish_ready"]
 
 
+def test_long_official_topic_label_uses_bounded_search_intent_phrase() -> None:
+    from woori.article_quality import search_intent_phrase
+
+    label = (
+        "Minutes of the Board's discount rate meetings on August 17, September 9, "
+        "and September 16, 2026"
+    )
+    assert search_intent_phrase(label) == "Minutes of the Board's discount rate meetings"
+    assert search_intent_phrase("x" * 81) == ""
+
+
+def test_localization_holds_exact_long_source_sentence_and_accepts_bounded_restatement() -> None:
+    from woori.localization import fact_ledger, localize_fact
+
+    source = {
+        "id": "fed-source",
+        "source_language": "en",
+        "evidence": (
+            "The Board's process for setting the discount rate is distinct from the process "
+            "the Federal Open Market Committee follows in setting the target range for the "
+            "federal funds rate."
+        ),
+    }
+    fact = fact_ledger(source)[0]
+    copied = localize_fact(
+        fact, "en", lambda excerpt, *_: excerpt, force_local=True,
+    )
+    assert copied["checks"]["no_mass_direct_quote"] is False
+    assert copied["longest_source_overlap_words"] == 30
+    assert copied["status"] == "quality_held"
+    assert copied["publish_ready"] is False
+
+    restated = localize_fact(
+        fact,
+        "en",
+        lambda *_: (
+            "Federal Reserve Board distinguishes its discount-rate process from how the "
+            "Federal Open Market Committee sets the federal funds target range."
+        ),
+        force_local=True,
+    )
+    assert restated["checks"]["no_mass_direct_quote"] is True
+    assert restated["longest_source_overlap_words"] < 25
+    assert restated["human_review_required"] is True
+    assert restated["publish_ready"] is False
+
+
 def test_localization_blocks_number_date_and_unapproved_entity_drift() -> None:
     from woori.localization import fact_ledger, localize_fact
 

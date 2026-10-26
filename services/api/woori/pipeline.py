@@ -18,7 +18,7 @@ from croniter import croniter
 from psycopg.types.json import Jsonb
 
 from .ai import Draft, EngineFailure, provider
-from .article_quality import longest_source_overlap
+from .article_quality import longest_source_overlap, search_intent_phrase
 from .db import connection
 from .grounding import inspect, numbers, proper_names
 from .localization import EXTRACTOR_VERSION, fact_ledger, localize_fact
@@ -284,14 +284,17 @@ def render_localized_fact_section(
         localized_rows.append(row)
 
     prefix, summary = copy[language]
+    concise_keyword = search_intent_phrase(keyword)
+    if not concise_keyword:
+        raise EngineFailure("search_intent_phrase_requires_review")
     if include_title and language != "en":
         translated_keyword = localized_translation(
-            keyword, language, glossary, sorted(proper_names(keyword)), model, timeout,
+            concise_keyword, language, glossary, sorted(proper_names(concise_keyword)), model, timeout,
             metrics_sink=model_call_metrics,
         ).strip()
         calls += 1
     else:
-        translated_keyword = keyword
+        translated_keyword = concise_keyword
     title = prefix + translated_keyword if include_title else prefix.rstrip()
     body = "\n\n".join(
         str(row["text"]).strip() + " " + " ".join(
@@ -462,7 +465,7 @@ def quality(
 ) -> dict[str, Any]:
     text = draft.title + " " + draft.body
     ids = {str(s["id"]) for s in sources}
-    search_phrase = keyword if language == "en" else (draft.keywords[0] if draft.keywords else "")
+    search_phrase = search_intent_phrase(keyword) if language == "en" else (draft.keywords[0] if draft.keywords else "")
     checks = {
         "source_ids_valid": bool(draft.source_ids) and set(draft.source_ids).issubset(ids),
         "keyword_in_title_and_body": bool(search_phrase)

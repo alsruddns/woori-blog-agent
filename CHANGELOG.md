@@ -1,5 +1,10 @@
 # Changelog
 
+## Phase 3.9-U (implementation complete; real model check pending)
+- Confirm the Phase 3.9-T 30-token overlap is an exact copied source sentence, not a verifier false positive; preserve the original held version and append two deterministic rechecks.
+- Strengthen local fact paraphrasing, apply the unchanged 25-token source-overlap limit per fact, and derive bounded search-intent metadata from clearly date-qualified topic labels.
+- Keep real model improvement unverified until Phase 3.9-V; quality and publication gates remain closed.
+
 ## Phase 3.9-T (partial validation; 2026-10-27)
 - Added a physically separate, secret-free evaluation database snapshot with least-privilege application, reader, migration, and identity roles; no Blogger/OAuth/publishing state is copied.
 - Added read-only evaluation result visibility to the research dashboard and a single-shot isolated Worker path for sequential, per-language C3 evaluation.

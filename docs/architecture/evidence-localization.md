@@ -25,6 +25,10 @@ Evaluation-only jobs may use the fixed, already-installed Qwen3 4B Q4 model when
 
 The Research dashboard displays original excerpts beside persisted localized output, status/metrics, current glossary approvals, and immutable glossary history. It reports actual stored rows only.
 
+## Phase 3.9-U source-overlap controls
+
+The local faithful-paraphrase instruction requests independently worded text and explicitly rejects long copied runs. `localize_fact` applies the same existing 25-token longest-contiguous-source-overlap gate to each localized fact, and the complete article is checked again after rendering. This is an additional early hold, not a relaxed article threshold. A source-faithful paraphrase still needs a human semantic and rights review. Long date-qualified topic labels are reduced only at a clear date-introducer boundary for title/keyword metadata; ambiguous overlong phrases fail closed instead of being cut arbitrarily.
+
 ## Limitations
 
 Language script and exact token checks are heuristics, not semantic entailment. The checker does not prove a translated sentence means the same thing as its source, nor does an English proper-name detector cover every writing system. Such cases remain human-review items. A `machine_passed` evaluation alone is never a human quality approval. Title/summary/keyword candidates must still be supplied and validated before a full localized draft can be composed.

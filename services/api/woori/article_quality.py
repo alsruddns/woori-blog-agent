@@ -7,6 +7,20 @@ from .ai import Draft
 from .grounding import inspect
 
 
+def search_intent_phrase(keyword: str) -> str:
+    """Drop an appended date qualifier from a long topic label without inventing a query."""
+    value = " ".join(keyword.split())
+    value = re.split(
+        r"\s+(?:on|dated|as of)\s+(?=(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|"
+        r"Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|"
+        r"Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|\d{4}\b))",
+        value,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0]
+    return value if 1 <= len(value) <= 80 else ""
+
+
 def _tokens(value: str) -> list[str]:
     tokens: list[str] = []
     for segment in re.findall(

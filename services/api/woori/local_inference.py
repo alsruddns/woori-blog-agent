@@ -183,8 +183,10 @@ def localized_translation(
                             "role": "system",
                             "content": (
                                 (
-                                    "Rewrite the supplied excerpt concisely in the same requested language. "
-                                    "Faithfully improve wording only; do not change its claims or add facts. "
+                                    "Write a concise, independently worded restatement of the supplied fact in the requested language. "
+                                    "Do not copy a complete source sentence or preserve a long run of source wording. "
+                                    "Keep protected names and numeric/date values unchanged. "
+                                    "If a faithful restatement is not possible, retain only the minimal wording needed and let deterministic checks hold it. "
                                 )
                                 if mode == "faithful_paraphrase"
                                 else "Translate the supplied source excerpt into the requested BCP 47 language. "
