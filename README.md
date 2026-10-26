@@ -108,3 +108,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1
 
 ## Zero additional cost
 All external requests pass through the closed provider allowlist in `services/api/woori/external_policy.py`. Paid AI, metered services, paid data, proxies, hosting and cloud services are blocked. Free quotas are hard stops; a 429 never triggers retries or provider fallback. Blogger reads are blocked until the Google Cloud project's billing status is verified. The authenticated research state reports provider blocks and suspicious credential variable names only. See [the cost and provider review](docs/operations/zero-cost-policy.md).
+## Evidence-led generation pipeline
+
+Research generation runs through persisted source, evidence, outline, section, localization, claim, SEO, and draft-persistence stages. Inspect per-attempt inputs, outputs, source links, validations, retries, and timings in the authenticated `/research` dashboard. Machine checks do not approve semantic truth or naturalness; uncertain versions remain `quality_held` and unpublished. See [the staged pipeline architecture](docs/architecture/pipeline-stages.md), [schema model](docs/architecture/data-model.md), and [Phase 3.7 source review and evaluation record](docs/development/P3-7-001.md).

@@ -1,5 +1,6 @@
 """Conservative diagnostics, not semantic truth or fluency certification."""
 
+import hashlib
 import re
 from datetime import UTC, datetime
 from typing import Any
@@ -89,10 +90,20 @@ def extract_facts(sources: list[dict[str, Any]]) -> list[dict[str, str]]:
     """Split reviewed source text into traceable evidence units; do not infer truth."""
     facts: list[dict[str, str]] = []
     for source in sources:
-        for sentence in re.split(r"(?<=[.!?])\s+|\n+", str(source.get("evidence", ""))):
+        for index, sentence in enumerate(
+            re.split(r"(?<=[.!?])\s+|\n+", str(source.get("evidence", ""))), start=1
+        ):
             text = " ".join(sentence.split()).strip()
             if text:
-                facts.append({"text": text, "source_id": str(source["id"])})
+                source_id = str(source["id"])
+                fingerprint = hashlib.sha256(text.encode("utf-8")).hexdigest()[:10]
+                facts.append(
+                    {
+                        "fact_id": f"{source_id}:{index}:{fingerprint}",
+                        "text": text,
+                        "source_id": source_id,
+                    }
+                )
     return facts
 
 

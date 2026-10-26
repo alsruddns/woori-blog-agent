@@ -33,12 +33,13 @@ class Provider(Protocol):
 class MockProvider:
     def generate(self, context: dict[str, Any], policy: dict[str, Any]) -> Draft:
         keyword = context["keyword"]
-        # This tests N-language orchestration, never pretends to be fluent translation.
-        label = f"MOCK TEST ONLY [{context['language_code']}/{context['target_country']}]"
+        # This tests stage persistence/orchestration, never pretends to be fluent translation.
+        section = context.get("plan", {}).get("section_number", 1)
+        label = f"MOCK TEST ONLY [{context['language_code']}/{context['target_country']}] section {section}"
         facts = "\n".join(f"- {s['evidence']} [source:{s['id']}]" for s in context["sources"])
         return Draft(
             title=f"{keyword} | {label}",
-            body=f"{label}\n## {keyword}\n{facts}\n## Review\nAs of {context['as_of']}. Human review required.",
+            body=f"{label}\n## {keyword} {section}\n{facts}",
             summary=f"{keyword}: {label}. Not publishable; synthetic pipeline validation.",
             keywords=[keyword],
             source_ids=[str(s["id"]) for s in context["sources"]],

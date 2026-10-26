@@ -220,8 +220,21 @@ def state() -> dict[str, Any]:
                 "collection_sources": "SELECT * FROM collection_sources ORDER BY name",
                 "collection_jobs": "SELECT r.*,j.source_id FROM job_runs r JOIN collection_jobs j ON j.run_id=r.id ORDER BY r.created_at DESC LIMIT 50",
                 "measurements": "SELECT * FROM model_measurements ORDER BY created_at DESC LIMIT 50",
+                "stage_runs": "SELECT * FROM generation_stage_runs ORDER BY started_at DESC LIMIT 300",
             }.items()
         }
+        result["coverage"] = conn.execute(
+            """SELECT c.slug AS category,l.code AS language_code,
+            coalesce((SELECT count(DISTINCT s.id) FROM language_profiles p
+                JOIN keyword_candidates k ON k.profile_id=p.id AND k.category_id=c.id
+                JOIN research_sources s ON s.keyword_id=k.id AND s.valid_until>now()
+                JOIN LATERAL (SELECT approved FROM source_reviews WHERE source_id=s.id
+                    ORDER BY review_sequence DESC LIMIT 1) review ON review.approved
+                WHERE p.language_code=l.code AND k.status='selected'
+                AND NOT EXISTS(SELECT 1 FROM research_sources newer WHERE newer.keyword_id=s.keyword_id
+                    AND newer.url=s.url AND newer.revision>s.revision)),0) AS reviewed_source_count
+            FROM categories c CROSS JOIN languages l WHERE l.active ORDER BY c.slug,l.code"""
+        ).fetchall()
         result["cost_policy"] = external_policy_status()
         result["controls"] = conn.execute("SELECT * FROM pipeline_controls").fetchone()
         result["events"] = conn.execute(

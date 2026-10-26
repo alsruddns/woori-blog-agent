@@ -113,6 +113,34 @@ def test_failed_local_quality_gate_is_always_quality_held() -> None:
     assert pipeline.draft_state("local", False, {"structural_pass": True, "grounding": {"rule_pass": True}}) == "human_review_required"
 
 
+def test_unexpected_stage_error_is_recorded_and_job_is_terminalized(
+    lab: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    conn, api, h = lab
+    keyword, _ = topic(lab)
+
+    def crash(self: MockProvider, context: dict[str, Any], policy: dict[str, Any]) -> Any:
+        raise RuntimeError("synthetic stage failure")
+
+    monkeypatch.setattr(MockProvider, "generate", crash)
+    response = api.post(
+        "/admin/research/jobs",
+        headers=h,
+        json={"keyword_id": keyword, "idempotency_key": "stage-error-" + uuid.uuid4().hex},
+    )
+    assert response.status_code == 201, response.text
+    run_id = response.json()["id"]
+    assert pipeline.tick()
+    stage = conn.execute(
+        "SELECT status,error_category,validation FROM generation_stage_runs WHERE run_id=%s AND stage_name='section_generation'",
+        (run_id,),
+    ).fetchone()
+    assert stage["status"] == "failed"
+    assert stage["error_category"] == "stage_validation_error"
+    assert stage["validation"]["error_type"] == "RuntimeError"
+    assert conn.execute("SELECT status FROM job_runs WHERE id=%s", (run_id,)).fetchone()["status"] == "failed"
+
+
 def test_pipeline_n_languages_versions_and_audit(lab: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     conn, api, h = lab
     keyword, profiles = topic(lab)
@@ -128,17 +156,34 @@ def test_pipeline_n_languages_versions_and_audit(lab: Any, monkeypatch: pytest.M
         == "succeeded"
     )
     old_ids = {r["content_version_id"] for r in rows}
+    stages = conn.execute(
+        "SELECT stage_name,status,input_snapshot,output_snapshot FROM generation_stage_runs WHERE run_id=%s",
+        (job["id"],),
+    ).fetchall()
+    assert {r["stage_name"] for r in stages} >= {
+        "source_collection", "evidence_extraction", "evidence_validation", "content_outline",
+        "section_generation", "localization", "claim_verification", "seo_quality", "draft_persistence",
+    }
+    assert all(r["status"] == "succeeded" for r in stages)
+    assert all(r["input_snapshot"] is not None and r["output_snapshot"] is not None for r in stages)
     original = MockProvider.generate
 
     def revised(self: MockProvider, context: dict[str, Any], policy: dict[str, Any]) -> Any:
         draft = original(self, context, policy)
-        draft.body += (
-            "\n## Revision\n" + "Reviewed synthetic revision context and commentary. " * 40
-        )
+        section = context.get("plan", {}).get("section_number", 1)
+        draft.body += f"\nReviewed synthetic revision context for section {section}."
+        draft._metrics = {"tokens_per_second_wall": 3.0, "rss_peak_mib": 128.0}
         return draft
 
     monkeypatch.setattr(MockProvider, "generate", revised)
-    run_job(lab, keyword)
+    metric_job = run_job(lab, keyword)
+    metric_results = conn.execute(
+        "SELECT result_metadata FROM generation_results WHERE run_id=%s", (metric_job["id"],)
+    ).fetchall()
+    assert metric_results and all(
+        result["result_metadata"]["metrics"]["section_metrics"][0]["tokens_per_second_wall"] == 3.0
+        for result in metric_results
+    )
     versions = conn.execute(
         "SELECT * FROM content_versions WHERE group_id=(SELECT group_id FROM keyword_candidates WHERE id=%s)",
         (keyword,),
@@ -149,15 +194,28 @@ def test_pipeline_n_languages_versions_and_audit(lab: Any, monkeypatch: pytest.M
         "UPDATE audit_events SET payload=payload",
         "DELETE FROM generation_results",
         "UPDATE research_sources SET evidence=evidence",
+        "DELETE FROM generation_stage_runs",
     ):
         with pytest.raises(psycopg.Error), conn.transaction():
             conn.execute(sql)
+    stage_id = conn.execute(
+        "SELECT id FROM generation_stage_runs WHERE run_id=%s LIMIT 1", (job["id"],)
+    ).fetchone()["id"]
+    with pytest.raises(psycopg.Error), conn.transaction():
+        conn.execute(
+            "UPDATE generation_stage_runs SET output_snapshot='{}' WHERE id=%s", (stage_id,)
+        )
     events = conn.execute(
         "SELECT event_type FROM audit_events WHERE run_id=%s", (job["id"],)
     ).fetchall()
     assert "research.completed" in {r["event_type"] for r in events}
+    assert "research.stage.succeeded" in {r["event_type"] for r in events}
     assert api.get("/admin/research/state").status_code == 401
-    assert api.get("/admin/research/state", headers=h).status_code == 200
+    response = api.get("/admin/research/state", headers=h)
+    assert response.status_code == 200
+    state = response.json()
+    assert state["stage_runs"] and state["coverage"]
+    assert all("reviewed_source_count" in row for row in state["coverage"])
 
 
 def test_evidence_block_and_duplicate_generation(lab: Any) -> None:
@@ -253,6 +311,12 @@ def test_retry_recovery_pause_scheduler(lab: Any, monkeypatch: pytest.MonkeyPatc
         "UPDATE job_runs SET status='running',lease_until=now()-interval '1 second' WHERE id=%s",
         (job["id"],),
     )
+    conn.execute(
+        """INSERT INTO generation_stage_runs(run_id,profile_id,worker_attempt,stage_attempt,sequence,
+        stage_name,status,model,prompt_version,input_snapshot) VALUES (%s,%s,1,99,999,
+        'section_generation','running','mock-v1','test-v1','{}')""",
+        (job["id"], conn.execute("SELECT profile_id FROM generation_targets WHERE run_id=%s LIMIT 1", (job["id"],)).fetchone()["profile_id"]),
+    )
     conn.execute("UPDATE job_runs SET available_at=now() WHERE id=%s", (job["id"],))
     monkeypatch.setattr(MockProvider, "generate", old)
     assert pipeline.tick()
@@ -260,6 +324,10 @@ def test_retry_recovery_pause_scheduler(lab: Any, monkeypatch: pytest.MonkeyPatc
         conn.execute("SELECT status FROM job_runs WHERE id=%s", (job["id"],)).fetchone()["status"]
         == "succeeded"
     )
+    assert conn.execute(
+        "SELECT error_category FROM generation_stage_runs WHERE run_id=%s AND sequence=999",
+        (job["id"],),
+    ).fetchone()["error_category"] == "worker_interrupted"
     assert conn.execute(
         "SELECT 1 FROM generation_attempts WHERE run_id=%s AND event='recovered'", (job["id"],)
     ).fetchone()
@@ -313,7 +381,7 @@ def test_partial_retry_skips_saved_targets_and_fences(
     def flaky(self: MockProvider, context: dict[str, Any], policy: dict[str, Any]) -> Any:
         nonlocal calls
         calls += 1
-        if calls == 2:
+        if calls in (3, 4):
             raise EngineFailure("temporary_model_failure", True)
         return original(self, context, policy)
 
@@ -325,9 +393,9 @@ def test_partial_retry_skips_saved_targets_and_fences(
         ).fetchone()["n"]
         == 1
     )
+    assert conn.execute("SELECT status FROM job_runs WHERE id=%s", (job["id"],)).fetchone()["status"] == "queued"
     conn.execute("UPDATE job_runs SET available_at=now() WHERE id=%s", (job["id"],))
     assert pipeline.tick()
-    assert calls == 5
     assert (
         conn.execute(
             "SELECT count(*) AS n FROM generation_results WHERE run_id=%s", (job["id"],)

@@ -77,3 +77,11 @@ OAuth 토큰·API Key·비밀번호를 코드에 저장하지 않는다. .env �
 - Compare model versions using identical, checksummed material, prompt, language, and scoring rules; retain output, errors, versions, and measured resource data. Do not claim GPU measurements when unavailable.
 - Before loading a model, enforce available-RAM headroom and project-local disk limits. Run one inference model at a time and do not stop or alter other projects or system services.
 - Model acquisition is limited to unauthenticated public files with reviewed free terms and pinned revision/SHA-256. Never download gated weights, use hosted inference, or fall back to a paid service.
+
+## Phase 3.7 evidence-led pipeline rules
+- Keep source collection, verbatim evidence extraction/validation, outline, section generation, localization, claim review, SEO quality, and draft persistence as separately identified and audited stages. Store the input/output, model/prompt version, source IDs, validation, timing, retry, and terminal status for each attempt.
+- Only extract evidence spans that occur in the reviewed source revision. An evidence ID proves traceability, not truth or semantic support.
+- Give each generated section only its assigned evidence IDs. Enforce bounded retries; failed checks remain held and cannot be promoted by model self-review.
+- Retain detected source names, numbers, dates, and source IDs through localization. Country-specific claims require reviewed country-relevant evidence.
+- Keep machine checks and human approval separate. If semantic entailment, language quality, rights, or freshness is uncertain, retain `quality_held` and `publish_ready=false`.
+- Evaluation runs may not enable Blogger writes, automatic publication, or paid/metered services.

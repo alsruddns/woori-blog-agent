@@ -6,7 +6,7 @@ export type State = {
   profiles: Row[]; categories: Row[]; keywords: Row[]; sources: Row[]; jobs: Row[];
   versions: Row[]; settings: Row[]; prompts: Row[]; controls: Row; schedules: Row[];
   attempts: Row[]; events: Row[]; dispatches: Row[]; collection_sources: Row[]; cost_policy?: Row;
-  collection_jobs: Row[]; measurements: Row[];
+  collection_jobs: Row[]; measurements: Row[]; stage_runs: Row[]; coverage: Row[];
 };
 type Field = { name: string; label: string; type?: string; optional?: boolean; options?: { value: string; label: string }[] };
 const str = (row: Row, key: string) => String(row[key] ?? "");
@@ -104,6 +104,14 @@ export default function Research({ initial }: { initial: State }) {
         <button disabled={busy || j.status === "succeeded"} onClick={() => act(`jobs/${str(j, "id")}/action`, { action: j.paused ? "resume" : "pause" })}>{j.paused ? "재개" : "중지·현재 추론 취소"}</button>
         <button disabled={busy || j.status !== "failed" || Number(j.attempts) >= 3} onClick={() => act(`jobs/${str(j, "id")}/action`, { action: "retry" })}>재시도</button></article>)}
       <details><summary>실패·재시도 이력</summary><pre>{JSON.stringify(data.attempts, null, 2)}</pre></details>
+    </section>
+    <section><h2>단계별 생성 추적·근거 범위</h2>
+      <p>진행과 완료 데이터는 PostgreSQL 실행 단계 기록에서 조회합니다. 검토된 출처 수는 활성 언어별·카테고리별 현재 승인 근거 집계이며 검색량이나 콘텐츠 품질 점수가 아닙니다.</p>
+      <div style={{ overflowX: "auto" }}><table><thead><tr><th>카테고리</th><th>언어</th><th>승인된 근거 수</th></tr></thead><tbody>
+        {data.coverage.map((item, index) => <tr key={index}><td>{str(item, "category")}</td><td>{str(item, "language_code")}</td><td>{str(item, "reviewed_source_count")}</td></tr>)}
+      </tbody></table></div>
+      {data.stage_runs.map(stage => <details key={str(stage, "id")}><summary>{str(stage, "stage_name")} · {str(stage, "status")} · {str(stage, "profile_id")} · {str(stage, "started_at")} · {str(stage, "error_category")}</summary>
+        <pre style={{ whiteSpace: "pre-wrap" }}>{JSON.stringify({ execution_id: stage.id, run_id: stage.run_id, worker_attempt: stage.worker_attempt, stage_attempt: stage.stage_attempt, sequence: stage.sequence, model: stage.model, prompt_version: stage.prompt_version, elapsed_ms: stage.elapsed_ms, source_ids: stage.source_ids, input: stage.input_snapshot, output: stage.output_snapshot, validation: stage.validation }, null, 2)}</pre></details>)}
     </section>
     <section><h2>원본·언어별 초안·품질·버전 비교</h2><p>quality_held는 품질 미달·미확인 보존본입니다. 내부 점수는 순위·수익 보장이 아니며 모든 발행 준비 상태는 false입니다.</p>
       {[{ id: left, set: setLeft }, { id: right, set: setRight }].map((item, index) => <label key={index}>비교 {index + 1}<select value={item.id} onChange={e => item.set(e.target.value)}><option value="">초안 선택</option>{data.versions.map(v => <option key={str(v, "id")} value={str(v, "id")}>{str(v, "language")} v{str(v, "version")} · {str(v, "state")} · {str(v, "title")}</option>)}</select></label>)}

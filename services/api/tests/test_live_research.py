@@ -202,10 +202,45 @@ def test_extract_facts_keeps_source_identity() -> None:
     from woori.grounding import extract_facts
 
     facts = extract_facts([{"id": "source-1", "evidence": "First fact. Second fact!"}])
-    assert facts == [
-        {"text": "First fact.", "source_id": "source-1"},
-        {"text": "Second fact!", "source_id": "source-1"},
-    ]
+    assert [fact["text"] for fact in facts] == ["First fact.", "Second fact!"]
+    assert all(fact["source_id"] == "source-1" for fact in facts)
+    assert facts[0]["fact_id"] != facts[1]["fact_id"]
+    assert facts == extract_facts([{"id": "source-1", "evidence": "First fact. Second fact!"}])
+
+
+def test_section_claim_gate_checks_numbers_names_and_citations() -> None:
+    from woori.grounding import extract_facts
+    from woori.pipeline import section_response_valid
+
+    source = {"id": "source-1", "evidence": "Federal Reserve Board issued a public notice."}
+    facts = extract_facts([source])
+    valid = Draft(
+        title="Federal Reserve Board notice",
+        body="Federal Reserve Board issued a public notice. [source:source-1]",
+        summary="A sourced notice from the Federal Reserve Board.",
+        keywords=["notice"],
+        source_ids=["source-1"],
+    )
+    assert section_response_valid(valid, facts, {"source-1"}, "2026-10-26")["passed"]
+    numbered_heading = valid.model_copy(update={"body": "## 1\n" + valid.body})
+    assert section_response_valid(numbered_heading, facts, {"source-1"}, "2026-10-26")["passed"]
+    unsupported = valid.model_copy(
+        update={"body": "Federal Reserve Board issued a $99 million notice. [source:source-1]"}
+    )
+    failed = section_response_valid(unsupported, facts, {"source-1"}, "2026-10-26")
+    assert not failed["passed"] and not failed["checks"]["numbers_from_evidence"]
+    unknown_citation = valid.model_copy(update={"body": "Federal Reserve Board notice. [source:other]"})
+    failed = section_response_valid(unknown_citation, facts, {"source-1"}, "2026-10-26")
+    assert not failed["passed"] and not failed["checks"]["citations_allowed"]
+    invented_name = valid.model_copy(
+        update={
+            "body": "Federal Reserve Board and European Central Bank issued a public notice. "
+            "[source:source-1]"
+        }
+    )
+    failed = section_response_valid(invented_name, facts, {"source-1"}, "2026-10-26")
+    assert not failed["passed"] and not failed["checks"]["no_unsupported_proper_names"]
+    assert "European Central Bank" in failed["unsupported_proper_names"]
 
 
 def test_grounding_normalizes_dates_and_avoids_sentence_boundary_name_false_positives() -> None:

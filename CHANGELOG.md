@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased - Phase 3.7 - 2026-10-26
+
+- Persist independently auditable source, evidence, outline, per-section generation/localization, claim, SEO, and draft-persistence stages.
+- Use stable evidence sentence IDs, exact source-span extraction checks, section-scoped evidence, bounded retry, and keep failed versions quality-held.
+- Add live database stage/coverage views and expand regression tests for unsupported names, headings, recovery, and stage metrics.
+- Run a real Qwen3 4B Q4_K_M Vulkan evaluation on the same Federal Reserve source across four DB languages; all four versions remain quality-held.
+- Document source availability and licensing review; no new source integration or Blogger writes were enabled.
+
+
 ## Unreleased - Phase 3.6 - 2026-10-26
 
 - Add source-linked evidence facts, citation markers and stricter rule checks for sourced names, numbers, URLs, language fields, citations and repeated paragraphs.
