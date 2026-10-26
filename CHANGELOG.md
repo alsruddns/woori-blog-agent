@@ -1,5 +1,9 @@
 # Changelog
 
+## Phase 3.8-C1
+- Added a zero-cost SEC EDGAR submissions/XBRL collector alongside the bounded Federal Reserve collector, with filing-linked facts, exact retrieval timestamps, source policy metadata and append-only completed-article evaluations.
+- Added local Qwen full-article evaluation for active language profiles, separate source-grounding/SEO checks, saved localized versions and dashboard previews. All articles require human review; publication remains disabled.
+
 ## Unreleased - Phase 3.8-B - 2026-10-26
 
 - Add immutable source-span fact records, reviewed source-language attribution, and fail-closed BCP 47 localization checks for names, numbers, dates, citations, repetition, and URLs.

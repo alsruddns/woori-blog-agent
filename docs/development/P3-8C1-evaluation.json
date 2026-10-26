@@ -1,0 +1,725 @@
+{
+  "phase": "3.8-C1",
+  "batch_id": "accda6bd-cf11-4cdc-8f35-801e0fbbbddc",
+  "created_at": "2026-10-26T08:58:18.826813+00:00",
+  "model": {
+    "pid": 31064,
+    "model": "Qwen3-4B-Q4_K_M.gguf",
+    "engine": "llama.cpp b11889",
+    "threads": 4,
+    "backend": "vulkan",
+    "engine_directory": "llama-b11889-vulkan",
+    "gpu_layers": 20
+  },
+  "external_collection": false,
+  "source_records": [
+    {
+      "id": "873093a8-085e-42b5-8bb2-657f62f8df94",
+      "keyword": "Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026",
+      "category": "finance",
+      "url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20261013a.htm",
+      "source_name": "Federal Reserve Board press releases",
+      "source_language": "en",
+      "published_at": "2026-10-14 03:00:00+09:00",
+      "retrieved_at": "2026-10-26 17:36:37.674289+09:00",
+      "valid_until": "2026-11-13 03:00:00+09:00",
+      "rights": "Board-authored text public domain unless indicated; cite Board; exclude third-party material",
+      "access_policy": "Explicit RSS/API access; bounded requests, no redirects, 1 MiB cap; cite provider",
+      "evidence": "Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026. The Federal Reserve Board on Tuesday released the minutes from its recent meetings to review and determine the discount rates provided to depository institutions through the discount window. Today's minutes cover the Board meetings that occurred on August 17, September 9, and September 16, 2026. The Board's process for setting the discount rate is distinct from the process the Federal Open Market Committee follows in setting the target range for the federal funds rate. For media inquiries, please email [email protected] or call 202-452-2955."
+    },
+    {
+      "id": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+      "keyword": "Apple Inc. 10-Q filed 2026-07-31",
+      "category": "stocks",
+      "url": "https://www.sec.gov/Archives/edgar/data/320193/32019326000020/aapl-20260627.htm",
+      "source_name": "SEC EDGAR company submissions and XBRL facts",
+      "source_language": "en",
+      "published_at": "2026-07-31 09:00:00+09:00",
+      "retrieved_at": "2026-10-26 17:36:39.388000+09:00",
+      "valid_until": "2027-01-24 17:36:39.388003+09:00",
+      "rights": "SEC states government-created SEC site and EDGAR public filing content is free to access and reuse; cite the underlying filing and do not copy third-party assets.",
+      "access_policy": "Explicit RSS/API access; bounded requests, no redirects, 1 MiB cap; cite provider",
+      "evidence": "Apple Inc. filed SEC Form 10-Q on 2026-07-31 for the period ended 2026-06-27. revenue: 109417000000 USD for period 2026-03-29 to 2026-06-27; net income: 29789000000 USD for period 2026-03-29 to 2026-06-27. SEC accession number 0000320193-26-000020."
+    }
+  ],
+  "results": [
+    {
+      "id": "287b4db9-006c-4eec-8da6-4e0091deb2a4",
+      "version_id": "3caba1cb-4392-4612-a5a1-d8d6879e873c",
+      "group_id": "36efa0e8-4a98-4b1d-9149-488e9b1fef69",
+      "topic_key": "873093a8-085e-42b5-8bb2-657f62f8df94",
+      "language": "en",
+      "title": "Minutes of the Board's Discount Rate Meetings on August 17, September 9, and September 16, 2026",
+      "summary": "The Federal Reserve Board released minutes from its discount rate meetings on August 17, September 9, and September 16, 2026. The minutes detail the discussions and decisions made during these meetings, which are separate from the Federal Open Market Committee's process for setting the federal funds rate.",
+      "keywords": [
+        "Federal Reserve Board",
+        "discount rate meetings",
+        "Federal Open Market Committee",
+        "federal funds rate",
+        "minutes of meetings"
+      ],
+      "body": "## What the official source states\nThe Federal Reserve Board on Tuesday released the minutes from its recent meetings to review and determine the discount rates provided to depository institutions through the discount window. Today's minutes cover the Board meetings that occurred on August 17, September 9, and September 16, 2026. [source:873093a8-085e-42b5-8bb2-657f62f8df94]\n\n## How to read the reported information\nThe Board's process for setting the discount rate is distinct from the process the Federal Open Market Committee follows in setting the target range for the federal funds rate. [source:873093a8-085e-42b5-8bb2-657f62f8df94]\n\n## Limits and source context\nThe minutes provide a record of the discussions and decisions made during the Board's discount rate meetings. The information is limited to the details provided in the official release and does not include additional commentary or analysis. [source:873093a8-085e-42b5-8bb2-657f62f8df94]",
+      "status": "quality_held",
+      "quality": {
+        "checks": {
+          "source_ids_valid": true,
+          "no_fabricated_urls": true,
+          "source_urls_well_formed": true,
+          "citation_ids_valid": true,
+          "factual_paragraphs_cited": true,
+          "no_unverified_numbers": true,
+          "proper_names_preserved": true,
+          "no_unsupported_proper_names": false,
+          "no_repeated_paragraphs": true,
+          "no_repeated_sentences": true,
+          "rights_recorded": true,
+          "current_sources": true,
+          "language_script_present": true,
+          "language_metadata_matches": true,
+          "no_obvious_high_risk_claims": true,
+          "article_structure": true,
+          "title_body_alignment": true,
+          "keyword_search_intent_coverage": true,
+          "keywords_are_search_terms_not_internal_ids": true,
+          "legal_access_claims_grounded_in_supplied_source": true,
+          "no_mass_direct_quote": false
+        },
+        "machine_passed": false,
+        "grounding_details": {
+          "proper_name_candidates": [
+            "Federal Open Market Committee",
+            "Federal Reserve Board"
+          ],
+          "missing_proper_names": [],
+          "unsupported_proper_names": [
+            "Board's Discount Rate Meetings"
+          ],
+          "unexpected_numbers": [],
+          "uncited_paragraphs": [],
+          "invalid_source_urls": []
+        },
+        "human_review_required": true,
+        "semantic_accuracy": "human_review_required",
+        "naturalness": "human_review_required",
+        "rights_review": "human_review_required",
+        "publish_ready": false,
+        "word_count": 147,
+        "section_count": 3,
+        "paragraph_count": 3,
+        "source_overlap_words_max": 30,
+        "fact_count": 5,
+        "search_intent": "Summarize and explain the supplied official filing/release; not investment advice"
+      },
+      "metrics": {
+        "wall_seconds": 43.786,
+        "engine": "llama.cpp b11889",
+        "rss_peak_mib": 5255.55,
+        "process_cpu_mean_percent_machine": 27.06,
+        "system_cpu_peak_percent": 52.6,
+        "gpu_utilization_percent": 94.18,
+        "gpu_layers": 20,
+        "backend": "Vulkan GPU offload",
+        "completion_tokens": 455,
+        "tokens_per_second_wall": 10.39,
+        "pipeline_elapsed_ms": 44795,
+        "source_retrieved_at": "2026-10-26 17:36:37.674289+09:00",
+        "source_published_at": "2026-10-14 03:00:00+09:00",
+        "fact_spans": 5,
+        "model_calls": 1,
+        "cpu_model": 6,
+        "available_ram_mib_before": 8206
+      },
+      "elapsed_ms": 44795,
+      "ai_calls": 1,
+      "publish_ready": false
+    },
+    {
+      "id": "a4d21666-7886-4ad1-8f93-0ad2c54f748b",
+      "version_id": "25f05a01-ee9b-4796-80a8-5aa9731462dd",
+      "group_id": "36efa0e8-4a98-4b1d-9149-488e9b1fef69",
+      "topic_key": "873093a8-085e-42b5-8bb2-657f62f8df94",
+      "language": "ja",
+      "title": "2026年8月17日、9月9日および16日におけるボードのディスカウントレート会議の記録",
+      "summary": "2026年8月17日、9月9日および16日におけるボードのディスカウントレート会議の記録が公開されました。この記録は、連邦準備銀行がディスカウントレートを設定するプロセスを示しています。",
+      "keywords": [
+        "2026年8月17日",
+        "ボードのディスカウントレート会議",
+        "連邦準備銀行",
+        "ディスカウントレート",
+        "記録"
+      ],
+      "body": "## 事実の記録\nボードのディスカウントレート会議の記録は、2026年8月17日、9月9日および16日に開催された会議の内容を含みます。この記録は、連邦準備銀行がディスカウントウィンドウを通じて銀行に提供するディスカウントレートを審査し、決定するプロセスを示しています。\n\n## 記録の解釈方法\n記録は、連邦準備銀行がディスカウントレートを設定するプロセスについての情報を提供しています。このプロセスは、連邦開市委員会がファーティュアルフンドレートのターゲット範囲を設定するプロセスとは異なります。\n\n## 限界とソースの文脈\nこの記録は、2026年10月14日に公開され、2026年11月13日に有効期限が切れる情報です。この記録は、連邦準備銀行がディスカウントレートを設定するプロセスに関する情報を提供していますが、その詳細な分析や解釈は含まれていません。\n\n[source:873093a8-085e-42b5-8bb2-657f62f8df94]",
+      "status": "quality_held",
+      "quality": {
+        "checks": {
+          "source_ids_valid": true,
+          "no_fabricated_urls": true,
+          "source_urls_well_formed": true,
+          "citation_ids_valid": true,
+          "factual_paragraphs_cited": false,
+          "no_unverified_numbers": false,
+          "proper_names_preserved": false,
+          "no_unsupported_proper_names": true,
+          "no_repeated_paragraphs": true,
+          "no_repeated_sentences": true,
+          "rights_recorded": true,
+          "current_sources": true,
+          "language_script_present": true,
+          "language_metadata_matches": true,
+          "no_obvious_high_risk_claims": true,
+          "article_structure": true,
+          "title_body_alignment": true,
+          "keyword_search_intent_coverage": true,
+          "keywords_are_search_terms_not_internal_ids": true,
+          "legal_access_claims_grounded_in_supplied_source": true,
+          "no_mass_direct_quote": true
+        },
+        "machine_passed": false,
+        "grounding_details": {
+          "proper_name_candidates": [
+            "Federal Open Market Committee",
+            "Federal Reserve Board"
+          ],
+          "missing_proper_names": [
+            "Federal Open Market Committee",
+            "Federal Reserve Board"
+          ],
+          "unsupported_proper_names": [],
+          "unexpected_numbers": [
+            "16.0",
+            "DATE:2026-11-13"
+          ],
+          "uncited_paragraphs": [],
+          "invalid_source_urls": []
+        },
+        "human_review_required": true,
+        "semantic_accuracy": "human_review_required",
+        "naturalness": "human_review_required",
+        "rights_review": "human_review_required",
+        "publish_ready": false,
+        "word_count": 320,
+        "section_count": 3,
+        "paragraph_count": 4,
+        "source_overlap_words_max": 1,
+        "fact_count": 5,
+        "search_intent": "Summarize and explain the supplied official filing/release; not investment advice"
+      },
+      "metrics": {
+        "wall_seconds": 52.077,
+        "engine": "llama.cpp b11889",
+        "rss_peak_mib": 5527.37,
+        "process_cpu_mean_percent_machine": 27.42,
+        "system_cpu_peak_percent": 51.3,
+        "gpu_utilization_percent": 93.28,
+        "gpu_layers": 20,
+        "backend": "Vulkan GPU offload",
+        "completion_tokens": 540,
+        "tokens_per_second_wall": 10.37,
+        "pipeline_elapsed_ms": 53043,
+        "source_retrieved_at": "2026-10-26 17:36:37.674289+09:00",
+        "source_published_at": "2026-10-14 03:00:00+09:00",
+        "fact_spans": 5,
+        "model_calls": 1,
+        "cpu_model": 6,
+        "available_ram_mib_before": 7966
+      },
+      "elapsed_ms": 53043,
+      "ai_calls": 1,
+      "publish_ready": false
+    },
+    {
+      "id": "94b7b2d8-1900-455c-93f2-cfc87ddcd78d",
+      "version_id": "fc7c3874-7131-4968-a123-8c103e362be2",
+      "group_id": "36efa0e8-4a98-4b1d-9149-488e9b1fef69",
+      "topic_key": "873093a8-085e-42b5-8bb2-657f62f8df94",
+      "language": "ko",
+      "title": "2026년 8월 17일, 9월 9일 및 16일 Federal Reserve 보드의 할인율 회의 기록",
+      "summary": "2026년 8월 17일, 9월 9일 및 16일 Federal Reserve 보드의 할인율 회의 기록이 2026년 10월 14일에 발표되었습니다. 이 기록은 보드가 기관에 제공하는 할인율을 결정하는 과정을 기록하며, Federal Open Market Committee가 Федер럴 펀드 이자율 범위를 설정하는 과정과 구별된다는 점을 강조합니다.",
+      "keywords": [
+        "Federal Reserve 보드",
+        "할인율 회의",
+        "2026년 8월 17일",
+        "2026년 9월 9일",
+        "2026년 9월 16일",
+        "할인율 결정 과정",
+        "Federal Open Market Committee",
+        "Federal Funds Rate",
+        "할인 윈도우",
+        "미디어 문의"
+      ],
+      "body": "## 2026년 8월 17일, 9월 9일 및 16일 Federal Reserve 보드의 할인율 회의 기록\nFederal Reserve 보드는 2026년 10월 14일에 2026년 8월 17일, 9월 9일 및 16일에 개최된 할인율 회의 기록을 발표했습니다. 이 기록은 보드가 기관에 할인 윈도우를 통해 제공하는 할인율을 검토하고 결정하는 과정을 기록한 것입니다. 이 기록은 보드가 할인율을 설정하는 과정이 Federal Open Market Committee가 Федер럴 펀드 이자율 범위를 설정하는 과정과 구별된다는 점을 명시하고 있습니다.\n\n## 기관에 제공되는 할인율 결정 과정\nFederal Reserve 보드는 할인율을 설정하는 과정이 Federal Open Market Committee가 Федер럴 펀드 이자율 범위를 설정하는 과정과 구별된다는 점을 강조했습니다. 이 과정은 보드가 기관에 제공하는 할인율을 결정하는 데 사용되는 방법과 관련된 정보를 제공합니다.\n\n## 연락처 정보\n미디어 문의는 [email protected]로 이메일을 보내거나 202-452-2955로 전화할 수 있습니다.",
+      "status": "quality_held",
+      "quality": {
+        "checks": {
+          "source_ids_valid": true,
+          "no_fabricated_urls": true,
+          "source_urls_well_formed": true,
+          "citation_ids_valid": true,
+          "factual_paragraphs_cited": false,
+          "no_unverified_numbers": false,
+          "proper_names_preserved": false,
+          "no_unsupported_proper_names": true,
+          "no_repeated_paragraphs": true,
+          "no_repeated_sentences": true,
+          "rights_recorded": true,
+          "current_sources": true,
+          "language_script_present": true,
+          "language_metadata_matches": true,
+          "no_obvious_high_risk_claims": true,
+          "article_structure": true,
+          "title_body_alignment": true,
+          "keyword_search_intent_coverage": true,
+          "keywords_are_search_terms_not_internal_ids": false,
+          "legal_access_claims_grounded_in_supplied_source": true,
+          "no_mass_direct_quote": true
+        },
+        "machine_passed": false,
+        "grounding_details": {
+          "proper_name_candidates": [
+            "Federal Open Market Committee",
+            "Federal Reserve Board"
+          ],
+          "missing_proper_names": [
+            "Federal Open Market Committee",
+            "Federal Reserve Board"
+          ],
+          "unsupported_proper_names": [],
+          "unexpected_numbers": [
+            "16.0"
+          ],
+          "uncited_paragraphs": [
+            "Federal Reserve 보드는 2026년 10월 14일에 2026년 8월 17일, 9월 9일 및 16일에 개최된 할인율 회의 기록을 발표했습니다. 이 기록은 보드가 기관에 할인 윈도우를 통해 제공하는 할인율을 ",
+            "Federal Reserve 보드는 할인율을 설정하는 과정이 Federal Open Market Committee가 Федер럴 펀드 이자율 범위를 설정하는 과정과 구별된다는 점을 강조했습니다. 이 과정은 보드가 기",
+            "미디어 문의는 [email protected]로 이메일을 보내거나 202-452-2955로 전화할 수 있습니다."
+          ],
+          "invalid_source_urls": []
+        },
+        "human_review_required": true,
+        "semantic_accuracy": "human_review_required",
+        "naturalness": "human_review_required",
+        "rights_review": "human_review_required",
+        "publish_ready": false,
+        "word_count": 230,
+        "section_count": 3,
+        "paragraph_count": 3,
+        "source_overlap_words_max": 4,
+        "fact_count": 5,
+        "search_intent": "Summarize and explain the supplied official filing/release; not investment advice"
+      },
+      "metrics": {
+        "wall_seconds": 61.569,
+        "engine": "llama.cpp b11889",
+        "rss_peak_mib": 5810.75,
+        "process_cpu_mean_percent_machine": 27.89,
+        "system_cpu_peak_percent": 50.5,
+        "gpu_utilization_percent": 94.02,
+        "gpu_layers": 20,
+        "backend": "Vulkan GPU offload",
+        "completion_tokens": 639,
+        "tokens_per_second_wall": 10.38,
+        "pipeline_elapsed_ms": 62588,
+        "source_retrieved_at": "2026-10-26 17:36:37.674289+09:00",
+        "source_published_at": "2026-10-14 03:00:00+09:00",
+        "fact_spans": 5,
+        "model_calls": 1,
+        "cpu_model": 6,
+        "available_ram_mib_before": 7656
+      },
+      "elapsed_ms": 62588,
+      "ai_calls": 1,
+      "publish_ready": false
+    },
+    {
+      "id": "cbf134e5-b485-4557-91af-d1d8bf29b895",
+      "version_id": "a9462d7b-0408-4c0c-945e-9ce79d7803c6",
+      "group_id": "36efa0e8-4a98-4b1d-9149-488e9b1fef69",
+      "topic_key": "873093a8-085e-42b5-8bb2-657f62f8df94",
+      "language": "zh-CN",
+      "title": "美联储2026年8月17日、9月9日和9月16日贴现率会议纪要",
+      "summary": "美联储2026年8月17日、9月9日和9月16日贴现率会议纪要，用于审查并确定通过贴现窗口向存款机构提供的贴现率。",
+      "keywords": [
+        "美联储贴现率会议纪要",
+        "2026年8月17日",
+        "2026年9月9日",
+        "2026年9月16日",
+        "贴现率设定流程"
+      ],
+      "body": "## 官方来源说明\n美联储于周二发布了2026年8月17日、9月9日和9月16日贴现率会议的纪要，用于审查并确定通过贴现窗口向存款机构提供的贴现率。\n\n## 如何解读报告信息\n会议纪要涵盖了2026年8月17日、9月9日和9月16日的会议内容，其中提到美联储设定贴现率的流程与联邦公开市场委员会设定联邦基金利率目标范围的流程不同。\n\n## 限制与来源背景\n会议纪要由美联储发布，内容仅限于会议记录，不包含任何额外信息或分析。如需进一步了解，可联系美联储媒体办公室，电话为202-452-2955，或发送电子邮件至[email protected]。\n\n[source:873093a8-085e-42b5-8bb2-657f62f8df94]",
+      "status": "quality_held",
+      "quality": {
+        "checks": {
+          "source_ids_valid": true,
+          "no_fabricated_urls": true,
+          "source_urls_well_formed": true,
+          "citation_ids_valid": true,
+          "factual_paragraphs_cited": false,
+          "no_unverified_numbers": true,
+          "proper_names_preserved": false,
+          "no_unsupported_proper_names": true,
+          "no_repeated_paragraphs": true,
+          "no_repeated_sentences": true,
+          "rights_recorded": true,
+          "current_sources": true,
+          "language_script_present": true,
+          "language_metadata_matches": true,
+          "no_obvious_high_risk_claims": true,
+          "article_structure": true,
+          "title_body_alignment": true,
+          "keyword_search_intent_coverage": true,
+          "keywords_are_search_terms_not_internal_ids": true,
+          "legal_access_claims_grounded_in_supplied_source": true,
+          "no_mass_direct_quote": true
+        },
+        "machine_passed": false,
+        "grounding_details": {
+          "proper_name_candidates": [
+            "Federal Open Market Committee",
+            "Federal Reserve Board"
+          ],
+          "missing_proper_names": [
+            "Federal Open Market Committee",
+            "Federal Reserve Board"
+          ],
+          "unsupported_proper_names": [],
+          "unexpected_numbers": [],
+          "uncited_paragraphs": [
+            "会议纪要由美联储发布，内容仅限于会议记录，不包含任何额外信息或分析。如需进一步了解，可联系美联储媒体办公室，电话为202-452-2955，或发送电子邮件至[email protected]。"
+          ],
+          "invalid_source_urls": []
+        },
+        "human_review_required": true,
+        "semantic_accuracy": "human_review_required",
+        "naturalness": "human_review_required",
+        "rights_review": "human_review_required",
+        "publish_ready": false,
+        "word_count": 199,
+        "section_count": 3,
+        "paragraph_count": 4,
+        "source_overlap_words_max": 3,
+        "fact_count": 5,
+        "search_intent": "Summarize and explain the supplied official filing/release; not investment advice"
+      },
+      "metrics": {
+        "wall_seconds": 44.742,
+        "engine": "llama.cpp b11889",
+        "rss_peak_mib": 6108.15,
+        "process_cpu_mean_percent_machine": 26.46,
+        "system_cpu_peak_percent": 56.0,
+        "gpu_utilization_percent": 94.48,
+        "gpu_layers": 20,
+        "backend": "Vulkan GPU offload",
+        "completion_tokens": 411,
+        "tokens_per_second_wall": 9.19,
+        "pipeline_elapsed_ms": 45757,
+        "source_retrieved_at": "2026-10-26 17:36:37.674289+09:00",
+        "source_published_at": "2026-10-14 03:00:00+09:00",
+        "fact_spans": 5,
+        "model_calls": 1,
+        "cpu_model": 6,
+        "available_ram_mib_before": 7373
+      },
+      "elapsed_ms": 45757,
+      "ai_calls": 1,
+      "publish_ready": false
+    },
+    {
+      "id": "cca5a045-c948-40c2-be55-65c1007ec08e",
+      "version_id": "446cda2e-a880-40d6-bb55-62f8f202c4e7",
+      "group_id": "f2942ae6-d30d-4266-98eb-469bac7abe29",
+      "topic_key": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+      "language": "en",
+      "title": "Apple Inc. 10-Q Filing for 2026-07-31",
+      "summary": "Apple Inc. filed a 10-Q report with the SEC on 2026-07-31 for the period ended 2026-06-27, reporting revenue and net income figures for the quarter ending 2026-06-27.",
+      "keywords": [
+        "Apple Inc. 10-Q",
+        "SEC Form 10-Q",
+        "2026-07-31 filing",
+        "revenue report",
+        "net income data"
+      ],
+      "body": "## What the official source states\nApple Inc. filed SEC Form 10-Q on 2026-07-31 for the period ended 2026-06-27. [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]\n\n## How to read the reported information\nThe filing reports revenue of 109417000000 USD for the period from 2026-03-29 to 2026-06-27 and net income of 29789000000 USD for the same period. [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]\n\n## Limits and source context\nThe filing is part of the SEC record and includes the SEC accession number 0000320193-26-000020. [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]",
+      "status": "quality_held",
+      "quality": {
+        "checks": {
+          "source_ids_valid": true,
+          "no_fabricated_urls": true,
+          "source_urls_well_formed": true,
+          "citation_ids_valid": true,
+          "factual_paragraphs_cited": true,
+          "no_unverified_numbers": true,
+          "proper_names_preserved": true,
+          "no_unsupported_proper_names": false,
+          "no_repeated_paragraphs": true,
+          "no_repeated_sentences": true,
+          "rights_recorded": true,
+          "current_sources": true,
+          "language_script_present": true,
+          "language_metadata_matches": true,
+          "no_obvious_high_risk_claims": true,
+          "article_structure": true,
+          "title_body_alignment": true,
+          "keyword_search_intent_coverage": true,
+          "keywords_are_search_terms_not_internal_ids": false,
+          "legal_access_claims_grounded_in_supplied_source": true,
+          "no_mass_direct_quote": true
+        },
+        "machine_passed": false,
+        "grounding_details": {
+          "proper_name_candidates": [
+            "Apple Inc",
+            "SEC Form"
+          ],
+          "missing_proper_names": [],
+          "unsupported_proper_names": [
+            "Q Filing"
+          ],
+          "unexpected_numbers": [],
+          "uncited_paragraphs": [],
+          "invalid_source_urls": []
+        },
+        "human_review_required": true,
+        "semantic_accuracy": "human_review_required",
+        "naturalness": "human_review_required",
+        "rights_review": "human_review_required",
+        "publish_ready": false,
+        "word_count": 96,
+        "section_count": 3,
+        "paragraph_count": 3,
+        "source_overlap_words_max": 18,
+        "fact_count": 4,
+        "search_intent": "Summarize and explain the supplied official filing/release; not investment advice"
+      },
+      "metrics": {
+        "wall_seconds": 43.94,
+        "engine": "llama.cpp b11889",
+        "rss_peak_mib": 6374.34,
+        "process_cpu_mean_percent_machine": 27.13,
+        "system_cpu_peak_percent": 54.3,
+        "gpu_utilization_percent": 95.75,
+        "gpu_layers": 20,
+        "backend": "Vulkan GPU offload",
+        "completion_tokens": 459,
+        "tokens_per_second_wall": 10.45,
+        "pipeline_elapsed_ms": 44956,
+        "source_retrieved_at": "2026-10-26 17:36:39.388000+09:00",
+        "source_published_at": "2026-07-31 09:00:00+09:00",
+        "fact_spans": 4,
+        "model_calls": 1,
+        "cpu_model": 6,
+        "available_ram_mib_before": 7236
+      },
+      "elapsed_ms": 44956,
+      "ai_calls": 1,
+      "publish_ready": false
+    },
+    {
+      "id": "edf9ee67-590e-4e41-a449-254c6f1622e5",
+      "version_id": "20137e84-5335-4cf4-85dc-0a353401eb8a",
+      "group_id": "f2942ae6-d30d-4266-98eb-469bac7abe29",
+      "topic_key": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+      "language": "ja",
+      "title": "Apple Inc. 2026年7月31日に提出された10-Qフォーム",
+      "summary": "Apple Inc.は2026年7月31日にSECに10-Qフォームを提出しました。このフォームは、2026年6月27日までの期間をカバーしています。この報告書には、2026年3月29日から2026年6月27日までの期間における収益と純利益が記載されています。",
+      "keywords": [
+        "Apple Inc. 10-Q",
+        "2026年7月31日",
+        "SECフォーム10-Q",
+        "収益",
+        "純利益"
+      ],
+      "body": "## 官方の記述\nApple Inc.は、2026年7月31日にSECに10-Qフォームを提出しました。このフォームは、2026年6月27日までの期間をカバーしています。\n\n## 报告情報の読み方\nこの報告書には、2026年3月29日から2026年6月27日までの期間における収益と純利益が記載されています。収益は109,417,000,000 United States Dollar、純利益は29,789,000,000 United States Dollarです。\n\n## 制限とソースの文脈\nこの報告書は、2026年7月31日に提出されたSECフォーム10-Qに基づいて作成されています。このフォームのアクセス番号は0000320193-26-000020です。\n\n[source:76c54502-ee6e-45b8-b078-24182fbe3ef3]",
+      "status": "quality_held",
+      "quality": {
+        "checks": {
+          "source_ids_valid": true,
+          "no_fabricated_urls": true,
+          "source_urls_well_formed": true,
+          "citation_ids_valid": true,
+          "factual_paragraphs_cited": false,
+          "no_unverified_numbers": false,
+          "proper_names_preserved": false,
+          "no_unsupported_proper_names": false,
+          "no_repeated_paragraphs": true,
+          "no_repeated_sentences": true,
+          "rights_recorded": true,
+          "current_sources": true,
+          "language_script_present": true,
+          "language_metadata_matches": true,
+          "no_obvious_high_risk_claims": true,
+          "article_structure": true,
+          "title_body_alignment": true,
+          "keyword_search_intent_coverage": true,
+          "keywords_are_search_terms_not_internal_ids": true,
+          "legal_access_claims_grounded_in_supplied_source": true,
+          "no_mass_direct_quote": true
+        },
+        "machine_passed": false,
+        "grounding_details": {
+          "proper_name_candidates": [
+            "Apple Inc",
+            "SEC Form"
+          ],
+          "missing_proper_names": [
+            "SEC Form"
+          ],
+          "unsupported_proper_names": [
+            "United States",
+            "United States Dollar"
+          ],
+          "unexpected_numbers": [
+            "109417.0",
+            "29789.0"
+          ],
+          "uncited_paragraphs": [
+            "この報告書には、2026年3月29日から2026年6月27日までの期間における収益と純利益が記載されています。収益は109,417,000,000 United States Dollar、純利益は29,789,000,000 United"
+          ],
+          "invalid_source_urls": []
+        },
+        "human_review_required": true,
+        "semantic_accuracy": "human_review_required",
+        "naturalness": "human_review_required",
+        "rights_review": "human_review_required",
+        "publish_ready": false,
+        "word_count": 186,
+        "section_count": 3,
+        "paragraph_count": 4,
+        "source_overlap_words_max": 3,
+        "fact_count": 4,
+        "search_intent": "Summarize and explain the supplied official filing/release; not investment advice"
+      },
+      "metrics": {
+        "wall_seconds": 45.104,
+        "engine": "llama.cpp b11889",
+        "rss_peak_mib": 6633.46,
+        "process_cpu_mean_percent_machine": 27.01,
+        "system_cpu_peak_percent": 64.7,
+        "gpu_utilization_percent": 95.17,
+        "gpu_layers": 20,
+        "backend": "Vulkan GPU offload",
+        "completion_tokens": 469,
+        "tokens_per_second_wall": 10.4,
+        "pipeline_elapsed_ms": 46082,
+        "source_retrieved_at": "2026-10-26 17:36:39.388000+09:00",
+        "source_published_at": "2026-07-31 09:00:00+09:00",
+        "fact_spans": 4,
+        "model_calls": 1,
+        "cpu_model": 6,
+        "available_ram_mib_before": 7025
+      },
+      "elapsed_ms": 46082,
+      "ai_calls": 1,
+      "publish_ready": false
+    },
+    {
+      "id": "09bed01a-ede5-46d4-a12f-b3d5930e893b",
+      "topic_key": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+      "language": "ko",
+      "status": "failed",
+      "error_category": "local_model_output_schema_invalid",
+      "elapsed_ms": 60377,
+      "ai_calls": 1,
+      "publish_ready": false
+    },
+    {
+      "id": "40145b79-e3c4-4921-ac12-e14018454838",
+      "version_id": "2dd4ec19-0837-4a8e-a21e-15fcb703dd22",
+      "group_id": "f2942ae6-d30d-4266-98eb-469bac7abe29",
+      "topic_key": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+      "language": "zh-CN",
+      "title": "Apple Inc. 2026年7月31日提交的10-Q文件",
+      "summary": "Apple Inc. 于2026年7月31日提交了10-Q文件，报告期为2026年6月27日结束。该文件显示，2026年3月29日至2026年6月27日期间的收入为109417000000美元，净收入为29789000000美元。",
+      "keywords": [
+        "Apple Inc. 10-Q",
+        "2026年7月31日",
+        "SEC Form 10-Q",
+        "财务报告",
+        "收入和净收入"
+      ],
+      "body": "## 官方文件内容\nApple Inc. 于2026年7月31日提交了SEC Form 10-Q，报告期为2026年6月27日结束。该文件显示，2026年3月29日至2026年6月27日期间的收入为109417000000美元，净收入为29789000000美元。\n\n## 如何解读报告信息\n该报告提供了Apple Inc.在特定财务期间的收入和净收入数据，这些数据是根据SEC规定的格式和时间表提交的。报告中的所有数字和信息均来自官方文件，未经过任何第三方验证。\n\n## 限制与上下文\n该报告仅涵盖2026年3月29日至2026年6月27日期间的财务数据，不包括其他时间段的信息。此外，该报告的访问权限和使用范围受SEC规定的限制，不得用于任何非官方用途。\n\n[source:76c54502-ee6e-45b8-b078-24182fbe3ef3]",
+      "status": "quality_held",
+      "quality": {
+        "checks": {
+          "source_ids_valid": true,
+          "no_fabricated_urls": true,
+          "source_urls_well_formed": true,
+          "citation_ids_valid": true,
+          "factual_paragraphs_cited": false,
+          "no_unverified_numbers": true,
+          "proper_names_preserved": false,
+          "no_unsupported_proper_names": true,
+          "no_repeated_paragraphs": true,
+          "no_repeated_sentences": true,
+          "rights_recorded": true,
+          "current_sources": true,
+          "language_script_present": true,
+          "language_metadata_matches": true,
+          "no_obvious_high_risk_claims": true,
+          "article_structure": true,
+          "title_body_alignment": true,
+          "keyword_search_intent_coverage": true,
+          "keywords_are_search_terms_not_internal_ids": true,
+          "legal_access_claims_grounded_in_supplied_source": true,
+          "no_mass_direct_quote": true
+        },
+        "machine_passed": false,
+        "grounding_details": {
+          "proper_name_candidates": [
+            "Apple Inc",
+            "SEC Form"
+          ],
+          "missing_proper_names": [
+            "SEC Form"
+          ],
+          "unsupported_proper_names": [],
+          "unexpected_numbers": [],
+          "uncited_paragraphs": [
+            "Apple Inc. 于2026年7月31日提交了SEC Form 10-Q，报告期为2026年6月27日结束。该文件显示，2026年3月29日至2026年6月27日期间的收入为109417000000美元，净收入为29789000000美"
+          ],
+          "invalid_source_urls": []
+        },
+        "human_review_required": true,
+        "semantic_accuracy": "human_review_required",
+        "naturalness": "human_review_required",
+        "rights_review": "human_review_required",
+        "publish_ready": false,
+        "word_count": 204,
+        "section_count": 3,
+        "paragraph_count": 4,
+        "source_overlap_words_max": 4,
+        "fact_count": 4,
+        "search_intent": "Summarize and explain the supplied official filing/release; not investment advice"
+      },
+      "metrics": {
+        "wall_seconds": 45.316,
+        "engine": "llama.cpp b11889",
+        "rss_peak_mib": 7180.01,
+        "process_cpu_mean_percent_machine": 27.09,
+        "system_cpu_peak_percent": 49.6,
+        "gpu_utilization_percent": 95.59,
+        "gpu_layers": 20,
+        "backend": "Vulkan GPU offload",
+        "completion_tokens": 476,
+        "tokens_per_second_wall": 10.5,
+        "pipeline_elapsed_ms": 45625,
+        "source_retrieved_at": "2026-10-26 17:36:39.388000+09:00",
+        "source_published_at": "2026-07-31 09:00:00+09:00",
+        "fact_spans": 4,
+        "model_calls": 1,
+        "cpu_model": 6,
+        "available_ram_mib_before": 6528
+      },
+      "elapsed_ms": 45625,
+      "ai_calls": 1,
+      "publish_ready": false
+    }
+  ],
+  "summary": {
+    "draft_count": 7,
+    "machine_passed": 0,
+    "quality_held": 7,
+    "failed": 1,
+    "all_publish_ready_false": true,
+    "human_review_required": true,
+    "semantic_accuracy_and_naturalness": "not machine-certified"
+  }
+}

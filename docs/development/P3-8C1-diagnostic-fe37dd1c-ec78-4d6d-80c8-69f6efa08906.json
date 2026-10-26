@@ -1,0 +1,52 @@
+{
+  "phase": "3.8-C1",
+  "batch_id": "fe37dd1c-ec78-4d6d-80c8-69f6efa08906",
+  "created_at": "2026-10-26T08:38:28.888565+00:00",
+  "model": {
+    "pid": 31064,
+    "model": "Qwen3-4B-Q4_K_M.gguf",
+    "engine": "llama.cpp b11889",
+    "threads": 4,
+    "backend": "vulkan",
+    "engine_directory": "llama-b11889-vulkan",
+    "gpu_layers": 20
+  },
+  "external_collection": false,
+  "source_records": [
+    {
+      "id": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+      "keyword": "Apple Inc. 10-Q filed 2026-07-31",
+      "category": "stocks",
+      "url": "https://www.sec.gov/Archives/edgar/data/320193/32019326000020/aapl-20260627.htm",
+      "source_name": "SEC EDGAR company submissions and XBRL facts",
+      "source_language": "en",
+      "published_at": "2026-07-31 09:00:00+09:00",
+      "retrieved_at": "2026-10-26 17:36:39.388000+09:00",
+      "valid_until": "2027-01-24 17:36:39.388003+09:00",
+      "rights": "SEC states government-created SEC site and EDGAR public filing content is free to access and reuse; cite the underlying filing and do not copy third-party assets.",
+      "access_policy": "Explicit RSS/API access; bounded requests, no redirects, 1 MiB cap; cite provider",
+      "evidence": "Apple Inc. filed SEC Form 10-Q on 2026-07-31 for the period ended 2026-06-27. revenue: 109417000000 USD for period 2026-03-29 to 2026-06-27; net income: 29789000000 USD for period 2026-03-29 to 2026-06-27. SEC accession number 0000320193-26-000020."
+    }
+  ],
+  "results": [
+    {
+      "id": "61f7d802-446e-4a38-94ba-2c7dcf42d7bb",
+      "topic_key": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+      "language": "en",
+      "status": "failed",
+      "error_category": "local_model_response_invalid_type",
+      "elapsed_ms": 1312,
+      "ai_calls": 1,
+      "publish_ready": false
+    }
+  ],
+  "summary": {
+    "draft_count": 0,
+    "machine_passed": 0,
+    "quality_held": 0,
+    "failed": 1,
+    "all_publish_ready_false": true,
+    "human_review_required": true,
+    "semantic_accuracy_and_naturalness": "not machine-certified"
+  }
+}

@@ -15,19 +15,37 @@ def numbers(text: str) -> set[str]:
     months = {
         name.casefold(): index
         for index, name in enumerate(
-            ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"),
+            (
+                "January",
+                "February",
+                "March",
+                "April",
+                "May",
+                "June",
+                "July",
+                "August",
+                "September",
+                "October",
+                "November",
+                "December",
+            ),
             1,
         )
     }
     dates: set[str] = set()
 
     month_pattern = r"\b(" + "|".join(months) + r")\s+(\d{1,2})(?:,\s*(\d{4}))?\b"
-    localized_pattern = r"(?<!\d)(?:(\d{4})\s*(?:년|年)\s*)?(\d{1,2})\s*(?:월|月)\s*(\d{1,2})\s*(?:일|日)?"
+    localized_pattern = (
+        r"(?<!\d)(?:(\d{4})\s*(?:년|年)\s*)?(\d{1,2})\s*(?:월|月)\s*(\d{1,2})\s*(?:일|日)?"
+    )
 
     def date_lists(sentence: str, pattern: str, kind: str) -> str:
         matches = list(re.finditer(pattern, sentence, flags=re.IGNORECASE))
-        explicit_years = [int(m.group(3) if kind == "named" else m.group(1))
-                          for m in matches if (m.group(3) if kind == "named" else m.group(1))]
+        explicit_years = [
+            int(m.group(3) if kind == "named" else m.group(1))
+            for m in matches
+            if (m.group(3) if kind == "named" else m.group(1))
+        ]
         unique_years = set(explicit_years)
         replacements: list[tuple[int, int]] = []
         for match in matches:
@@ -77,24 +95,59 @@ def numbers(text: str) -> set[str]:
     # stripping numbered-list prefixes as well, without hiding inline numbers.
     text = re.sub(r"(?m)^\s*#{1,6}\s+\d+\s*$", "", text)
     text = re.sub(r"(?m)^\s*(?:#{1,6}\s*)?\d+[.)]\s", "", text)
+    numeric_tokens = re.findall(r"\d+(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?", text)
     return dates | {
-        str(float(n.replace(",", ""))) for n in re.findall(r"\d+(?:[,\.]\d+)?", text) if len(n) < 20
+        str(float(n.replace(",", ""))) for n in numeric_tokens if len(n) < 20
     }
 
 
 _NON_NAME_STARTS = {
-    "a", "an", "and", "as", "at", "announced", "by", "for", "from", "in", "on",
-    "the", "terminated", "to", "these", "this",
+    "a",
+    "an",
+    "and",
+    "as",
+    "at",
+    "announced",
+    "by",
+    "for",
+    "from",
+    "in",
+    "on",
+    "the",
+    "terminated",
+    "to",
+    "these",
+    "this",
 }
 
 _NON_NAME_ENDS = {
-    "announced", "announcement", "announces", "actions", "analysis", "briefing",
-    "concludes", "conclusion", "explained", "guide", "highlights", "overview",
-    "report", "review", "summary", "terminated", "termination", "update",
+    "announced",
+    "announcement",
+    "announces",
+    "actions",
+    "analysis",
+    "briefing",
+    "concludes",
+    "conclusion",
+    "explained",
+    "filed",
+    "guide",
+    "highlights",
+    "overview",
+    "report",
+    "review",
+    "summary",
+    "terminated",
+    "termination",
+    "update",
 }
 
 _GENERIC_HEADLINE_NAMES = {
-    "enforcement actions", "regulatory measures", "official announcement",
+    "enforcement actions",
+    "regulatory measures",
+    "official announcement",
+    "board's discount rate meetings",
+    "q filing",
 }
 
 
@@ -135,9 +188,7 @@ def repeated_sentences(text: str) -> list[str]:
 
 def prose_without_headings(text: str) -> str:
     """Remove actual Markdown headings, while retaining cited text on heading lines."""
-    return re.sub(
-        r"(?m)^\s*#{1,6}\s+(?!.*\[source:[^\]]+\]).*$", "", text
-    )
+    return re.sub(r"(?m)^\s*#{1,6}\s+(?!.*\[source:[^\]]+\]).*$", "", text)
 
 
 def extract_facts(sources: list[dict[str, Any]]) -> list[dict[str, str]]:
@@ -177,20 +228,20 @@ def inspect(
     # A shorter exact phrase such as "Federal Reserve" is supported by the
     # source's full name "Federal Reserve Board"; added entity tokens still fail.
     ungrounded_names = sorted(
-        name for name in output_names - evidence_names
-        if not any(
-            re.sub(r"'s$", "", name) in evidence_name
-            for evidence_name in evidence_names
-        )
+        name
+        for name in output_names - evidence_names
+        if not any(re.sub(r"'s$", "", name) in evidence_name for evidence_name in evidence_names)
     )
     cited_ids = set(re.findall(r"\[source:([^\]]+)\]", draft.body))
     substantive_paragraphs = [
-        p.strip() for p in re.split(r"\n\s*\n", prose_body)
-        if len(re.findall(r"\w+", p)) >= 8
+        p.strip() for p in re.split(r"\n\s*\n", prose_body) if len(re.findall(r"\w+", p)) >= 8
     ]
-    uncited_paragraphs = [p[:120] for p in substantive_paragraphs if not re.search(r"\[source:[^\]]+\]", p)]
+    uncited_paragraphs = [
+        p[:120] for p in substantive_paragraphs if not re.search(r"\[source:[^\]]+\]", p)
+    ]
     invalid_source_urls = sorted(
-        str(s.get("url", "")) for s in sources
+        str(s.get("url", ""))
+        for s in sources
         if urlparse(str(s.get("url", ""))).scheme != "https"
         or not urlparse(str(s.get("url", ""))).hostname
         or urlparse(str(s.get("url", ""))).username is not None

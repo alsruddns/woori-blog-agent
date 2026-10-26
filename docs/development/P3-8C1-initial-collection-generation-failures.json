@@ -1,0 +1,136 @@
+{
+  "phase": "3.8-C1",
+  "batch_id": "8dbb91f6-8a02-432c-a63d-06db511b2f99",
+  "created_at": "2026-10-26T08:36:43.518791+00:00",
+  "model": {
+    "pid": 31064,
+    "model": "Qwen3-4B-Q4_K_M.gguf",
+    "engine": "llama.cpp b11889",
+    "threads": 4,
+    "backend": "vulkan",
+    "engine_directory": "llama-b11889-vulkan",
+    "gpu_layers": 20
+  },
+  "external_collection": true,
+  "source_records": [
+    {
+      "id": "873093a8-085e-42b5-8bb2-657f62f8df94",
+      "keyword": "Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026",
+      "category": "finance",
+      "url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20261013a.htm",
+      "source_name": "Federal Reserve Board press releases",
+      "source_language": "en",
+      "published_at": "2026-10-14 03:00:00+09:00",
+      "retrieved_at": "2026-10-26 17:36:37.674289+09:00",
+      "valid_until": "2026-11-13 03:00:00+09:00",
+      "rights": "Board-authored text public domain unless indicated; cite Board; exclude third-party material",
+      "access_policy": "Explicit RSS/API access; bounded requests, no redirects, 1 MiB cap; cite provider",
+      "evidence": "Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026. The Federal Reserve Board on Tuesday released the minutes from its recent meetings to review and determine the discount rates provided to depository institutions through the discount window. Today's minutes cover the Board meetings that occurred on August 17, September 9, and September 16, 2026. The Board's process for setting the discount rate is distinct from the process the Federal Open Market Committee follows in setting the target range for the federal funds rate. For media inquiries, please email [email protected] or call 202-452-2955."
+    },
+    {
+      "id": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+      "keyword": "Apple Inc. 10-Q filed 2026-07-31",
+      "category": "stocks",
+      "url": "https://www.sec.gov/Archives/edgar/data/320193/32019326000020/aapl-20260627.htm",
+      "source_name": "SEC EDGAR company submissions and XBRL facts",
+      "source_language": "en",
+      "published_at": "2026-07-31 09:00:00+09:00",
+      "retrieved_at": "2026-10-26 17:36:39.388000+09:00",
+      "valid_until": "2027-01-24 17:36:39.388003+09:00",
+      "rights": "SEC states government-created SEC site and EDGAR public filing content is free to access and reuse; cite the underlying filing and do not copy third-party assets.",
+      "access_policy": "Explicit RSS/API access; bounded requests, no redirects, 1 MiB cap; cite provider",
+      "evidence": "Apple Inc. filed SEC Form 10-Q on 2026-07-31 for the period ended 2026-06-27. revenue: 109417000000 USD for period 2026-03-29 to 2026-06-27; net income: 29789000000 USD for period 2026-03-29 to 2026-06-27. SEC accession number 0000320193-26-000020."
+    }
+  ],
+  "results": [
+    {
+      "id": "22be0982-8779-40d0-81d3-19e92ea19fa5",
+      "topic_key": "873093a8-085e-42b5-8bb2-657f62f8df94",
+      "language": "en",
+      "status": "failed",
+      "error_category": "invalid_local_model_response",
+      "elapsed_ms": 1279,
+      "ai_calls": 1,
+      "publish_ready": false
+    },
+    {
+      "id": "4c2618e1-6584-470b-a693-84578e7810c8",
+      "topic_key": "873093a8-085e-42b5-8bb2-657f62f8df94",
+      "language": "ja",
+      "status": "failed",
+      "error_category": "invalid_local_model_response",
+      "elapsed_ms": 233,
+      "ai_calls": 1,
+      "publish_ready": false
+    },
+    {
+      "id": "4bdb94ae-618e-4c6d-bae6-fbc1e35513df",
+      "topic_key": "873093a8-085e-42b5-8bb2-657f62f8df94",
+      "language": "ko",
+      "status": "failed",
+      "error_category": "invalid_local_model_response",
+      "elapsed_ms": 229,
+      "ai_calls": 1,
+      "publish_ready": false
+    },
+    {
+      "id": "435a0f67-928b-4c4f-91e9-da8f768f453c",
+      "topic_key": "873093a8-085e-42b5-8bb2-657f62f8df94",
+      "language": "zh-CN",
+      "status": "failed",
+      "error_category": "invalid_local_model_response",
+      "elapsed_ms": 237,
+      "ai_calls": 1,
+      "publish_ready": false
+    },
+    {
+      "id": "31ca84f1-75b3-433a-b578-6c0d95681240",
+      "topic_key": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+      "language": "en",
+      "status": "failed",
+      "error_category": "invalid_local_model_response",
+      "elapsed_ms": 236,
+      "ai_calls": 1,
+      "publish_ready": false
+    },
+    {
+      "id": "ae645782-d99b-4d4f-97a9-7e0eb181abee",
+      "topic_key": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+      "language": "ja",
+      "status": "failed",
+      "error_category": "invalid_local_model_response",
+      "elapsed_ms": 235,
+      "ai_calls": 1,
+      "publish_ready": false
+    },
+    {
+      "id": "4e3c94d4-1bf0-47b6-b058-45323ebc67b8",
+      "topic_key": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+      "language": "ko",
+      "status": "failed",
+      "error_category": "invalid_local_model_response",
+      "elapsed_ms": 235,
+      "ai_calls": 1,
+      "publish_ready": false
+    },
+    {
+      "id": "c3a8e9d4-acbd-4740-9981-fc72a45bb9f2",
+      "topic_key": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+      "language": "zh-CN",
+      "status": "failed",
+      "error_category": "invalid_local_model_response",
+      "elapsed_ms": 234,
+      "ai_calls": 1,
+      "publish_ready": false
+    }
+  ],
+  "summary": {
+    "draft_count": 0,
+    "machine_passed": 0,
+    "quality_held": 0,
+    "failed": 8,
+    "all_publish_ready_false": true,
+    "human_review_required": true,
+    "semantic_accuracy_and_naturalness": "not machine-certified"
+  }
+}

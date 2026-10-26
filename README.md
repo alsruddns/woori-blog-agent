@@ -115,3 +115,8 @@ Research generation runs through persisted source, evidence, outline, section, l
 ## Evidence-preserving localization
 
 Current source excerpts, reviewed source language, fact snapshots, approved glossary revisions, and per-language localization evaluations are stored separately and append-only. Original-language excerpts do not count as target-language prose. Cross-language generation uses only the already installed local model; if it is unavailable or the target language is unsupported, the result remains held. The `/research` screen shows source/output comparisons and review status. See [the localization architecture](docs/architecture/evidence-localization.md), [Phase 3.8-B record](docs/development/P3-8B-001.md), and [measured evaluation](docs/development/P3-8B-evaluation.json).
+
+
+## Phase 3.8-C1 finance/stock article evaluation
+
+The current source-backed evaluation is limited to Federal Reserve releases and SEC EDGAR filings/XBRL facts. It stores retrieval timestamps and a per-claim fact ledger, generates local-only Qwen drafts for active language profiles, and exposes complete saved drafts and machine checks in `/research`. The recorded C1 run is in [the evaluation artifact](docs/development/P3-8C1-evaluation.json); quality failures remain held and require editorial review. No Blogger write or paid API path is enabled. See the [architecture](docs/architecture/complete-articles.md) and [operations guide](docs/operations/live-research.md).

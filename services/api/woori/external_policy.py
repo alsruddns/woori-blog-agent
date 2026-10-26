@@ -27,7 +27,9 @@ class FreeQuotaExceeded(httpx.TransportError):
 # reviewed in docs/operations/zero-cost-policy.md; no provider may use auto-billing.
 PROVIDERS: dict[str, dict[str, Any]] = {
     "google_blogger_read": {
-        "hosts": {"www.googleapis.com"}, "methods": {"GET"}, "rpm": 30,
+        "hosts": {"www.googleapis.com"},
+        "methods": {"GET"},
+        "rpm": 30,
         "rph": 120,
         "operations": {"blogger_read"},
         "paths": ("/blogger/v3/blogs", "/blogger/v3/users/self/blogs"),
@@ -36,7 +38,9 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "zero_cost_reviewed": False,
     },
     "google_oauth": {
-        "hosts": {"oauth2.googleapis.com"}, "methods": {"POST"}, "rpm": 10,
+        "hosts": {"oauth2.googleapis.com"},
+        "methods": {"POST"},
+        "rpm": 10,
         "rph": 20,
         "operations": {"oauth"},
         "paths": ("/token", "/revoke"),
@@ -45,7 +49,9 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "zero_cost_reviewed": True,
     },
     "federal_reserve": {
-        "hosts": {"www.federalreserve.gov"}, "methods": {"GET"}, "rpm": 3,
+        "hosts": {"www.federalreserve.gov"},
+        "methods": {"GET"},
+        "rpm": 3,
         "rph": 24,
         "operations": {"source_collection"},
         "paths": ("/feeds/press_all.xml", "/newsevents/pressreleases/"),
@@ -53,19 +59,39 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "commercial_use": "Board material subject to disclaimer; cite source, exclude third-party works",
         "zero_cost_reviewed": True,
     },
+    "sec_edgar": {
+        "hosts": {"data.sec.gov"},
+        "methods": {"GET"},
+        "rpm": 3,
+        "rph": 24,
+        "operations": {"source_collection"},
+        "paths_by_host": {
+            "data.sec.gov": ("/submissions/CIK", "/api/xbrl/companyconcept/CIK"),
+        },
+        "cost": "public EDGAR submissions and companyfacts JSON; no key or per-call fee identified",
+        "commercial_use": "SEC states government-created sec.gov and EDGAR public filing content may be reused; filing source must be cited",
+        "zero_cost_reviewed": True,
+    },
     "wikidata": {
-        "hosts": {"www.wikidata.org"}, "methods": {"GET"}, "rpm": 10,
+        "hosts": {"www.wikidata.org"},
+        "methods": {"GET"},
+        "rpm": 10,
         "rph": 60,
-        "operations": {"source_collection"}, "paths": ("/w/api.php",),
+        "operations": {"source_collection"},
+        "paths": ("/w/api.php",),
         "cost": "public API; no billing credential or paid tier used; hard-stop throttling",
         "commercial_use": "CC0 data; API policy/User-Agent and rate limits apply",
         "zero_cost_reviewed": True,
     },
     "artifact_setup": {
         "hosts": {
-            "api.github.com", "github.com", "objects.githubusercontent.com",
-            "release-assets.githubusercontent.com", "huggingface.co",
-            "cdn-lfs.huggingface.co", "cas-bridge.xethub.hf.co",
+            "api.github.com",
+            "github.com",
+            "objects.githubusercontent.com",
+            "release-assets.githubusercontent.com",
+            "huggingface.co",
+            "cdn-lfs.huggingface.co",
+            "cas-bridge.xethub.hf.co",
             "us.aws.cdn.hf.co",
         },
         "methods": {"GET"},
@@ -98,19 +124,51 @@ PROVIDERS: dict[str, dict[str, Any]] = {
 }
 
 _BILLING_PREFIXES = (
-    "OPENAI_", "ANTHROPIC_", "GEMINI_", "AWS_", "AZURE_", "STRIPE_", "PAYPAL_",
-    "BILLING_", "PAYMENT_", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "PROXY_",
-    "GOOGLE_CLOUD_", "GOOGLE_BILLING_", "CLOUD_BILLING_", "HUGGINGFACEHUB_",
+    "OPENAI_",
+    "ANTHROPIC_",
+    "GEMINI_",
+    "AWS_",
+    "AZURE_",
+    "STRIPE_",
+    "PAYPAL_",
+    "BILLING_",
+    "PAYMENT_",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "PROXY_",
+    "GOOGLE_CLOUD_",
+    "GOOGLE_BILLING_",
+    "CLOUD_BILLING_",
+    "HUGGINGFACEHUB_",
 )
 _BILLING_NAMES = {
-    "GOOGLE_API_KEY", "GOOGLE_APPLICATION_CREDENTIALS", "GOOGLE_CLOUD_PROJECT",
-    "CLOUDSDK_CORE_PROJECT", "AZURE_OPENAI_API_KEY", "AZURE_OPENAI_ENDPOINT",
-    "COHERE_API_KEY", "MISTRAL_API_KEY", "DEEPSEEK_API_KEY", "GROQ_API_KEY",
-    "HF_TOKEN", "HUGGINGFACE_HUB_TOKEN", "GITHUB_TOKEN",
-    "FIRECRAWL_API_KEY", "SERPAPI_API_KEY", "TAVILY_API_KEY", "EXA_API_KEY",
-    "SERPER_API_KEY", "BING_SEARCH_V7_SUBSCRIPTION_KEY", "NEWSAPI_KEY",
-    "ALPHAVANTAGE_API_KEY", "POLYGON_API_KEY", "COINMARKETCAP_API_KEY",
-    "REPLICATE_API_TOKEN", "TOGETHER_API_KEY", "PERPLEXITY_API_KEY",
+    "GOOGLE_API_KEY",
+    "GOOGLE_APPLICATION_CREDENTIALS",
+    "GOOGLE_CLOUD_PROJECT",
+    "CLOUDSDK_CORE_PROJECT",
+    "AZURE_OPENAI_API_KEY",
+    "AZURE_OPENAI_ENDPOINT",
+    "COHERE_API_KEY",
+    "MISTRAL_API_KEY",
+    "DEEPSEEK_API_KEY",
+    "GROQ_API_KEY",
+    "HF_TOKEN",
+    "HUGGINGFACE_HUB_TOKEN",
+    "GITHUB_TOKEN",
+    "FIRECRAWL_API_KEY",
+    "SERPAPI_API_KEY",
+    "TAVILY_API_KEY",
+    "EXA_API_KEY",
+    "SERPER_API_KEY",
+    "BING_SEARCH_V7_SUBSCRIPTION_KEY",
+    "NEWSAPI_KEY",
+    "ALPHAVANTAGE_API_KEY",
+    "POLYGON_API_KEY",
+    "COINMARKETCAP_API_KEY",
+    "REPLICATE_API_TOKEN",
+    "TOGETHER_API_KEY",
+    "PERPLEXITY_API_KEY",
 }
 _ROOT = Path(__file__).resolve().parents[3]
 TERMS_REVIEWED_AT = date(2026, 10, 26)
@@ -160,23 +218,28 @@ def status() -> dict[str, Any]:
     blocked_providers: list[dict[str, str]] = []
     for name, rule in sorted(PROVIDERS.items()):
         reason = (
-            "potentially_billable_credentials_detected" if blocked
-            else "external_terms_review_expired" if review_due
-            else None if rule["zero_cost_reviewed"]
+            "potentially_billable_credentials_detected"
+            if blocked
+            else "external_terms_review_expired"
+            if review_due
+            else None
+            if rule["zero_cost_reviewed"]
             else "manual_zero_cost_review_required"
         )
         allowed = reason is None
-        providers.append({
-            "name": name,
-            "cost": rule["cost"],
-            "usage_limit": (
-                f"local hard caps {rule['rpm']} calls/minute and {rule['rph']} calls/hour; "
-                "provider 429/quota stops immediately"
-            ),
-            "commercial_use": rule["commercial_use"],
-            "calls_allowed": allowed,
-            "block_reason": reason,
-        })
+        providers.append(
+            {
+                "name": name,
+                "cost": rule["cost"],
+                "usage_limit": (
+                    f"local hard caps {rule['rpm']} calls/minute and {rule['rph']} calls/hour; "
+                    "provider 429/quota stops immediately"
+                ),
+                "commercial_use": rule["commercial_use"],
+                "calls_allowed": allowed,
+                "block_reason": reason,
+            }
+        )
         if not allowed:
             blocked_providers.append({"name": name, "reason": str(reason)})
     return {
@@ -209,8 +272,12 @@ def _audit(provider: str, operation: str, phase: str, **fields: Any) -> None:
 def _deny(provider: str, operation: str, request: httpx.Request, reason: str) -> NoReturn:
     try:
         _audit(
-            provider, operation, "call.blocked", host=request.url.host,
-            method=request.method, reason=reason,
+            provider,
+            operation,
+            "call.blocked",
+            host=request.url.host,
+            method=request.method,
+            reason=reason,
         )
     except psycopg.Error:
         pass
@@ -284,20 +351,28 @@ class _GuardedTransport(httpx.BaseTransport):
                     }
                 except (ValueError, AttributeError, TypeError):
                     reasons = set()
-                if reasons.intersection({"quotaExceeded", "rateLimitExceeded", "userRateLimitExceeded"}):
+                if reasons.intersection(
+                    {"quotaExceeded", "rateLimitExceeded", "userRateLimitExceeded"}
+                ):
                     response.close()
                     raise FreeQuotaExceeded("provider_free_quota_or_rate_limit")
                 content = response.content
                 headers = response.headers
                 response.close()
                 response = httpx.Response(
-                    response.status_code, headers=headers, content=content,
+                    response.status_code,
+                    headers=headers,
+                    content=content,
                     request=request,
                 )
             try:
                 _audit(
-                    self.provider, self.operation, "call.completed", host=request.url.host,
-                    method=request.method, status=response.status_code,
+                    self.provider,
+                    self.operation,
+                    "call.completed",
+                    host=request.url.host,
+                    method=request.method,
+                    status=response.status_code,
                     elapsed_ms=round((time.monotonic() - started) * 1000),
                     response_bytes=response.headers.get("content-length"),
                 )
@@ -327,7 +402,9 @@ def client(provider: str, operation: str, **kwargs: Any) -> httpx.Client:
     return httpx.Client(transport=_GuardedTransport(provider, operation), **kwargs)
 
 
-def guarded_transport(provider: str, operation: str, inner: httpx.BaseTransport) -> httpx.BaseTransport:
+def guarded_transport(
+    provider: str, operation: str, inner: httpx.BaseTransport
+) -> httpx.BaseTransport:
     """Test seam for deterministic MockTransport tests; production uses client()."""
     if provider not in PROVIDERS or operation not in PROVIDERS[provider]["operations"]:
         raise ExternalCallBlocked("provider_not_allowlisted")

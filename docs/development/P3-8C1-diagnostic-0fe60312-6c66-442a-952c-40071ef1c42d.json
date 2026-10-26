@@ -1,0 +1,131 @@
+{
+  "phase": "3.8-C1",
+  "batch_id": "0fe60312-6c66-442a-952c-40071ef1c42d",
+  "created_at": "2026-10-26T08:50:42.924241+00:00",
+  "model": {
+    "pid": 31064,
+    "model": "Qwen3-4B-Q4_K_M.gguf",
+    "engine": "llama.cpp b11889",
+    "threads": 4,
+    "backend": "vulkan",
+    "engine_directory": "llama-b11889-vulkan",
+    "gpu_layers": 20
+  },
+  "external_collection": false,
+  "source_records": [
+    {
+      "id": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+      "keyword": "Apple Inc. 10-Q filed 2026-07-31",
+      "category": "stocks",
+      "url": "https://www.sec.gov/Archives/edgar/data/320193/32019326000020/aapl-20260627.htm",
+      "source_name": "SEC EDGAR company submissions and XBRL facts",
+      "source_language": "en",
+      "published_at": "2026-07-31 09:00:00+09:00",
+      "retrieved_at": "2026-10-26 17:36:39.388000+09:00",
+      "valid_until": "2027-01-24 17:36:39.388003+09:00",
+      "rights": "SEC states government-created SEC site and EDGAR public filing content is free to access and reuse; cite the underlying filing and do not copy third-party assets.",
+      "access_policy": "Explicit RSS/API access; bounded requests, no redirects, 1 MiB cap; cite provider",
+      "evidence": "Apple Inc. filed SEC Form 10-Q on 2026-07-31 for the period ended 2026-06-27. revenue: 109417000000 USD for period 2026-03-29 to 2026-06-27; net income: 29789000000 USD for period 2026-03-29 to 2026-06-27. SEC accession number 0000320193-26-000020."
+    }
+  ],
+  "results": [
+    {
+      "id": "46dc3075-ee0e-4503-b288-ac26fc075bbe",
+      "version_id": "27ede8ce-8b76-4572-8f13-597e6370a2d7",
+      "group_id": "f22bb4b7-4ce4-4ca5-9dac-fe0bfb937b04",
+      "topic_key": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+      "language": "en",
+      "title": "Apple Inc. 10-Q Filed on 2026-07-31",
+      "summary": "Apple Inc. filed a 10-Q report with the SEC on 2026-07-31 for the period ended 2026-06-27, reporting revenue and net income figures for the quarter ending 2026-06-27.",
+      "keywords": [
+        "Apple Inc. 10-Q filed 2026-07-31",
+        "SEC Form 10-Q",
+        "revenue",
+        "net income",
+        "financial report",
+        "2026-07-31",
+        "2026-06-27",
+        "SEC accession number 0000320193-26-000020"
+      ],
+      "body": "## What the official source states\nApple Inc. filed SEC Form 10-Q on 2026-07-31 for the period ended 2026-06-27. [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]\n\n## How to read the reported information\nThe filing reports revenue of 109417000000 USD for the period from 2026-03-29 to 2026-06-27 and net income of 29789000000 USD for the same period. [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]\n\n## Limits and source context\nThe filing is part of the SEC's public record and includes an accession number 0000320193-26-000020. [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]",
+      "status": "machine_passed_review_required",
+      "quality": {
+        "checks": {
+          "source_ids_valid": true,
+          "no_fabricated_urls": true,
+          "source_urls_well_formed": true,
+          "citation_ids_valid": true,
+          "factual_paragraphs_cited": true,
+          "no_unverified_numbers": true,
+          "proper_names_preserved": true,
+          "no_unsupported_proper_names": true,
+          "no_repeated_paragraphs": true,
+          "no_repeated_sentences": true,
+          "rights_recorded": true,
+          "current_sources": true,
+          "language_script_present": true,
+          "language_metadata_matches": true,
+          "no_obvious_high_risk_claims": true,
+          "article_structure": true,
+          "title_body_alignment": true,
+          "keyword_search_intent_coverage": true,
+          "no_mass_direct_quote": true
+        },
+        "machine_passed": true,
+        "grounding_details": {
+          "proper_name_candidates": [
+            "Apple Inc",
+            "SEC Form"
+          ],
+          "missing_proper_names": [],
+          "unsupported_proper_names": [],
+          "unexpected_numbers": [],
+          "uncited_paragraphs": [],
+          "invalid_source_urls": []
+        },
+        "human_review_required": true,
+        "semantic_accuracy": "human_review_required",
+        "naturalness": "human_review_required",
+        "rights_review": "human_review_required",
+        "publish_ready": false,
+        "word_count": 97,
+        "section_count": 3,
+        "paragraph_count": 3,
+        "source_overlap_words_max": 18,
+        "fact_count": 4,
+        "search_intent": "Summarize and explain the supplied official filing/release; not investment advice"
+      },
+      "metrics": {
+        "wall_seconds": 48.071,
+        "engine": "llama.cpp b11889",
+        "rss_peak_mib": 4992.62,
+        "process_cpu_mean_percent_machine": 27.15,
+        "system_cpu_peak_percent": 52.6,
+        "gpu_utilization_percent": 94.3,
+        "gpu_layers": 20,
+        "backend": "Vulkan GPU offload",
+        "completion_tokens": 510,
+        "tokens_per_second_wall": 10.61,
+        "pipeline_elapsed_ms": 48078,
+        "source_retrieved_at": "2026-10-26 17:36:39.388000+09:00",
+        "source_published_at": "2026-07-31 09:00:00+09:00",
+        "fact_spans": 4,
+        "model_calls": 1,
+        "cpu_model": 6,
+        "available_ram_mib_before": 8492
+      },
+      "elapsed_ms": 48078,
+      "ai_calls": 1,
+      "publish_ready": false
+    }
+  ],
+  "summary": {
+    "draft_count": 1,
+    "machine_passed": 1,
+    "quality_held": 0,
+    "failed": 0,
+    "all_publish_ready_false": true,
+    "human_review_required": true,
+    "semantic_accuracy_and_naturalness": "not machine-certified"
+  }
+}

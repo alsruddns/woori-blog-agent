@@ -260,6 +260,7 @@ def state() -> dict[str, Any]:
                 "localizations": "SELECT * FROM localization_evaluations ORDER BY created_at DESC LIMIT 200",
                 "glossary": "SELECT * FROM glossary_entries ORDER BY target_language,source_term",
                 "glossary_revisions": "SELECT * FROM glossary_entry_revisions ORDER BY id DESC LIMIT 200",
+                "article_evaluations": "SELECT e.*,v.group_id,v.version,v.title AS saved_title,v.body AS saved_body FROM article_quality_evaluations e LEFT JOIN content_versions v ON v.id=e.content_version_id ORDER BY e.created_at DESC LIMIT 32",
             }.items()
         }
         result["coverage"] = conn.execute(

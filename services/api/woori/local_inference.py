@@ -11,6 +11,7 @@ from typing import Any
 import httpx
 import langcodes
 import psutil
+from pydantic import ValidationError
 
 from .ai import Draft, EngineFailure
 from .db import connection
@@ -246,7 +247,7 @@ class LlamaCppProvider:
         language_name = langcodes.Language.get(context["language_code"]).display_name("en")
         material["requested_language_name"] = language_name
         material["sources"] = [
-            {k: str(s.get(k, "")) for k in ("id", "url", "evidence", "published_at", "valid_until")}
+            {k: str(s.get(k, "")) for k in ("id", "url", "evidence", "published_at")}
             for s in context["sources"]
         ]
         if context.get("original_draft"):
@@ -337,7 +338,19 @@ class LlamaCppProvider:
             raise EngineFailure("local_model_timeout", True) from None
         except httpx.NetworkError:
             raise EngineFailure("local_engine_unavailable", True) from None
-        except (httpx.HTTPError, ValueError, KeyError, TypeError):
+        except httpx.HTTPStatusError as exc:
+            if 400 <= exc.response.status_code < 500:
+                raise EngineFailure("local_model_request_rejected") from None
+            raise EngineFailure("local_model_http_error") from None
+        except ValidationError:
+            raise EngineFailure("local_model_output_schema_invalid") from None
+        except ValueError:
+            raise EngineFailure("local_model_json_invalid") from None
+        except KeyError:
+            raise EngineFailure("local_model_response_missing_field") from None
+        except TypeError:
+            raise EngineFailure("local_model_response_invalid_type") from None
+        except httpx.HTTPError:
             raise EngineFailure("invalid_local_model_response") from None
         finally:
             stop.set()

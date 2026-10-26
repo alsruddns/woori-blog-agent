@@ -8,6 +8,7 @@ export type State = {
   attempts: Row[]; events: Row[]; dispatches: Row[]; collection_sources: Row[]; cost_policy?: Row;
   collection_jobs: Row[]; measurements: Row[]; stage_runs: Row[]; coverage: Row[]; experiments?: Row[];
   evidence_facts?: Row[]; localizations?: Row[]; glossary?: Row[]; glossary_revisions?: Row[];
+  article_evaluations?: Row[];
 };
 type Field = { name: string; label: string; type?: string; optional?: boolean; options?: { value: string; label: string }[] };
 const str = (row: Row, key: string) => String(row[key] ?? "");
@@ -98,15 +99,24 @@ export default function Research({ initial }: { initial: State }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 20 }}>{measurements.map((m, index) => m && <article key={index}><h4>{str(m, "model")} · {str(m, "language_code")}</h4><pre style={{ whiteSpace: "pre-wrap" }}>{JSON.stringify({ status: m.status, error: m.error_category, checks: m.checks, metrics: m.metrics, generated_sample: m.sample }, null, 2)}</pre></article>)}</div>
     </section>
     <section><h2>자동 주제 수집·근거 자료 조사</h2>
-      <p>Fed 공식 본문과 Wikidata CC0 구조화 메타데이터만 허용합니다. Wikidata 후보는 공식 발표·시세·영업·효능 검증 자료가 아니며 승인 대기입니다. 검색량·경쟁도·CPC는 미수집입니다.</p>
+      <p>Fed·SEC 공식 자료와 Wikidata CC0 구조화 메타데이터만 허용합니다. Wikidata 후보는 공식 발표·시세·영업·효능 검증 자료가 아니며 승인 대기입니다. 검색량·경쟁도·CPC는 미수집입니다.</p>
       {data.collection_sources.map(s => <article key={str(s, "id")}><h3>{str(s, "name")}</h3><p>{str(s, "endpoint")}</p><p>{str(s, "rights")} · <a href={str(s, "terms_url")} target="_blank" rel="noreferrer">이용 조건</a></p>
-        <p>마지막 수집 {str(s, "last_collected_at")} · 오류 {str(s, "last_error") || "없음"} · 시간당 최대 한 번</p>
+        <p>마지막 시도 {str(s, "last_attempt_at")} · 마지막 성공 {str(s, "last_successful_at") || str(s, "last_collected_at")} · 오류 {str(s, "last_error") || "없음"} · 이용 정책 {JSON.stringify(s.source_policy ?? {})}</p>
         <Editor disabled={busy} label="실제 자료 수집 실행" fields={[profileField, { name: "auto_generate", label: "검증된 모델만 후속 자동 초안 허용", type: "checkbox" }]}
           submit={body => act("collections", { ...body, source_id: s.id, idempotency_key: crypto.randomUUID() })}/>
         <Editor disabled={busy} label="수집 스케줄 저장" defaults={s} fields={[profileField, { name: "scheduled", label: "자동 수집", type: "checkbox" }, { name: "interval_minutes", label: "간격 분 (최소 60)", type: "number" }, { name: "auto_generate", label: "후속 자동 초안", type: "checkbox" }]}
           submit={body => act(`collections/${str(s, "id")}`, body, "PUT")}/>
       </article>)}
       <details><summary>조사 작업 진행·실패·재시도</summary><pre>{JSON.stringify(data.collection_jobs, null, 2)}</pre></details>
+    </section>
+    <section><h2>완성 원고 평가 (사람 검토 대기)</h2>
+      {(data.article_evaluations ?? []).map(a => <article key={str(a, "id")}><h3>{str(a, "topic")} · {str(a, "language_code")} · {str(a, "status")}</h3>
+        <p>주제 {str(a, "topic_key")} · 수집 출처 {JSON.stringify(a.source_ids ?? [])} · 사실 단위 {JSON.stringify(a.fact_ids ?? [])}</p>
+        <p>모델 {str(a, "model")} · 처리 {str(a, "elapsed_ms")} ms · AI 호출 {str(a, "ai_calls")} · 사람 검토 필수 · 발행 준비 {String(a.publish_ready ?? false)}</p>
+        <p>키워드 {JSON.stringify(a.keywords ?? [])}</p>
+        {a.error_category ? <p>실패: {str(a, "error_category")}</p> : <><h4>{str(a, "saved_title") || str(a, "title")}</h4><p>{str(a, "summary")}</p><details><summary>전체 원고 미리보기</summary><pre>{str(a, "saved_body")}</pre></details></>}
+        <details><summary>기계 검사와 자원 측정</summary><pre>{JSON.stringify({ checks: a.checks, metrics: a.metrics }, null, 2)}</pre></details>
+      </article>)}
     </section>
     <section><h2>키워드 후보·주제 선정</h2>
       <Editor disabled={busy} label="수동 후보 등록" defaults={{ priority: 50 }} fields={[profileField, categoryField, { name: "keyword", label: "키워드" }, { name: "search_intent", label: "검색 의도" }, { name: "collection_source", label: "수집 출처" }, { name: "rationale", label: "선정 근거" }, { name: "priority", label: "우선순위 1–100", type: "number" }, { name: "expires_at", label: "유효 기한", type: "datetime-local" }]} submit={body => act("keywords", body)}/>

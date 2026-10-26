@@ -3,6 +3,7 @@
 import hashlib
 import html
 import json
+import os
 import re
 import time
 import xml.etree.ElementTree as ET
@@ -23,6 +24,7 @@ from .pipeline import emit, enqueue, normalized, required
 ENDPOINTS = {
     "fed_rss": "https://www.federalreserve.gov/feeds/press_all.xml",
     "wikidata": "https://www.wikidata.org/w/api.php",
+    "sec_edgar": "https://data.sec.gov/submissions/",
 }
 USER_AGENT = (
     "WooriBlogAgent/0.3.5 (https://github.com/alsruddns/woori-blog-agent; bounded research)"
@@ -93,10 +95,18 @@ def retrieve(source: dict[str, Any], topics: list[dict[str, Any]]) -> list[dict[
     if ENDPOINTS.get(source["adapter"]) != source["endpoint"]:
         raise EngineFailure("collection_endpoint_not_approved")
     results = []
-    provider = "federal_reserve" if source["adapter"] == "fed_rss" else "wikidata"
-    with external_client(
-        provider, "source_collection", timeout=15, headers={"User-Agent": USER_AGENT}
-    ) as client:
+    provider = {
+        "fed_rss": "federal_reserve",
+        "wikidata": "wikidata",
+        "sec_edgar": "sec_edgar",
+    }[source["adapter"]]
+    headers = {"User-Agent": USER_AGENT}
+    if source["adapter"] == "sec_edgar":
+        contact = os.getenv("SEC_USER_AGENT_CONTACT", "").strip()
+        if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", contact):
+            raise EngineFailure("sec_user_agent_contact_required")
+        headers["User-Agent"] = f"WooriBlogAgent/0.3.8 ({contact})"
+    with external_client(provider, "source_collection", timeout=15, headers=headers) as client:
         if source["adapter"] == "fed_rss":
             data = fetch(client, source["endpoint"])
             if b"<!DOCTYPE" in data.upper() or b"<!ENTITY" in data.upper():
@@ -129,12 +139,14 @@ def retrieve(source: dict[str, Any], topics: list[dict[str, Any]]) -> list[dict[
                         "title": title[:150],
                         "evidence": evidence,
                         "published_at": published,
+                        "source_language": "en",
+                        "retrieved_at": datetime.now(UTC),
                         "category_id": topics[0]["category_id"],
                         "primary": True,
                         "valid_until": published + timedelta(days=30),
                     }
                 )
-        else:
+        elif source["adapter"] == "wikidata":
             for topic in topics:
                 time.sleep(1)
                 data = json.loads(
@@ -163,11 +175,90 @@ def retrieve(source: dict[str, Any], topics: list[dict[str, Any]]) -> list[dict[
                             "title": item.get("label", topic["query"])[:150],
                             "evidence": item.get("label", "") + ": " + item.get("description", ""),
                             "published_at": None,
+                            "source_language": "en",
+                            "retrieved_at": datetime.now(UTC),
                             "category_id": topic["category_id"],
                             "primary": False,
                             "valid_until": datetime.now(UTC) + timedelta(days=7),
                         }
                     )
+        else:
+            # A topic is a CIK, stored as data, never interpolated into an arbitrary host/path.
+            for topic in topics[:2]:
+                cik = str(topic["query"]).strip().removeprefix("CIK").zfill(10)
+                if not re.fullmatch(r"\d{10}", cik):
+                    continue
+                data = json.loads(fetch(client, source["endpoint"] + f"CIK{cik}.json"))
+                recent = data.get("filings", {}).get("recent", {})
+                forms = recent.get("form", [])
+                chosen = next((i for i, form in enumerate(forms) if form in {"10-K", "10-Q"}), None)
+                if chosen is None:
+                    continue
+                accession = recent["accessionNumber"][chosen]
+                accession_compact = accession.replace("-", "")
+                filed = datetime.fromisoformat(recent["filingDate"][chosen]).replace(tzinfo=UTC)
+                period = str(recent.get("reportDate", [""])[chosen] or "")
+                company = str(data.get("name", "SEC filer"))[:120]
+                form = str(forms[chosen])
+                fact_terms = (
+                    ("RevenueFromContractWithCustomerExcludingAssessedTax", "revenue"),
+                    ("NetIncomeLoss", "net income"),
+                )
+                fact_lines: list[str] = []
+                for concept, label in fact_terms:
+                    fact_url = f"https://data.sec.gov/api/xbrl/companyconcept/CIK{cik}/us-gaap/{concept}.json"
+                    concept_payload = json.loads(fetch(client, fact_url))
+                    units = concept_payload.get("units", {})
+                    entries = [
+                        entry
+                        for unit_entries in units.values()
+                        for entry in unit_entries
+                        if entry.get("accn") == accession
+                        and (not period or entry.get("end") == period)
+                    ]
+                    if not entries:
+                        continue
+                    entry = entries[-1]
+                    value = entry.get("val")
+                    if not isinstance(value, (int, float)):
+                        continue
+                    fact_lines.append(
+                        f"{label}: {value} {next(iter(units), 'reported units')}"
+                        + (
+                            f" for period {entry.get('start')} to {entry.get('end')}"
+                            if entry.get("start")
+                            else f" as of {entry.get('end')}"
+                        )
+                    )
+                if len(fact_lines) < 2:
+                    continue
+                accession_path = accession_compact.lstrip("0")
+                primary = str(recent.get("primaryDocument", [""])[chosen])
+                if not re.fullmatch(r"[A-Za-z0-9_.-]{1,120}", primary):
+                    continue
+                filing_url = (
+                    f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{accession_path}/{primary}"
+                )
+                published = filed
+                results.append(
+                    {
+                        "external_id": f"{cik}:{accession}",
+                        "url": filing_url,
+                        "title": f"{company} {form} filed {filed.date().isoformat()}",
+                        "evidence": (
+                            f"{company} filed SEC Form {form} on {filed.date().isoformat()}"
+                            + (f" for the period ended {period}. " if period else ". ")
+                            + "; ".join(fact_lines)
+                            + f". SEC accession number {accession}."
+                        )[:1000],
+                        "published_at": published,
+                        "source_language": "en",
+                        "retrieved_at": datetime.now(UTC),
+                        "category_id": topic["category_id"],
+                        "primary": True,
+                        "valid_until": datetime.now(UTC) + timedelta(days=90),
+                    }
+                )
     return results
 
 
@@ -281,13 +372,14 @@ def collect(run: dict[str, Any]) -> None:
             )["n"]
             stored = required(
                 conn.execute(
-                    """INSERT INTO research_sources(keyword_id,url,source_name,published_at,evidence,reliability_reason,rights,access_policy,valid_until,is_primary,revision)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                    """INSERT INTO research_sources(keyword_id,url,source_name,published_at,collected_at,evidence,reliability_reason,rights,access_policy,valid_until,is_primary,revision,source_language)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
                     (
                         keyword["id"],
                         item["url"],
                         source["name"],
                         item["published_at"],
+                        item.get("retrieved_at", datetime.now(UTC)),
                         item["evidence"],
                         "Fixed official feed URL and article provenance"
                         if item["primary"]
@@ -297,20 +389,30 @@ def collect(run: dict[str, Any]) -> None:
                         item["valid_until"],
                         item["primary"],
                         revision,
+                        item.get("source_language", "und"),
                     ),
                 ).fetchone()
             )
             if item["primary"]:
                 conn.execute(
-                    "INSERT INTO source_reviews(source_id,approved,reason,reviewer) VALUES (%s,true,%s,'collector:fed_rss')",
+                    "INSERT INTO source_reviews(source_id,approved,reason,reviewer,source_language) VALUES (%s,true,%s,%s,%s)",
                     (
                         stored["id"],
-                        "Official Board-authored release, public-domain text, date and origin mechanically checked; semantic claims still require human review",
+                        "Primary public filing/feed origin and filing metadata checked mechanically; substantive article claims remain subject to human review",
+                        "collector:" + source["adapter"],
+                        item.get("source_language", "und"),
                     ),
                 )
             conn.execute(
-                "INSERT INTO collection_items(source_id,external_id,keyword_id,research_source_id,payload_hash) VALUES (%s,%s,%s,%s,%s)",
-                (source["id"], item["external_id"], keyword["id"], stored["id"], fingerprint),
+                "INSERT INTO collection_items(source_id,external_id,keyword_id,research_source_id,payload_hash,collected_at) VALUES (%s,%s,%s,%s,%s,%s)",
+                (
+                    source["id"],
+                    item["external_id"],
+                    keyword["id"],
+                    stored["id"],
+                    fingerprint,
+                    item.get("retrieved_at", datetime.now(UTC)),
+                ),
             )
             emit(
                 conn,
@@ -331,19 +433,29 @@ def collect(run: dict[str, Any]) -> None:
             ).fetchall()
         for keyword in admitted:
             enqueue(keyword["id"], "collected-" + str(keyword["id"]))
+    with connection() as conn:
+        conn.execute(
+            "UPDATE collection_sources SET last_collected_at=now(),last_attempt_at=now(),last_successful_at=now(),last_error=NULL WHERE id=%s",
+            (source["id"],),
+        )
 
 
-def tick() -> bool:
+def tick(run_id: UUID | None = None) -> bool:
     with connection() as conn:
         conn.execute("SELECT pg_advisory_xact_lock(781211)")
         if required(conn.execute("SELECT paused FROM pipeline_controls").fetchone())["paused"]:
             return False
-        expired = conn.execute("""UPDATE job_runs SET status=CASE WHEN attempts>=3 THEN 'failed' ELSE 'queued' END,lease_until=NULL
-            WHERE task_kind='collection' AND status='running' AND lease_until<now() RETURNING id""").fetchall()
+        expired = conn.execute(
+            """UPDATE job_runs SET status=CASE WHEN attempts>=3 THEN 'failed' ELSE 'queued' END,lease_until=NULL
+            WHERE task_kind='collection' AND status='running' AND lease_until<now()
+              AND (%s::uuid IS NULL OR id=%s) RETURNING id""",
+            (run_id, run_id),
+        ).fetchall()
         for row in expired:
             emit(conn, "collection.recovered", row["id"])
         run = conn.execute(
-            "SELECT r.* FROM job_runs r JOIN collection_jobs j ON j.run_id=r.id WHERE r.status='queued' AND r.available_at<=now() AND r.task_kind='collection' ORDER BY r.created_at FOR UPDATE OF r SKIP LOCKED LIMIT 1"
+            "SELECT r.* FROM job_runs r JOIN collection_jobs j ON j.run_id=r.id WHERE r.status='queued' AND r.available_at<=now() AND r.task_kind='collection' AND (%s::uuid IS NULL OR r.id=%s) ORDER BY r.created_at FOR UPDATE OF r SKIP LOCKED LIMIT 1",
+            (run_id, run_id),
         ).fetchone()
         if not run:
             return False
@@ -376,7 +488,7 @@ def tick() -> bool:
         if changed:
             emit(conn, "collection." + status, run["id"], category=category)
             conn.execute(
-                "UPDATE collection_sources SET last_collected_at=now(),last_error=%s WHERE id=(SELECT source_id FROM collection_jobs WHERE run_id=%s)",
+                "UPDATE collection_sources SET last_attempt_at=now(),last_error=%s WHERE id=(SELECT source_id FROM collection_jobs WHERE run_id=%s)",
                 (category, run["id"]),
             )
     return True

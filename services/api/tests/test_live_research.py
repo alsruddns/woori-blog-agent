@@ -1,4 +1,4 @@
-﻿import hashlib
+import hashlib
 import json
 import subprocess
 import uuid
@@ -34,9 +34,9 @@ def test_external_policy_closed_allowlist_and_zero_cost_credentials(
         match="potentially_billable_credentials_detected",
     ):
         external_policy._authorize(
-            "federal_reserve", "source_collection", httpx.Request(
-                "GET", "https://www.federalreserve.gov/feeds/press_all.xml"
-            )
+            "federal_reserve",
+            "source_collection",
+            httpx.Request("GET", "https://www.federalreserve.gov/feeds/press_all.xml"),
         )
 
 
@@ -46,16 +46,46 @@ def test_external_policy_blocks_unlisted_destination(monkeypatch: pytest.MonkeyP
         external_policy.ExternalCallBlocked, match="destination_or_method_not_allowlisted"
     ):
         external_policy._authorize(
-            "google_blogger_read", "blogger_read",
+            "google_blogger_read",
+            "blogger_read",
             httpx.Request("GET", "https://example.com/blogger/v3/blogs/1"),
         )
     with pytest.raises(
         external_policy.ExternalCallBlocked, match="destination_or_method_not_allowlisted"
     ):
         external_policy._authorize(
-            "artifact_setup", "artifact_download",
+            "artifact_setup",
+            "artifact_download",
             httpx.Request("GET", "https://api.github.com/repos/other/project/releases"),
         )
+
+
+def test_sec_edgar_is_restricted_to_free_submissions_and_companyconcept_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(external_policy, "billing_credential_names", list)
+    monkeypatch.setattr(external_policy, "_audit", lambda *args, **kwargs: None)
+    external_policy._authorize(
+        "sec_edgar",
+        "source_collection",
+        httpx.Request("GET", "https://data.sec.gov/submissions/CIK0000320193.json"),
+    )
+    external_policy._authorize(
+        "sec_edgar",
+        "source_collection",
+        httpx.Request(
+            "GET",
+            "https://data.sec.gov/api/xbrl/companyconcept/CIK0000320193/us-gaap/NetIncomeLoss.json",
+        ),
+    )
+    for url in (
+        "https://data.sec.gov/api/private/anything",
+        "https://www.sec.gov/Archives/edgar/data/1/a.htm",
+    ):
+        with pytest.raises(
+            external_policy.ExternalCallBlocked, match="destination_or_method_not_allowlisted"
+        ):
+            external_policy._authorize("sec_edgar", "source_collection", httpx.Request("GET", url))
 
 
 def test_model_artifact_gate_is_narrowly_scoped(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -74,12 +104,16 @@ def test_model_artifact_gate_is_narrowly_scoped(monkeypatch: pytest.MonkeyPatch)
         "artifact_download",
         httpx.Request("GET", "https://us.aws.cdn.hf.co/xet-bridge-us/immutable-object-id"),
     )
-    with pytest.raises(external_policy.ExternalCallBlocked, match="destination_or_method_not_allowlisted"):
+    with pytest.raises(
+        external_policy.ExternalCallBlocked, match="destination_or_method_not_allowlisted"
+    ):
         external_policy._authorize(
             "artifact_setup",
             "artifact_download",
             httpx.Request("GET", "https://us.aws.cdn.hf.co/other/path"),
         )
+
+
 def test_blogger_reads_wait_for_manual_zero_cost_review(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -102,9 +136,7 @@ def test_blogger_reads_wait_for_manual_zero_cost_review(
 
 
 @pytest.mark.parametrize("status", [429, 403])
-def test_external_policy_quota_is_a_hard_stop(
-    monkeypatch: pytest.MonkeyPatch, status: int
-) -> None:
+def test_external_policy_quota_is_a_hard_stop(monkeypatch: pytest.MonkeyPatch, status: int) -> None:
     monkeypatch.setattr(external_policy, "_audit", lambda *args, **kwargs: None)
     if status == 429:
         handler = lambda request: httpx.Response(429, request=request)
@@ -164,13 +196,15 @@ def test_gpu_counter_is_scoped_to_inference_process(monkeypatch: pytest.MonkeyPa
 
 
 def test_grounding_requires_source_markers_and_preserves_names() -> None:
-    sources = [{
-        "id": "acme-1",
-        "url": "https://example.com/report",
-        "evidence": "Acme Research published a report.",
-        "rights": "Public domain test fixture",
-        "valid_until": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
-    }]
+    sources = [
+        {
+            "id": "acme-1",
+            "url": "https://example.com/report",
+            "evidence": "Acme Research published a report.",
+            "rights": "Public domain test fixture",
+            "valid_until": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
+        }
+    ]
     clean = Draft(
         title="Acme Research report",
         body="## Overview\nAcme Research published a report [source:acme-1].",
@@ -185,12 +219,14 @@ def test_grounding_requires_source_markers_and_preserves_names() -> None:
     assert result["source_url_network_existence"] == "not_rechecked_by_quality_gate"
     assert result["publish_ready"] is False
 
-    bad = clean.model_copy(update={
-        "title": "Unknown Startup report",
-        "summary": "A startup published a report without supporting sources.",
-        "body": "## Overview\nUnknown Startup published a report without a source marker.\n\n"
-        "Unknown Startup published a report without a source marker.",
-    })
+    bad = clean.model_copy(
+        update={
+            "title": "Unknown Startup report",
+            "summary": "A startup published a report without supporting sources.",
+            "body": "## Overview\nUnknown Startup published a report without a source marker.\n\n"
+            "Unknown Startup published a report without a source marker.",
+        }
+    )
     blocked = inspect(bad, sources, "en", datetime.now(UTC).date().isoformat())
     assert not blocked["rule_checks"]["proper_names_preserved"]
     assert not blocked["rule_checks"]["no_unsupported_proper_names"]
@@ -229,7 +265,9 @@ def test_section_claim_gate_checks_numbers_names_and_citations() -> None:
     )
     failed = section_response_valid(unsupported, facts, {"source-1"}, "2026-10-26")
     assert not failed["passed"] and not failed["checks"]["numbers_from_evidence"]
-    unknown_citation = valid.model_copy(update={"body": "Federal Reserve Board notice. [source:other]"})
+    unknown_citation = valid.model_copy(
+        update={"body": "Federal Reserve Board notice. [source:other]"}
+    )
     failed = section_response_valid(unknown_citation, facts, {"source-1"}, "2026-10-26")
     assert not failed["passed"] and not failed["checks"]["citations_allowed"]
     invented_name = valid.model_copy(
@@ -255,6 +293,12 @@ def test_grounding_normalizes_dates_and_avoids_sentence_boundary_name_false_posi
 
 def test_number_only_markdown_headings_are_not_factual_numbers() -> None:
     assert numbers("## 1\n## 2\n## 10") == set()
+
+
+def test_grouped_financial_amounts_normalize_to_the_same_numeric_fact() -> None:
+    assert numbers("Revenue was 109417000000 USD") == numbers(
+        "Revenue was 109,417,000,000 USD"
+    )
 
 
 def test_inherited_year_date_lists_match_localized_dates() -> None:
@@ -285,11 +329,16 @@ def test_historical_english_headlines_do_not_create_generic_proper_names() -> No
     assert "Federal Reserve Board Announces" not in names
     assert "Enforcement Actions" not in names
     assert "Federal Reserve Board's" in proper_names("Federal Reserve Board's policy")
+    assert "Q Filed" not in proper_names("Apple Inc. Form 10-Q Filed on 2026-07-31")
+    assert "Board's Discount Rate Meetings" not in proper_names(
+        "Minutes of the Board's Discount Rate Meetings"
+    )
 
 
 def test_cited_text_prefixed_as_markdown_heading_is_still_validated() -> None:
     source = {
-        "id": "source-1", "url": "https://example.com/source",
+        "id": "source-1",
+        "url": "https://example.com/source",
         "evidence": "Federal Reserve Board issued a public notice.",
         "rights": "Public domain",
         "valid_until": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
@@ -298,7 +347,8 @@ def test_cited_text_prefixed_as_markdown_heading_is_still_validated() -> None:
         title="Federal Reserve Board notice",
         body="## European Central Bank announced a 9 percent rate change. [source:source-1]",
         summary="A notice from the Federal Reserve Board.",
-        keywords=["Federal Reserve Board"], source_ids=["source-1"],
+        keywords=["Federal Reserve Board"],
+        source_ids=["source-1"],
     )
     result = inspect(draft, [source], "en", "2026-10-26")
     assert not result["rule_checks"]["no_unsupported_proper_names"]
@@ -336,7 +386,8 @@ def test_fact_ledger_and_localization_separate_source_language_and_expression() 
     from woori.localization import fact_ledger, localize_fact
 
     source = {
-        "id": "fed-source", "source_language": "en",
+        "id": "fed-source",
+        "source_language": "en",
         "evidence": "Federal Reserve Board ended the action on October 13, 2026.",
     }
     fact = fact_ledger(source)[0]
@@ -351,9 +402,17 @@ def test_fact_ledger_and_localization_separate_source_language_and_expression() 
     assert not held["checks"]["language_matches"]
     assert held["publish_ready"] is False
 
-    glossary = [{"source_term": "Federal Reserve Board", "localized_term": "연방준비제도",
-                 "source_language": "en", "target_language": "ko", "approved": True, "official_translation": True,
-                 "translation_source": "https://example.org/official-glossary"}]
+    glossary = [
+        {
+            "source_term": "Federal Reserve Board",
+            "localized_term": "연방준비제도",
+            "source_language": "en",
+            "target_language": "ko",
+            "approved": True,
+            "official_translation": True,
+            "translation_source": "https://example.org/official-glossary",
+        }
+    ]
     localized = localize_fact(
         fact, "ko", lambda *_: "Federal Reserve Board는 2026년 10월 13일 조치를 종료했다.", glossary
     )
@@ -368,8 +427,13 @@ def test_fact_ledger_and_localization_separate_source_language_and_expression() 
 def test_localization_blocks_number_date_and_unapproved_entity_drift() -> None:
     from woori.localization import fact_ledger, localize_fact
 
-    fact = fact_ledger({"id": "fed-source", "source_language": "en",
-                        "evidence": "Federal Reserve Board ended the action on October 13, 2026."})[0]
+    fact = fact_ledger(
+        {
+            "id": "fed-source",
+            "source_language": "en",
+            "evidence": "Federal Reserve Board ended the action on October 13, 2026.",
+        }
+    )[0]
     changed = localize_fact(
         fact, "ko", lambda *_: "연방준비제도는 2026년 10월 14일 조치를 종료했고 9%를 기록했다."
     )
@@ -378,16 +442,34 @@ def test_localization_blocks_number_date_and_unapproved_entity_drift() -> None:
     assert not changed["publish_ready"]
 
     # No AI/translation adapter is a safe refusal, never a source-language success.
-    refused = localize_fact(fact, "fr", glossary=[{
-        "source_term": "Federal Reserve Board", "localized_term": "Conseil de la Réserve fédérale",
-        "target_language": "fr", "approved": False, "official_translation": False,
-    }])
+    refused = localize_fact(
+        fact,
+        "fr",
+        glossary=[
+            {
+                "source_term": "Federal Reserve Board",
+                "localized_term": "Conseil de la Réserve fédérale",
+                "target_language": "fr",
+                "approved": False,
+                "official_translation": False,
+            }
+        ],
+    )
     assert refused["status"] == "held_translation_unavailable"
 
     unapproved_term = localize_fact(
-        fact, "fr", lambda *_: "Le Conseil de la Réserve fédérale a publié un rapport.",
-        [{"source_term": "Federal Reserve Board", "localized_term": "Conseil de la Réserve fédérale",
-          "target_language": "fr", "approved": False, "official_translation": False}],
+        fact,
+        "fr",
+        lambda *_: "Le Conseil de la Réserve fédérale a publié un rapport.",
+        [
+            {
+                "source_term": "Federal Reserve Board",
+                "localized_term": "Conseil de la Réserve fédérale",
+                "target_language": "fr",
+                "approved": False,
+                "official_translation": False,
+            }
+        ],
     )
     assert unapproved_term["checks"]["no_unapproved_translation_asserted"] is False
     assert unapproved_term["status"] == "quality_held"
@@ -413,17 +495,33 @@ def test_local_translation_protects_entity_spans_and_fails_if_marker_is_lost(
         def handler(request: httpx.Request) -> httpx.Response:
             payload = json.loads(request.content)
             observed.append(payload["messages"][1]["content"])
-            return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(
-                {"localized_text": response_text}, ensure_ascii=False
-            )}}]})
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {"localized_text": response_text}, ensure_ascii=False
+                                )
+                            }
+                        }
+                    ]
+                },
+            )
 
         monkeypatch.setattr(
-            inference.httpx, "Client",
+            inference.httpx,
+            "Client",
             lambda *args, **kwargs: base_client(transport=httpx.MockTransport(handler), **kwargs),
         )
         return inference.localized_translation(
-            "The Federal Reserve Board issued a notice.", "ko", [],
-            ["Federal Reserve Board"], "local-test-model", 10,
+            "The Federal Reserve Board issued a notice.",
+            "ko",
+            [],
+            ["Federal Reserve Board"],
+            "local-test-model",
+            10,
         )
 
     restored = execute("[[LOCKED_ENTITY_0001]]가 공지를 발표했습니다.")
@@ -443,9 +541,14 @@ def test_reviewed_source_facts_and_localization_are_durable_and_fail_closed(lab:
         (keyword_id,),
     ).fetchone()
     language_review = api.post(
-        f"/admin/research/sources/{source['id']}/reviews", headers=headers,
-        json={"approved": True, "reason": "Synthetic fixture is authored in English for this test.",
-              "reviewer": "Test reviewer", "source_language": "en"},
+        f"/admin/research/sources/{source['id']}/reviews",
+        headers=headers,
+        json={
+            "approved": True,
+            "reason": "Synthetic fixture is authored in English for this test.",
+            "reviewer": "Test reviewer",
+            "source_language": "en",
+        },
     )
     assert language_review.status_code == 201, language_review.text
     extracted = api.post(f"/admin/research/sources/{source['id']}/facts", headers=headers)
@@ -457,14 +560,16 @@ def test_reviewed_source_facts_and_localization_are_durable_and_fail_closed(lab:
 
     # Same-language rendering is deterministic; Korean without local AI remains held.
     english = api.post(
-        "/admin/research/localizations", headers=headers,
+        "/admin/research/localizations",
+        headers=headers,
         json={"fact_id": fact["id"], "target_language": "en"},
     )
     assert english.status_code == 201, english.text
     assert english.json()["machine_passed"] is True
     assert english.json()["publish_ready"] is False
     result = api.post(
-        "/admin/research/localizations", headers=headers,
+        "/admin/research/localizations",
+        headers=headers,
         json={"fact_id": fact["id"], "target_language": "ko"},
     )
     assert result.status_code == 201, result.text
@@ -483,21 +588,38 @@ def test_localized_template_composes_only_passed_fact_spans() -> None:
     from woori.evidence_template import build_localized_evidence_template
 
     source = {
-        "id": "source-1", "url": "https://www.federalreserve.gov/test", "source_name": "Federal Reserve Board",
-        "evidence": "Federal Reserve Board issued a public informational notice on Tuesday regarding the latest enforcement action.", "rights": "Public domain",
+        "id": "source-1",
+        "url": "https://www.federalreserve.gov/test",
+        "source_name": "Federal Reserve Board",
+        "evidence": "Federal Reserve Board issued a public informational notice on Tuesday regarding the latest enforcement action.",
+        "rights": "Public domain",
         "valid_until": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
     }
-    fact = {"text": "Federal Reserve Board, 화요일 최신 집행 조치에 관한 공식 정보 안내문을 발표했습니다.", "target_language": "ko",
-            "status": "machine_passed", "source_ids": ["source-1"], "ai_calls": 0}
+    fact = {
+        "text": "Federal Reserve Board, 화요일 최신 집행 조치에 관한 공식 정보 안내문을 발표했습니다.",
+        "target_language": "ko",
+        "status": "machine_passed",
+        "source_ids": ["source-1"],
+        "ai_calls": 0,
+    }
     draft, metrics = build_localized_evidence_template(
-        [source], [fact], "ko", "연방준비제도 공식 안내", "공식 안내의 핵심 내용을 정리했습니다.", ["공식 안내"]
+        [source],
+        [fact],
+        "ko",
+        "연방준비제도 공식 안내",
+        "공식 안내의 핵심 내용을 정리했습니다.",
+        ["공식 안내"],
     )
     assert "[source:source-1]" in draft.body
     assert metrics["human_review_required"] and not metrics["publish_ready"]
     with pytest.raises(ValueError, match="localization_quality_held"):
         build_localized_evidence_template(
-            [source], [{**fact, "status": "held_translation_unavailable"}], "ko",
-            "연방준비제도 공식 안내", "공식 안내의 핵심 내용을 정리했습니다.", ["공식 안내"],
+            [source],
+            [{**fact, "status": "held_translation_unavailable"}],
+            "ko",
+            "연방준비제도 공식 안내",
+            "공식 안내의 핵심 내용을 정리했습니다.",
+            ["공식 안내"],
         )
 
 
@@ -510,11 +632,196 @@ def test_collection_bounded_and_no_arbitrary_endpoint(monkeypatch: pytest.Monkey
 
     base = httpx.Client
     monkeypatch.setattr(
-        collection, "external_client",
+        collection,
+        "external_client",
         lambda provider, operation, **kw: base(transport=httpx.MockTransport(handler), **kw),
     )
     with pytest.raises(EngineFailure, match="unsafe_feed"):
         collection.retrieve({"adapter": "fed_rss", "endpoint": collection.ENDPOINTS["fed_rss"]}, [])
+
+
+def test_sec_edgar_collector_is_bounded_and_records_filing_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from datetime import UTC
+
+    monkeypatch.setenv("SEC_USER_AGENT_CONTACT", "research@example.test")
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path.endswith(".json") and "/submissions/" in request.url.path:
+            return httpx.Response(
+                200,
+                json={
+                    "name": "Example Corporation",
+                    "filings": {
+                        "recent": {
+                            "form": ["10-Q"],
+                            "accessionNumber": ["0000123456-26-000007"],
+                            "filingDate": ["2026-08-01"],
+                            "reportDate": ["2026-06-30"],
+                            "primaryDocument": ["quarterly.htm"],
+                        }
+                    },
+                },
+                request=request,
+            )
+        value = 1234567 if "RevenueFrom" in request.url.path else 765432
+        return httpx.Response(
+            200,
+            json={
+                "units": {
+                    "USD": [
+                        {
+                            "accn": "0000123456-26-000007",
+                            "end": "2026-06-30",
+                            "start": "2026-04-01",
+                            "val": value,
+                        }
+                    ]
+                }
+            },
+            request=request,
+        )
+
+    base = httpx.Client
+    monkeypatch.setattr(
+        collection,
+        "external_client",
+        lambda provider, operation, **kw: base(transport=httpx.MockTransport(handler), **kw),
+    )
+    item = collection.retrieve(
+        {"adapter": "sec_edgar", "endpoint": collection.ENDPOINTS["sec_edgar"]},
+        [{"query": "0000123456", "category_id": "stocks-category"}],
+    )[0]
+    assert len(requests) == 3
+    assert all(
+        "WooriBlogAgent/0.3.8 (research@example.test)" == r.headers["user-agent"] for r in requests
+    )
+    assert item["source_language"] == "en" and item["retrieved_at"].tzinfo == UTC
+    assert item["primary"] and item["category_id"] == "stocks-category"
+    assert "10-Q" in item["evidence"] and "revenue: 1234567 USD" in item["evidence"]
+    assert "net income: 765432 USD" in item["evidence"]
+    assert item["url"].startswith("https://www.sec.gov/Archives/edgar/data/123456/")
+
+
+def test_sec_edgar_requires_declared_contact_before_network(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("SEC_USER_AGENT_CONTACT", raising=False)
+    called = False
+
+    def no_network(*args: Any, **kwargs: Any) -> Any:
+        nonlocal called
+        called = True
+        raise AssertionError("network must not be attempted without SEC contact")
+
+    monkeypatch.setattr(collection, "external_client", no_network)
+    with pytest.raises(EngineFailure, match="sec_user_agent_contact_required"):
+        collection.retrieve(
+            {"adapter": "sec_edgar", "endpoint": collection.ENDPOINTS["sec_edgar"]}, []
+        )
+    assert not called
+
+
+def test_complete_article_quality_separates_machine_checks_from_editorial_approval() -> None:
+    from woori.article_quality import evaluate
+
+    source = {
+        "id": "source-1",
+        "url": "https://www.federalreserve.gov/test.htm",
+        "source_name": "Federal Reserve Board",
+        "evidence": "The Federal Reserve Board issued a notice about its published review process and described how readers can find the official minutes.",
+        "rights": "Official public-domain information; cite the Board.",
+        "valid_until": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
+    }
+    draft = Draft(
+        title="Federal Reserve Board minutes explained",
+        body=(
+            "## What the notice says\n\nThe Federal Reserve Board issued a notice about its published review process. [source:source-1]\n\n"
+            "## How readers can use the filing\n\nReaders can consult the cited material to understand what the notice identifies. [source:source-1]\n\n"
+            "## Limits of this summary\n\nThis summary describes the supplied notice and does not provide an investment recommendation. [source:source-1]"
+        ),
+        summary="A sourced guide to the Federal Reserve Board notice.",
+        keywords=["Federal Reserve Board notice"],
+        source_ids=["source-1"],
+    )
+    result = evaluate(draft, [source], "en", datetime.now(UTC).date().isoformat(), 3)
+    assert result["machine_passed"]
+    assert result["human_review_required"] and not result["publish_ready"]
+
+    source["evidence"] = (
+        "Federal Reserve Board published a notice and explained the official minutes. "
+        + "Readers can find the official record for additional information about the review process. "
+        * 2
+    )
+    quote_draft = draft.model_copy(
+        update={
+            "body": "## Source\n\n"
+            + source["evidence"]
+            + " [source:source-1]\n\n## Notes\n\nA guide describes the official record for readers. [source:source-1]\n\n## Limits\n\nNo advice is offered here. [source:source-1]"
+        }
+    )
+    quote_result = evaluate(quote_draft, [source], "en", datetime.now(UTC).date().isoformat(), 3)
+    assert not quote_result["checks"]["no_mass_direct_quote"]
+
+
+def test_complete_article_structure_handles_cjk_scripts() -> None:
+    from woori.article_quality import evaluate
+
+    source = {
+        "id": "source-1",
+        "url": "https://www.federalreserve.gov/test.htm",
+        "source_name": "Federal Reserve Board",
+        "evidence": "The Federal Reserve Board issued an official notice for readers.",
+        "rights": "Official source; cite the Board.",
+        "valid_until": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
+    }
+    draft = Draft(
+        title="Federal Reserve Board 공식 안내 해설",
+        body=(
+            "## 공식 안내의 내용\n\nFederal Reserve Board는 공식 안내를 발표했습니다. [source:source-1]\n\n"
+            "## 자료를 읽는 방법\n\n독자는 인용된 자료에서 발표된 안내의 범위를 확인할 수 있습니다. [source:source-1]\n\n"
+            "## 이 요약의 한계\n\n이 글은 제공된 안내만 요약하며 투자 권고를 하지 않습니다. [source:source-1]"
+        ),
+        summary="Federal Reserve Board의 공식 안내를 한국어로 정리합니다.",
+        keywords=["Federal Reserve Board", "공식 안내"],
+        source_ids=["source-1"],
+    )
+    result = evaluate(draft, [source], "ko", datetime.now(UTC).date().isoformat(), 3)
+    assert result["machine_passed"]
+    assert result["paragraph_count"] >= 3
+    assert result["human_review_required"] and not result["publish_ready"]
+
+
+def test_article_gate_holds_unsupported_access_claims_and_internal_seo_ids() -> None:
+    from woori.article_quality import evaluate
+
+    source = {
+        "id": "source-1",
+        "url": "https://www.federalreserve.gov/test.htm",
+        "source_name": "Federal Reserve Board",
+        "evidence": "The Federal Reserve Board published an informational notice for readers.",
+        "rights": "Official source; cite the Board.",
+        "valid_until": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
+    }
+    body = (
+        "## Notice\n\nThe Federal Reserve Board published an informational notice. [source:source-1]\n\n"
+        "## Reading it\n\nReaders can consult the supplied notice for the information stated there. [source:source-1]\n\n"
+        "## Scope\n\nThis is part of a public record and no other claims are made here. [source:source-1]"
+    )
+    draft = Draft(
+        title="Federal Reserve Board notice explained",
+        body=body,
+        summary="A sourced guide to the Federal Reserve Board notice.",
+        keywords=["Federal Reserve Board notice", "2026-10-26"],
+        source_ids=["source-1"],
+    )
+    result = evaluate(draft, [source], "en", "2026-10-26", 3)
+    assert not result["checks"]["legal_access_claims_grounded_in_supplied_source"]
+    assert not result["checks"]["keywords_are_search_terms_not_internal_ids"]
+    assert not result["machine_passed"]
 
 
 def test_collection_durable_retry_and_idempotency(
