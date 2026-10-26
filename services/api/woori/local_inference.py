@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 import re
 import subprocess
 import threading
@@ -90,6 +91,7 @@ def localized_translation(
     model: str,
     timeout: int,
     mode: str = "translate",
+    metrics_sink: list[dict[str, Any]] | None = None,
 ) -> str:
     """One bounded project-local translation request; there is no remote fallback."""
     from pydantic import BaseModel, ConfigDict, Field
@@ -132,6 +134,31 @@ def localized_translation(
 
         text = pattern.sub(lock, text)
     schema = Translation.model_json_schema()
+    inference_pid = int(info.get("pid", os.getpid()))
+    process = psutil.Process(inference_pid)
+    samples: list[tuple[float, int, float]] = []
+    gpu_samples: list[float] = []
+    stop = threading.Event()
+
+    def sample() -> None:
+        process.cpu_percent()
+        last_gpu_sample = 0.0
+        while not stop.wait(0.25):
+            try:
+                samples.append((process.cpu_percent() / (psutil.cpu_count() or 1), process.memory_info().rss, psutil.cpu_percent()))
+                if info.get("backend") == "vulkan" and info.get("pid") and time.monotonic() - last_gpu_sample >= 1:
+                    last_gpu_sample = time.monotonic()
+                    measured_gpu = gpu_engine_percent(inference_pid)
+                    if measured_gpu is not None:
+                        gpu_samples.append(measured_gpu)
+            except psutil.Error:
+                break
+
+    sampler = threading.Thread(target=sample, daemon=True)
+    sampler.start()
+    started = time.monotonic()
+    usage: dict[str, Any] = {}
+    succeeded = False
     try:
         with httpx.Client(
             timeout=httpx.Timeout(timeout, connect=5),
@@ -186,12 +213,15 @@ def localized_translation(
             response.raise_for_status()
             if len(response.content) > 20000:
                 raise EngineFailure("localization_response_too_large")
-            content = response.json()["choices"][0]["message"]["content"]
+            response_data = response.json()
+            usage = response_data.get("usage", {})
+            content = response_data["choices"][0]["message"]["content"]
             localized = Translation.model_validate_json(content).localized_text
             for token, replacement in protected_terms.items():
                 if localized.count(token) != 1:
                     raise EngineFailure("localization_entity_placeholder_error")
                 localized = localized.replace(token, replacement)
+            succeeded = True
             return localized
     except httpx.TimeoutException:
         raise EngineFailure("localization_timeout", True) from None
@@ -199,6 +229,25 @@ def localized_translation(
         raise EngineFailure("local_engine_unavailable", True) from None
     except (httpx.HTTPError, ValueError, KeyError, TypeError):
         raise EngineFailure("invalid_localization_response") from None
+    finally:
+        stop.set()
+        sampler.join(timeout=1)
+        if metrics_sink is not None:
+            elapsed = time.monotonic() - started
+            metrics_sink.append({
+                "wall_seconds": round(elapsed, 3),
+                "completion_tokens": usage.get("completion_tokens"),
+                "prompt_tokens": usage.get("prompt_tokens"),
+                "tokens_per_second_wall": round(usage["completion_tokens"] / elapsed, 2)
+                if usage.get("completion_tokens") and elapsed else None,
+                "rss_peak_mib": round(max((item[1] for item in samples), default=process.memory_info().rss) / 2**20, 2),
+                "process_cpu_mean_percent_machine": round(sum(item[0] for item in samples) / max(len(samples), 1), 2),
+                "system_cpu_peak_percent": max((item[2] for item in samples), default=None),
+                "gpu_utilization_percent": max(gpu_samples, default=None),
+                "gpu_layers": info.get("gpu_layers", 0),
+                "backend": info.get("backend"),
+                "succeeded": succeeded,
+            })
 
 
 class LlamaCppProvider:

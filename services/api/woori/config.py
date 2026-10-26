@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     google_client_id: str = ""
     google_client_secret: SecretStr = SecretStr("")
     token_encryption_key: SecretStr = SecretStr("")
+    evaluation_database_url: str = ""
     google_redirect_uri: Literal["http://127.0.0.1:3100/api/blogger/callback"] = (
         "http://127.0.0.1:3100/api/blogger/callback"
     )

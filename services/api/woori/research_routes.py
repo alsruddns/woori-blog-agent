@@ -318,9 +318,91 @@ def state() -> dict[str, Any]:
         result["events"] = conn.execute(
             "SELECT id,run_id,event_type,payload,created_at FROM audit_events WHERE event_type LIKE 'research.%' ORDER BY id DESC LIMIT 100"
         ).fetchall()
+        result["evaluation_results"] = _evaluation_results_snapshot()
         result["publishing_enabled"] = False
         result["paid_ai_enabled"] = False
         return result
+
+
+def _evaluation_results_snapshot() -> dict[str, Any]:
+    """Read evaluation-only drafts through the separate read-only database role."""
+    from .config import settings
+
+    url = settings().evaluation_database_url
+    if not url:
+        return {"configured": False, "runs": [], "stages": []}
+    import psycopg
+    from psycopg.rows import dict_row
+
+    try:
+        with psycopg.connect(url, connect_timeout=2, row_factory=dict_row) as conn:
+            identity = conn.execute(
+                "SELECT current_database() AS database_name"
+            ).fetchone()
+            snapshot = conn.execute(
+                "SELECT min(created_at) AS snapshot_at FROM audit_events WHERE event_type='evaluation.environment.initialized'"
+            ).fetchone()
+            if not snapshot or not snapshot["snapshot_at"]:
+                return {"configured": True, "available": False, "error_category": "evaluation_snapshot_marker_missing", "runs": [], "stages": [], "events": [], "quota": []}
+            quota = conn.execute(
+                """SELECT p.language_code,g.evaluation_daily_limit AS quota_limit,
+                    count(*) FILTER (WHERE j.evaluation_only)::int AS quota_used,
+                    (date_trunc('day',now() AT TIME ZONE 'Asia/Seoul') + interval '1 day') AT TIME ZONE 'Asia/Seoul' AS resets_at
+                FROM language_profiles p JOIN languages l ON l.code=p.language_code AND l.active
+                JOIN generation_settings g ON g.profile_id=p.id
+                LEFT JOIN generation_targets t ON t.profile_id=p.id
+                LEFT JOIN generation_jobs j ON j.run_id=t.run_id AND j.created_at >=
+                    (date_trunc('day',now() AT TIME ZONE 'Asia/Seoul') AT TIME ZONE 'Asia/Seoul')
+                WHERE p.target_country=''
+                GROUP BY p.language_code,g.evaluation_daily_limit ORDER BY p.language_code"""
+            ).fetchall()
+            runs = conn.execute(
+                """SELECT r.id AS run_id,r.status AS run_status,r.error_type,r.attempts,
+                    r.created_at,j.evaluation_only,g.profile_id,g.state,g.provider,g.model,
+                    g.elapsed_ms,g.result_metadata,g.source_snapshot,v.id AS version_id,
+                    v.language AS language_code,v.title,v.body,false AS publish_ready
+                FROM job_runs r JOIN generation_jobs j ON j.run_id=r.id
+                JOIN generation_results g ON g.run_id=r.id
+                LEFT JOIN content_versions v ON v.id=g.content_version_id
+                WHERE j.evaluation_only AND r.created_at>%s
+                ORDER BY r.created_at DESC,g.profile_id LIMIT 32""",
+                (snapshot["snapshot_at"],),
+            ).fetchall()
+            stages = conn.execute(
+                """SELECT s.id,s.run_id,s.profile_id,s.stage_name,s.status,s.sequence,
+                    s.model,s.elapsed_ms,s.error_category,s.source_ids,s.validation,
+                    s.output_snapshot,s.started_at,s.finished_at
+                FROM generation_stage_runs s JOIN generation_jobs j ON j.run_id=s.run_id
+                WHERE j.evaluation_only AND s.started_at>%s ORDER BY s.started_at DESC LIMIT 160""",
+                (snapshot["snapshot_at"],),
+            ).fetchall()
+            events = conn.execute(
+                """SELECT id,run_id,event_type,payload,created_at FROM audit_events
+                WHERE (event_type LIKE 'evaluation.%%' OR event_type LIKE 'generation.%%'
+                    OR event_type LIKE 'stage.%%' OR event_type IN ('queued','started','completed','failed','retry','recovered','worker.status.changed'))
+                  AND created_at>=%s
+                ORDER BY id DESC LIMIT 160""",
+                (snapshot["snapshot_at"],),
+            ).fetchall()
+            evaluation_worker = conn.execute(
+                """SELECT service_name,process_id,status,last_error_category,last_seen_at,
+                    last_seen_at>now()-interval '45 seconds' AS fresh
+                FROM worker_heartbeats WHERE service_name='evaluation_worker'"""
+            ).fetchone()
+        return {
+            "configured": True,
+            "database": identity["database_name"] if identity else None,
+            "baseline_snapshot_at": snapshot["snapshot_at"],
+            "quota": quota,
+            "worker": evaluation_worker,
+            "runs": runs,
+            "stages": stages,
+            "events": events,
+            "publish_ready_forced_false": True,
+        }
+    except psycopg.Error as exc:
+        # Never return a connection string, credentials, or raw driver error.
+        return {"configured": True, "available": False, "error_category": "evaluation_read_failed", "error_code": exc.sqlstate, "runs": [], "stages": []}
 
 
 @router.post("/versions/{version_id}/validate")

@@ -117,12 +117,15 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description="Run the local durable research worker")
     parser.add_argument("--evaluation", action="store_true", help="Consume only the isolated evaluation queue")
+    parser.add_argument("--once", action="store_true", help="Process at most one job, only in evaluation mode")
     parser.add_argument("--diagnostic-only", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--run-seconds", type=int, default=0, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.run_seconds < 0 or args.run_seconds > 3600:
         raise SystemExit("run-seconds must be between 0 and 3600")
     evaluation_mode = bool(args.evaluation)
+    if args.once and not evaluation_mode:
+        raise SystemExit("--once is reserved for the isolated evaluation worker")
     if evaluation_mode and args.diagnostic_only:
         raise SystemExit("Worker modes are mutually exclusive")
     if evaluation_mode:
@@ -168,6 +171,8 @@ def main() -> None:
                 print("Database unavailable; reconnecting without logging credentials", flush=True)
             else:
                 degraded.clear()
+            if args.once:
+                break
             stop.wait(5)
     finally:
         stop.set()

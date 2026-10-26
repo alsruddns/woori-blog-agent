@@ -1,5 +1,12 @@
 # Changelog
 
+## Phase 3.9-T (partial validation; 2026-10-27)
+- Added a physically separate, secret-free evaluation database snapshot with least-privilege application, reader, migration, and identity roles; no Blogger/OAuth/publishing state is copied.
+- Added read-only evaluation result visibility to the research dashboard and a single-shot isolated Worker path for sequential, per-language C3 evaluation.
+- Added evaluation-only cross-run source-draft reuse for localization, preserving source-version links without touching operational records.
+- Run one actual Fed English C3 job in the isolated evaluation DB with Qwen3 4B Q4_K_M; save the draft as `quality_held` because the direct-quotation/source-overlap gate detected a 30-word overlap. Do not claim a quality improvement over C1 (7 held, 1 not replayable); stop the remaining seven planned evaluations pending analysis.
+- Fixed evaluation Worker bootstrap validation without loading an administrator secret and retried the same quota-counted run; verify heartbeat stop, 33 audit events, 5 model calls, and resource samples. Publishing and paid services remain disabled.
+
 ## Unreleased - Phase 3.9-S - 2026-10-26
 
 - Separate evaluation and operations daily quotas while retaining shared resource, pause, and concurrency gates; evaluation fails closed unless physical DB isolation is verified.

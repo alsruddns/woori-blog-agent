@@ -9,6 +9,7 @@ export type State = {
   collection_jobs: Row[]; measurements: Row[]; stage_runs: Row[]; coverage: Row[]; experiments?: Row[];
   evidence_facts?: Row[]; localizations?: Row[]; glossary?: Row[]; glossary_revisions?: Row[];
   article_evaluations?: Row[]; worker?: Row | null; evaluation_worker?: Row | null; daily_workload?: Row[]; operations_summary?: Row;
+  evaluation_results?: { configured?: boolean; available?: boolean; database?: string; baseline_snapshot_at?: string; error_category?: string; worker?: Row | null; quota?: Row[]; runs?: Row[]; stages?: Row[]; events?: Row[] };
 };
 type Field = { name: string; label: string; type?: string; optional?: boolean; options?: { value: string; label: string }[] };
 const str = (row: Row, key: string) => String(row[key] ?? "");
@@ -163,6 +164,19 @@ export default function Research({ initial }: { initial: State }) {
         <button disabled={busy || j.status === "succeeded"} onClick={() => act(`jobs/${str(j, "id")}/action`, { action: j.paused ? "resume" : "pause" })}>{j.paused ? "재개" : "중지·현재 추론 취소"}</button>
         <button disabled={busy || j.status !== "failed" || Number(j.attempts) >= 3} onClick={() => act(`jobs/${str(j, "id")}/action`, { action: "retry" })}>재시도</button></article>)}
       <details><summary>실패·재시도 이력</summary><pre>{JSON.stringify(data.attempts, null, 2)}</pre></details>
+    </section>
+    <section><h2>Isolated evaluation results (read only)</h2>
+      <p>Evaluation DB: {data.evaluation_results?.configured ? data.evaluation_results.available === false ? "unavailable" : str(data.evaluation_results as Row, "database") : "read-only connection not configured"}. Worker: {str(data.evaluation_results?.worker ?? {}, "status") || "not started"}; baseline snapshot {str(data.evaluation_results as Row, "baseline_snapshot_at")}. Human review remains pending; publish_ready is always false.</p>
+      {data.evaluation_results?.error_category ? <p role="alert">{data.evaluation_results.error_category}</p> : null}
+      {(data.evaluation_results?.quota ?? []).map(q => <p key={str(q, "language_code")}>Evaluation quota {str(q, "language_code")}: {str(q, "quota_used")}/{str(q, "quota_limit")}; resets {str(q, "resets_at")}.</p>)}
+      {(data.evaluation_results?.runs ?? []).map((run, index) => <details key={`${str(run, "run_id")}-${index}`}>
+        <summary>{str(run, "language_code")} | {str(run, "run_status")} | {str(run, "state")} | {str(run, "model")} | {str(run, "created_at")}</summary>
+        <h3>{str(run, "title") || "No saved draft"}</h3>
+        <pre style={{ whiteSpace: "pre-wrap" }}>{str(run, "body")}</pre>
+        <p>Machine checks and review metadata</p><pre>{JSON.stringify({ error: run.error_type, attempts: run.attempts, elapsed_ms: run.elapsed_ms, result_metadata: run.result_metadata, evidence: run.source_snapshot, publish_ready: false }, null, 2)}</pre>
+      </details>)}
+      <details><summary>Stage audit data ({data.evaluation_results?.stages?.length ?? 0})</summary><pre>{JSON.stringify(data.evaluation_results?.stages ?? [], null, 2)}</pre></details>
+      <details><summary>Evaluation audit events ({data.evaluation_results?.events?.length ?? 0})</summary><pre>{JSON.stringify(data.evaluation_results?.events ?? [], null, 2)}</pre></details>
     </section>
     <section><h2>단계별 생성 추적·근거 범위</h2>
       <p>진행과 완료 데이터는 PostgreSQL 실행 단계 기록에서 조회합니다. 검토된 출처 수는 활성 언어별·카테고리별 현재 승인 근거 집계이며 검색량이나 콘텐츠 품질 점수가 아닙니다.</p>

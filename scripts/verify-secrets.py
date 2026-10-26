@@ -5,6 +5,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 import httpx
+import psycopg
 from dotenv import dotenv_values
 from woori.db import connection
 from woori.google_oauth import decrypt
@@ -15,7 +16,10 @@ secrets = []
 local_key = root / ".local/inference.key"
 if local_key.exists():
     secrets.append(local_key.read_text(encoding="utf-8").strip())
-for name in (".env", ".env.bootstrap", ".env.migration", "apps/dashboard/.env.local"):
+for name in (
+    ".env", ".env.bootstrap", ".env.migration", ".env.evaluation",
+    ".env.evaluation-migration", ".env.evaluation-readonly", "apps/dashboard/.env.local",
+):
     for key, value in dotenv_values(root / name).items():
         if not value:
             continue
@@ -27,6 +31,27 @@ for name in (".env", ".env.bootstrap", ".env.migration", "apps/dashboard/.env.lo
         subprocess.run(["git", "check-ignore", "--quiet", name], cwd=root, check=False).returncode
         == 0
     )
+evaluation_url = dotenv_values(root / ".env.evaluation-readonly").get("EVALUATION_DATABASE_URL", "")
+if evaluation_url:
+    with psycopg.connect(evaluation_url, connect_timeout=3) as evaluation:
+        history = str(evaluation.execute("SELECT payload FROM audit_events").fetchall())
+        history += str(evaluation.execute("SELECT title,body FROM content_versions").fetchall())
+        history += str(evaluation.execute("SELECT result_metadata,source_snapshot FROM generation_results").fetchall())
+        assert not any(contains_secret(history, value) for value in secrets), (
+            "Plaintext secret found in isolated evaluation history"
+        )
+        write_rights = evaluation.execute(
+            """SELECT has_table_privilege(current_user,'blogger_blogs','INSERT'),
+                has_table_privilege(current_user,'blogger_blogs','UPDATE'),
+                has_table_privilege(current_user,'blogger_blogs','DELETE'),
+                has_table_privilege(current_user,'publishing_policies','UPDATE'),
+                has_table_privilege(current_user,'language_execution_limits','UPDATE'),
+                has_table_privilege(current_user,'generation_results','INSERT'),
+                has_table_privilege(current_user,'generation_stage_runs','UPDATE'),
+                has_table_privilege(current_user,'audit_events','UPDATE'),
+                has_table_privilege(current_user,'content_versions','INSERT')"""
+        ).fetchone()
+        assert not any(write_rights), "Evaluation dashboard role has operational write privileges"
 with connection() as conn:
     for row in conn.execute(
         "SELECT access_ciphertext,refresh_ciphertext FROM google_connections WHERE status='connected'"
@@ -56,7 +81,8 @@ names = (
     .split("\0")
 )
 for name in filter(None, names):
-    assert not Path(name).name.startswith(".env"), "Unexpected staged dotenv"
+    basename = Path(name).name
+    assert not (basename.startswith(".env") and basename != ".env.example"), "Unexpected staged dotenv"
     content = subprocess.check_output(["git", "show", ":" + name], cwd=root)
     assert not any(contains_secret(content.decode("utf-8"), value) for value in secrets), (
         "Secret found in staged content"

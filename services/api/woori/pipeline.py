@@ -8,7 +8,8 @@ import time
 import unicodedata
 from datetime import UTC, datetime
 from difflib import SequenceMatcher
-from typing import Any
+from pathlib import Path
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 import psutil
@@ -245,6 +246,7 @@ def render_localized_fact_section(
     started = time.monotonic()
     source_by_id = {str(source["id"]): source for source in sources}
     localized_rows: list[dict[str, Any]] = []
+    model_call_metrics: list[dict[str, Any]] = []
     calls = 0
     for fact in facts:
         source_id = str(fact["source_id"])
@@ -267,7 +269,8 @@ def render_localized_fact_section(
             selected_mode: str = translation_mode,
         ) -> str:
             return localized_translation(
-                text, target, approved, entities, model, timeout, selected_mode
+                text, target, approved, entities, model, timeout, selected_mode,
+                metrics_sink=model_call_metrics,
             )
 
         row = localize_fact(
@@ -283,7 +286,8 @@ def render_localized_fact_section(
     prefix, summary = copy[language]
     if include_title and language != "en":
         translated_keyword = localized_translation(
-            keyword, language, glossary, sorted(proper_names(keyword)), model, timeout
+            keyword, language, glossary, sorted(proper_names(keyword)), model, timeout,
+            metrics_sink=model_call_metrics,
         ).strip()
         calls += 1
     else:
@@ -309,6 +313,7 @@ def render_localized_fact_section(
     draft._metrics = {
         "localization_adapter": "per_fact_local_json_translation",
         "localization_facts": len(localized_rows), "model_calls": calls,
+        "inference_calls": model_call_metrics,
         "fact_localization_elapsed_ms": sum(int(row["elapsed_ms"]) for row in localized_rows),
         "elapsed_ms": round((time.monotonic() - started) * 1000),
         "localization_checks": checks,
@@ -366,7 +371,17 @@ def enqueue(
             targets = [t for t in targets if t["profile_id"] in profile_ids]
             if {t["profile_id"] for t in targets} != set(profile_ids):
                 raise EngineFailure("inactive_or_unknown_target")
-        if not targets or targets[0]["profile_id"] != keyword["profile_id"]:
+        if not targets:
+            raise EngineFailure("source_profile_required")
+        if evaluation_only:
+            source_profile = conn.execute(
+                """SELECT 1 FROM language_profiles p JOIN languages l ON l.code=p.language_code
+                WHERE p.id=%s AND l.active""",
+                (keyword["profile_id"],),
+            ).fetchone()
+            if source_profile is None:
+                raise EngineFailure("source_profile_required")
+        elif targets[0]["profile_id"] != keyword["profile_id"]:
             raise EngineFailure("source_profile_required")
         if evaluation_only and any(t["provider"] != "local" for t in targets):
             raise EngineFailure("evaluation_requires_real_local_provider")
@@ -485,6 +500,28 @@ def quality(
 def direct_quote_gate(draft: Draft, sources: list[dict[str, Any]]) -> dict[str, Any]:
     overlap = longest_source_overlap(draft.body, sources)
     return {"no_mass_direct_quote": overlap < 25, "longest_source_overlap_words": overlap}
+
+
+def _evaluation_source_draft(
+    conn: Any, run_id: UUID, keyword_id: UUID, source_profile_id: UUID, evaluation_only: bool
+) -> dict[str, Any] | None:
+    draft = conn.execute(
+        """SELECT v.id,v.title,v.body,g.result_metadata FROM generation_results g
+        JOIN content_versions v ON v.id=g.content_version_id
+        WHERE g.run_id=%s AND g.profile_id=%s""",
+        (run_id, source_profile_id),
+    ).fetchone()
+    if draft is None and evaluation_only:
+        draft = conn.execute(
+            """SELECT v.id,v.title,v.body,g.result_metadata
+            FROM generation_results g JOIN content_versions v ON v.id=g.content_version_id
+            JOIN generation_jobs j ON j.run_id=g.run_id JOIN job_runs r ON r.id=g.run_id
+            WHERE j.keyword_id=%s AND j.evaluation_only AND r.status='succeeded'
+              AND g.profile_id=%s AND g.content_version_id IS NOT NULL
+            ORDER BY r.updated_at DESC,g.created_at DESC LIMIT 1""",
+            (keyword_id, source_profile_id),
+        ).fetchone()
+    return cast(dict[str, Any] | None, draft)
 
 
 def generate_staged_target(
@@ -849,10 +886,10 @@ def process(run: dict[str, Any]) -> None:
                 ).fetchone()
             )
         with connection() as conn:
-            source_draft = conn.execute(
-                "SELECT v.id,v.title,v.body,g.result_metadata FROM generation_results g JOIN content_versions v ON v.id=g.content_version_id WHERE g.run_id=%s AND g.profile_id=%s",
-                (run_id, keyword["profile_id"]),
-            ).fetchone()
+            source_draft = _evaluation_source_draft(
+                conn, run_id, keyword["id"], keyword["profile_id"],
+                bool(policy.get("evaluation_only")),
+            )
         started = time.monotonic()
         draft, stage_details, stage_sequence = generate_staged_target(
             run_id,
@@ -987,9 +1024,12 @@ def process(run: dict[str, Any]) -> None:
                     "SELECT content_version_id FROM generation_results WHERE run_id=%s AND profile_id=%s",
                     (run_id, keyword["profile_id"]),
                 ).fetchone()
-                if not source:
+                if not source and policy.get("evaluation_only") and source_draft is not None:
+                    source = {"content_version_id": source_draft["id"]}
+                if not source and not policy.get("evaluation_only"):
                     raise EngineFailure("source_version_missing")
-                source_version = source["content_version_id"]
+                if source:
+                    source_version = source["content_version_id"]
             number = required(
                 conn.execute(
                     "SELECT coalesce(max(version),0)+1 AS n FROM content_versions WHERE localization_id=%s",
@@ -1074,10 +1114,13 @@ def process(run: dict[str, Any]) -> None:
 
 def resources_ok(controls: dict[str, Any]) -> bool:
     ram = psutil.virtual_memory()
+    project_root = Path(__file__).resolve().parents[3]
+    disk = psutil.disk_usage(str(project_root))
     return bool(
         psutil.cpu_percent(interval=0.1) < controls["cpu_percent"]
         and ram.percent < controls["ram_percent"]
         and ram.available >= 6 * 1024**3
+        and disk.free >= 10 * 1024**3
     )
 
 

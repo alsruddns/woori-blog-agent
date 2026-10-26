@@ -118,6 +118,81 @@ def test_model_artifact_gate_is_narrowly_scoped(monkeypatch: pytest.MonkeyPatch)
         )
 
 
+def test_evaluation_dashboard_is_empty_when_read_only_connection_is_not_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from woori import config, research_routes
+
+    monkeypatch.setattr(config, "settings", lambda: SimpleNamespace(evaluation_database_url=""))
+    assert research_routes._evaluation_results_snapshot() == {
+        "configured": False, "runs": [], "stages": []
+    }
+
+
+def test_worker_single_shot_mode_requires_evaluation_isolation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sys
+
+    from woori import worker
+
+    monkeypatch.setattr(sys, "argv", ["worker", "--once"])
+    with pytest.raises(SystemExit, match="reserved for the isolated evaluation worker"):
+        worker.main()
+
+
+def test_localized_translation_records_measured_usage_and_resource_samples(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeProcess:
+        pid = 123
+
+        def cpu_percent(self) -> float:
+            return 5.0
+
+        def memory_info(self) -> Any:
+            return type("Memory", (), {"rss": 1024 * 1024 * 128})()
+
+    class FakeResponse:
+        content = b'{"choices":[{"message":{"content":"{\\"localized_text\\":\\"Hello\\"}"}}],"usage":{"prompt_tokens":12,"completion_tokens":3}}'
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, Any]:
+            return {
+                "choices": [{"message": {"content": '{"localized_text":"Hello"}'}}],
+                "usage": {"prompt_tokens": 12, "completion_tokens": 3},
+            }
+
+    class FakeClient:
+        def __init__(self, **_kwargs: Any) -> None:
+            pass
+
+        def __enter__(self) -> Any:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def post(self, *_args: Any, **_kwargs: Any) -> FakeResponse:
+            return FakeResponse()
+
+    monkeypatch.setattr(local_inference, "runtime", lambda: {"pid": 123, "model": "local", "backend": "cpu", "gpu_layers": 0})
+    monkeypatch.setattr(local_inference, "auth_headers", dict)
+    monkeypatch.setattr(local_inference.psutil, "Process", lambda _pid: FakeProcess())
+    monkeypatch.setattr(local_inference.httpx, "Client", FakeClient)
+    metrics: list[dict[str, Any]] = []
+    result = local_inference.localized_translation("Hello", "en", [], [], "local", 5, metrics_sink=metrics)
+    assert result == "Hello"
+    assert metrics[0]["prompt_tokens"] == 12
+    assert metrics[0]["completion_tokens"] == 3
+    assert metrics[0]["succeeded"] is True
+    assert metrics[0]["rss_peak_mib"] >= 128
+
+
 def test_blogger_reads_wait_for_manual_zero_cost_review(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1101,7 +1176,7 @@ def test_fact_first_localization_renders_citations_from_source_registry(
     }
     monkeypatch.setattr(
         local_inference, "localized_translation",
-        lambda text, target, glossary, entities, model, timeout, mode="translate": (
+        lambda text, target, glossary, entities, model, timeout, mode="translate", metrics_sink=None: (
             "??? ??? ?? 2026" if text == source["evidence"]
             else "??? ??"
         ),

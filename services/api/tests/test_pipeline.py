@@ -150,6 +150,71 @@ def test_operational_and_evaluation_workers_consume_separate_queues(
     assert processed == [operations["id"], evaluation["id"]]
 
 
+def test_evaluation_can_generate_one_localized_profile_per_isolated_run(lab: Any) -> None:
+    keyword_id, _ = topic(lab)
+    conn, _api, _headers = lab
+    conn.execute("UPDATE generation_settings SET provider='local',engine='llamacpp'")
+    target = conn.execute(
+        "SELECT id FROM language_profiles WHERE language_code='ko' AND target_country=''"
+    ).fetchone()
+    assert target is not None
+    job = pipeline.enqueue(
+        uuid.UUID(keyword_id), "single-language-eval-" + uuid.uuid4().hex,
+        profile_ids=[target["id"]], evaluation_only=True,
+        evaluation_model="Qwen3-4B-Q4_K_M.gguf",
+    )
+    selected = conn.execute(
+        "SELECT p.language_code FROM generation_targets t JOIN language_profiles p ON p.id=t.profile_id WHERE t.run_id=%s",
+        (job["id"],),
+    ).fetchall()
+    assert [row["language_code"] for row in selected] == ["ko"]
+
+
+def test_localized_evaluation_reuses_only_a_successful_isolated_source_draft() -> None:
+    class FakeResult:
+        def __init__(self, row: Any) -> None:
+            self.row = row
+
+        def fetchone(self) -> Any:
+            return self.row
+
+    class FakeConnection:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, tuple[Any, ...]]] = []
+
+        def execute(self, query: str, params: tuple[Any, ...]) -> FakeResult:
+            self.calls.append((query, params))
+            return FakeResult(None if len(self.calls) == 1 else {"id": "source-version"})
+
+    conn = FakeConnection()
+    result = pipeline._evaluation_source_draft(
+        conn, uuid.uuid4(), uuid.uuid4(), uuid.uuid4(), evaluation_only=True,
+    )
+    assert result == {"id": "source-version"}
+    assert len(conn.calls) == 2
+    assert "j.evaluation_only" in conn.calls[1][0]
+    assert "r.status='succeeded'" in conn.calls[1][0]
+    assert "j.keyword_id=%s" in conn.calls[1][0]
+
+
+def test_worker_resource_gate_holds_when_project_disk_headroom_is_low(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(pipeline.psutil, "cpu_percent", lambda interval=None: 10.0)
+    monkeypatch.setattr(
+        pipeline.psutil, "virtual_memory",
+        lambda: SimpleNamespace(percent=40.0, available=16 * 1024**3),
+    )
+    disk = SimpleNamespace(free=9 * 1024**3)
+    monkeypatch.setattr(pipeline.psutil, "disk_usage", lambda _path: disk)
+    controls = {"cpu_percent": 80, "ram_percent": 80}
+    assert not pipeline.resources_ok(controls)
+    disk.free = 10 * 1024**3
+    assert pipeline.resources_ok(controls)
+
+
 def test_unexpected_stage_error_is_recorded_and_job_is_terminalized(
     lab: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
