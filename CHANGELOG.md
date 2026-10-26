@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased - Phase 3.6 - 2026-10-26
+
+- Add source-linked evidence facts, citation markers and stricter rule checks for sourced names, numbers, URLs, language fields, citations and repeated paragraphs.
+- Pin public Qwen3 4B/8B Q4_K_M downloads by immutable revision and SHA-256; add memory admission and avoid overwriting an existing local inference engine.
+- Add same-material, same-prompt model/language measurement comparison in the research dashboard; retain quality-held and publishing-off safeguards.
+- Record model measurements and human-review limitations as internal evaluation only.
+
 ## Unreleased - Phase 3.5 - 2026-10-26
 
 - Install and checksum project-local official CPU llama.cpp and Qwen GGUF models; preserve all system and other-project settings.

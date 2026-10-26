@@ -35,6 +35,7 @@ function Editor({ fields, defaults = {}, submit, label, disabled }: {
 export default function Research({ initial }: { initial: State }) {
   const [data, setData] = useState(initial), [local, setLocal] = useState<Row>({}), [busy, setBusy] = useState(false);
   const [message, setMessage] = useState(""), [left, setLeft] = useState(""), [right, setRight] = useState("");
+  const [measureLeft, setMeasureLeft] = useState(""), [measureRight, setMeasureRight] = useState("");
   async function refresh() {
     const [state, ai] = await Promise.all([fetch("/api/research/state", { cache: "no-store" }), fetch("/api/research/local-ai", { cache: "no-store" })]);
     if (!state.ok || !ai.ok) throw new Error("상태 조회 실패");
@@ -56,15 +57,19 @@ export default function Research({ initial }: { initial: State }) {
   const profileField: Field = { name: "profile_id", label: "원본 언어·국가", options: profiles };
   const categoryField: Field = { name: "category_id", label: "카테고리", options: categories };
   const versions = [data.versions.find(v => v.id === left), data.versions.find(v => v.id === right)];
+  const measurements = [data.measurements.find(m => m.id === measureLeft), data.measurements.find(m => m.id === measureRight)];
   return <>
     <section><h2>Zero additional cost policy</h2><p>External gate: {data.cost_policy?.external_calls_allowed ? "active; check provider-specific blocks" : "blocked by credential or terms review"}</p><p>Paid fallback and automatic paid upgrades are disabled.</p><pre>{JSON.stringify({ blockedProviders: data.cost_policy?.blocked_providers ?? [], credentialNames: data.cost_policy?.blocked_credential_names ?? [] }, null, 2)}</pre></section>
     <p role="status">{message}</p><button disabled={busy} onClick={() => refresh().catch(() => setMessage("조회 실패"))}>새로 고침</button>
     <section><h2>실제 로컬 AI 상태·성능 측정</h2>
       <p>연결 상태: {local.available ? "정상" : "미연결 또는 로딩 중"} · 현재 모델: {str(local, "model") || "확인 전"}</p>
-      <p>CPU 전용 엔진이며 GPU 가속을 검증한 상태가 아닙니다. 성능 측정 성공은 사실·번역 품질 합격을 뜻하지 않습니다.</p>
+      <p>실행 백엔드: {str(local, "backend") === "vulkan" ? `Vulkan · 요청 layer ${str(local, "gpu_layers") || "0"}` : "CPU 전용"} · GPU Engine 사용률은 측정 행에 실제 값이 있을 때만 표시합니다. 성능 측정 성공은 사실·번역 품질 합격을 뜻하지 않습니다.</p>
       <details><summary>설치 모델·버전·해시</summary><pre>{JSON.stringify(local.installed_models ?? [], null, 2)}</pre></details>
       {data.measurements.map(m => <details key={str(m, "id")}><summary>{str(m, "model")} · {str(m, "language_code")} · {str(m, "status")} · {str(m, "error_category")}</summary>
         <pre>{JSON.stringify({ checks: m.checks, metrics: m.metrics, sample: m.sample }, null, 2)}</pre></details>)}
+      <h3>실측 모델 결과 나란히 비교</h3>
+      {[{ id: measureLeft, set: setMeasureLeft }, { id: measureRight, set: setMeasureRight }].map((item, index) => <label key={index}>모델 결과 {index + 1}<select value={item.id} onChange={e => item.set(e.target.value)}><option value="">측정 결과 선택</option>{data.measurements.map(m => <option key={str(m, "id")} value={str(m, "id")}>{str(m, "model")} · {str(m, "language_code")} · {str(m, "status")}</option>)}</select></label>)}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 20 }}>{measurements.map((m, index) => m && <article key={index}><h4>{str(m, "model")} · {str(m, "language_code")}</h4><pre style={{ whiteSpace: "pre-wrap" }}>{JSON.stringify({ status: m.status, error: m.error_category, checks: m.checks, metrics: m.metrics, generated_sample: m.sample }, null, 2)}</pre></article>)}</div>
     </section>
     <section><h2>자동 주제 수집·근거 자료 조사</h2>
       <p>Fed 공식 본문과 Wikidata CC0 구조화 메타데이터만 허용합니다. Wikidata 후보는 공식 발표·시세·영업·효능 검증 자료가 아니며 승인 대기입니다. 검색량·경쟁도·CPC는 미수집입니다.</p>

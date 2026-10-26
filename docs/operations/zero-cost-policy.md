@@ -29,3 +29,16 @@ Before every remote request the gate checks process environment variables and pr
 Terms and costs were reviewed 2026-10-26; the policy blocks all external calls after 2027-01-26 until a new review is recorded in this file and the registry. Provider pricing or terms are not polled automatically. If the operator learns of a change before then, disable external calls immediately and update this record. Unknown providers and unclear charges remain blocked by default.
 
 The guarantee covers application-selected services and their API charges. Local ISP/mobile data plans and existing PC power use are outside this repository's visibility; downloads are explicit opt-in and may consume network bandwidth. No cloud compute, storage, database, or hosted inference is used by this policy. Google Blogger reads are currently disabled until the account-side billing status, which is not exposed to the local app, has been verified as compatible with the zero-cost rule.
+
+### Phase 3.6 pinned model files
+
+The official public Qwen GGUF repositories are Apache-2.0 and public downloads (no authenticated Hugging Face token or hosted inference). The project allowlist permits only the four Qwen repository metadata/file path prefixes and the observed Hugging Face Xet transfer host path; redirects remain checked by the same gate. Exact additions:
+
+| Model file | Repository revision | SHA-256 | Published file size |
+|---|---|---|---:|
+| `Qwen3-4B-Q4_K_M.gguf` | `bc640142c66e1fdd12af0bd68f40445458f3869b` | `7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5` | 2,497,280,256 bytes |
+| `Qwen3-8B-Q4_K_M.gguf` | `7c41481f57cb95916b40956ab2f0b139b296d974` | `d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785` | 5,027,783,488 bytes |
+
+The optional separate Windows x64 Vulkan llama.cpp b11889 archive is 37,049,027 bytes with SHA-256 `3874d6cb33c3540a68191c1ca31b774bd72914e8ca65e51dfe23e3dae8201f00` and MIT license. `setup-local-ai.py --with-vulkan` installs it under `.local/llama-b11889-vulkan`; the default CPU engine is retained. The external gate follows only the allowlisted GitHub release asset and its official release-assets redirect. This build is local inference, not hosted inference.
+
+The setup command verifies every downloaded file against its pinned SHA-256 and writes a local manifest. It is opt-in, uses `.local` only, requires at least 20 GiB free, and creates no paid service or account. At the latest Phase 3.6 preflight this PC had 237.03 GiB free on C: and 11.62 GiB available RAM; the 8B inference startup guard requires file size plus 3 GiB of available memory (at least 6 GiB). Inference is serial. This PC separately validated the project-local Vulkan b11889 build on RX 570; Qwen3-4B Vulkan runs used 20 GPU layers and recorded per-process GPU Engine counters. This is local inference, not a paid or hosted service.

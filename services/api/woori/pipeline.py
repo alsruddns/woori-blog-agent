@@ -16,7 +16,7 @@ from psycopg.types.json import Jsonb
 
 from .ai import Draft, EngineFailure, provider
 from .db import connection
-from .grounding import inspect
+from .grounding import extract_facts, inspect
 
 
 def required(row: dict[str, Any] | None) -> dict[str, Any]:
@@ -27,6 +27,15 @@ def required(row: dict[str, Any] | None) -> dict[str, Any]:
 
 def normalized(value: str) -> str:
     return " ".join(unicodedata.normalize("NFKC", value).casefold().split())
+
+
+def draft_state(provider_name: str, evaluation_only: bool, checks: dict[str, Any]) -> str:
+    if provider_name == "mock":
+        return "mock_draft"
+    grounding = checks.get("grounding", {})
+    if evaluation_only or not checks.get("structural_pass") or not grounding.get("rule_pass"):
+        return "quality_held"
+    return "human_review_required"
 
 
 def emit(conn: Any, kind: str, run_id: UUID | None = None, **data: Any) -> None:
@@ -258,6 +267,7 @@ def process(run: dict[str, Any]) -> None:
             keyword=keyword["keyword"],
             as_of=datetime.now(UTC).date().isoformat(),
             sources=json.loads(json.dumps(sources, default=str)),
+            verified_facts=extract_facts(sources),
         )
         context["plan"] = {
             "angle": keyword["search_intent"],
@@ -395,15 +405,7 @@ def process(run: dict[str, Any]) -> None:
                     ),
                     digest,
                     int((time.monotonic() - started) * 1000),
-                    "mock_draft"
-                    if policy["provider"] == "mock"
-                    else (
-                        "human_review_required"
-                        if not policy.get("evaluation_only")
-                        and checks["structural_pass"]
-                        and checks["grounding"]["rule_pass"]
-                        else "quality_held"
-                    ),
+                    draft_state(policy["provider"], policy.get("evaluation_only", False), checks),
                 ),
             )
             conn.execute(

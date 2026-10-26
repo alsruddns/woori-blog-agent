@@ -106,6 +106,13 @@ def run_job(lab: Any, keyword: str) -> dict[str, Any]:
     return r.json()
 
 
+def test_failed_local_quality_gate_is_always_quality_held() -> None:
+    checks = {"structural_pass": True, "grounding": {"rule_pass": False}}
+    assert pipeline.draft_state("local", False, checks) == "quality_held"
+    assert pipeline.draft_state("local", True, {"structural_pass": True, "grounding": {"rule_pass": True}}) == "quality_held"
+    assert pipeline.draft_state("local", False, {"structural_pass": True, "grounding": {"rule_pass": True}}) == "human_review_required"
+
+
 def test_pipeline_n_languages_versions_and_audit(lab: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     conn, api, h = lab
     keyword, profiles = topic(lab)

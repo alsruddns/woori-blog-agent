@@ -1,5 +1,6 @@
 import hashlib
 import json
+import subprocess
 import uuid
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
@@ -10,9 +11,9 @@ import pytest
 from test_pipeline import lab as shared_lab
 
 lab = shared_lab
-from woori import collection, external_policy
+from woori import collection, external_policy, local_inference
 from woori.ai import Draft, EngineFailure
-from woori.grounding import inspect
+from woori.grounding import inspect, numbers, proper_names
 from woori.local_inference import LlamaCppProvider
 
 
@@ -57,6 +58,28 @@ def test_external_policy_blocks_unlisted_destination(monkeypatch: pytest.MonkeyP
         )
 
 
+def test_model_artifact_gate_is_narrowly_scoped(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(external_policy, "billing_credential_names", list)
+    monkeypatch.setattr(external_policy, "_audit", lambda *args, **kwargs: None)
+    external_policy._authorize(
+        "artifact_setup",
+        "artifact_download",
+        httpx.Request(
+            "GET",
+            "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/bc640142c66e1fdd12af0bd68f40445458f3869b/Qwen3-4B-Q4_K_M.gguf",
+        ),
+    )
+    external_policy._authorize(
+        "artifact_setup",
+        "artifact_download",
+        httpx.Request("GET", "https://us.aws.cdn.hf.co/xet-bridge-us/immutable-object-id"),
+    )
+    with pytest.raises(external_policy.ExternalCallBlocked, match="destination_or_method_not_allowlisted"):
+        external_policy._authorize(
+            "artifact_setup",
+            "artifact_download",
+            httpx.Request("GET", "https://us.aws.cdn.hf.co/other/path"),
+        )
 def test_blogger_reads_wait_for_manual_zero_cost_review(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -123,6 +146,76 @@ def test_grounding_rejects_numbers_urls_and_wrong_language() -> None:
     assert not result["rule_checks"]["no_fabricated_urls"]
     assert not result["rule_checks"]["language_script_present"]
     assert result["publish_ready"] is False
+
+
+def test_gpu_counter_is_scoped_to_inference_process(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        local_inference.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, "37.5\n", ""),
+    )
+    assert local_inference.gpu_engine_percent(1234) == 37.5
+    monkeypatch.setattr(
+        local_inference.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 1, "", ""),
+    )
+    assert local_inference.gpu_engine_percent(1234) is None
+
+
+def test_grounding_requires_source_markers_and_preserves_names() -> None:
+    sources = [{
+        "id": "acme-1",
+        "url": "https://example.com/report",
+        "evidence": "Acme Research published a report.",
+        "rights": "Public domain test fixture",
+        "valid_until": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
+    }]
+    clean = Draft(
+        title="Acme Research report",
+        body="## Overview\nAcme Research published a report [source:acme-1].",
+        summary="Acme Research published a report.",
+        keywords=["Acme Research"],
+        source_ids=["acme-1"],
+    )
+    result = inspect(clean, sources, "en", datetime.now(UTC).date().isoformat())
+    assert result["rule_checks"]["proper_names_preserved"]
+    assert result["rule_checks"]["factual_paragraphs_cited"]
+    assert result["rule_checks"]["citation_ids_valid"]
+    assert result["source_url_network_existence"] == "not_rechecked_by_quality_gate"
+    assert result["publish_ready"] is False
+
+    bad = clean.model_copy(update={
+        "title": "Unknown Startup report",
+        "summary": "A startup published a report without supporting sources.",
+        "body": "## Overview\nUnknown Startup published a report without a source marker.\n\n"
+        "Unknown Startup published a report without a source marker.",
+    })
+    blocked = inspect(bad, sources, "en", datetime.now(UTC).date().isoformat())
+    assert not blocked["rule_checks"]["proper_names_preserved"]
+    assert not blocked["rule_checks"]["no_unsupported_proper_names"]
+    assert not blocked["rule_checks"]["factual_paragraphs_cited"]
+    assert not blocked["rule_checks"]["no_repeated_paragraphs"]
+
+
+def test_extract_facts_keeps_source_identity() -> None:
+    from woori.grounding import extract_facts
+
+    facts = extract_facts([{"id": "source-1", "evidence": "First fact. Second fact!"}])
+    assert facts == [
+        {"text": "First fact.", "source_id": "source-1"},
+        {"text": "Second fact!", "source_id": "source-1"},
+    ]
+
+
+def test_grounding_normalizes_dates_and_avoids_sentence_boundary_name_false_positives() -> None:
+    assert numbers("October 16, 2026") == numbers("2026-10-16") == numbers("20261016")
+    names = proper_names(
+        "The Federal Reserve Board announced. Kansas. Cease and Desist Order. Terminated October."
+    )
+    assert "Federal Reserve Board" in names
+    assert "Kansas Cease" not in names
+    assert "Terminated October" not in names
 
 
 def test_collection_bounded_and_no_arbitrary_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:

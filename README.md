@@ -95,6 +95,8 @@ WooriBlogAgent-Worker와 WooriBlogAgent-Backup을 현재 사용자 Interactive �
 .venv/Scripts/python scripts/migrate.py
 .venv/Scripts/python scripts/setup-local-ai.py
 .venv/Scripts/python scripts/start-local-ai.py Qwen3-1.7B-Q8_0.gguf
+.venv/Scripts/python scripts/setup-local-ai.py --with-vulkan
+.venv/Scripts/python scripts/start-local-ai.py Qwen3-4B-Q4_K_M.gguf 4 vulkan
 .venv/Scripts/python scripts/benchmark-local-ai.py
 # 기존 API/Dashboard/Windows Worker를 실행한 상태에서 명시적 평가:
 .venv/Scripts/python scripts/verify-live-pipeline.py --evaluation-only

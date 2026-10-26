@@ -68,3 +68,12 @@ OAuth 토큰·API Key·비밀번호를 코드에 저장하지 않는다. .env �
 - Record every service's price basis, usage caps, terms, commercial-use conditions, license, and review date in `docs/operations/zero-cost-policy.md`. If price or terms are unclear, block by default. Re-review before monetized use or after provider terms change.
 - Audit external calls with provider/operation/status/usage metadata only. Never log URL query strings, headers, bodies, tokens, credentials, or secret values.
 - Add automated tests that prove paid/unknown providers, billable credentials, quota exhaustion, and paid fallback paths are blocked. Update the development record and cost policy when changing any integration.
+
+## Phase 3.6 model evaluation and content quality (permanent)
+- Treat local model output as untrusted. Split reviewed evidence into immutable source-linked facts, plan an outline, generate sections from that ledger, then run deterministic grounding/localization/SEO rules before creating a version.
+- Keep source identity attached to every fact and require valid `[source:ID]` markers on every substantive factual paragraph. Preserve evidence-backed names, dates, and numbers; flag repeated paragraphs, unsupported names/URLs/numbers, and language/script mismatches.
+- Distinguish syntax/heuristic/model checks from semantic fact verification and naturalness review. A model's self-evaluation never approves factual claims. Any failed or unverified quality gate remains `quality_held`; `publish_ready` stays false.
+- Validate source URLs only through the exact shared outbound allowlist. A syntactically valid URL or a model-generated citation does not prove that a URL exists or that its content supports a claim.
+- Compare model versions using identical, checksummed material, prompt, language, and scoring rules; retain output, errors, versions, and measured resource data. Do not claim GPU measurements when unavailable.
+- Before loading a model, enforce available-RAM headroom and project-local disk limits. Run one inference model at a time and do not stop or alter other projects or system services.
+- Model acquisition is limited to unauthenticated public files with reviewed free terms and pinned revision/SHA-256. Never download gated weights, use hosted inference, or fall back to a paid service.
