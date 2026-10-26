@@ -39,6 +39,7 @@ export default async function Page() {
       </p>
       <p>등록된 언어와 블로그를 하나의 운영 공간에서 관리합니다.</p>
       <aside>안전 모드 · 실제 발행 및 AI 호출 차단</aside>
+      <p><Link href="/publishing">Publication requests (offline simulation only) ?</Link></p>
       <p>
         <Link href="/config">언어 · 블로그 · 국가별 정책 관리 →</Link>
       </p>

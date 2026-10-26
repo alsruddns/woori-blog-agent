@@ -14,6 +14,7 @@ from .db import connection
 from .google_http import GoogleFailure
 from .multilingual import router
 from .operations import health as operations_health
+from .publications import router as publications_router
 from .research_routes import router as research_router
 
 app = FastAPI(title="Woori Blog Agent", docs_url=None, redoc_url=None, openapi_url=None)
@@ -30,6 +31,7 @@ def authorize(credentials: Annotated[HTTPAuthorizationCredentials | None, Depend
 app.include_router(research_router, dependencies=[Depends(authorize)])
 app.include_router(router, dependencies=[Depends(authorize)])
 app.include_router(blogger_router, dependencies=[Depends(authorize)])
+app.include_router(publications_router, dependencies=[Depends(authorize)])
 
 
 @app.exception_handler(EngineFailure)

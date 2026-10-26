@@ -139,3 +139,8 @@ Operations and evaluation have separate daily quotas, with shared global resourc
 The local evaluation database is provisioned separately from `woori_blog_agent` by `scripts/provision-evaluation-database.py`. Its snapshot excludes OAuth, Blogger connection/API, publishing, search-performance, and heartbeat rows. Credentials are written only to ignored `.env.evaluation*` files. The dashboard reads evaluation drafts through the separate read-only `woori_eval_reader` role when `EVALUATION_DATABASE_URL` is configured.
 
 After the Asia/Seoul daily evaluation quota resets, start the existing model in evaluation context with `.venv/Scripts/python scripts/start_evaluation_ai.py Qwen3-4B-Q4_K_M.gguf 4 vulkan`, then run one item at a time with `.venv/Scripts/python scripts/run_phase39t_evaluation.py --source fed --language en` (then `ko`, `ja`, `zh-CN`; only proceed to SEC when the Federal Reserve results permit). SEC evaluation follows the same language order. Each target consumes its existing per-language evaluation quota when created, including failures/cancellations; retries reuse that target. Do not clear quota manually. The runner refuses model downloads, checks physical DB isolation, and starts the Worker with `--evaluation --once`. Results are new JSON artifacts under `docs/development`; all outputs remain internal and `publish_ready=false`.
+
+
+### Publication workflow (simulation only)
+
+Open `http://127.0.0.1:3100/publishing` to inspect blocked requests and run an offline Fake Publisher simulation. It cannot approve content or publish to Blogger. Real Blogger writes and `publish_ready` remain disabled in code and schema. Schema migration 025 is applied by `scripts/migrate.py`.

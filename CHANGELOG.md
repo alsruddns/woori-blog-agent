@@ -125,3 +125,10 @@
 ## Unreleased - Phase 3.9-V - 2026-10-27
 - Fix a verified Korean proper-name checker false positive when exact Latin entities are followed by Hangul particles; preserve strict unsupported-name detection.
 - Run four quota-bound Fed C3 language evaluations using the existing local Qwen3 4B model and preserve per-run artifacts plus deterministic rechecks. SEC evaluation remains quota-blocked.
+
+
+## Unreleased - Phase 4-A - 2026-10-27
+- Add blocked-by-default publication requests, eligibility reasons, append-only state events and mock attempts.
+- Add a network-free Fake Publisher and a permanently disabled real Publisher adapter; no route can approve human review or enable live writes.
+- Add the `/publishing` dashboard and same-origin API proxy with blocked request and offline simulation views.
+- Add additive schema migration 025; publication attempts and state history are immutable and `publish_ready` remains disabled.
