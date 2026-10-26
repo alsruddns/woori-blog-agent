@@ -5,6 +5,7 @@ $commands = @(
     @{ Exe='.venv/Scripts/python.exe'; Args=@('-m','ruff','check','.') },
     @{ Exe='.venv/Scripts/python.exe'; Args=@('-m','mypy','services/api/woori') },
     @{ Exe='.venv/Scripts/python.exe'; Args=@('-m','pytest','-q') },
+    @{ Exe='.venv/Scripts/python.exe'; Args=@('scripts/build-wheel.py') },
     @{ Exe='npm.cmd'; Args=@('run','lint') },
     @{ Exe='npm.cmd'; Args=@('run','build') },
     @{ Exe='npm.cmd'; Args=@('run','typecheck') }

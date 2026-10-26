@@ -75,7 +75,7 @@ def test_configuration_lifecycle(sandbox: psycopg.Connection[dict[str, Any]]) ->
         registered = client.post(
             "/admin/config/languages",
             headers=headers,
-            json={"code": code, "display_name": "Español"},
+            json={"code": code, "display_name": "Espa梨컊l"},
         )
         assert registered.status_code == 201, registered.text
         assert (
@@ -216,7 +216,7 @@ def test_configuration_lifecycle(sandbox: psycopg.Connection[dict[str, Any]]) ->
                 json={
                     "profile_id": profiles[0]["id"],
                     "source_term": "stock",
-                    "localized_term": "acción",
+                    "localized_term": "acci泥쁭",
                 },
             ).status_code
             == 200
@@ -288,6 +288,10 @@ def test_legacy_migration_preserves_content_and_audits() -> None:
             "004_config_permissions.sql",
             "005_blogger_oauth.sql",
             "006_content_categories.sql",
+            "007_research_pipeline.sql",
+            "008_research_dispatch.sql",
+            "009_pipeline_permissions.sql",
+            "010_review_order.sql",
         ]:
             content = (
                 (root / "scripts" / migration)

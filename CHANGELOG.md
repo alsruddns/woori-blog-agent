@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased - Phase 3 - 2026-10-26
+
+- Add evidence-reviewed keyword research, immutable sources/reviews, versioned prompts and per-profile AI policies.
+- Add closed Mock/CPU-local providers, N-language draft orchestration, provenance and internal quality holds.
+- Extend the durable Worker with fenced retries, partial-result recovery, resource admission and scheduled dispatch.
+- Add Korean research management UI, real proxy/Worker Mock E2E and regression coverage; preserve production write/paid AI blocks.
+- Document sources, costs, local hardware limits and remaining human/model validation.
+
 ## Unreleased - Phase 2 - 2026-10-26
 
 - Verify live readonly OAuth and all four configured Blogger IDs, account membership, URLs and empty post lists.

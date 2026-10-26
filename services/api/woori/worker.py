@@ -1,9 +1,10 @@
-"""Durable Phase 1 diagnostic worker; no content generation or external publication."""
+"""Durable diagnostic and internal research worker; no external publication."""
 
 import time
 
 import psycopg
 
+from . import pipeline
 from .db import connection
 
 
@@ -14,13 +15,13 @@ def tick() -> bool:
             ELSE 'queued' END, lease_until=NULL, error_type='LeaseExpired',
             error_message='Worker lease expired', error_location='worker', error_at=now(),
             resolution='Recovered expired lease', updated_at=now()
-            WHERE status='running' AND lease_until<now() RETURNING id,status""").fetchall()
+            WHERE task_kind='diagnostic' AND status='running' AND lease_until<now() RETURNING id,status""").fetchall()
         for item in recovered:
             conn.execute(
                 "INSERT INTO audit_events(run_id,event_type,payload) VALUES (%s,%s,%s)",
                 (item["id"], "run." + item["status"], '{"reason":"lease_expired"}'),
             )
-        row = conn.execute("""SELECT id, attempts FROM job_runs WHERE status='queued' AND available_at<=now()
+        row = conn.execute("""SELECT id, attempts FROM job_runs WHERE task_kind='diagnostic' AND status='queued' AND available_at<=now()
             ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1""").fetchone()
         if row is None:
             return False
@@ -52,6 +53,8 @@ def tick() -> bool:
 def main() -> None:
     while True:
         try:
+            pipeline.schedule_tick()
+            pipeline.tick()
             tick()
         except psycopg.Error:
             print("Database unavailable; reconnecting without logging credentials", flush=True)

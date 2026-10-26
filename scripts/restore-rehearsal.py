@@ -36,7 +36,19 @@ created = False
 try:
     with psycopg.connect(owner_url) as source:
         source.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-        tables = ["content_versions", "audit_events", "blogger_blogs", "google_connections"]
+        schema_version = source.execute("SELECT max(version) FROM schema_migrations").fetchone()[0]
+        tables = [
+            "content_versions",
+            "audit_events",
+            "blogger_blogs",
+            "google_connections",
+            "keyword_candidates",
+            "research_sources",
+            "source_reviews",
+            "generation_results",
+            "generation_targets",
+            "research_dispatches",
+        ]
         counts = {
             table: source.execute(
                 sql.SQL("SELECT count(*) FROM {}").format(sql.Identifier(table))
@@ -89,7 +101,10 @@ try:
     if result.returncode:
         raise SystemExit("Isolated restore failed")
     with psycopg.connect(owner_url, dbname=target) as restored:
-        assert restored.execute("SELECT max(version) FROM schema_migrations").fetchone()[0] == 6
+        assert (
+            restored.execute("SELECT max(version) FROM schema_migrations").fetchone()[0]
+            == schema_version
+        )
         for table, count in counts.items():
             assert (
                 restored.execute(
@@ -104,7 +119,9 @@ try:
             pass
         else:
             raise SystemExit("Restored audit immutability check failed")
-    print("Isolated restore verified: schema 6, snapshot table counts, audit mutation protection.")
+    print(
+        "Isolated restore verified: schema", schema_version, "snapshot counts and audit protection."
+    )
 finally:
     if created:
         with psycopg.connect(
@@ -127,5 +144,6 @@ from woori.db import connection
 
 with connection() as audit_db:
     audit_db.execute(
-        "INSERT INTO audit_events(event_type,payload) VALUES ('operations.restore.completed',jsonb_build_object('schema_version',6,'isolated',true))"
+        "INSERT INTO audit_events(event_type,payload) VALUES ('operations.restore.completed',jsonb_build_object('schema_version',%s,'isolated',true))",
+        (schema_version,),
     )

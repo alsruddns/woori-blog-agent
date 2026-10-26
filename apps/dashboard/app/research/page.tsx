@@ -1,0 +1,16 @@
+import Link from "next/link";
+import { API_BASE, headers } from "../../lib/server";
+import Research, { type State } from "./research";
+export const dynamic = "force-dynamic";
+export default async function Page() {
+  let data: State | null = null;
+  try {
+    const response = await fetch(`${API_BASE}/admin/research/state`, { headers: headers(), cache: "no-store", signal: AbortSignal.timeout(5000) });
+    if (response.ok) data = await response.json() as State;
+  } catch {}
+  return <main><header><Link href="/">WOORI / OPERATIONS</Link><Link href="/config">????? ??</Link></header>
+    <h1>??? ?????? ??</h1>
+    <aside>Mock ??? ?? ??????. ?? AI ??? ??? ????????? ??? ?????. ?? ????? AI? ?????.</aside>
+    {data ? <Research initial={data}/> : <p role="alert">API ?? ?? ?? ??? ?????.</p>}
+  </main>;
+}

@@ -13,7 +13,7 @@ with psycopg.connect(url) as conn:
     if not exists:
         conn.execute((root / "scripts/001_initial.sql").read_text(), prepare=False)
     current = conn.execute("SELECT max(version) FROM schema_migrations").fetchone()[0]
-    if current > 6:
+    if current > 10:
         raise SystemExit("Database schema is newer than this application")
     if current < 2:
         conn.execute(
@@ -35,4 +35,21 @@ with psycopg.connect(url) as conn:
         conn.execute(
             (root / "scripts/006_content_categories.sql").read_text(encoding="utf-8"), prepare=False
         )
-print("Migration 006 verified")
+    if current < 7:
+        conn.execute(
+            (root / "scripts/007_research_pipeline.sql").read_text(encoding="utf-8"), prepare=False
+        )
+    if current < 8:
+        conn.execute(
+            (root / "scripts/008_research_dispatch.sql").read_text(encoding="utf-8"), prepare=False
+        )
+    if current < 9:
+        conn.execute(
+            (root / "scripts/009_pipeline_permissions.sql").read_text(encoding="utf-8"),
+            prepare=False,
+        )
+    if current < 10:
+        conn.execute(
+            (root / "scripts/010_review_order.sql").read_text(encoding="utf-8"), prepare=False
+        )
+print("Migration 010 verified")

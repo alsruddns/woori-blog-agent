@@ -7,12 +7,14 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
+from .ai import EngineFailure
 from .blogger_routes import router as blogger_router
 from .config import settings
 from .db import connection
 from .google_http import GoogleFailure
 from .multilingual import router
 from .operations import health as operations_health
+from .research_routes import router as research_router
 
 app = FastAPI(title="Woori Blog Agent", docs_url=None, redoc_url=None, openapi_url=None)
 bearer = HTTPBearer(auto_error=False)
@@ -25,8 +27,14 @@ def authorize(credentials: Annotated[HTTPAuthorizationCredentials | None, Depend
         raise HTTPException(401, "Unauthorized")
 
 
+app.include_router(research_router, dependencies=[Depends(authorize)])
 app.include_router(router, dependencies=[Depends(authorize)])
 app.include_router(blogger_router, dependencies=[Depends(authorize)])
+
+
+@app.exception_handler(EngineFailure)
+async def engine_error(request: Request, exc: EngineFailure) -> JSONResponse:
+    return JSONResponse({"error": exc.category}, status_code=409)
 
 
 @app.exception_handler(GoogleFailure)
