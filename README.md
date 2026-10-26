@@ -147,3 +147,8 @@ Open `http://127.0.0.1:3100/publishing` to inspect blocked requests and run an o
 
 
 Phase 4-B keeps scheduled jobs simulation-only. To process one isolated fake job, run `.venv/Scripts/python.exe scripts/publication-worker.py --evaluation`. The worker checks database isolation before starting. Real Blogger writes remain disabled; Blogger reconciliation is read-only and its live API result is not verified by mock tests.
+
+
+## Phase 4-C status (2026-10-27)
+
+`/research` now provides an append-only human editorial review workspace for the four machine-passed Federal Reserve C3 drafts. Review notes do not approve Blogger publication or change content versions. The dashboard shows historical Blogger read verification and current zero-cost policy status. New Blogger API reads remain blocked until the provider cost review allows them; SEC C3 inference remains quota-gated. Blogger writes, automatic publication, and `publish_ready` remain disabled. See [P4-C-001](docs/development/P4-C-001.md) and [the evaluation record](docs/development/P4-C-evaluation-20261027.json).

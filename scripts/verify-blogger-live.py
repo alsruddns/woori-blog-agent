@@ -9,6 +9,7 @@ from psycopg.types.json import Jsonb
 from woori import blogger_service as blogger
 from woori import google_oauth as oauth
 from woori.db import connection
+from woori.external_policy import ExternalCallBlocked
 from woori.google_http import READ_SCOPE, GoogleFailure
 
 sys.stdout.reconfigure(encoding="utf-8")
@@ -29,6 +30,9 @@ if not account or account["scopes"] != [READ_SCOPE]:
     raise SystemExit(2)
 try:
     accessible = blogger.account_blogs(account["id"]).get("items", [])
+except ExternalCallBlocked:
+    print(json.dumps({"account_error": "external_provider_blocked_by_zero_cost_policy", "http_requests_sent": 0}))
+    raise SystemExit(2) from None
 except GoogleFailure as exc:
     print(json.dumps({"account_error": exc.category, "http_status": exc.status}))
     raise SystemExit(1) from None

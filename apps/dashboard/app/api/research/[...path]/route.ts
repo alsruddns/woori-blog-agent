@@ -6,7 +6,7 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
   const { path } = await context.params;
   const route = path.join("/");
   const allowed = request.method === "GET" ? ["state", "local-ai"].includes(route) : request.method === "POST"
-    ? /^(versions\/[a-f0-9-]+\/validate|collections|keywords|sources|jobs|prompts|schedules|sources\/[a-f0-9-]+\/reviews|jobs\/[a-f0-9-]+\/action)$/.test(route)
+    ? /^(versions\/[a-f0-9-]+\/validate|collections|keywords|sources|jobs|prompts|schedules|sources\/[a-f0-9-]+\/reviews|jobs\/[a-f0-9-]+\/action|article-reviews)$/.test(route)
     : request.method === "PUT" && /^(controls|collections\/[a-f0-9-]+|keywords\/[a-f0-9-]+|settings\/[a-f0-9-]+)$/.test(route);
   if (!allowed) return NextResponse.json({ error: "Unsupported operation" }, { status: 404 });
   try {

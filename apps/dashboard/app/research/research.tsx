@@ -9,7 +9,9 @@ export type State = {
   collection_jobs: Row[]; measurements: Row[]; stage_runs: Row[]; coverage: Row[]; experiments?: Row[];
   evidence_facts?: Row[]; localizations?: Row[]; glossary?: Row[]; glossary_revisions?: Row[];
   article_evaluations?: Row[]; worker?: Row | null; evaluation_worker?: Row | null; daily_workload?: Row[]; operations_summary?: Row;
-  evaluation_results?: { configured?: boolean; available?: boolean; database?: string; baseline_snapshot_at?: string; error_category?: string; worker?: Row | null; quota?: Row[]; runs?: Row[]; stages?: Row[]; events?: Row[] };
+  evaluation_results?: { configured?: boolean; available?: boolean; database?: string; baseline_snapshot_at?: string; error_category?: string; worker?: Row | null; quota?: Row[]; runs?: Row[]; stages?: Row[]; events?: Row[]; fed_articles?: Row[]; sec_historical_quality?: Row[]; sec_new_inference?: string };
+  prepublication?: { blogger_accounts_connected?: number; blogs?: Row[]; historical_read_verifications?: Row[]; safety?: Row; real_blogger_sync_verified?: boolean; real_writes_enabled?: boolean };
+  article_reviews?: Row[];
 };
 type Field = { name: string; label: string; type?: string; optional?: boolean; options?: { value: string; label: string }[] };
 const str = (row: Row, key: string) => String(row[key] ?? "");
@@ -124,6 +126,82 @@ export default function Research({ initial }: { initial: State }) {
         {a.error_category ? <p>실패: {str(a, "error_category")}</p> : <><h4>{str(a, "saved_title") || str(a, "title")}</h4><p>{str(a, "summary")}</p><details><summary>전체 원고 미리보기</summary><pre>{str(a, "saved_body")}</pre></details></>}
         <details><summary>기계 검사와 자원 측정</summary><pre>{JSON.stringify({ checks: a.checks, metrics: a.metrics }, null, 2)}</pre></details>
       </article>)}
+    </section>
+    <section aria-labelledby="phase4c-review">
+      <h2 id="phase4c-review">Phase 4-C · Fed 원고 사람 검토</h2>
+      <p>기계 검사 통과 원고 {data.evaluation_results?.fed_articles?.length ?? 0}개를 검토 대상으로 표시합니다. 제출한 편집 검토는 Blogger 발행 승인이 아니며 원고 버전을 변경하지 않습니다.</p>
+      {(data.evaluation_results?.fed_articles ?? []).map(article => {
+        const evaluationId = str(article, "evaluation_id");
+        const history = (data.article_reviews ?? []).filter(item => str(item, "evaluation_id") === evaluationId);
+        const latestReview = history[0];
+        const sources = (article.sources as Row[] | undefined) ?? [];
+        const facts = (article.facts as Row[] | undefined) ?? [];
+        const paragraphs = str(article, "body").split(/\n\s*\n/).filter(Boolean);
+        return <article key={evaluationId}>
+          <h3>{str(article, "language_code")} · {str(article, "title")}</h3>
+          <p>기계 검사 통과 · 사람 검토 {latestReview ? str(latestReview, "disposition") : "대기"} · 게시 승인 없음 · 버전 {str(article, "content_version")}</p>
+          <p>{str(article, "summary")}</p>
+          <h4>전체 원고 및 문장별 출처 연결 (문단 근거 표식 적용)</h4>
+          {paragraphs.map((paragraph, index) => {
+            const cited = [...paragraph.matchAll(/\[source:([0-9a-f-]{36})\]/gi)].map(match => match[1]);
+            const sentences = paragraph.split(/(?<=[.!?。！？])\s+|(?<=[。！？])/u).filter(Boolean);
+            return <div key={`${evaluationId}-${index}`}>
+              {sentences.map((sentence, sentenceIndex) => <p key={`${evaluationId}-${index}-${sentenceIndex}`} style={{ whiteSpace: "pre-wrap" }}>
+                {sentence.replace(/\[source:([0-9a-f-]{36})\]/gi, (_marker, id: string) => `〔${sources.find(source => str(source, "id") === id)?.source_name ?? "출처 참조 확인 필요"}〕`)}
+                <small>　출처: {cited.length ? cited.map(id => sources.find(source => str(source, "id") === id)?.source_name ?? "출처 참조 확인 필요").join(", ") : "표식 미검출 — 근거 목록에서 확인 필요"}</small>
+              </p>)}
+            </div>;
+          })}
+          <details><summary>사실·근거 원문 및 날짜·숫자·고유명사 비교 ({facts.length})</summary>
+            {facts.map(fact => <section key={str(fact, "id")}>
+              <h5>사실 {facts.indexOf(fact) + 1} · {str(fact, "verification_status")}</h5>
+              <p>근거 원문: {str(fact, "source_excerpt")}</p>
+              <p>검사기 고유명사 후보: {JSON.stringify(article.proper_name_candidates ?? [])} · 근거 숫자: {JSON.stringify(fact.numeric_values ?? [])} · 근거 날짜: {JSON.stringify(fact.date_values ?? [])}</p>
+              <p>연결 출처: {JSON.stringify((fact.citation_ids as string[] | undefined)?.map(id => sources.find(source => str(source, "id") === id)?.source_name ?? "출처 참조 확인 필요") ?? [])}</p>
+            </section>)}
+            {sources.map(source => <p key={str(source, "id")}>{str(source, "source_name")} · <a href={str(source, "url")} target="_blank" rel="noreferrer">원문 열기</a> · 게시 {str(source, "published_at")} · 수집 {str(source, "collected_at")} · 권리 {str(source, "rights")}</p>)}
+          </details>
+          <details><summary>제목·키워드·기계 검사</summary><p>{JSON.stringify(article.keywords ?? [])}</p><pre>{JSON.stringify({ checks: article.checks, model: article.model, prompt: article.prompt_version, publish_ready: false }, null, 2)}</pre></details>
+          <h4>사람 검토 이력 ({history.length})</h4>
+          {history.map(item => <details key={str(item, "id")}><summary>{str(item, "reviewer_name")} · {str(item, "disposition")} · {str(item, "created_at")}</summary>
+            <p>사실 정확성 {str(item, "factual_accuracy")} · 번역 자연스러움 {str(item, "translation_naturalness")} · 독자 가치 {str(item, "reader_value")}</p>
+            <p>{str(item, "comments")}</p><p>수정 요청: {str(item, "requested_changes") || "없음"}</p>
+          </details>)}
+          <form onSubmit={event => { event.preventDefault(); const form = new FormData(event.currentTarget); void act("article-reviews", {
+            evaluation_id: evaluationId, content_version_id: article.content_version_id,
+            idempotency_key: crypto.randomUUID(), reviewer_name: String(form.get("reviewer_name") ?? ""),
+            factual_accuracy: String(form.get("factual_accuracy") ?? "not_assessed"),
+            translation_naturalness: String(form.get("translation_naturalness") ?? "not_assessed"),
+            reader_value: String(form.get("reader_value") ?? "not_assessed"),
+            disposition: String(form.get("disposition") ?? "reviewed"),
+            comments: String(form.get("comments") ?? ""), requested_changes: String(form.get("requested_changes") ?? ""),
+          }); }}>
+            <label>검토자 이름 <input name="reviewer_name" minLength={2} maxLength={80} required /></label>
+            <label>사실 정확성 <select name="factual_accuracy"><option value="not_assessed">미평가</option><option value="verified">확인</option><option value="issue_found">문제 발견</option><option value="uncertain">불확실</option></select></label>
+            <label>번역 자연스러움 <select name="translation_naturalness"><option value="not_assessed">미평가</option><option value="acceptable">수용 가능</option><option value="issue_found">문제 발견</option><option value="uncertain">불확실</option></select></label>
+            <label>독자 가치 <select name="reader_value"><option value="not_assessed">미평가</option><option value="useful">유용함</option><option value="insufficient">부족함</option><option value="uncertain">불확실</option></select></label>
+            <label>검토 결과 <select name="disposition"><option value="reviewed">검토 기록</option><option value="revision_requested">수정 요청</option><option value="rejected">반려</option></select></label>
+            <label>검토 의견 <textarea name="comments" minLength={10} maxLength={2000} required /></label>
+            <label>수정 요청 내용 <textarea name="requested_changes" maxLength={2000} /></label>
+            <button disabled={busy}>검토 기록 추가</button>
+          </form>
+        </article>;
+      })}
+    </section>
+    <section aria-labelledby="phase4c-status">
+      <h2 id="phase4c-status">Phase 4-C · SEC·Blogger·발행 안전 점검</h2>
+      <p>SEC 신규 실추론: {data.evaluation_results?.sec_new_inference === "not_run_quota_blocked" ? "미실행 — en 일일 평가 quota 소진" : data.evaluation_results?.sec_new_inference === "not_run" ? "미실행 — 순서상 SEC 평가 시작 전" : "미확인"}. 기존 SEC 평가 기록은 아래에 과거 결과로 표시하며 이번 실추론으로 간주하지 않습니다.</p>
+      <details><summary>기존 SEC 품질 기록</summary><pre>{JSON.stringify(data.evaluation_results?.sec_historical_quality ?? [], null, 2)}</pre></details>
+      <p>실제 Blogger 읽기 동기화: {data.prepublication?.real_blogger_sync_verified ? "검증됨" : "미검증"} · 연결된 Google 계정 {data.prepublication?.blogger_accounts_connected ?? 0}개</p>
+      <p>0원 정책 차단 사유: {JSON.stringify((data.cost_policy?.blocked_providers as Row[] | undefined)?.filter(provider => provider.name === "google_blogger_read") ?? [])}. 외부 GET은 이 정책 차단을 우회하지 않습니다.</p>
+      {(data.prepublication?.blogs ?? []).map(blog => {
+        const prior = (data.prepublication?.historical_read_verifications as Row[] | undefined)?.find(event => event.blog_id === blog.id);
+        const payload = (prior?.payload as Row | undefined) ?? {};
+        return <article key={str(blog, "id")}><p>{str(blog, "language_code")} · {str(blog, "url")} · Blog ID {str(blog, "blog_id") || "미등록"} · OAuth {str(blog, "oauth_status") || "미연결"} · 마지막 조회 {str(blog, "last_checked_at") || "없음"} · 오류 {str(blog, "connection_error") || "없음"}</p>
+          <p>과거 읽기 검증 기록 {str(prior ?? {}, "created_at") || "없음"} · 게시글 {prior ? str(payload, "posts") : "미검증"} · 페이지 {prior ? str(payload, "pages") : "미검증"} · 페이지 종료 {prior ? String(payload.terminal_page ?? false) : "미검증"}. 이번 Phase에서 실제 동기화는 수행하지 않았습니다.</p></article>;
+      })}
+      <pre>{JSON.stringify({ ...(data.prepublication?.safety ?? {}), real_writes_enabled: data.prepublication?.real_writes_enabled, publish_ready: false }, null, 2)}</pre>
+      <p>미검증: SEC 신규 추론, 실제 Blogger 인증 계정·4개 블로그 조회·게시글 상세/페이지네이션. 운영 발행은 비활성화 상태입니다.</p>
     </section>
     <section><h2>키워드 후보·주제 선정</h2>
       <Editor disabled={busy} label="수동 후보 등록" defaults={{ priority: 50 }} fields={[profileField, categoryField, { name: "keyword", label: "키워드" }, { name: "search_intent", label: "검색 의도" }, { name: "collection_source", label: "수집 출처" }, { name: "rationale", label: "선정 근거" }, { name: "priority", label: "우선순위 1–100", type: "number" }, { name: "expires_at", label: "유효 기한", type: "datetime-local" }]} submit={body => act("keywords", body)}/>

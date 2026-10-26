@@ -1,0 +1,56 @@
+{
+  "phase": "3.9-S",
+  "kind": "isolated_worker_real_process",
+  "captured_at": "2026-10-26T16:36:43.490213+00:00",
+  "preflight": {
+    "ram_total_gib": 31.91,
+    "ram_available_gib": 13.24,
+    "ram_used_percent": 58.5,
+    "cpu_percent_sample": 33.2,
+    "temp_disk_free_gib": 189.59
+  },
+  "isolation": "temporary schema-only search_path; diagnostic-only worker",
+  "migration": "001-027 in isolated schema",
+  "normal_worker": {
+    "launcher_pid": 42628,
+    "worker_pid": 35512,
+    "exit_code": 0,
+    "elapsed_seconds": 16.1,
+    "peak_worker_rss_bytes": 57958400,
+    "peak_worker_cpu_percent_sample": 0.0,
+    "sanitized_error_type": null
+  },
+  "jobs": {
+    "normal": "succeeded_once",
+    "lease_expired_attempt_1": "recovered_and_succeeded_attempt_2",
+    "lease_expired_attempt_3": "failed_terminally",
+    "duplicate_idempotency_rows": 1,
+    "audit_event_counts": {
+      "run.failed": 1,
+      "run.queued": 1,
+      "run.completed": 2,
+      "run.started": 2
+    }
+  },
+  "abrupt_worker": {
+    "abrupt_pid": 42720,
+    "abrupt_heartbeat_status": "running",
+    "restart": {
+      "launcher_pid": 35584,
+      "worker_pid": 15796,
+      "exit_code": 0,
+      "elapsed_seconds": 15.93,
+      "peak_worker_rss_bytes": 58150912,
+      "peak_worker_cpu_percent_sample": 0.0,
+      "sanitized_error_type": null
+    },
+    "final_status": "stopped",
+    "heartbeat_transitions": 5,
+    "prior_last_seen": "2026-10-27T01:37:01.093780+09:00"
+  },
+  "evaluation_worker": {
+    "exit_code": 1,
+    "result": "correctly_refused_same_physical_database"
+  },
+  "operational_public_schema_rows_for_test_keys": 0
+}

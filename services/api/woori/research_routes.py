@@ -179,6 +179,26 @@ class CollectionSchedule(Input):
     auto_generate: bool = False
 
 
+class ArticleHumanReview(Input):
+    evaluation_id: UUID
+    content_version_id: UUID
+    idempotency_key: str = Field(min_length=16, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+    reviewer_name: str = Field(min_length=2, max_length=80)
+    factual_accuracy: Literal["verified", "issue_found", "uncertain", "not_assessed"]
+    translation_naturalness: Literal["acceptable", "issue_found", "uncertain", "not_assessed"]
+    reader_value: Literal["useful", "insufficient", "uncertain", "not_assessed"]
+    disposition: Literal["reviewed", "revision_requested", "rejected"]
+    comments: str = Field(min_length=10, max_length=2000)
+    requested_changes: str = Field(default="", max_length=2000)
+
+    @field_validator("requested_changes")
+    @classmethod
+    def revision_requires_detail(cls, value: str, info: Any) -> str:
+        if info.data.get("disposition") == "revision_requested" and len(value.strip()) < 10:
+            raise ValueError("revision_requested_requires_change_details")
+        return value
+
+
 @router.post("/collections", status_code=201)
 def collect(request: CollectionRequest) -> dict[str, Any]:
     return collection.request(
@@ -319,6 +339,13 @@ def state() -> dict[str, Any]:
             "SELECT id,run_id,event_type,payload,created_at FROM audit_events WHERE event_type LIKE 'research.%' ORDER BY id DESC LIMIT 100"
         ).fetchall()
         result["evaluation_results"] = _evaluation_results_snapshot()
+        result["prepublication"] = _prepublication_snapshot(conn)
+        result["article_reviews"] = conn.execute(
+            """SELECT id,evaluation_id,content_version_id,idempotency_key,reviewer_name,
+                factual_accuracy,translation_naturalness,reader_value,disposition,comments,
+                requested_changes,created_at FROM article_human_reviews
+                ORDER BY created_at DESC,id DESC LIMIT 100"""
+        ).fetchall()
         result["publishing_enabled"] = False
         result["paid_ai_enabled"] = False
         return result
@@ -368,6 +395,20 @@ def _evaluation_results_snapshot() -> dict[str, Any]:
                 ORDER BY r.created_at DESC,g.profile_id LIMIT 32""",
                 (snapshot["snapshot_at"],),
             ).fetchall()
+            fed_articles = _fed_article_reviews(conn)
+            sec_history = conn.execute(
+                """SELECT language_code,status,count(*)::int AS count,
+                    max(created_at) AS latest_at
+                FROM article_quality_evaluations
+                WHERE topic ILIKE 'Apple Inc. 10-Q%'
+                GROUP BY language_code,status ORDER BY language_code,status"""
+            ).fetchall()
+            english_quota = next((row for row in quota if row["language_code"] == "en"), None)
+            sec_gate = (
+                "not_run_quota_blocked"
+                if english_quota and english_quota["quota_used"] >= english_quota["quota_limit"]
+                else "not_run"
+            )
             stages = conn.execute(
                 """SELECT s.id,s.run_id,s.profile_id,s.stage_name,s.status,s.sequence,
                     s.model,s.elapsed_ms,s.error_category,s.source_ids,s.validation,
@@ -396,6 +437,9 @@ def _evaluation_results_snapshot() -> dict[str, Any]:
             "quota": quota,
             "worker": evaluation_worker,
             "runs": runs,
+            "fed_articles": fed_articles,
+            "sec_historical_quality": sec_history,
+            "sec_new_inference": sec_gate,
             "stages": stages,
             "events": events,
             "publish_ready_forced_false": True,
@@ -403,6 +447,159 @@ def _evaluation_results_snapshot() -> dict[str, Any]:
     except psycopg.Error as exc:
         # Never return a connection string, credentials, or raw driver error.
         return {"configured": True, "available": False, "error_category": "evaluation_read_failed", "error_code": exc.sqlstate, "runs": [], "stages": []}
+
+
+def _fed_article_reviews(conn: Any) -> list[dict[str, Any]]:
+    """Read the four latest machine-passed Fed C3 drafts from the isolated DB."""
+    rows = conn.execute(
+        """SELECT DISTINCT ON (q.language_code) q.id AS evaluation_id,
+            q.content_version_id,q.language_code,q.topic,q.title,q.summary,q.keywords,
+            q.source_ids,q.fact_ids,q.model,q.prompt_version,q.metrics,q.checks,
+            q.machine_passed,q.human_review_required,q.status,q.created_at,
+            v.body,v.version AS content_version
+        FROM article_quality_evaluations q
+        JOIN content_versions v ON v.id=q.content_version_id
+        WHERE q.topic_key LIKE 'phase39t:%%' AND q.topic ILIKE 'Federal Reserve%%'
+          AND q.machine_passed AND q.human_review_required AND NOT q.publish_ready
+          AND q.content_version_id IS NOT NULL
+        ORDER BY q.language_code,q.created_at DESC,q.id DESC"""
+    ).fetchall()
+    articles: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        source_ids = item["source_ids"]
+        fact_ids = item["fact_ids"]
+        sources = conn.execute(
+            """SELECT id,source_name,url,published_at,collected_at,evidence,rights,
+                access_policy,valid_until,revision,source_language
+            FROM research_sources WHERE id=ANY(%s) ORDER BY id""",
+            (source_ids,),
+        ).fetchall()
+        facts = conn.execute(
+            """SELECT id,fact_key,source_id,source_language,source_excerpt,entity_ids,
+                numeric_values,date_values,citation_ids,verification_status
+            FROM evidence_facts WHERE id=ANY(%s) ORDER BY fact_key,id""",
+            (fact_ids,),
+        ).fetchall()
+        item["sources"] = [dict(source) for source in sources]
+        item["facts"] = [dict(fact) for fact in facts]
+        check_payload = item.get("checks") or {}
+        check_payload = check_payload.get("checks", check_payload) if isinstance(check_payload, dict) else {}
+        grounding_details = check_payload.get("grounding_details", {}) if isinstance(check_payload, dict) else {}
+        item["proper_name_candidates"] = (
+            grounding_details.get("proper_name_candidates", [])
+            if isinstance(grounding_details, dict) else []
+        )
+        item["publication_approval_granted"] = False
+        item["publish_ready"] = False
+        articles.append(item)
+    return articles
+
+
+def _prepublication_snapshot(conn: Any) -> dict[str, Any]:
+    blogs = conn.execute(
+        """SELECT b.id,b.language_code,b.url,b.blog_id,b.active,
+            b.connection_verified_at,b.last_checked_at,b.connection_error,
+            g.status AS oauth_status,g.scopes
+        FROM blogger_blogs b LEFT JOIN google_connections g ON g.id=b.oauth_connection_id
+        ORDER BY b.language_code,b.url"""
+    ).fetchall()
+    safety = conn.execute(
+        """SELECT
+            (SELECT count(*)::int FROM publishing_jobs WHERE NOT simulation_only OR adapter_type<>'fake') AS non_mock_jobs,
+            (SELECT count(*)::int FROM publishing_records) AS real_publishing_records,
+            (SELECT count(*)::int FROM article_quality_evaluations WHERE publish_ready) AS publish_ready_evaluations,
+            (SELECT count(*)::int FROM publishing_policies WHERE auto_publish_allowed) AS auto_publish_policies,
+            EXISTS(SELECT 1 FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid
+                JOIN pg_proc p ON p.oid=t.tgfoid
+                WHERE c.relname='audit_events' AND p.proname='deny_mutation' AND t.tgenabled='O') AS audit_immutable"""
+    ).fetchone()
+    blog_ids = [blog["id"] for blog in blogs]
+    verification_events = (
+        conn.execute(
+            """SELECT DISTINCT ON (blog_id) blog_id,payload,created_at
+            FROM audit_events WHERE event_type='blogger.verification.completed'
+              AND blog_id=ANY(%s) ORDER BY blog_id,created_at DESC,id DESC""",
+            (blog_ids,),
+        ).fetchall()
+        if blog_ids else []
+    )
+    return {
+        "blogger_accounts_connected": conn.execute(
+            "SELECT count(*)::int AS n FROM google_connections WHERE status='connected'"
+        ).fetchone()["n"],
+        "blogs": [dict(blog) for blog in blogs],
+        "historical_read_verifications": [dict(event) for event in verification_events],
+        "safety": dict(safety),
+        "real_blogger_sync_verified": False,
+        "real_writes_enabled": False,
+    }
+
+
+@router.post("/article-reviews", status_code=201)
+def record_article_review(request: ArticleHumanReview) -> dict[str, Any]:
+    """Append a human content review note; never approves Blogger publication."""
+    from psycopg.types.json import Jsonb
+
+    from .config import settings
+
+    url = settings().evaluation_database_url
+    if not url:
+        raise HTTPException(503, "Isolated evaluation review data is unavailable")
+    import psycopg
+    from psycopg.rows import dict_row
+
+    try:
+        with psycopg.connect(url, connect_timeout=2, row_factory=dict_row) as evaluation_conn:
+            db = evaluation_conn.execute("SELECT current_database() AS name").fetchone()
+            if not db or db["name"] != "woori_blog_agent_eval":
+                raise HTTPException(503, "Evaluation database identity check failed")
+            valid = evaluation_conn.execute(
+                """SELECT 1 FROM article_quality_evaluations q
+                JOIN content_versions v ON v.id=q.content_version_id
+                WHERE q.id=%s AND q.content_version_id=%s
+                  AND q.topic_key LIKE 'phase39t:%%' AND q.topic ILIKE 'Federal Reserve%%'
+                  AND q.machine_passed AND q.human_review_required AND NOT q.publish_ready""",
+                (request.evaluation_id, request.content_version_id),
+            ).fetchone()
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Evaluation review data is unavailable") from exc
+    if not valid:
+        raise HTTPException(404, "Review target is not an eligible Fed evaluation draft")
+
+    with connection() as conn:
+        existing = conn.execute(
+            "SELECT * FROM article_human_reviews WHERE idempotency_key=%s",
+            (request.idempotency_key,),
+        ).fetchone()
+        if existing:
+            return {"review": dict(existing), "duplicate": True, "publication_approval_granted": False}
+        row = conn.execute(
+            """INSERT INTO article_human_reviews(evaluation_id,content_version_id,idempotency_key,
+                reviewer_name,factual_accuracy,translation_naturalness,reader_value,disposition,
+                comments,requested_changes)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
+            (request.evaluation_id,request.content_version_id,request.idempotency_key,
+             request.reviewer_name,request.factual_accuracy,request.translation_naturalness,
+             request.reader_value,request.disposition,request.comments,request.requested_changes),
+        ).fetchone()
+        if row is None:
+            existing = conn.execute(
+                "SELECT * FROM article_human_reviews WHERE idempotency_key=%s",
+                (request.idempotency_key,),
+            ).fetchone()
+            if existing is None:
+                raise HTTPException(409, "Review idempotency conflict")
+            return {"review": dict(existing), "duplicate": True, "publication_approval_granted": False}
+        conn.execute(
+            "INSERT INTO audit_events(event_type,payload) VALUES ('article.human_review.recorded',%s)",
+            (Jsonb({"review_id": str(row["id"]), "evaluation_id": str(request.evaluation_id),
+                "content_version_id": str(request.content_version_id),
+                "disposition": request.disposition, "publication_approval_granted": False,
+                "publish_ready": False}),),
+        )
+        return {"review": dict(row), "duplicate": False, "publication_approval_granted": False,
+            "publish_ready": False, "content_version_changed": False}
 
 
 @router.post("/versions/{version_id}/validate")

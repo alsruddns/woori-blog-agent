@@ -140,7 +140,8 @@ with psycopg.connect(migration_url, row_factory=psycopg.rows.dict_row) as evalua
     evaluation.execute("GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO woori_eval_app")
     evaluation.execute("""GRANT SELECT ON job_runs,generation_jobs,generation_targets,generation_results,
         generation_stage_runs,evidence_facts,research_sources,source_reviews,language_profiles,
-        languages,generation_settings,content_versions,prompt_templates,audit_events,worker_heartbeats TO woori_eval_reader""")
+        languages,generation_settings,content_versions,prompt_templates,audit_events,worker_heartbeats,
+        article_quality_evaluations TO woori_eval_reader""")
     quarantined = evaluation.execute(
         """UPDATE job_runs SET status='failed',lease_until=NULL,error_type='evaluation_snapshot_quarantined',
         error_message='Copied active work is quarantined in the evaluation snapshot',

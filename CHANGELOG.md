@@ -1,5 +1,12 @@
 # Changelog
 
+## Phase 4-C (partial validation; 2026-10-27)
+- Add a human review workspace for the four machine-passed Fed C3 language drafts, with full text, paragraph-to-sentence citation display, source facts, dates/numbers, keywords, and append-only review comments/history.
+- Persist editorial feedback in an immutable operations table. Review notes never modify an article version, approve Blogger publication, or change `publish_ready`.
+- Add a scoped read-only grant for evaluation quality rows and dashboard prepublication status covering quota, historical Blogger verification, OAuth scopes, and safety counts.
+- Do not run SEC inference because the required first English target is already at its 2/2 KST quota. Do not send Blogger GET requests because the zero-cost provider gate still blocks Blogger API calls pending cost review.
+- Keep Blogger writes, paid services, automatic publication, and `publish_ready` disabled.
+
 ## Phase 3.9-U (implementation complete; real model check pending)
 - Confirm the Phase 3.9-T 30-token overlap is an exact copied source sentence, not a verifier false positive; preserve the original held version and append two deterministic rechecks.
 - Strengthen local fact paraphrasing, apply the unchanged 25-token source-overlap limit per fact, and derive bounded search-intent metadata from clearly date-qualified topic labels.
