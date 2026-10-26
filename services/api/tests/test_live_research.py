@@ -1,4 +1,4 @@
-import hashlib
+﻿import hashlib
 import json
 import subprocess
 import uuid
@@ -255,6 +255,12 @@ def test_grounding_normalizes_dates_and_avoids_sentence_boundary_name_false_posi
 
 def test_number_only_markdown_headings_are_not_factual_numbers() -> None:
     assert numbers("## 1\n## 2\n## 10") == set()
+
+
+def test_inherited_year_date_lists_match_localized_dates() -> None:
+    source = "Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026."
+    localized = "2026년 8월 17일, 9월 9일 및 9월 16일 보드의 할인율 회의록."
+    assert numbers(source) == numbers(localized)
     assert numbers("## 1\nThe rate was 5 percent.") == {"5.0"}
     assert numbers("October 13, 2026") == numbers("2026년 10월 13일")
     assert numbers("2026-10-13") == numbers("2026年10月13日")
@@ -324,6 +330,175 @@ def test_evidence_template_preserves_source_text_and_holds_unlocalized_language(
     assert not ko_checked["rule_checks"]["language_metadata_matches"]
     with pytest.raises(ValueError, match="template_language_not_evaluated"):
         build_evidence_template([source], "ja", "Federal Reserve", "2026-10-26")
+
+
+def test_fact_ledger_and_localization_separate_source_language_and_expression() -> None:
+    from woori.localization import fact_ledger, localize_fact
+
+    source = {
+        "id": "fed-source", "source_language": "en",
+        "evidence": "Federal Reserve Board ended the action on October 13, 2026.",
+    }
+    fact = fact_ledger(source)[0]
+    assert fact["source_excerpt"] == source["evidence"]
+    assert fact["citation_ids"] == ["fed-source"]
+    assert fact["date_values"] == ["DATE:2026-10-13"]
+    assert fact["verification_status"] == "source_span_verified"
+
+    # Original English text cannot be mistaken for a Korean translation.
+    held = localize_fact(fact, "ko")
+    assert held["status"] == "held_translation_unavailable"
+    assert not held["checks"]["language_matches"]
+    assert held["publish_ready"] is False
+
+    glossary = [{"source_term": "Federal Reserve Board", "localized_term": "연방준비제도",
+                 "source_language": "en", "target_language": "ko", "approved": True, "official_translation": True,
+                 "translation_source": "https://example.org/official-glossary"}]
+    localized = localize_fact(
+        fact, "ko", lambda *_: "Federal Reserve Board는 2026년 10월 13일 조치를 종료했다.", glossary
+    )
+    assert localized["checks"]["language_matches"]
+    assert localized["checks"]["numbers_preserved"]
+    assert localized["checks"]["entities_preserved"]
+    assert "연방준비제도" in localized["text"]
+    assert localized["source_ids"] == ["fed-source"]
+    assert localized["human_review_required"] and not localized["publish_ready"]
+
+
+def test_localization_blocks_number_date_and_unapproved_entity_drift() -> None:
+    from woori.localization import fact_ledger, localize_fact
+
+    fact = fact_ledger({"id": "fed-source", "source_language": "en",
+                        "evidence": "Federal Reserve Board ended the action on October 13, 2026."})[0]
+    changed = localize_fact(
+        fact, "ko", lambda *_: "연방준비제도는 2026년 10월 14일 조치를 종료했고 9%를 기록했다."
+    )
+    assert not changed["checks"]["numbers_preserved"]
+    assert changed["status"] == "quality_held"
+    assert not changed["publish_ready"]
+
+    # No AI/translation adapter is a safe refusal, never a source-language success.
+    refused = localize_fact(fact, "fr", glossary=[{
+        "source_term": "Federal Reserve Board", "localized_term": "Conseil de la Réserve fédérale",
+        "target_language": "fr", "approved": False, "official_translation": False,
+    }])
+    assert refused["status"] == "held_translation_unavailable"
+
+    unapproved_term = localize_fact(
+        fact, "fr", lambda *_: "Le Conseil de la Réserve fédérale a publié un rapport.",
+        [{"source_term": "Federal Reserve Board", "localized_term": "Conseil de la Réserve fédérale",
+          "target_language": "fr", "approved": False, "official_translation": False}],
+    )
+    assert unapproved_term["checks"]["no_unapproved_translation_asserted"] is False
+    assert unapproved_term["status"] == "quality_held"
+
+    preserved_name = localize_fact(
+        fact, "ko", lambda *_: "Federal Reserve Board은 화요일 공식 공지를 발표했습니다."
+    )
+    assert preserved_name["checks"]["entities_preserved"]
+    assert preserved_name["checks"]["no_unverified_entity_added"]
+
+
+def test_local_translation_protects_entity_spans_and_fails_if_marker_is_lost(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from woori import local_inference as inference
+
+    monkeypatch.setattr(inference, "runtime", lambda: {"model": "local-test-model"})
+    monkeypatch.setattr(inference, "auth_headers", dict)
+    base_client = httpx.Client
+    observed: list[str] = []
+
+    def execute(response_text: str) -> str:
+        def handler(request: httpx.Request) -> httpx.Response:
+            payload = json.loads(request.content)
+            observed.append(payload["messages"][1]["content"])
+            return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(
+                {"localized_text": response_text}, ensure_ascii=False
+            )}}]})
+
+        monkeypatch.setattr(
+            inference.httpx, "Client",
+            lambda *args, **kwargs: base_client(transport=httpx.MockTransport(handler), **kwargs),
+        )
+        return inference.localized_translation(
+            "The Federal Reserve Board issued a notice.", "ko", [],
+            ["Federal Reserve Board"], "local-test-model", 10,
+        )
+
+    restored = execute("[[LOCKED_ENTITY_0001]]가 공지를 발표했습니다.")
+    assert restored == "Federal Reserve Board가 공지를 발표했습니다."
+    assert "[[LOCKED_ENTITY_0001]]" in observed[0]
+    with pytest.raises(EngineFailure, match="localization_entity_placeholder_error"):
+        execute("기관이 공지를 발표했습니다.")
+
+
+def test_reviewed_source_facts_and_localization_are_durable_and_fail_closed(lab: Any) -> None:
+    from test_pipeline import topic
+
+    conn, api, headers = lab
+    keyword_id, _ = topic(lab)
+    source = conn.execute(
+        "SELECT id FROM research_sources WHERE keyword_id=%s ORDER BY revision DESC LIMIT 1",
+        (keyword_id,),
+    ).fetchone()
+    language_review = api.post(
+        f"/admin/research/sources/{source['id']}/reviews", headers=headers,
+        json={"approved": True, "reason": "Synthetic fixture is authored in English for this test.",
+              "reviewer": "Test reviewer", "source_language": "en"},
+    )
+    assert language_review.status_code == 201, language_review.text
+    extracted = api.post(f"/admin/research/sources/{source['id']}/facts", headers=headers)
+    assert extracted.status_code == 201, extracted.text
+    fact = extracted.json()["facts"][0]
+    assert fact["source_language"] == "en"
+    assert fact["citation_ids"]
+    assert fact["verification_status"] == "source_span_verified"
+
+    # Same-language rendering is deterministic; Korean without local AI remains held.
+    english = api.post(
+        "/admin/research/localizations", headers=headers,
+        json={"fact_id": fact["id"], "target_language": "en"},
+    )
+    assert english.status_code == 201, english.text
+    assert english.json()["machine_passed"] is True
+    assert english.json()["publish_ready"] is False
+    result = api.post(
+        "/admin/research/localizations", headers=headers,
+        json={"fact_id": fact["id"], "target_language": "ko"},
+    )
+    assert result.status_code == 201, result.text
+    assert result.json()["machine_passed"] is False
+    assert result.json()["publish_ready"] is False
+    saved = result.json()["output_snapshot"]
+    assert saved["status"] == "held_translation_language_unverified"
+
+    state = api.get("/admin/research/state", headers=headers)
+    assert state.status_code == 200
+    assert any(row["id"] == fact["id"] for row in state.json()["evidence_facts"])
+    assert any(row["id"] == result.json()["id"] for row in state.json()["localizations"])
+
+
+def test_localized_template_composes_only_passed_fact_spans() -> None:
+    from woori.evidence_template import build_localized_evidence_template
+
+    source = {
+        "id": "source-1", "url": "https://www.federalreserve.gov/test", "source_name": "Federal Reserve Board",
+        "evidence": "Federal Reserve Board issued a public informational notice on Tuesday regarding the latest enforcement action.", "rights": "Public domain",
+        "valid_until": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
+    }
+    fact = {"text": "Federal Reserve Board, 화요일 최신 집행 조치에 관한 공식 정보 안내문을 발표했습니다.", "target_language": "ko",
+            "status": "machine_passed", "source_ids": ["source-1"], "ai_calls": 0}
+    draft, metrics = build_localized_evidence_template(
+        [source], [fact], "ko", "연방준비제도 공식 안내", "공식 안내의 핵심 내용을 정리했습니다.", ["공식 안내"]
+    )
+    assert "[source:source-1]" in draft.body
+    assert metrics["human_review_required"] and not metrics["publish_ready"]
+    with pytest.raises(ValueError, match="localization_quality_held"):
+        build_localized_evidence_template(
+            [source], [{**fact, "status": "held_translation_unavailable"}], "ko",
+            "연방준비제도 공식 안내", "공식 안내의 핵심 내용을 정리했습니다.", ["공식 안내"],
+        )
 
 
 def test_collection_bounded_and_no_arbitrary_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:

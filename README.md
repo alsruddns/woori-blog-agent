@@ -111,3 +111,7 @@ All external requests pass through the closed provider allowlist in `services/ap
 ## Evidence-led generation pipeline
 
 Research generation runs through persisted source, evidence, outline, section, localization, claim, SEO, and draft-persistence stages. Inspect per-attempt inputs, outputs, source links, validations, retries, and timings in the authenticated `/research` dashboard. Machine checks do not approve semantic truth or naturalness; uncertain versions remain `quality_held` and unpublished. See [the staged pipeline architecture](docs/architecture/pipeline-stages.md), [schema model](docs/architecture/data-model.md), and [Phase 3.7 source review and evaluation record](docs/development/P3-7-001.md).
+
+## Evidence-preserving localization
+
+Current source excerpts, reviewed source language, fact snapshots, approved glossary revisions, and per-language localization evaluations are stored separately and append-only. Original-language excerpts do not count as target-language prose. Cross-language generation uses only the already installed local model; if it is unavailable or the target language is unsupported, the result remains held. The `/research` screen shows source/output comparisons and review status. See [the localization architecture](docs/architecture/evidence-localization.md), [Phase 3.8-B record](docs/development/P3-8B-001.md), and [measured evaluation](docs/development/P3-8B-evaluation.json).

@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased - Phase 3.8-B - 2026-10-26
+
+- Add immutable source-span fact records, reviewed source-language attribution, and fail-closed BCP 47 localization checks for names, numbers, dates, citations, repetition, and URLs.
+- Add glossary approval provenance and append-only glossary revisions; historical terms are backfilled as unapproved.
+- Add local-only excerpt translation with bounded JSON output, evidence-only draft composition, durable localization evaluations, and `/research` comparison/history views.
+- Evaluate the saved Federal Reserve source: English exact-span rendering passed mechanical checks (0 AI calls); Korean remained held because the local engine was unavailable. No improvement is claimed; zh-CN/ja expansion is deferred.
+- Keep semantic accuracy and naturalness for human review, `publish_ready=false`, and all Blogger writes disabled.
+- Append a new source-review language attribution instead of changing historical source metadata; preserve existing unapproved glossary terms as their first immutable revisions.
+- Run an evaluation-only Qwen3 4B Q4_K_M Vulkan comparison on two Federal Reserve fact spans across en/ko/zh-CN/ja; preserve entity names, normalize inherited-year dates, and keep all candidates held for human semantic review.
+
 ## Unreleased - Phase 3.8-A - 2026-10-26
 
 - Re-evaluate Phase 3.7 saved drafts immutably and separate deterministic false positives from actual repetition, missing localization, and unsupported meaning.

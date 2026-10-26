@@ -1,10 +1,10 @@
 """Evidence-first experimental rendering that never invents factual prose."""
 
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Any
 
 from .ai import Draft
-from .grounding import extract_facts
+from .grounding import extract_facts, inspect
 
 
 def build_evidence_template(
@@ -57,3 +57,39 @@ def build_evidence_template(
         source_ids=source_ids,
     )
     return draft, {"fact_count": len(rendered_facts), "source_ids": source_ids, "ai_calls": 0}
+
+
+def build_localized_evidence_template(
+    sources: list[dict[str, Any]], localized_facts: list[dict[str, Any]], language: str,
+    title: str, summary: str, keywords: list[str],
+) -> tuple[Draft, dict[str, Any]]:
+    """Compose only already checked localized fact spans into a new review draft."""
+    import langcodes
+
+    if not langcodes.tag_is_valid(language):
+        raise ValueError("invalid_target_language")
+    if not sources or not localized_facts:
+        raise ValueError("verified_evidence_required")
+    if any(item.get("target_language") != language or item.get("status") != "machine_passed"
+           for item in localized_facts):
+        raise ValueError("localization_quality_held")
+    allowed_ids = {str(source["id"]) for source in sources}
+    used_ids = list(dict.fromkeys(
+        str(source_id) for item in localized_facts for source_id in item.get("source_ids", [])
+    ))
+    if not used_ids or not set(used_ids).issubset(allowed_ids):
+        raise ValueError("localization_source_link_invalid")
+    body = "\n\n".join(
+        str(item["text"]).strip() + " " + " ".join(
+            f"[source:{source_id}]" for source_id in item["source_ids"]
+        ) for item in localized_facts
+    )
+    draft = Draft(title=title, body=body, summary=summary, keywords=keywords, source_ids=used_ids)
+    checks = inspect(draft, sources, language, datetime.now(UTC).date().isoformat())
+    if not checks["rule_pass"]:
+        raise ValueError("localized_draft_quality_held")
+    return draft, {
+        "fact_count": len(localized_facts), "source_ids": used_ids,
+        "ai_calls": sum(int(item.get("ai_calls", 0)) for item in localized_facts),
+        "checks": checks, "human_review_required": True, "publish_ready": False,
+    }

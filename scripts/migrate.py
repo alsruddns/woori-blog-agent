@@ -13,7 +13,7 @@ with psycopg.connect(url) as conn:
     if not exists:
         conn.execute((root / "scripts/001_initial.sql").read_text(), prepare=False)
     current = conn.execute("SELECT max(version) FROM schema_migrations").fetchone()[0]
-    if current > 15:
+    if current > 18:
         raise SystemExit("Database schema is newer than this application")
     if current < 2:
         conn.execute(
@@ -73,4 +73,19 @@ with psycopg.connect(url) as conn:
             (root / "scripts/015_research_experiment_evaluations.sql").read_text(encoding="utf-8"),
             prepare=False,
         )
-print("Migration 015 verified")
+    if current < 16:
+        conn.execute(
+            (root / "scripts/016_evidence_localization.sql").read_text(encoding="utf-8"),
+            prepare=False,
+        )
+    if current < 17:
+        conn.execute(
+            (root / "scripts/017_reviewed_source_language.sql").read_text(encoding="utf-8"),
+            prepare=False,
+        )
+    if current < 18:
+        conn.execute(
+            (root / "scripts/018_glossary_revision_backfill.sql").read_text(encoding="utf-8"),
+            prepare=False,
+        )
+print("Migration 018 verified")

@@ -209,8 +209,7 @@ def test_configuration_lifecycle(sandbox: psycopg.Connection[dict[str, Any]]) ->
             ).status_code
             == 200
         )
-        assert (
-            client.post(
+        glossary_response = client.post(
                 "/admin/config/glossary",
                 headers=headers,
                 json={
@@ -218,9 +217,31 @@ def test_configuration_lifecycle(sandbox: psycopg.Connection[dict[str, Any]]) ->
                     "source_term": "stock",
                     "localized_term": "acci泥쁭",
                 },
-            ).status_code
-            == 200
+            )
+        assert glossary_response.status_code == 200
+        assert glossary_response.json()["approved"] is False
+        entry_id = glossary_response.json()["id"]
+        assert sandbox.execute(
+            "SELECT count(*) AS n FROM glossary_entry_revisions WHERE entry_id=%s", (entry_id,)
+        ).fetchone()["n"] == 1
+        assert client.post(
+            "/admin/config/glossary", headers=headers,
+            json={"profile_id": profiles[0]["id"], "source_term": "stock",
+                  "localized_term": "acción", "approved": True,
+                  "official_translation": True, "source_language": "en"},
+        ).status_code == 422
+        approved_glossary = client.post(
+            "/admin/config/glossary", headers=headers,
+            json={"profile_id": profiles[0]["id"], "source_term": "stock",
+                  "localized_term": "acción", "approved": True,
+                  "official_translation": True,
+                  "source_language": "en",
+                  "translation_source": "https://example.org/controlled-test-glossary"},
         )
+        assert approved_glossary.status_code == 200, approved_glossary.text
+        assert sandbox.execute(
+            "SELECT count(*) AS n FROM glossary_entry_revisions WHERE entry_id=%s", (entry_id,)
+        ).fetchone()["n"] == 2
         assert (
             client.patch(
                 "/admin/config/languages/" + code,

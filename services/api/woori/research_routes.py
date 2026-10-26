@@ -46,6 +46,7 @@ class Source(Input):
     keyword_id: UUID
     url: str = Field(max_length=2000)
     source_name: str = Field(min_length=2, max_length=200)
+    source_language: str = Field(default="und", max_length=100)
     published_at: datetime | None = None
     evidence: str = Field(min_length=10, max_length=1000)
     reliability_reason: str = Field(min_length=10, max_length=1000)
@@ -69,6 +70,15 @@ class Source(Input):
             raise ValueError("Public HTTPS citation without credentials/query required")
         return value
 
+    @field_validator("source_language")
+    @classmethod
+    def valid_source_language(cls, value: str) -> str:
+        import langcodes
+
+        if value != "und" and not langcodes.tag_is_valid(value):
+            raise ValueError("Use a valid BCP 47 source language or und")
+        return value if value == "und" else str(langcodes.standardize_tag(value))
+
     @field_validator("published_at", "valid_until")
     @classmethod
     def aware(cls, value: datetime | None) -> datetime | None:
@@ -81,6 +91,30 @@ class Review(Input):
     approved: bool
     reason: str = Field(min_length=10, max_length=1000)
     reviewer: str = Field(min_length=2, max_length=100)
+    source_language: str = Field(default="und", max_length=100)
+
+    @field_validator("source_language")
+    @classmethod
+    def valid_review_language(cls, value: str) -> str:
+        import langcodes
+
+        if value != "und" and not langcodes.tag_is_valid(value):
+            raise ValueError("Use a valid BCP 47 language tag or und")
+        return value if value == "und" else str(langcodes.standardize_tag(value))
+
+
+class LocalizeRequest(Input):
+    fact_id: UUID
+    target_language: str = Field(min_length=1, max_length=100)
+
+    @field_validator("target_language")
+    @classmethod
+    def valid_target_language(cls, value: str) -> str:
+        import langcodes
+
+        if not langcodes.tag_is_valid(value):
+            raise ValueError("Use a valid BCP 47 language tag")
+        return str(langcodes.standardize_tag(value))
 
 
 class Generate(Input):
@@ -207,7 +241,7 @@ def state() -> dict[str, Any]:
             name: conn.execute(query).fetchall()
             for name, query in {
                 "keywords": "SELECT k.*,p.language_code,p.target_country FROM keyword_candidates k JOIN language_profiles p ON p.id=k.profile_id ORDER BY k.collected_at DESC LIMIT 100",
-                "sources": "SELECT s.*,r.approved,r.reason AS review_reason,r.reviewer FROM research_sources s LEFT JOIN LATERAL (SELECT * FROM source_reviews WHERE source_id=s.id ORDER BY review_sequence DESC LIMIT 1) r ON true ORDER BY s.collected_at DESC LIMIT 100",
+                "sources": "SELECT s.*,r.approved,r.reason AS review_reason,r.reviewer,COALESCE(NULLIF(r.source_language,'und'),s.source_language) AS reviewed_source_language FROM research_sources s LEFT JOIN LATERAL (SELECT * FROM source_reviews WHERE source_id=s.id ORDER BY review_sequence DESC LIMIT 1) r ON true ORDER BY s.collected_at DESC LIMIT 100",
                 "profiles": "SELECT p.*,l.display_name,l.active FROM language_profiles p JOIN languages l ON l.code=p.language_code ORDER BY p.language_code,p.target_country",
                 "categories": "SELECT * FROM categories ORDER BY slug",
                 "settings": "SELECT * FROM generation_settings ORDER BY profile_id",
@@ -222,6 +256,10 @@ def state() -> dict[str, Any]:
                 "measurements": "SELECT * FROM model_measurements ORDER BY created_at DESC LIMIT 50",
                 "stage_runs": "SELECT * FROM generation_stage_runs ORDER BY started_at DESC LIMIT 300",
                 "experiments": "SELECT * FROM research_experiment_evaluations ORDER BY created_at DESC LIMIT 200",
+                "evidence_facts": "SELECT * FROM evidence_facts ORDER BY created_at DESC LIMIT 200",
+                "localizations": "SELECT * FROM localization_evaluations ORDER BY created_at DESC LIMIT 200",
+                "glossary": "SELECT * FROM glossary_entries ORDER BY target_language,source_term",
+                "glossary_revisions": "SELECT * FROM glossary_entry_revisions ORDER BY id DESC LIMIT 200",
             }.items()
         }
         result["coverage"] = conn.execute(
@@ -359,10 +397,216 @@ def review_source(source_id: UUID, request: Review) -> dict[str, Any]:
     with connection() as conn:
         return required(
             conn.execute(
-                "INSERT INTO source_reviews(source_id,approved,reason,reviewer) VALUES (%s,%s,%s,%s) RETURNING *",
-                (source_id, request.approved, request.reason, request.reviewer),
+                "INSERT INTO source_reviews(source_id,approved,reason,reviewer,source_language) VALUES (%s,%s,%s,%s,%s) RETURNING *",
+                (
+                    source_id,
+                    request.approved,
+                    request.reason,
+                    request.reviewer,
+                    request.source_language,
+                ),
             ).fetchone()
         )
+
+
+@router.post("/sources/{source_id}/facts", status_code=201)
+def extract_source_facts(source_id: UUID) -> dict[str, Any]:
+    from psycopg.types.json import Jsonb
+
+    from .localization import fact_ledger
+
+    with connection() as conn:
+        source = conn.execute(
+            """SELECT s.*,COALESCE(NULLIF(r.source_language,'und'),s.source_language) AS reviewed_source_language
+            FROM research_sources s
+            JOIN LATERAL (SELECT approved,source_language FROM source_reviews WHERE source_id=s.id
+              ORDER BY review_sequence DESC LIMIT 1) r ON r.approved
+            WHERE s.id=%s AND s.valid_until>now()
+            AND NOT EXISTS(SELECT 1 FROM research_sources n WHERE n.keyword_id=s.keyword_id
+              AND n.url=s.url AND n.revision>s.revision)""",
+            (source_id,),
+        ).fetchone()
+        if source is None:
+            raise HTTPException(409, "Current, unexpired, reviewed source required")
+        source = dict(source)
+        source["source_language"] = source["reviewed_source_language"]
+        stored = []
+        for fact in fact_ledger(source):
+            row = conn.execute(
+                """INSERT INTO evidence_facts(fact_key,source_id,source_language,source_excerpt,
+                entity_ids,numeric_values,date_values,citation_ids,verification_status,extractor_version)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                ON CONFLICT(source_id,fact_key,extractor_version) DO NOTHING RETURNING *""",
+                (
+                    fact["fact_key"],
+                    source_id,
+                    fact["source_language"],
+                    fact["source_excerpt"],
+                    fact["entity_ids"],
+                    Jsonb(fact["numeric_values"]),
+                    Jsonb(fact["date_values"]),
+                    [source_id],
+                    fact["verification_status"],
+                    fact["extractor_version"],
+                ),
+            ).fetchone()
+            if row is None:
+                row = conn.execute(
+                    "SELECT * FROM evidence_facts WHERE source_id=%s AND fact_key=%s AND extractor_version=%s",
+                    (source_id, fact["fact_key"], fact["extractor_version"]),
+                ).fetchone()
+            stored.append(row)
+        pipeline.emit(
+            conn,
+            "research.evidence_facts.extracted",
+            None,
+            source_id=str(source_id),
+            fact_count=len(stored),
+        )
+        return {"source_id": source_id, "facts": stored, "human_review_required": True}
+
+
+@router.post("/localizations", status_code=201)
+def localize_evidence(request: LocalizeRequest) -> dict[str, Any]:
+    from psycopg.types.json import Jsonb
+
+    from .localization import localize_fact
+
+    with connection() as conn:
+        fact = conn.execute(
+            """SELECT f.*,s.url AS source_url,s.source_name,s.valid_until,
+            (SELECT approved FROM source_reviews r WHERE r.source_id=s.id
+              ORDER BY r.review_sequence DESC LIMIT 1) AS source_approved,
+            NOT EXISTS(SELECT 1 FROM research_sources n WHERE n.keyword_id=s.keyword_id
+              AND n.url=s.url AND n.revision>s.revision) AS is_current
+            FROM evidence_facts f JOIN research_sources s ON s.id=f.source_id WHERE f.id=%s""",
+            (request.fact_id,),
+        ).fetchone()
+        language = conn.execute(
+            "SELECT code,active FROM languages WHERE code=%s", (request.target_language,)
+        ).fetchone()
+        profile = conn.execute(
+            """SELECT p.id,g.provider,g.model,g.timeout_seconds,g.enabled,g.language_verified,g.daily_limit,
+            c.translation_supported FROM language_profiles p
+            JOIN generation_settings g ON g.profile_id=p.id
+            JOIN language_capabilities c ON c.profile_id=p.id
+            WHERE p.language_code=%s ORDER BY p.target_country LIMIT 1""",
+            (request.target_language,),
+        ).fetchone()
+        if fact is None or language is None or not language["active"] or profile is None:
+            raise HTTPException(404, "Fact or active language profile not found")
+        if (
+            fact["verification_status"] != "source_span_verified"
+            or not fact["source_approved"]
+            or not fact["is_current"]
+            or fact["valid_until"] <= datetime.now(UTC)
+        ):
+            raise HTTPException(409, "Verified source-span fact required")
+        glossary = conn.execute(
+            """SELECT source_term,localized_term,source_language,target_language,
+            official_translation,translation_source,approved FROM glossary_entries
+            WHERE profile_id=%s""",
+            (profile["id"],),
+        ).fetchall()
+        localization_count = required(
+            conn.execute(
+                """SELECT count(*) AS count FROM localization_evaluations
+            WHERE target_language=%s AND created_at>=date_trunc('day',now())""",
+                (request.target_language,),
+            ).fetchone()
+        )["count"]
+        if localization_count >= profile["daily_limit"]:
+            raise HTTPException(429, "Daily localization limit reached; no fallback or retry")
+    model_name = "deterministic-same-language"
+    if fact["source_language"] == request.target_language:
+        result = localize_fact(fact, request.target_language, glossary=glossary)
+    elif (
+        profile["provider"] != "local"
+        or not profile["enabled"]
+        or not profile["language_verified"]
+        or not profile["translation_supported"]
+    ):
+        result = {
+            "text": fact["source_excerpt"],
+            "source_language": fact["source_language"],
+            "target_language": request.target_language,
+            "fact_id": fact["fact_key"],
+            "source_ids": [str(fact["source_id"])],
+            "status": "held_translation_language_unverified",
+            "checks": {"translation_supported_and_verified": False},
+            "ai_calls": 0,
+            "human_review_required": True,
+            "publish_ready": False,
+        }
+    else:
+        from .ai import EngineFailure
+        from .local_inference import localized_translation
+
+        model_name = profile["model"]
+        translator = lambda excerpt, target, terms, entities: localized_translation(
+            excerpt, target, terms, entities, profile["model"], profile["timeout_seconds"]
+        )
+        try:
+            result = localize_fact(fact, request.target_language, translator, glossary)
+        except EngineFailure as error:
+            result = {
+                "text": "",
+                "source_language": fact["source_language"],
+                "target_language": request.target_language,
+                "fact_id": fact["fact_key"],
+                "source_ids": [str(fact["source_id"])],
+                "status": "held_" + error.category,
+                "checks": {"translation_completed": False},
+                "ai_calls": 1,
+                "human_review_required": True,
+                "publish_ready": False,
+            }
+        except Exception:  # noqa: BLE001 - persist a sanitized hold; never expose model errors.
+            result = {
+                "text": "",
+                "source_language": fact["source_language"],
+                "target_language": request.target_language,
+                "fact_id": fact["fact_key"],
+                "source_ids": [str(fact["source_id"])],
+                "status": "held_localization_failed",
+                "checks": {"translation_completed": False},
+                "ai_calls": 1,
+                "human_review_required": True,
+                "publish_ready": False,
+            }
+    metrics = {
+        "elapsed_ms": result.get("elapsed_ms"),
+        "ai_calls": result.get("ai_calls", 0),
+        "model": model_name,
+    }
+    with connection() as conn:
+        row = required(
+            conn.execute(
+                """INSERT INTO localization_evaluations(source_id,fact_id,target_language,output_snapshot,
+            metrics,checks,machine_passed,human_review_required,publish_ready)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,true,false) RETURNING *""",
+                (
+                    fact["source_id"],
+                    request.fact_id,
+                    request.target_language,
+                    Jsonb(result),
+                    Jsonb(metrics),
+                    Jsonb(result.get("checks", {})),
+                    result.get("status") == "machine_passed",
+                ),
+            ).fetchone()
+        )
+        pipeline.emit(
+            conn,
+            "research.localization.completed",
+            None,
+            evaluation_id=str(row["id"]),
+            fact_id=str(request.fact_id),
+            language=request.target_language,
+            status=result.get("status"),
+            ai_calls=result.get("ai_calls", 0),
+        )
+        return row
 
 
 @router.post("/jobs", status_code=201)

@@ -95,6 +95,21 @@ class GlossaryInput(Input):
     source_term: str = Field(min_length=1, max_length=200)
     localized_term: str = Field(min_length=1, max_length=200)
     notes: str = Field(default="", max_length=1000)
+    source_language: str = Field(default="und", max_length=100)
+    target_language: str | None = Field(default=None, max_length=100)
+    official_translation: bool = False
+    translation_source: str | None = Field(default=None, max_length=2000)
+    approved: bool = False
+
+    @field_validator("source_language")
+    @classmethod
+    def valid_source_language(cls, value: str) -> str:
+        return "und" if value == "und" else language_tag(value)
+
+    @field_validator("target_language")
+    @classmethod
+    def valid_target_language(cls, value: str | None) -> str | None:
+        return language_tag(value) if value else value
 
 
 class CommonCategoryInput(Input):
@@ -225,7 +240,23 @@ def save_policy(request: PolicyInput) -> dict[str, Any]:
 
 @router.post("/glossary")
 def save_glossary(request: GlossaryInput) -> dict[str, Any]:
-    return save("glossary_entries", request.model_dump(), ["profile_id", "source_term"])
+    values = request.model_dump()
+    with connection() as conn:
+        profile = conn.execute(
+            "SELECT language_code FROM language_profiles WHERE id=%s", (request.profile_id,)
+        ).fetchone()
+        if profile is None:
+            raise HTTPException(404, "Language profile not found")
+        target = values["target_language"] or profile["language_code"]
+        if target != profile["language_code"]:
+            raise HTTPException(422, "Glossary target language must match its profile")
+        if values["approved"] and (
+            values["source_language"] == "und" or not values["official_translation"] or not values["translation_source"]
+            or len(values["translation_source"].strip()) < 6
+        ):
+            raise HTTPException(422, "Approval requires known source language, official translation, and its source")
+    values["target_language"] = target
+    return save("glossary_entries", values, ["profile_id", "source_term"])
 
 
 @router.post("/categories", status_code=201)

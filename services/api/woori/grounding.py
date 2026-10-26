@@ -21,17 +21,39 @@ def numbers(text: str) -> set[str]:
     }
     dates: set[str] = set()
 
-    def named_date(match: re.Match[str]) -> str:
-        month, day, year = match.group(1).casefold(), int(match.group(2)), int(match.group(3))
-        dates.add(f"DATE:{year:04d}-{months[month]:02d}-{day:02d}")
-        return " "
+    month_pattern = r"\b(" + "|".join(months) + r")\s+(\d{1,2})(?:,\s*(\d{4}))?\b"
+    localized_pattern = r"(?<!\d)(?:(\d{4})\s*(?:년|年)\s*)?(\d{1,2})\s*(?:월|月)\s*(\d{1,2})\s*(?:일|日)?"
 
-    text = re.sub(
-        r"\b(" + "|".join(months) + r")\s+(\d{1,2}),?\s+(\d{4})\b",
-        named_date,
-        text,
-        flags=re.IGNORECASE,
-    )
+    def date_lists(sentence: str, pattern: str, kind: str) -> str:
+        matches = list(re.finditer(pattern, sentence, flags=re.IGNORECASE))
+        explicit_years = [int(m.group(3) if kind == "named" else m.group(1))
+                          for m in matches if (m.group(3) if kind == "named" else m.group(1))]
+        unique_years = set(explicit_years)
+        replacements: list[tuple[int, int]] = []
+        for match in matches:
+            if kind == "named":
+                month = months[match.group(1).casefold()]
+                day = int(match.group(2))
+                explicit = int(match.group(3)) if match.group(3) else None
+                year = explicit or (next(iter(unique_years)) if len(unique_years) == 1 else None)
+            else:
+                explicit = int(match.group(1)) if match.group(1) else None
+                month, day = int(match.group(2)), int(match.group(3))
+                year = explicit or (next(iter(unique_years)) if len(unique_years) == 1 else None)
+            if year and 1 <= month <= 12 and 1 <= day <= 31:
+                dates.add(f"DATE:{year:04d}-{month:02d}-{day:02d}")
+                replacements.append(match.span())
+        for start, end in reversed(replacements):
+            sentence = sentence[:start] + " " + sentence[end:]
+        return sentence
+
+    sentences = re.split(r"(?<=[.!?。！？])\s+|\n+", text)
+    normalized: list[str] = []
+    for sentence in sentences:
+        sentence = date_lists(sentence, month_pattern, "named")
+        sentence = date_lists(sentence, localized_pattern, "localized")
+        normalized.append(sentence)
+    text = "\n".join(normalized)
 
     def numeric_date(match: re.Match[str]) -> str:
         value = match.group(1)
@@ -46,18 +68,6 @@ def numbers(text: str) -> set[str]:
 
     text = re.sub(r"\b(\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{8})\b", numeric_date, text)
 
-    def localized_date(match: re.Match[str]) -> str:
-        year, month, day = (int(value) for value in match.groups())
-        if 1 <= month <= 12 and 1 <= day <= 31:
-            dates.add(f"DATE:{year:04d}-{month:02d}-{day:02d}")
-            return " "
-        return match.group(0)
-
-    text = re.sub(
-        r"(?<!\d)(\d{4})\s*(?:년|年)\s*(\d{1,2})\s*(?:월|月)\s*(\d{1,2})\s*(?:일|日)?",
-        localized_date,
-        text,
-    )
     text = re.sub(
         r"https?://\S+|\[source:[^\]]+\]|\b[0-9a-f]{8}-[0-9a-f-]{27,}\b",
         "",

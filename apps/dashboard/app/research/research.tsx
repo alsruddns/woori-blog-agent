@@ -7,6 +7,7 @@ export type State = {
   versions: Row[]; settings: Row[]; prompts: Row[]; controls: Row; schedules: Row[];
   attempts: Row[]; events: Row[]; dispatches: Row[]; collection_sources: Row[]; cost_policy?: Row;
   collection_jobs: Row[]; measurements: Row[]; stage_runs: Row[]; coverage: Row[]; experiments?: Row[];
+  evidence_facts?: Row[]; localizations?: Row[]; glossary?: Row[]; glossary_revisions?: Row[];
 };
 type Field = { name: string; label: string; type?: string; optional?: boolean; options?: { value: string; label: string }[] };
 const str = (row: Row, key: string) => String(row[key] ?? "");
@@ -36,6 +37,7 @@ export default function Research({ initial }: { initial: State }) {
   const [data, setData] = useState(initial), [local, setLocal] = useState<Row>({}), [busy, setBusy] = useState(false);
   const [message, setMessage] = useState(""), [left, setLeft] = useState(""), [right, setRight] = useState("");
   const [measureLeft, setMeasureLeft] = useState(""), [measureRight, setMeasureRight] = useState("");
+  const [targetLanguage, setTargetLanguage] = useState("");
   async function refresh() {
     const [state, ai] = await Promise.all([fetch("/api/research/state", { cache: "no-store" }), fetch("/api/research/local-ai", { cache: "no-store" })]);
     if (!state.ok || !ai.ok) throw new Error("상태 조회 실패");
@@ -117,11 +119,26 @@ export default function Research({ initial }: { initial: State }) {
       </article>)}
     </section>
     <section><h2>수집 출처·검토 이력</h2><p>승인 정정은 새 검토를 추가합니다. 자동 출처 확인과 의미적 사실 검증을 구분하세요.</p>
-      <Editor disabled={busy} label="출처 등록" fields={[{ name: "keyword_id", label: "키워드", options: data.keywords.map(k => ({ value: str(k, "id"), label: str(k, "keyword") })) }, { name: "url", label: "공개 HTTPS URL", type: "url" }, { name: "source_name", label: "출처명" }, { name: "published_at", label: "게시일 (모르면 비움)", type: "datetime-local", optional: true }, { name: "evidence", label: "주요 근거 (최대 1,000자)", type: "textarea" }, { name: "reliability_reason", label: "신뢰성 근거" }, { name: "rights", label: "저작권·사용 범위" }, { name: "access_policy", label: "접근·robots 정책 확인" }, { name: "valid_until", label: "정보 유효 기한", type: "datetime-local" }, { name: "is_primary", label: "공식 1차 자료", type: "checkbox" }]} submit={body => act("sources", body)}/>
+      <Editor disabled={busy} label="출처 등록" fields={[{ name: "keyword_id", label: "키워드", options: data.keywords.map(k => ({ value: str(k, "id"), label: str(k, "keyword") })) }, { name: "url", label: "공개 HTTPS URL", type: "url" }, { name: "source_name", label: "출처명" }, { name: "source_language", label: "원문 언어 BCP 47 (미확인: und)" }, { name: "published_at", label: "게시일 (모르면 비움)", type: "datetime-local", optional: true }, { name: "evidence", label: "주요 근거 (최대 1,000자)", type: "textarea" }, { name: "reliability_reason", label: "신뢰성 근거" }, { name: "rights", label: "저작권·사용 범위" }, { name: "access_policy", label: "접근·robots 정책 확인" }, { name: "valid_until", label: "정보 유효 기한", type: "datetime-local" }, { name: "is_primary", label: "공식 1차 자료", type: "checkbox" }]} submit={body => act("sources", body)}/>
       {data.sources.map(s => <details key={str(s, "id")}><summary>{str(s, "source_name")} · 검토 {s.approved === true ? "승인 기록 있음" : "대기·불충분"} · {str(s, "valid_until")}</summary>
         <a href={str(s, "url")} target="_blank" rel="noreferrer">원문 출처</a><p>{str(s, "evidence")}</p><p>{str(s, "rights")} · {str(s, "reliability_reason")}</p><p>{str(s, "review_reason")}</p>
-        <Editor disabled={busy} label="새 검토 추가" fields={[{ name: "approved", label: "사실·권리 확인 (미선택은 거부 정정)", type: "checkbox" }, { name: "reason", label: "검토 근거 (10자 이상)" }, { name: "reviewer", label: "검토자" }]} submit={body => act(`sources/${str(s, "id")}/reviews`, body)}/>
+        <p>자료 언어: {str(s, "reviewed_source_language") || str(s, "source_language") || "und (미확인)"}</p>
+        <Editor disabled={busy} label="새 검토 추가" defaults={{ source_language: str(s, "reviewed_source_language") || str(s, "source_language") || "und" }} fields={[{ name: "approved", label: "사실·권리 확인 (미선택은 거부 정정)", type: "checkbox" }, { name: "source_language", label: "검증된 원문 언어 (BCP 47 또는 und)" }, { name: "reason", label: "검토 근거 (10자 이상)" }, { name: "reviewer", label: "검토자" }]} submit={body => act(`sources/${str(s, "id")}/reviews`, body)}/>
+        {s.approved === true && <button disabled={busy} onClick={() => act(`sources/${str(s, "id")}/facts`, {})}>승인 출처에서 사실 원장 추출</button>}
       </details>)}
+    </section>
+    <section><h2>근거 보존 다국어 현지화</h2>
+      <p>검토 승인된 출처 구간만 사실 원장에 저장합니다. 용어집은 공식 번역 근거와 승인 기록이 있는 항목만 적용됩니다. 기계 검사 통과도 사람 검토를 대체하지 않으며 발행 준비는 항상 false입니다.</p>
+      <p>사실 원장 {data.evidence_facts?.length ?? 0}건 · 현지화 평가 {data.localizations?.length ?? 0}건 · 용어집 변경 이력 {data.glossary_revisions?.length ?? 0}건</p>
+      <label>대상 언어 <select value={targetLanguage} onChange={e => setTargetLanguage(e.target.value)}><option value="">언어 선택</option>{Array.from(new Set(data.profiles.map(p => str(p, "language_code")))).map(code => <option key={code} value={code}>{code}</option>)}</select></label>
+      {(data.evidence_facts ?? []).map(f => <article key={str(f, "id")}><h3>{str(f, "source_language")} · 사실 {str(f, "fact_key")}</h3>
+        <p>{str(f, "source_excerpt")}</p><p>출처 연결: {JSON.stringify(f.citation_ids)} · {str(f, "verification_status")}</p>
+        <button disabled={busy || !targetLanguage} onClick={() => act("localizations", { fact_id: f.id, target_language: targetLanguage })}>이 근거 현지화</button>
+      </article>)}
+      {(data.localizations ?? []).map(item => { const output = item.output_snapshot as Row | undefined; const fact = data.evidence_facts?.find(f => f.id === item.fact_id); return <details key={str(item, "id")}><summary>{str(item, "target_language")} · {item.machine_passed ? "기계 검사 통과" : "품질 보류"} · 사람 검토 대기</summary>
+        <p>원문: {str(fact ?? {}, "source_excerpt")}</p><p>현지화: {str(output ?? {}, "text")}</p><pre>{JSON.stringify({ metrics: item.metrics, checks: item.checks, source_ids: output?.source_ids, semantic_accuracy: output?.semantic_accuracy, naturalness: output?.naturalness, publish_ready: item.publish_ready }, null, 2)}</pre></details>; })}
+      <details><summary>언어별 용어집 승인 상태</summary><pre>{JSON.stringify(data.glossary ?? [], null, 2)}</pre></details>
+      <details><summary>용어집 append-only 변경 이력</summary><pre>{JSON.stringify(data.glossary_revisions ?? [], null, 2)}</pre></details>
     </section>
     <section><h2>생성 작업·취소·복구</h2><p>스트리밍 중지 시 해당 추론 연결을 닫습니다. 저장한 타깃은 보존하며 재개 시 중복 생성하지 않습니다.</p>
       {data.jobs.map(j => <article key={str(j, "id")}><p>{str(j, "id")} · {str(j, "status")} · 시도 {str(j, "attempts")} · {str(j, "error_type")}</p>

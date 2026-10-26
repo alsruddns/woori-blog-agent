@@ -85,3 +85,11 @@ OAuth 토큰·API Key·비밀번호를 코드에 저장하지 않는다. .env �
 - Retain detected source names, numbers, dates, and source IDs through localization. Country-specific claims require reviewed country-relevant evidence.
 - Keep machine checks and human approval separate. If semantic entailment, language quality, rights, or freshness is uncertain, retain `quality_held` and `publish_ready=false`.
 - Evaluation runs may not enable Blogger writes, automatic publication, or paid/metered services.
+
+## Phase 3.8-B evidence-preserving localization rules
+- Store source-span facts independently of localized wording, with stable fact/source identity, source language, exact excerpt, entity/numeric/date snapshots, and citation references. Only an exact span from a current reviewed source may be marked `source_span_verified`.
+- Keep historical source language as `und` until a source review explicitly records BCP 47 language attribution. Never rewrite the source row to retrofit language metadata; append a review/fact/evaluation record.
+- Treat original-language quotations as quotations in that source language. They cannot satisfy another target language's language check. Never render translated text as a verbatim source quote.
+- Glossary terms are unapproved by default. Use a translated proper name as official only when an approved glossary revision records its source language, target language, official status, and translation source. Glossary revisions and localization evaluations are append-only.
+- Local AI may translate only supplied evidence excerpts or propose localized title/summary/keyword candidates. Validate numbers, dates, known entities, citations, URLs, language fields, repetition, and approved terminology; machine checks do not establish semantic equivalence or naturalness.
+- Compose localized drafts only from machine-checked fact spans. Any held/missing translation or unresolved claim blocks composition; semantic fidelity, naturalness, rights and editorial approval remain human review items. `publish_ready` remains false until separate human and operations approvals.

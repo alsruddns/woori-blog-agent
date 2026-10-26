@@ -1,4 +1,4 @@
-# 다국어 데이터 모델 (schema version 14)
+# 다국어 데이터 모델 (schema version 18)
 
 언어 수는 제한하지 않는다. 초기 ko/en/zh-CN/ja는 시드이며, 코드의 조건 분기가 아니다.
 
@@ -20,6 +20,10 @@ erDiagram
     categories ||--o{ category_localizations : names
     language_profiles ||--o{ category_localizations : localizes
     language_profiles ||--o{ glossary_entries : defines
+    glossary_entries ||--o{ glossary_entry_revisions : revises
+    research_sources ||--o{ evidence_facts : supports
+    evidence_facts ||--o{ localization_evaluations : localizes
+    languages ||--o{ localization_evaluations : targets
     content_localizations ||--o{ search_performance : measures
     blogger_blogs ||--o{ search_performance : reports
 ```
@@ -35,7 +39,9 @@ erDiagram
 | content_versions | localization + version 유일. UUID와 본문·제목 불변. source_version_id는 같은 그룹의 출처 버전만 참조 |
 | categories / category_localizations | 공통 식별자 및 국가별 프로필의 카테고리 명칭 |
 | localization_categories | 현지화 콘텐츠와 공통 카테고리의 N:M 연결 |
-| glossary_entries | 프로필별 원어·현지 용어·설명. 같은 원어는 해당 프로필에서 유일 |
+| glossary_entries / glossary_entry_revisions | 프로필·원어·원문/대상 언어·공식 번역 근거·승인 상태. 기존 용어는 미승인으로 backfill하며 변경 스냅샷은 append-only |
+| evidence_facts | 승인된 최신 출처에서 추출한 정확한 원문 구간. source language, entity IDs, 숫자·날짜, citation IDs와 추출기 버전을 저장. UPDATE/DELETE 불가 |
+| localization_evaluations | 사실 단위 언어별 결과·검사·시간·호출 수. 의미·자연스러움은 사람 검토이며 publish_ready는 DB CHECK로 false |
 | publishing_policies | blog + profile별 cron·IANA 시간대·활성 상태. 블로그와 프로필 언어 일치 FK. 자동 발행 허용은 Phase 1 DB CHECK로 false 고정 |
 | publishing_jobs | 정책·블로그·정확한 콘텐츠 버전·예약 시각·멱등성 키. 콘텐츠 언어·대상 국가는 정책과 일치해야 함. 현재 발행 Worker가 실행하지 않음 |
 | publishing_records | 작업·블로그·버전 FK, 원격 게시글 ID, 발행 시각. append-only. blog+version 및 blog+remote_post 유일 |

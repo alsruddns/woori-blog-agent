@@ -18,6 +18,7 @@ export default function Manager({ config }: { config: Config }) {
     const fields = new FormData(form);
     const body: Record<string, FormDataEntryValue | boolean> =
       Object.fromEntries(fields);
+    for (const key of ["official_translation", "approved"]) body[key] = fields.get(key) === "on";
     const suffix = body._id ? `/${encodeURIComponent(String(body._id))}` : "";
     delete body._id;
     if (active) body.active = fields.get("active") === "on";
@@ -388,6 +389,10 @@ export default function Manager({ config }: { config: Config }) {
             현지 용어
             <input name="localized_term" required maxLength={200} />
           </label>
+          <label>원문 언어 <input name="source_language" defaultValue="en" maxLength={100} /></label>
+          <label>공식 번역 근거 <input name="translation_source" maxLength={2000} /></label>
+          <label><input name="official_translation" type="checkbox" /> 공식 번역</label>
+          <label><input name="approved" type="checkbox" /> 검토 승인 (공식 번역과 출처 필요)</label>
           <label>
             설명
             <input name="notes" maxLength={1000} />
@@ -399,7 +404,7 @@ export default function Manager({ config }: { config: Config }) {
         {config.glossary.map((g) => (
           <li key={g.id}>
             {config.profiles.find((p) => p.id === g.profile_id)?.language_code}:{" "}
-            {g.source_term} → {g.localized_term}
+            {g.source_term} → {g.localized_term} · {g.approved ? "승인된 공식 번역" : "미승인·생성에 미사용"}
           </li>
         ))}
       </ul>

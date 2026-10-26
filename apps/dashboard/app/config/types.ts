@@ -49,6 +49,11 @@ export type Config = {
     source_term: string;
     localized_term: string;
     notes: string;
+    source_language: string;
+    target_language: string;
+    official_translation: boolean;
+    translation_source: string | null;
+    approved: boolean;
   }[];
   categories: { id: string; slug: string }[];
   category_localizations: {
