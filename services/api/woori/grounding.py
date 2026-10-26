@@ -153,7 +153,13 @@ _GENERIC_HEADLINE_NAMES = {
 
 def proper_names(text: str) -> set[str]:
     """Conservative multi-token Latin names for exact-preservation checks."""
-    pattern = r"\b[A-Z][A-Za-z0-9&'’\-]*(?:\s+[A-Z][A-Za-z0-9&'’\-]*){1,3}\b"
+    # Unicode ``\b`` treats Hangul as a word character, so an unchanged
+    # Latin proper name followed by a Korean particle was missed. Bound
+    # against ASCII name characters while preserving exact name matching.
+    pattern = (
+        r"(?<![A-Za-z0-9])[A-Z][A-Za-z0-9&'\-]*"
+        r"(?:\s+[A-Z][A-Za-z0-9&'\-]*){1,3}(?![A-Za-z0-9])"
+    )
     names: set[str] = set()
     for candidate in re.findall(pattern, text):
         tokens = candidate.split()

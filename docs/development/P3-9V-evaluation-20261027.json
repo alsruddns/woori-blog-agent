@@ -1,0 +1,239 @@
+{
+  "phase": "3.9-V",
+  "evaluation_date_kst": "2026-10-27",
+  "database": "woori_blog_agent_eval",
+  "model": {
+    "name": "Qwen3-4B-Q4_K_M.gguf",
+    "engine": "llama.cpp b11889",
+    "backend": "Vulkan",
+    "model_sha256": "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5"
+  },
+  "source": {
+    "provider": "Federal Reserve Board",
+    "adapter": "fed_rss",
+    "url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20261013a.htm",
+    "topics_completed": 1
+  },
+  "runs": [
+    {
+      "language": "en",
+      "run_id": "ea3d0ef8-6b0a-4668-8563-786d0c25959a",
+      "evaluation_artifact": "P3-9T-run-fed-en-cb2d7091-5421-414b-bedd-a1c5d2ff7d0c.json",
+      "content_version_id": "f0d52644-7a9b-4d1c-b7c5-a01548e4ca84",
+      "status": "succeeded",
+      "generation_gate_at_run": true,
+      "deterministic_recheck_machine_passed": true,
+      "recheck_batch_id": "98ccbcca-4739-4303-92d6-46e4cd90e88a",
+      "source_overlap_words_max": 17,
+      "elapsed_seconds": 27.66,
+      "model_calls": 5,
+      "completion_tokens": 198,
+      "tokens_per_second_aggregate_reported": 8.33,
+      "rss_peak_mib": 4880.57,
+      "cpu_machine_samples_percent": [
+        11.63,
+        12.31,
+        14.44,
+        13.38,
+        13.86
+      ],
+      "gpu_engine_samples_percent": [
+        78.65,
+        45.86,
+        49.8,
+        46.04,
+        48.55
+      ],
+      "quota": {
+        "used_before": 1,
+        "used_after": 2,
+        "limit": 2,
+        "count_policy": "target counted at creation; failures and cancellation remain counted; retries reuse target"
+      },
+      "failed_grounding_rules": [],
+      "human_review_required": true,
+      "publish_ready": false,
+      "paid_api_calls": 0,
+      "blogger_writes": 0
+    },
+    {
+      "language": "ko",
+      "run_id": "37e40f06-3653-46c1-a861-50d1d089b19d",
+      "evaluation_artifact": "P3-9T-run-fed-ko-ffb7d919-7e11-4963-a82e-953a47c47055.json",
+      "content_version_id": "57a0f484-48cc-40c5-92f5-b6365000b284",
+      "status": "succeeded",
+      "generation_gate_at_run": false,
+      "deterministic_recheck_machine_passed": true,
+      "recheck_batch_id": "dee7daa9-7640-43a4-9135-830ea7abd83c",
+      "source_overlap_words_max": 4,
+      "elapsed_seconds": 49.09,
+      "model_calls": 6,
+      "completion_tokens": 275,
+      "tokens_per_second_aggregate_reported": 9.96,
+      "rss_peak_mib": 4960.61,
+      "cpu_machine_samples_percent": [
+        14.59,
+        14.15,
+        15.33,
+        13.11,
+        13.62,
+        13.96
+      ],
+      "gpu_engine_samples_percent": [
+        50.15,
+        49.64,
+        27.19,
+        50.8,
+        54.48,
+        51.35
+      ],
+      "quota": {
+        "used_before": 0,
+        "used_after": 1,
+        "limit": 2,
+        "count_policy": "target counted at creation; failures and cancellation remain counted; retries reuse target"
+      },
+      "failed_grounding_rules": [
+        "proper_names_preserved"
+      ],
+      "human_review_required": true,
+      "publish_ready": false,
+      "paid_api_calls": 0,
+      "blogger_writes": 0
+    },
+    {
+      "language": "ja",
+      "run_id": "a2434d90-4357-4870-88a9-fd480be090c7",
+      "evaluation_artifact": "P3-9T-run-fed-ja-5b0e5505-ce5b-474f-8cf5-f2180fd2c9ee.json",
+      "content_version_id": "dedd68e3-1829-4d2c-8ec2-c783911b765f",
+      "status": "succeeded",
+      "generation_gate_at_run": true,
+      "deterministic_recheck_machine_passed": true,
+      "recheck_batch_id": "4fc7c6cf-46f3-47d3-a557-f3aa4cb3257c",
+      "source_overlap_words_max": 4,
+      "elapsed_seconds": 33.6,
+      "model_calls": 6,
+      "completion_tokens": 274,
+      "tokens_per_second_aggregate_reported": 9.29,
+      "rss_peak_mib": 3663.77,
+      "cpu_machine_samples_percent": [
+        13.33,
+        18.44,
+        0.0,
+        13.58,
+        13.18,
+        14.1
+      ],
+      "gpu_engine_samples_percent": [
+        44.08,
+        49.33,
+        48.25,
+        49.56,
+        45.05,
+        49.93
+      ],
+      "quota": {
+        "used_before": 0,
+        "used_after": 1,
+        "limit": 2,
+        "count_policy": "target counted at creation; failures and cancellation remain counted; retries reuse target"
+      },
+      "failed_grounding_rules": [],
+      "human_review_required": true,
+      "publish_ready": false,
+      "paid_api_calls": 0,
+      "blogger_writes": 0
+    },
+    {
+      "language": "zh-CN",
+      "run_id": "ee2a4dbe-2c29-4006-a981-b4b4efa693a6",
+      "evaluation_artifact": "P3-9T-run-fed-zh-CN-209c349d-b4a9-49c2-8a26-a4b4ddc0856d.json",
+      "content_version_id": "35615057-3e01-490f-8234-0e7d9684c65c",
+      "status": "succeeded",
+      "generation_gate_at_run": true,
+      "deterministic_recheck_machine_passed": true,
+      "recheck_batch_id": "8fbe4c91-78d4-4a38-938c-efcce73f9a6d",
+      "source_overlap_words_max": 4,
+      "elapsed_seconds": 29.52,
+      "model_calls": 6,
+      "completion_tokens": 195,
+      "tokens_per_second_aggregate_reported": 7.63,
+      "rss_peak_mib": 3657.31,
+      "cpu_machine_samples_percent": [
+        12.93,
+        13.7,
+        0.0,
+        13.87,
+        14.18,
+        13.84
+      ],
+      "gpu_engine_samples_percent": [
+        44.18,
+        47.26,
+        12.48,
+        49.06,
+        45.52,
+        47.73
+      ],
+      "quota": {
+        "used_before": 0,
+        "used_after": 1,
+        "limit": 2,
+        "count_policy": "target counted at creation; failures and cancellation remain counted; retries reuse target"
+      },
+      "failed_grounding_rules": [],
+      "human_review_required": true,
+      "publish_ready": false,
+      "paid_api_calls": 0,
+      "blogger_writes": 0
+    }
+  ],
+  "summary": {
+    "actual_model_targets_completed": 4,
+    "machine_gate_at_generation_passed": 3,
+    "machine_gate_passed_after_deterministic_recheck": 4,
+    "human_review_pending": 4,
+    "quality_held_after_recheck": 0,
+    "publish_ready": false,
+    "model_calls_total": 23,
+    "completion_tokens_total": 942,
+    "wall_elapsed_seconds_sum": 139.87,
+    "max_rss_mib_observed": 4960.61,
+    "token_throughput_samples_per_target": [
+      8.33,
+      9.96,
+      9.29,
+      7.63
+    ]
+  },
+  "quota_state_after_fed": {
+    "en": "2/2 exhausted",
+    "ko": "1/2",
+    "ja": "1/2",
+    "zh-CN": "1/2",
+    "policy": "KST daily target quota; no reset or override"
+  },
+  "sec_evaluation": {
+    "status": "not_run_quota_blocked",
+    "reason": "Required first target SEC English was already at 2/2 for the KST evaluation day; did not skip ordering or reset quota"
+  },
+  "quality_recheck": {
+    "method": "deterministic saved-draft recheck; no model calls; append-only isolated evaluation rows and audit events",
+    "original_drafts_modified": false,
+    "historical_evaluations_modified": false
+  },
+  "safety": {
+    "evaluation_db_only": true,
+    "paid_api_calls": 0,
+    "external_data_calls_during_generation": 0,
+    "blogger_writes": 0,
+    "operating_post_changes": 0,
+    "publish_ready_true_rows_added": 0
+  },
+  "system_resources": {
+    "model_server_started_for_this_run": true,
+    "model_server_stopped_after_evaluation": true,
+    "gpu_metric": "sampled by runner per inference request",
+    "cpu_metric": "sampled by runner per inference request"
+  }
+}

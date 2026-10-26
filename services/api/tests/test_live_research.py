@@ -370,6 +370,16 @@ def test_grounding_normalizes_dates_and_avoids_sentence_boundary_name_false_posi
     assert "Terminated October" not in names
 
 
+def test_proper_names_allow_adjacent_korean_particles_without_relaxing_name_matching() -> None:
+    names = proper_names(
+        "Federal Reserve Board? ??? ???. "
+        "Federal Open Market Committee? ?? ??? ???."
+    )
+    assert "Federal Reserve Board" in names
+    assert "Federal Open Market Committee" in names
+    assert "European Central Bank" not in names
+
+
 def test_number_only_markdown_headings_are_not_factual_numbers() -> None:
     assert numbers("## 1\n## 2\n## 10") == set()
 

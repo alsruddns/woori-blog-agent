@@ -32,3 +32,8 @@ The local faithful-paraphrase instruction requests independently worded text and
 ## Limitations
 
 Language script and exact token checks are heuristics, not semantic entailment. The checker does not prove a translated sentence means the same thing as its source, nor does an English proper-name detector cover every writing system. Such cases remain human-review items. A `machine_passed` evaluation alone is never a human quality approval. Title/summary/keyword candidates must still be supplied and validated before a full localized draft can be composed.
+
+
+## Latin entities adjacent to localized particles
+
+Proper-name preservation uses ASCII-character lookarounds rather than Unicode word boundaries. This recognizes an unchanged Latin organization name when a Korean particle directly follows it, while the entity tokens themselves must still match the evidence. The check does not approve translated names without a glossary mapping and does not relax unsupported-entity checks. Semantic accuracy and naturalness remain human-review items.

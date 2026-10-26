@@ -121,3 +121,7 @@
 ## Unreleased - Phase 3.9-R - 2026-10-26
 - Preflight the full bounded Fed/SEC evaluation batch against per-language daily generation capacity before loading the local model or enqueueing any job; preserve the existing quota and resource gates.
 - Diagnose the shared evaluation/operations quota, idle Vulkan model memory use, live service health, and Worker/queue state in an append-only preflight artifact. Actual inference and real Worker execution remain unverified because quota capacity was exhausted and no isolated Worker runtime was available.
+
+## Unreleased - Phase 3.9-V - 2026-10-27
+- Fix a verified Korean proper-name checker false positive when exact Latin entities are followed by Hangul particles; preserve strict unsupported-name detection.
+- Run four quota-bound Fed C3 language evaluations using the existing local Qwen3 4B model and preserve per-run artifacts plus deterministic rechecks. SEC evaluation remains quota-blocked.
