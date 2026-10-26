@@ -2,6 +2,10 @@
 
 ## Unreleased - Phase 2 - 2026-10-26
 
+- Verify live readonly OAuth and all four configured Blogger IDs, account membership, URLs and empty post lists.
+- Fix Google HTTP 400 caused by sending an empty first-page token; normalize omitted post items to an empty list.
+- Add authenticated account-blog discovery with account-scoped audit/quota and refresh successful read timestamps.
+- Expand live verification with bounded pagination, per-blog failures and immutable verification events (P2-003).
 - Add readonly Google OAuth, encrypted tokens, refresh/revocation, browser-bound state and PKCE.
 - Add Blogger GET/ID/post verification, safe API audit/errors, language quotas and Korean management UI.
 - Add Mock-only mutation protocols with durable duplicate/uncertain-write blocking and local content versions.

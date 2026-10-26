@@ -81,6 +81,11 @@ def disconnect(connection_id: UUID) -> dict[str, bool]:
     return oauth.disconnect(connection_id)
 
 
+@router.get("/oauth/{connection_id}/blogs")
+def account_blogs(connection_id: UUID) -> dict[str, Any]:
+    return blogger.account_blogs(connection_id)
+
+
 @router.post("/blogs/{blog_id}/connect")
 def connect(blog_id: UUID, request: Connect) -> dict[str, Any]:
     return blogger.connect_blog(blog_id, request.connection_id)

@@ -40,7 +40,22 @@ def record(
 ) -> None:
     blocked = False
     with connection() as conn:
-        if status == "requested":
+        if status == "requested" and blog["language_code"] is None:
+            conn.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
+                ("oauth:" + str(connection_id),),
+            )
+            count = conn.execute(
+                """SELECT count(*) AS n FROM blogger_api_calls WHERE connection_id=%s
+                AND language_code IS NULL AND status='requested'
+                AND created_at>now()-interval '1 minute'""",
+                (connection_id,),
+            ).fetchone()
+            assert count
+            blocked = count["n"] >= 30
+            if blocked:
+                status, category = "blocked", "local_rate_limit"
+        elif status == "requested":
             conn.execute(
                 "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (blog["language_code"],)
             )
@@ -187,6 +202,11 @@ def connect_blog(blog_id: UUID, connection_id: UUID) -> dict[str, Any]:
     return {"verified": True, "blog_id": remote_id}
 
 
+def account_blogs(connection_id: UUID) -> dict[str, Any]:
+    """Account-scoped read: no fabricated language or blog association in audit."""
+    return read({"id": None, "language_code": None}, connection_id, lambda r: r.account_blogs())
+
+
 def disconnect_blog(blog_id: UUID) -> dict[str, bool]:
     with connection() as conn:
         row = conn.execute(
@@ -216,11 +236,18 @@ def connected(blog_id: UUID) -> dict[str, Any]:
 
 def posts(blog_id: UUID, page_token: str = "", status: str = "live") -> dict[str, Any]:
     blog = connected(blog_id)
-    return read(
+    result = read(
         blog,
         blog["oauth_connection_id"],
         lambda r: r.posts(blog["blog_id"], blog["max_page_size"], page_token, status),
     )
+    result.setdefault("items", [])
+    with connection() as conn:
+        conn.execute(
+            "UPDATE blogger_blogs SET last_checked_at=now(),connection_error=NULL WHERE id=%s",
+            (blog_id,),
+        )
+    return result
 
 
 def post(blog_id: UUID, post_id: str) -> dict[str, Any]:

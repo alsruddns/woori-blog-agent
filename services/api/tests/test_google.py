@@ -446,6 +446,56 @@ def test_unrecoverable_read_network_error_is_bounded() -> None:
     assert len([a for a in attempts if a[2] == "requested"]) == 3
 
 
+def test_live_pagination_regression_and_account_path() -> None:
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        assert request.method == "GET"
+        if request.url.path.endswith("/users/self/blogs"):
+            return httpx.Response(200, json={"items": [{"id": "1001"}]})
+        if "pageToken" not in request.url.params:
+            return httpx.Response(200, json={"items": [{"id": "2001"}], "nextPageToken": "next"})
+        assert request.url.params["pageToken"] == "next"
+        return httpx.Response(200, json={"items": []})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as transport:
+        reader = BloggerReader(transport, lambda: "test-token", lambda *a: None)
+        assert reader.account_blogs()["items"][0]["id"] == "1001"
+        first = reader.posts("1001")
+        assert reader.posts("1001", page_token=first["nextPageToken"])["items"] == []
+        with pytest.raises(GoogleFailure, match="invalid_path"):
+            reader.get("invalid", "/users/another/blogs")
+    assert len(calls) == 3
+
+
+def test_account_scoped_audit(
+    sandbox: psycopg.Connection[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    google_mock(monkeypatch)
+    connection_id, _, _ = authorize()
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(200, json={})
+
+    monkeypatch.setattr(
+        service, "client", lambda: httpx.Client(transport=httpx.MockTransport(handler))
+    )
+    headers = {"Authorization": "Bearer " + settings().admin_token}
+    with TestClient(app) as api:
+        assert api.get(f"/admin/blogger/oauth/{connection_id}/blogs").status_code == 401
+        assert api.get(f"/admin/blogger/oauth/{connection_id}/blogs", headers=headers).json() == {}
+    row = sandbox.execute(
+        "SELECT * FROM blogger_api_calls WHERE connection_id=%s AND operation='list_account_blogs' AND status='succeeded'",
+        (connection_id,),
+    ).fetchone()
+    assert row and row["blog_id"] is None and row["language_code"] is None
+    assert row["http_status"] == 200
+    assert len(calls) == 1
+
+
 def test_unauthorized_read_refreshes_once(
     sandbox: psycopg.Connection[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -474,7 +524,7 @@ def test_unauthorized_read_refreshes_once(
 
     def handler(request: httpx.Request) -> httpx.Response:
         calls.append(request)
-        return httpx.Response(next(statuses), json={"items": []})
+        return httpx.Response(next(statuses), json={})
 
     monkeypatch.setattr(
         service, "client", lambda: httpx.Client(transport=httpx.MockTransport(handler))

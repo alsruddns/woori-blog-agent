@@ -61,7 +61,11 @@ class BloggerReader:
     def get(
         self, operation: str, path: str, params: dict[str, Any] | None = None
     ) -> dict[str, Any]:
-        if not path.startswith("/blogs/") or ".." in path or "?" in path:
+        if (
+            (not path.startswith("/blogs/") and path != "/users/self/blogs")
+            or ".." in path
+            or "?" in path
+        ):
             raise GoogleFailure("invalid_path")
         for attempt in range(1, 4):
             self.audit(operation, attempt, "requested", None, None)
@@ -106,6 +110,9 @@ class BloggerReader:
     def blog_by_url(self, url: str) -> dict[str, Any]:
         return self.get("get_by_url", "/blogs/byurl", {"url": url})
 
+    def account_blogs(self) -> dict[str, Any]:
+        return self.get("list_account_blogs", "/users/self/blogs")
+
     def blog(self, blog_id: str) -> dict[str, Any]:
         return self.get("get_blog", f"/blogs/{numeric_id(blog_id)}")
 
@@ -119,7 +126,7 @@ class BloggerReader:
             f"/blogs/{numeric_id(blog_id)}/posts",
             {
                 "maxResults": limit,
-                "pageToken": page_token,
+                **({"pageToken": page_token} if page_token else {}),
                 "status": status,
                 "fetchBodies": "false",
                 "view": "AUTHOR",
