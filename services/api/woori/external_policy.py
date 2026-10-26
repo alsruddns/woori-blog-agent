@@ -33,6 +33,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "paths": ("/blogger/v3/blogs", "/blogger/v3/users/self/blogs"),
         "cost": "readonly quota API; no per-call charge found; stop on provider quota",
         "commercial_use": "terms apply; review before monetized operation",
+        "zero_cost_reviewed": False,
     },
     "google_oauth": {
         "hosts": {"oauth2.googleapis.com"}, "methods": {"POST"}, "rpm": 10,
@@ -41,6 +42,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "paths": ("/token", "/revoke"),
         "cost": "OAuth token exchange/revocation; no separate call fee identified",
         "commercial_use": "Google OAuth terms and consent rules apply",
+        "zero_cost_reviewed": True,
     },
     "federal_reserve": {
         "hosts": {"www.federalreserve.gov"}, "methods": {"GET"}, "rpm": 3,
@@ -49,6 +51,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "paths": ("/feeds/press_all.xml", "/newsevents/pressreleases/"),
         "cost": "public RSS/HTML; no account or API key; no provider fee identified",
         "commercial_use": "Board material subject to disclaimer; cite source, exclude third-party works",
+        "zero_cost_reviewed": True,
     },
     "wikidata": {
         "hosts": {"www.wikidata.org"}, "methods": {"GET"}, "rpm": 10,
@@ -56,6 +59,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "operations": {"source_collection"}, "paths": ("/w/api.php",),
         "cost": "public API; no billing credential or paid tier used; hard-stop throttling",
         "commercial_use": "CC0 data; API policy/User-Agent and rate limits apply",
+        "zero_cost_reviewed": True,
     },
     "artifact_setup": {
         "hosts": {
@@ -83,6 +87,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         },
         "cost": "unauthenticated public metadata/artifact download only; no hosted inference",
         "commercial_use": "only the pinned MIT engine and Apache-2.0 models; terms/limits apply",
+        "zero_cost_reviewed": True,
     },
 }
 
@@ -145,19 +150,35 @@ def billing_credential_names() -> list[str]:
 def status() -> dict[str, Any]:
     blocked = billing_credential_names()
     review_due = datetime.now(UTC).date() > TERMS_REVIEW_DUE
+    providers: list[dict[str, Any]] = []
+    blocked_providers: list[dict[str, str]] = []
+    for name, rule in sorted(PROVIDERS.items()):
+        reason = (
+            "potentially_billable_credentials_detected" if blocked
+            else "external_terms_review_expired" if review_due
+            else None if rule["zero_cost_reviewed"]
+            else "manual_zero_cost_review_required"
+        )
+        allowed = reason is None
+        providers.append({
+            "name": name,
+            "cost": rule["cost"],
+            "usage_limit": (
+                f"local hard caps {rule['rpm']} calls/minute and {rule['rph']} calls/hour; "
+                "provider 429/quota stops immediately"
+            ),
+            "commercial_use": rule["commercial_use"],
+            "calls_allowed": allowed,
+            "block_reason": reason,
+        })
+        if not allowed:
+            blocked_providers.append({"name": name, "reason": str(reason)})
     return {
         "policy": "zero_additional_cost",
         "external_calls_allowed": not blocked and not review_due,
         "blocked_credential_names": blocked,
-        "providers": [
-            {
-                "name": name,
-                "cost": rule["cost"],
-                "usage_limit": f"local hard caps {rule['rpm']} calls/minute and {rule['rph']} calls/hour; provider 429/quota stops immediately",
-                "commercial_use": rule["commercial_use"],
-            }
-            for name, rule in sorted(PROVIDERS.items())
-        ],
+        "providers": providers,
+        "blocked_providers": blocked_providers,
         "paid_fallback": False,
         "automatic_paid_upgrade": False,
         "terms_reviewed_at": TERMS_REVIEWED_AT.isoformat(),
@@ -210,6 +231,8 @@ def _authorize(provider: str, operation: str, request: httpx.Request) -> None:
         or parsed.password
     ):
         _deny(provider, operation, request, "destination_or_method_not_allowlisted")
+    if not rule["zero_cost_reviewed"]:
+        _deny(provider, operation, request, "provider_cost_unverified")
     # Per-process safety caps supplement durable application quotas. Provider 429
     # and quota errors remain hard stops; this limiter never sleeps or retries.
     now = time.monotonic()

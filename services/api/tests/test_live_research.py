@@ -57,6 +57,27 @@ def test_external_policy_blocks_unlisted_destination(monkeypatch: pytest.MonkeyP
         )
 
 
+def test_blogger_reads_wait_for_manual_zero_cost_review(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(external_policy, "billing_credential_names", list)
+    monkeypatch.setattr(external_policy, "_audit", lambda *args, **kwargs: None)
+    policy = external_policy.status()
+    blogger = next(p for p in policy["providers"] if p["name"] == "google_blogger_read")
+    assert blogger["calls_allowed"] is False
+    assert blogger["block_reason"] == "manual_zero_cost_review_required"
+    transport = external_policy.guarded_transport(
+        "google_blogger_read",
+        "blogger_read",
+        httpx.MockTransport(lambda request: httpx.Response(200, request=request)),
+    )
+    with (
+        httpx.Client(transport=transport) as client,
+        pytest.raises(external_policy.ExternalCallBlocked, match="provider_cost_unverified"),
+    ):
+        client.get("https://www.googleapis.com/blogger/v3/blogs/123")
+
+
 @pytest.mark.parametrize("status", [429, 403])
 def test_external_policy_quota_is_a_hard_stop(
     monkeypatch: pytest.MonkeyPatch, status: int

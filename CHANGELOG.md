@@ -48,3 +48,4 @@
 - Added administrator visibility for cost policy status and credential variable names, plus reviewed provider cost/usage/license records.
 ### Changed
 - Blogger read requests now stop immediately on 429 or quota exhaustion instead of retrying.
+- Blogger API reads remain blocked until the Google Cloud project's account-side billing status is manually verified at zero cost.
