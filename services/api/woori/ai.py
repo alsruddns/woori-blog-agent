@@ -4,16 +4,20 @@ import json
 from typing import Any, Protocol
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 
 class EngineFailure(RuntimeError):
-    def __init__(self, category: str, retryable: bool = False) -> None:
+    def __init__(
+        self, category: str, retryable: bool = False, retry_after_seconds: int = 30
+    ) -> None:
         self.category, self.retryable = category, retryable
+        self.retry_after_seconds = max(1, min(86400, retry_after_seconds))
         super().__init__(category)
 
 
 class Draft(BaseModel):
+    _metrics: dict[str, Any] = PrivateAttr(default_factory=dict)
     model_config = ConfigDict(extra="forbid")
     title: str = Field(min_length=3, max_length=200)
     body: str = Field(min_length=20, max_length=20000)
@@ -45,6 +49,10 @@ class LocalProvider:
     """CPU-only Ollama; fixed loopback, no redirects/proxies or automatic downloads."""
 
     def generate(self, context: dict[str, Any], policy: dict[str, Any]) -> Draft:
+        if policy.get("engine") == "llamacpp":
+            from .local_inference import LlamaCppProvider
+
+            return LlamaCppProvider().generate(context, policy)
         if not policy["language_verified"]:
             raise EngineFailure("language_support_unverified")
         model = policy["model"]

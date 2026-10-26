@@ -8,9 +8,13 @@ import httpx
 from dotenv import dotenv_values
 from woori.db import connection
 from woori.google_oauth import decrypt
+from woori.secret_scan import contains_secret
 
 root = Path(__file__).resolve().parents[1]
 secrets = []
+local_key = root / ".local/inference.key"
+if local_key.exists():
+    secrets.append(local_key.read_text(encoding="utf-8").strip())
 for name in (".env", ".env.bootstrap", ".env.migration", "apps/dashboard/.env.local"):
     for key, value in dotenv_values(root / name).items():
         if not value:
@@ -31,7 +35,7 @@ with connection() as conn:
     history = str(conn.execute("SELECT payload FROM audit_events").fetchall())
     history += str(conn.execute("SELECT * FROM blogger_api_calls").fetchall())
     history += str(conn.execute("SELECT * FROM generation_attempts").fetchall())
-    assert not any(value and value in history for value in secrets), (
+    assert not any(contains_secret(history, value) for value in secrets), (
         "Plaintext secret found in history"
     )
     assert (
@@ -54,7 +58,7 @@ names = (
 for name in filter(None, names):
     assert not Path(name).name.startswith(".env"), "Unexpected staged dotenv"
     content = subprocess.check_output(["git", "show", ":" + name], cwd=root)
-    assert not any(value and value.encode() in content for value in secrets), (
+    assert not any(contains_secret(content.decode("utf-8"), value) for value in secrets), (
         "Secret found in staged content"
     )
 with httpx.Client(timeout=15, trust_env=False) as client:
@@ -69,7 +73,7 @@ with httpx.Client(timeout=15, trust_env=False) as client:
         )
         assert response.status_code == 200
         outputs.append(response.text)
-    assert not any(value and value in "\n".join(outputs) for value in secrets), (
+    assert not any(contains_secret("\n".join(outputs), value) for value in secrets), (
         "Plaintext secret in HTTP response"
     )
 print(

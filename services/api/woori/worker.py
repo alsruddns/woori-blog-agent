@@ -4,7 +4,7 @@ import time
 
 import psycopg
 
-from . import pipeline
+from . import collection, pipeline
 from .db import connection
 
 
@@ -53,6 +53,8 @@ def tick() -> bool:
 def main() -> None:
     while True:
         try:
+            collection.schedule_tick()
+            collection.tick()
             pipeline.schedule_tick()
             pipeline.tick()
             tick()

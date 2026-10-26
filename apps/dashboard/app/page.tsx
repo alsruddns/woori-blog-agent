@@ -33,6 +33,7 @@ export default async function Page() {
         <small>PHASE 01 · LOCAL</small>
       </header>
       <h1>블로그 운영 현황</h1>
+      <p><Link href="/research">콘텐츠 리서치·실제 AI 초안 →</Link></p>
       <p>
         <Link href="/blogger">Google OAuth · Blogger 읽기 관리 →</Link>
       </p>

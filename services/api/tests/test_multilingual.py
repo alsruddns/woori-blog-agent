@@ -292,6 +292,9 @@ def test_legacy_migration_preserves_content_and_audits() -> None:
             "008_research_dispatch.sql",
             "009_pipeline_permissions.sql",
             "010_review_order.sql",
+            "011_live_research.sql",
+            "012_source_revisions.sql",
+            "013_evaluation_jobs.sql",
         ]:
             content = (
                 (root / "scripts" / migration)

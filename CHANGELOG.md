@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased - Phase 3.5 - 2026-10-26
+
+- Install and checksum project-local official CPU llama.cpp and Qwen GGUF models; preserve all system and other-project settings.
+- Measure actual inference for two models and active DB languages, including failures and resource samples.
+- Collect bounded Fed public-domain release evidence and Wikidata CC0 topic metadata with durable jobs and immutable source revisions.
+- Add cancellable SSE local inference, explicit quality-held evaluation jobs, grounding/metadata diagnostics and append-only revalidation.
+- Store four actual-model drafts against collected evidence; keep semantic/translation quality unapproved and all publishing disabled.
+- Restore UTF-8 Korean research UI/rules and expose live collection, model, benchmark, provenance and quality results.
+
 ## Unreleased - Phase 3 - 2026-10-26
 
 - Add evidence-reviewed keyword research, immutable sources/reviews, versioned prompts and per-profile AI policies.

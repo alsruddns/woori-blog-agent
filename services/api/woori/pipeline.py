@@ -16,6 +16,7 @@ from psycopg.types.json import Jsonb
 
 from .ai import Draft, EngineFailure, provider
 from .db import connection
+from .grounding import inspect
 
 
 def required(row: dict[str, Any] | None) -> dict[str, Any]:
@@ -41,7 +42,7 @@ def evidence(keyword_id: UUID) -> list[dict[str, Any]]:
             """SELECT s.*,r.id AS review_id,r.approved,r.reason AS review_reason
             FROM research_sources s JOIN LATERAL
             (SELECT * FROM source_reviews WHERE source_id=s.id ORDER BY review_sequence DESC LIMIT 1) r ON true
-            WHERE s.keyword_id=%s AND s.valid_until>now() AND r.approved ORDER BY s.is_primary DESC,s.id""",
+            WHERE s.keyword_id=%s AND s.valid_until>now() AND r.approved AND NOT EXISTS(SELECT 1 FROM research_sources newer WHERE newer.keyword_id=s.keyword_id AND newer.url=s.url AND newer.revision>s.revision) ORDER BY s.is_primary DESC,s.id""",
             (keyword_id,),
         ).fetchall()
     if not rows or (not any(r["is_primary"] for r in rows) and len(rows) < 2):
@@ -49,7 +50,9 @@ def evidence(keyword_id: UUID) -> list[dict[str, Any]]:
     return rows
 
 
-def enqueue(keyword_id: UUID, key: str, profile_ids: list[UUID] | None = None) -> dict[str, Any]:
+def enqueue(
+    keyword_id: UUID, key: str, profile_ids: list[UUID] | None = None, evaluation_only: bool = False
+) -> dict[str, Any]:
     with connection() as conn:
         conn.execute("SELECT pg_advisory_xact_lock(781203)")
         keyword = conn.execute(
@@ -75,15 +78,26 @@ def enqueue(keyword_id: UUID, key: str, profile_ids: list[UUID] | None = None) -
                 raise EngineFailure("inactive_or_unknown_target")
         if not targets or targets[0]["profile_id"] != keyword["profile_id"]:
             raise EngineFailure("source_profile_required")
+        if evaluation_only and any(t["provider"] != "local" for t in targets):
+            raise EngineFailure("evaluation_requires_real_local_provider")
         fingerprint = hashlib.sha256(
-            json.dumps([str(keyword_id), sorted(str(t["profile_id"]) for t in targets)]).encode()
+            json.dumps(
+                [str(keyword_id), sorted(str(t["profile_id"]) for t in targets), evaluation_only]
+            ).encode()
         ).hexdigest()
         old = conn.execute(
             "SELECT r.*,g.request_fingerprint FROM job_runs r JOIN generation_jobs g ON g.run_id=r.id WHERE r.idempotency_key=%s",
             (key,),
         ).fetchone()
         if old:
-            if old["request_fingerprint"] != fingerprint:
+            legacy = hashlib.sha256(
+                json.dumps(
+                    [str(keyword_id), sorted(str(t["profile_id"]) for t in targets)]
+                ).encode()
+            ).hexdigest()
+            if old["request_fingerprint"] != fingerprint and (
+                evaluation_only or old["request_fingerprint"] != legacy
+            ):
                 raise EngineFailure("idempotency_conflict")
             return old
         if conn.execute("SELECT 1 FROM job_runs WHERE idempotency_key=%s", (key,)).fetchone():
@@ -103,11 +117,12 @@ def enqueue(keyword_id: UUID, key: str, profile_ids: list[UUID] | None = None) -
         ).fetchone()
         assert run is not None
         conn.execute(
-            "INSERT INTO generation_jobs(run_id,keyword_id,request_fingerprint) VALUES (%s,%s,%s)",
-            (run["id"], keyword_id, fingerprint),
+            "INSERT INTO generation_jobs(run_id,keyword_id,request_fingerprint,evaluation_only) VALUES (%s,%s,%s,%s)",
+            (run["id"], keyword_id, fingerprint, evaluation_only),
         )
         for t in targets:
             snapshot = json.loads(json.dumps(t, default=str))
+            snapshot["evaluation_only"] = evaluation_only
             conn.execute(
                 "INSERT INTO generation_targets VALUES (%s,%s,%s)",
                 (run["id"], t["profile_id"], Jsonb(snapshot)),
@@ -188,13 +203,13 @@ def process(run: dict[str, Any]) -> None:
                 raise EngineFailure("profile_processing_disabled")
             snapshot = target["settings_snapshot"]
             if snapshot["provider"] == "local" and (
-                not active["language_verified"]
+                (not active["language_verified"] and not snapshot.get("evaluation_only"))
                 or active["provider"] != "local"
                 or active["model"] != snapshot["model"]
             ):
                 raise EngineFailure("language_support_unverified")
             lease = conn.execute(
-                """UPDATE job_runs r SET lease_until=now()+interval '120 seconds'
+                """UPDATE job_runs r SET lease_until=now()+interval '300 seconds'
                 FROM generation_jobs j,pipeline_controls c WHERE r.id=%s AND r.id=j.run_id AND r.status='running'
                 AND r.attempts=%s AND NOT j.paused AND NOT c.paused AND r.lease_until>now() RETURNING r.id""",
                 (run_id, attempt),
@@ -210,7 +225,7 @@ def process(run: dict[str, Any]) -> None:
                 run_id,
                 profile_id=str(profile_id),
                 source_count=len(sources),
-                verification="human_attestation",
+                verification="recorded_source_attestation",
             )
         context = {
             k: policy[k]
@@ -262,10 +277,13 @@ def process(run: dict[str, Any]) -> None:
             emit(
                 conn, "planning.completed", run_id, profile_id=str(profile_id), plan=context["plan"]
             )
+        context["_run_id"] = str(run_id)
         started = time.monotonic()
         draft = provider(policy["provider"]).generate(context, policy)
         checks = quality(draft, sources, keyword["keyword"], policy["provider"] == "mock")
-        if not checks["structural_pass"]:
+        if policy["provider"] == "local":
+            checks["grounding"] = inspect(draft, sources, policy["language_code"], context["as_of"])
+        if not checks["structural_pass"] and policy["provider"] == "mock":
             raise EngineFailure("quality_checks_failed")
         digest = hashlib.sha256(normalized(draft.body).encode()).hexdigest()
         with connection() as conn:
@@ -367,11 +385,25 @@ def process(run: dict[str, Any]) -> None:
                     Jsonb({"settings": policy, "context": context}),
                     Jsonb(context["sources"]),
                     Jsonb(
-                        {"summary": draft.summary, "keywords": draft.keywords, "quality": checks}
+                        {
+                            "summary": draft.summary,
+                            "keywords": draft.keywords,
+                            "referenced_source_ids": draft.source_ids,
+                            "quality": checks,
+                            "metrics": draft._metrics,
+                        }
                     ),
                     digest,
                     int((time.monotonic() - started) * 1000),
-                    "mock_draft" if policy["provider"] == "mock" else "human_review_required",
+                    "mock_draft"
+                    if policy["provider"] == "mock"
+                    else (
+                        "human_review_required"
+                        if not policy.get("evaluation_only")
+                        and checks["structural_pass"]
+                        and checks["grounding"]["rule_pass"]
+                        else "quality_held"
+                    ),
                 ),
             )
             conn.execute(
@@ -428,7 +460,7 @@ def tick() -> bool:
         if not run:
             return False
         run = conn.execute(
-            """UPDATE job_runs SET status='running',attempts=attempts+1,lease_until=now()+interval '120 seconds',
+            """UPDATE job_runs SET status='running',attempts=attempts+1,lease_until=now()+interval '300 seconds',
             updated_at=now() WHERE id=%s RETURNING *""",
             (run["id"],),
         ).fetchone()
@@ -440,7 +472,7 @@ def tick() -> bool:
         category = exc.category if isinstance(exc, EngineFailure) else "internal_generation_error"
         retry = (
             isinstance(exc, EngineFailure) and exc.retryable and run["attempts"] < 3
-        ) or category == "lease_lost_or_paused"
+        ) or category in ("lease_lost_or_paused", "generation_cancelled")
         with connection() as conn:
             changed = conn.execute(
                 """UPDATE job_runs SET status=%s,lease_until=NULL,available_at=now()+interval '30 seconds',

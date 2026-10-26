@@ -10,8 +10,10 @@ from croniter import croniter
 from fastapi import APIRouter, HTTPException
 from pydantic import Field, field_validator
 
-from . import pipeline
+from . import collection, pipeline
+from .ai import Draft, EngineFailure
 from .db import connection
+from .grounding import inspect
 from .multilingual import Input
 from .pipeline import required
 
@@ -82,12 +84,14 @@ class Review(Input):
 
 
 class Generate(Input):
+    evaluation_only: bool = False
     keyword_id: UUID
     idempotency_key: str = Field(min_length=1, max_length=128, pattern=r"^[a-zA-Z0-9_-]+$")
     profile_ids: list[UUID] | None = Field(default=None, max_length=50)
 
 
 class ModelSettings(Input):
+    engine: Literal["ollama", "llamacpp"] = "ollama"
     provider: Literal["mock", "local"] = "mock"
     model: str = Field(
         default="mock-v1", min_length=1, max_length=100, pattern=r"^[a-zA-Z0-9_.:-]+$"
@@ -98,7 +102,7 @@ class ModelSettings(Input):
     prompt_id: UUID
     daily_limit: int = Field(default=5, ge=1, le=50)
     threads: int = Field(default=2, ge=1, le=4)
-    timeout_seconds: int = Field(default=30, ge=5, le=60)
+    timeout_seconds: int = Field(default=30, ge=5, le=180)
 
 
 class Prompt(Input):
@@ -126,6 +130,74 @@ class Schedule(Input):
     quantity: int = Field(default=1, ge=1, le=10)
 
 
+class CollectionRequest(Input):
+    source_id: UUID
+    profile_id: UUID
+    idempotency_key: str = Field(min_length=1, max_length=128, pattern=r"^[a-zA-Z0-9_-]+$")
+    auto_generate: bool = False
+
+
+class CollectionSchedule(Input):
+    profile_id: UUID
+    scheduled: bool = False
+    interval_minutes: int = Field(default=60, ge=60, le=10080)
+    auto_generate: bool = False
+
+
+@router.post("/collections", status_code=201)
+def collect(request: CollectionRequest) -> dict[str, Any]:
+    return collection.request(
+        request.source_id, request.profile_id, request.idempotency_key, request.auto_generate
+    )
+
+
+@router.put("/collections/{source_id}")
+def collection_schedule(source_id: UUID, request: CollectionSchedule) -> dict[str, Any]:
+    with connection() as conn:
+        return required(
+            conn.execute(
+                """UPDATE collection_sources SET profile_id=%s,scheduled=%s,
+            interval_minutes=%s,auto_generate=%s,next_run_at=now() WHERE id=%s RETURNING *""",
+                (
+                    request.profile_id,
+                    request.scheduled,
+                    request.interval_minutes,
+                    request.auto_generate,
+                    source_id,
+                ),
+            ).fetchone()
+        )
+
+
+@router.get("/local-ai")
+def local_status() -> dict[str, Any]:
+    import json
+
+    import httpx
+
+    from .ai import EngineFailure
+    from .local_inference import ROOT, auth_headers, runtime
+
+    result: dict[str, Any] = {"available": False, "installed_models": []}
+    folder = ROOT / ".local"
+    if (folder / "manifest.json").exists():
+        manifest = json.loads((folder / "manifest.json").read_text())
+        result["installed_models"] = [
+            {**m, "bytes": (folder / m["name"]).stat().st_size}
+            for m in manifest["models"]
+            if (folder / m["name"]).exists()
+        ]
+    try:
+        info = runtime()
+        with httpx.Client(timeout=2, trust_env=False, headers=auth_headers()) as client:
+            result.update(
+                available=client.get("http://127.0.0.1:11435/health").status_code == 200, **info
+            )
+    except (EngineFailure, httpx.HTTPError):
+        pass
+    return result
+
+
 @router.get("/state")
 def state() -> dict[str, Any]:
     with connection() as conn:
@@ -140,9 +212,12 @@ def state() -> dict[str, Any]:
                 "prompts": "SELECT * FROM prompt_templates ORDER BY name,version DESC",
                 "jobs": "SELECT r.*,j.keyword_id,j.paused FROM job_runs r JOIN generation_jobs j ON j.run_id=r.id ORDER BY r.created_at DESC LIMIT 100",
                 "attempts": "SELECT * FROM generation_attempts ORDER BY id DESC LIMIT 100",
-                "versions": "SELECT v.*,g.run_id,g.profile_id,g.provider,g.model,g.prompt_id,g.state,g.result_metadata FROM generation_results g JOIN content_versions v ON v.id=g.content_version_id ORDER BY v.created_at DESC LIMIT 100",
+                "versions": "SELECT v.*,g.run_id,g.profile_id,g.provider,g.model,g.prompt_id,g.state,g.result_metadata,g.source_snapshot,sa.checks AS latest_checks FROM generation_results g JOIN content_versions v ON v.id=g.content_version_id LEFT JOIN LATERAL (SELECT checks FROM seo_audits WHERE content_version_id=v.id ORDER BY created_at DESC,id DESC LIMIT 1) sa ON true ORDER BY v.created_at DESC LIMIT 100",
                 "schedules": "SELECT * FROM research_schedules ORDER BY next_run_at",
                 "dispatches": "SELECT * FROM research_dispatches ORDER BY occurrence DESC LIMIT 100",
+                "collection_sources": "SELECT * FROM collection_sources ORDER BY name",
+                "collection_jobs": "SELECT r.*,j.source_id FROM job_runs r JOIN collection_jobs j ON j.run_id=r.id ORDER BY r.created_at DESC LIMIT 50",
+                "measurements": "SELECT * FROM model_measurements ORDER BY created_at DESC LIMIT 50",
             }.items()
         }
         result["controls"] = conn.execute("SELECT * FROM pipeline_controls").fetchone()
@@ -152,6 +227,52 @@ def state() -> dict[str, Any]:
         result["publishing_enabled"] = False
         result["paid_ai_enabled"] = False
         return result
+
+
+@router.post("/versions/{version_id}/validate")
+def revalidate(version_id: UUID) -> dict[str, Any]:
+    from psycopg.types.json import Jsonb
+
+    with connection() as conn:
+        row = required(
+            conn.execute(
+                """SELECT v.*,g.profile_id,g.run_id,g.result_metadata,g.source_snapshot,j.keyword_id
+            FROM content_versions v JOIN generation_results g ON g.content_version_id=v.id
+            JOIN generation_jobs j ON j.run_id=g.run_id WHERE v.id=%s""",
+                (version_id,),
+            ).fetchone()
+        )
+    metadata = row["result_metadata"]
+    source_ids = metadata.get(
+        "referenced_source_ids", [str(s["id"]) for s in row["source_snapshot"]]
+    )
+    draft = Draft(
+        title=row["title"],
+        body=row["body"],
+        summary=metadata["summary"],
+        keywords=metadata["keywords"],
+        source_ids=source_ids,
+    )
+    checks = inspect(
+        draft, row["source_snapshot"], row["language"], datetime.now(UTC).date().isoformat()
+    )
+    try:
+        current = pipeline.evidence(row["keyword_id"])
+        checks["input_revision_current"] = {str(s["id"]) for s in current} == {
+            str(s["id"]) for s in row["source_snapshot"]
+        }
+    except EngineFailure:
+        checks["input_revision_current"] = False
+    checks["rule_pass"] = bool(checks["rule_pass"] and checks["input_revision_current"])
+    with connection() as conn:
+        conn.execute(
+            "INSERT INTO seo_audits(content_version_id,profile_id,passed,validator_adapter,checks) VALUES (%s,%s,false,'grounding-v2',%s)",
+            (version_id, row["profile_id"], Jsonb(checks)),
+        )
+        pipeline.emit(
+            conn, "quality.rechecked", row["run_id"], version_id=str(version_id), checks=checks
+        )
+    return checks
 
 
 @router.post("/keywords", status_code=201)
@@ -229,7 +350,9 @@ def review_source(source_id: UUID, request: Review) -> dict[str, Any]:
 
 @router.post("/jobs", status_code=201)
 def generate(request: Generate) -> dict[str, Any]:
-    return pipeline.enqueue(request.keyword_id, request.idempotency_key, request.profile_ids)
+    return pipeline.enqueue(
+        request.keyword_id, request.idempotency_key, request.profile_ids, request.evaluation_only
+    )
 
 
 @router.post("/jobs/{run_id}/action")

@@ -1,72 +1,120 @@
 "use client";
 import { useEffect, useState, type FormEvent } from "react";
 
-type Profile = { id: string; language_code: string; target_country: string; active: boolean };
-type Keyword = { id: string; keyword: string; status: string; language_code: string; target_country: string; priority: number; search_volume: number | null; cpc: number | null; collection_source: string; rationale: string; expires_at: string };
-type Source = { id: string; keyword_id: string; source_name: string; url: string; evidence: string; rights: string; reliability_reason: string; access_policy: string; approved: boolean | null; review_reason: string | null; valid_until: string };
-type Job = { id: string; status: string; attempts: number; paused: boolean; error_type: string | null; error_at: string | null };
-type Version = { id: string; group_id: string; language: string; localization_id: string; version: number; title: string; body: string; source_version_id: string | null; state: string; provider: string; model: string; result_metadata: { summary: string; keywords: string[]; quality: Record<string, unknown> } };
-type Setting = { profile_id: string; provider: string; model: string; enabled: boolean; language_verified: boolean; verification_reason: string; prompt_id: string; daily_limit: number; threads: number; timeout_seconds: number };
+type Row = Record<string, unknown>;
 export type State = {
- profiles: Profile[]; categories: { id: string; slug: string }[]; keywords: Keyword[]; sources: Source[];
- jobs: Job[]; versions: Version[]; settings: Setting[]; prompts: { id: string; name: string; version: number; instructions: string }[];
- controls: { paused: boolean; max_concurrency: number; cpu_percent: number; ram_percent: number };
- schedules: { id: string; category_id: string; profile_id: string; active: boolean; schedule_cron: string; timezone: string; quantity: number; next_run_at: string }[];
- attempts: Record<string, unknown>[]; events: Record<string, unknown>[]; dispatches: Record<string, unknown>[];
+  profiles: Row[]; categories: Row[]; keywords: Row[]; sources: Row[]; jobs: Row[];
+  versions: Row[]; settings: Row[]; prompts: Row[]; controls: Row; schedules: Row[];
+  attempts: Row[]; events: Row[]; dispatches: Row[]; collection_sources: Row[];
+  collection_jobs: Row[]; measurements: Row[];
 };
-const fields = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); return new FormData(event.currentTarget); };
-const text = (form: FormData, key: string) => String(form.get(key) ?? "");
-const checked = (form: FormData, key: string) => form.get(key) === "on";
-const date = (form: FormData, key: string) => new Date(text(form, key)).toISOString();
-function Input({ name, label, type = "text", value, required = true }: { name: string; label: string; type?: string; value?: string | number; required?: boolean }) {
- return <label>{label} <input name={name} type={type} defaultValue={value} required={required}/></label>;
+type Field = { name: string; label: string; type?: string; optional?: boolean; options?: { value: string; label: string }[] };
+const str = (row: Row, key: string) => String(row[key] ?? "");
+const profileLabel = (p: Row) => `${str(p, "language_code")} / ${str(p, "target_country") || "국가 미지정"}`;
+
+function Editor({ fields, defaults = {}, submit, label, disabled }: {
+  fields: Field[]; defaults?: Row; submit: (data: Row) => Promise<void>; label: string; disabled: boolean;
+}) {
+  function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget), output: Row = {};
+    for (const f of fields) {
+      const value = String(form.get(f.name) ?? "");
+      output[f.name] = f.type === "checkbox" ? form.has(f.name) : f.type === "number" ? Number(value)
+        : f.type === "datetime-local" ? (value ? new Date(value).toISOString() : null) : value;
+    }
+    void submit(output);
+  }
+  return <form onSubmit={save}>{fields.map(f => <label key={f.name}>{f.label} {f.options
+    ? <select name={f.name} defaultValue={str(defaults, f.name)} required>{f.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
+    : f.type === "textarea" ? <textarea name={f.name} defaultValue={str(defaults, f.name)} required={!f.optional}/>
+    : <input name={f.name} type={f.type ?? "text"} defaultValue={f.type === "checkbox" ? undefined : str(defaults, f.name)} defaultChecked={f.type === "checkbox" ? Boolean(defaults[f.name]) : undefined} required={f.type !== "checkbox" && !f.optional}/>}
+  </label>)}<button disabled={disabled}>{label}</button></form>;
 }
+
 export default function Research({ initial }: { initial: State }) {
- const [data, setData] = useState(initial), [message, setMessage] = useState(""), [busy, setBusy] = useState(false);
- const [first, setFirst] = useState(""), [second, setSecond] = useState("");
- async function refresh() {
-  const r = await fetch("/api/research/state", { cache: "no-store" });
-  if (!r.ok) throw new Error("?? ?? ??");
-  setData(await r.json() as State);
- }
- useEffect(() => { const timer = setInterval(() => { refresh().catch(() => setMessage("?? ?? ??. API ??? ?????.")); }, 5000); return () => clearInterval(timer); }, []);
- async function act(path: string, body: object, method = "POST") {
-  setBusy(true);
-  try {
-   const response = await fetch(`/api/research/${path}`, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-   const result = await response.json() as { error?: string; detail?: unknown };
-   if (!response.ok) throw new Error(result.error ?? JSON.stringify(result.detail ?? "?? ??"));
-   setMessage("??????. ?? ??? Worker? ?????."); await refresh();
-  } catch (error) { setMessage(error instanceof Error ? error.message : "?? ??"); } finally { setBusy(false); }
- }
- const profiles = (name = "profile_id") => <select name={name} required>{data.profiles.filter(p => p.active).map(p => <option key={p.id} value={p.id}>{p.language_code} / {p.target_country || "?? ???"}</option>)}</select>;
- const categories = <select name="category_id" required>{data.categories.map(c => <option key={c.id} value={c.id}>{c.slug}</option>)}</select>;
- const keywords = <select name="keyword_id" required>{data.keywords.map(k => <option key={k.id} value={k.id}>{k.keyword} ({k.language_code})</option>)}</select>;
- const a = data.versions.find(v => v.id === first), b = data.versions.find(v => v.id === second);
- return <>
- <p role="status">{message}</p><button disabled={busy} onClick={() => refresh().catch(() => setMessage("?? ??"))}>?? ??</button>
- <section><h2>??? ?? ?????</h2><p>????????CPC? ??? ???? ???? ??? ??????. ????? ??? ?????.</p>
- <form onSubmit={e => { const f = fields(e); void act("keywords", { profile_id: text(f,"profile_id"), category_id: text(f,"category_id"), keyword: text(f,"keyword"), search_intent: text(f,"search_intent"), collection_source: text(f,"collection_source"), rationale: text(f,"rationale"), priority: Number(text(f,"priority")), expires_at: date(f,"expires_at") }); }}>
- {profiles()}{categories}<Input name="keyword" label="???"/><Input name="search_intent" label="?? ??"/><Input name="collection_source" label="?? ??"/><Input name="rationale" label="?? ??"/><Input name="priority" label="???? 1?100" type="number" value={50}/><Input name="expires_at" label="?? ??" type="datetime-local"/><button disabled={busy}>?? ??</button></form>
- {data.keywords.map(k => <article key={k.id}><h3>{k.keyword} ? {k.language_code}/{k.target_country} ? {k.status}</h3><p>{k.collection_source} ? {k.rationale} ? ???? {k.priority} ? ??? {k.search_volume ?? "???"} ? CPC {k.cpc ?? "???"} ? ?? ?? {k.expires_at}</p>
- <button disabled={busy} onClick={() => act(`keywords/${k.id}`, { status: "selected" }, "PUT")}>??</button><button disabled={busy} onClick={() => act(`keywords/${k.id}`, { status: "excluded" }, "PUT")}>??</button>
- <button disabled={busy || k.status !== "selected"} onClick={() => act("jobs", { keyword_id: k.id, idempotency_key: crypto.randomUUID() })}>?? ??? ?? ?? ??</button></article>)}
- </section>
- <section><h2>?? ????? ??</h2><p>?? ????? ????. ??? ?? ??? ?? ??? ?? ???? ?? ??? ?????. ??? ?? ???? ?? ?? ???? ?? ?? ??? ????.</p>
- <form onSubmit={e => { const f = fields(e); void act("sources", { keyword_id: text(f,"keyword_id"), url: text(f,"url"), source_name: text(f,"source_name"), published_at: text(f,"published_at") ? date(f,"published_at") : null, evidence: text(f,"evidence"), reliability_reason: text(f,"reliability_reason"), rights: text(f,"rights"), access_policy: text(f,"access_policy"), valid_until: date(f,"valid_until"), is_primary: checked(f,"is_primary") }); }}>
- {keywords}<Input name="url" label="?? HTTPS URL (?? ??)" type="url"/><Input name="source_name" label="???"/><Input name="published_at" label="??? (??? ??)" type="datetime-local" required={false}/><label>?? (?? 1,000?)<textarea name="evidence" maxLength={1000} minLength={10} required/></label><Input name="reliability_reason" label="??? ?? ??"/><Input name="rights" label="?????? ?? ??"/><Input name="access_policy" label="robots???????? ??"/><Input name="valid_until" label="?? ?? ??" type="datetime-local"/><label><input type="checkbox" name="is_primary"/>?? 1? ??</label><button disabled={busy || !data.keywords.length}>?? ??</button></form>
- {data.sources.map(s => <article key={s.id}><h3><a href={s.url} target="_blank" rel="noreferrer">{s.source_name}</a> ? {s.approved === null ? "???" : s.approved ? "?? ??" : "?? ??"}</h3><p>{s.evidence}</p><p>{s.reliability_reason} ? {s.rights} ? {s.access_policy} ? ?? ?? {s.valid_until}</p><p>{s.review_reason}</p><form onSubmit={e => { const f = fields(e); void act(`sources/${s.id}/reviews`, { approved: text(f,"approved") === "true", reason: text(f,"reason"), reviewer: text(f,"reviewer") }); }}><select name="approved"><option value="false">?????? ?? ??</option><option value="true">???????? ??</option></select><Input name="reason" label="?? ?? (10? ??)"/><Input name="reviewer" label="???"/><button disabled={busy}>? ?? ?? ??</button></form></article>)}
- </section>
- <section><h2>?? ?????????</h2>{data.jobs.map(j => <article key={j.id}><p>{j.id} ? {j.status} ? ?? {j.attempts} ? {j.paused ? "?? ??" : "?? ??"} ? {j.error_type} {j.error_at}</p><button disabled={busy || j.status === "succeeded"} onClick={() => act(`jobs/${j.id}/action`, { action: j.paused ? "resume" : "pause" })}>{j.paused ? "??" : "?? ??"}</button><button disabled={busy || j.status !== "failed" || j.attempts >= 3} onClick={() => act(`jobs/${j.id}/action`, { action: "retry" })}>???</button></article>)}<details><summary>?????? ?? ?? ??</summary><pre>{JSON.stringify({ attempts: data.attempts, dispatches: data.dispatches }, null, 2)}</pre></details></section>
- <section><h2>?????? ????? ?? ??</h2><p>??? ?? ?? ????? Google ??? ??? ???? ????. Mock? ?? ?? ?? ??? ????.</p>
- {[{value:first,set:setFirst},{value:second,set:setSecond}].map((item,i) => <label key={i}>?? {i+1}<select value={item.value} onChange={e => item.set(e.target.value)}><option value="">?? ??</option>{data.versions.map(v => <option key={v.id} value={v.id}>{v.language} v{v.version} {v.title}</option>)}</select></label>)}
- {a && b && <p>{a.localization_id === b.localization_id ? "?? ???? ?? ??" : "?? ?? ??? ??"} ? ?? ? {b.body.split("\n").filter(line => !a.body.split("\n").includes(line)).length} ? ?? ? {a.body.split("\n").filter(line => !b.body.split("\n").includes(line)).length}</p>}
- <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:20 }}>{[a,b].map((v,i) => v && <article key={i}><h3>{v.title}</h3><p>{v.language} v{v.version} ? {v.state} ? {v.model} ? ?? {v.group_id} ? ?? ?? {v.source_version_id ?? "??"}</p><pre style={{whiteSpace:"pre-wrap"}}>{v.body}</pre><p>{v.result_metadata.summary}</p><pre>{JSON.stringify(v.result_metadata.quality,null,2)}</pre></article>)}</div></section>
- <section><h2>??? AI????? ??</h2><p>Mock? ??? ?????. Local? ??? CPU ??? ???? ??? ?? ??? ??? ?????. ? ???? ??? ?????.</p>
- {data.settings.map(s => <form key={s.profile_id} onSubmit={e => { const f = fields(e); void act(`settings/${s.profile_id}`, { provider:text(f,"provider"), model:text(f,"model"), enabled:checked(f,"enabled"), language_verified:checked(f,"language_verified"), verification_reason:text(f,"verification_reason"), prompt_id:text(f,"prompt_id"), daily_limit:Number(text(f,"daily_limit")), threads:Number(text(f,"threads")), timeout_seconds:Number(text(f,"timeout_seconds")) }, "PUT"); }}><h3>{data.profiles.find(p => p.id === s.profile_id)?.language_code} / {data.profiles.find(p => p.id === s.profile_id)?.target_country || "?? ???"}</h3><select name="provider" defaultValue={s.provider}><option value="mock">Mock ???</option><option value="local">Local Ollama CPU</option></select><Input name="model" label="??? ???" value={s.model}/><select name="prompt_id" defaultValue={s.prompt_id}>{data.prompts.map(p => <option key={p.id} value={p.id}>{p.name} v{p.version}</option>)}</select><Input name="daily_limit" label="?? ?? ? (1?50)" type="number" value={s.daily_limit}/><Input name="threads" label="CPU ??? (1?4)" type="number" value={s.threads}/><Input name="timeout_seconds" label="???? ? (5?60)" type="number" value={s.timeout_seconds}/><label><input name="enabled" type="checkbox" defaultChecked={s.enabled}/>?? ??</label><label><input name="language_verified" type="checkbox" defaultChecked={s.language_verified}/>?? ????? ?? ?? ??</label><Input name="verification_reason" label="????? ?? ??" value={s.verification_reason} required={false}/><button disabled={busy}>?? ??</button></form>)}
- <form onSubmit={e => { const f = fields(e); void act("prompts", { name:text(f,"name"),instructions:text(f,"instructions") }); }}><Input name="name" label="???? ?? (?? ??????????)"/><label>? ?? ???<textarea name="instructions" minLength={30} required/></label><button disabled={busy}>???? ? ?? ??</button></form><details><summary>?? ???? ??</summary>{data.prompts.map(p => <article key={p.id}><h3>{p.name} v{p.version}</h3><p>{p.instructions}</p></article>)}</details></section>
- <section><h2>?? ??????</h2><p>CPU/RAM? ?? ? ?? ?????. ?? ? OS ?? ?? ??? ????. Local? GPU 0????? 2048??? 1024??? ?? 4GiB ??? ?????.</p><form onSubmit={e => { const f=fields(e); void act("controls",{paused:checked(f,"paused"),max_concurrency:Number(text(f,"max_concurrency")),cpu_percent:Number(text(f,"cpu_percent")),ram_percent:Number(text(f,"ram_percent"))},"PUT"); }}><label><input type="checkbox" name="paused" defaultChecked={data.controls.paused}/>?? ?? ??</label><Input name="max_concurrency" label="?? ?? (1?2)" type="number" value={data.controls.max_concurrency}/><Input name="cpu_percent" label="CPU ?? ?? %" type="number" value={data.controls.cpu_percent}/><Input name="ram_percent" label="RAM ?? ?? %" type="number" value={data.controls.ram_percent}/><button disabled={busy}>?? ?? ??</button></form>
- <p>???? ??? ??? ??? ?????. ?? ??? ?? ??? ???? ?????. ?? ?? ???????? ?? ???? ?? ???? ?????.</p><form onSubmit={e => { const f=fields(e); void act("schedules",{category_id:text(f,"category_id"),profile_id:text(f,"profile_id"),active:checked(f,"active"),schedule_cron:text(f,"schedule_cron"),timezone:text(f,"timezone"),quantity:Number(text(f,"quantity"))}); }}>{categories}{profiles()}<Input name="schedule_cron" label="Cron (?? 5? ??)" value="0 9 * * *"/><Input name="timezone" label="???" value="Asia/Seoul"/><Input name="quantity" label="?? ?? ? (1?10)" type="number" value={1}/><label><input name="active" type="checkbox"/>??? ???</label><button disabled={busy}>??? ??</button></form><pre>{JSON.stringify(data.schedules,null,2)}</pre></section>
- <details><summary>?? ?? ?? ??</summary><pre>{JSON.stringify(data.events,null,2)}</pre></details>
- </>;
+  const [data, setData] = useState(initial), [local, setLocal] = useState<Row>({}), [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState(""), [left, setLeft] = useState(""), [right, setRight] = useState("");
+  async function refresh() {
+    const [state, ai] = await Promise.all([fetch("/api/research/state", { cache: "no-store" }), fetch("/api/research/local-ai", { cache: "no-store" })]);
+    if (!state.ok || !ai.ok) throw new Error("상태 조회 실패");
+    setData(await state.json() as State); setLocal(await ai.json() as Row);
+  }
+  useEffect(() => { const timer = setInterval(() => { refresh().catch(() => setMessage("상태 갱신 실패")); }, 5000); return () => clearInterval(timer); }, []);
+  async function act(path: string, body: Row, method = "POST") {
+    setBusy(true);
+    try {
+      const response = await fetch(`/api/research/${path}`, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const value = await response.json() as Row;
+      if (!response.ok) throw new Error(String(value.error ?? JSON.stringify(value.detail ?? "요청 실패")));
+      setMessage("저장했습니다. 대기 작업은 Worker가 처리합니다."); await refresh();
+    } catch (error) { setMessage(error instanceof Error ? error.message : "요청 실패"); } finally { setBusy(false); }
+  }
+  const profiles = data.profiles.filter(p => p.active).map(p => ({ value: str(p, "id"), label: profileLabel(p) }));
+  const categories = data.categories.map(c => ({ value: str(c, "id"), label: str(c, "slug") }));
+  const promptOptions = data.prompts.map(p => ({ value: str(p, "id"), label: `${str(p, "name")} v${str(p, "version")}` }));
+  const profileField: Field = { name: "profile_id", label: "원본 언어·국가", options: profiles };
+  const categoryField: Field = { name: "category_id", label: "카테고리", options: categories };
+  const versions = [data.versions.find(v => v.id === left), data.versions.find(v => v.id === right)];
+  return <>
+    <p role="status">{message}</p><button disabled={busy} onClick={() => refresh().catch(() => setMessage("조회 실패"))}>새로 고침</button>
+    <section><h2>실제 로컬 AI 상태·성능 측정</h2>
+      <p>연결 상태: {local.available ? "정상" : "미연결 또는 로딩 중"} · 현재 모델: {str(local, "model") || "확인 전"}</p>
+      <p>CPU 전용 엔진이며 GPU 가속을 검증한 상태가 아닙니다. 성능 측정 성공은 사실·번역 품질 합격을 뜻하지 않습니다.</p>
+      <details><summary>설치 모델·버전·해시</summary><pre>{JSON.stringify(local.installed_models ?? [], null, 2)}</pre></details>
+      {data.measurements.map(m => <details key={str(m, "id")}><summary>{str(m, "model")} · {str(m, "language_code")} · {str(m, "status")} · {str(m, "error_category")}</summary>
+        <pre>{JSON.stringify({ checks: m.checks, metrics: m.metrics, sample: m.sample }, null, 2)}</pre></details>)}
+    </section>
+    <section><h2>자동 주제 수집·근거 자료 조사</h2>
+      <p>Fed 공식 본문과 Wikidata CC0 구조화 메타데이터만 허용합니다. Wikidata 후보는 공식 발표·시세·영업·효능 검증 자료가 아니며 승인 대기입니다. 검색량·경쟁도·CPC는 미수집입니다.</p>
+      {data.collection_sources.map(s => <article key={str(s, "id")}><h3>{str(s, "name")}</h3><p>{str(s, "endpoint")}</p><p>{str(s, "rights")} · <a href={str(s, "terms_url")} target="_blank" rel="noreferrer">이용 조건</a></p>
+        <p>마지막 수집 {str(s, "last_collected_at")} · 오류 {str(s, "last_error") || "없음"} · 시간당 최대 한 번</p>
+        <Editor disabled={busy} label="실제 자료 수집 실행" fields={[profileField, { name: "auto_generate", label: "검증된 모델만 후속 자동 초안 허용", type: "checkbox" }]}
+          submit={body => act("collections", { ...body, source_id: s.id, idempotency_key: crypto.randomUUID() })}/>
+        <Editor disabled={busy} label="수집 스케줄 저장" defaults={s} fields={[profileField, { name: "scheduled", label: "자동 수집", type: "checkbox" }, { name: "interval_minutes", label: "간격 분 (최소 60)", type: "number" }, { name: "auto_generate", label: "후속 자동 초안", type: "checkbox" }]}
+          submit={body => act(`collections/${str(s, "id")}`, body, "PUT")}/>
+      </article>)}
+      <details><summary>조사 작업 진행·실패·재시도</summary><pre>{JSON.stringify(data.collection_jobs, null, 2)}</pre></details>
+    </section>
+    <section><h2>키워드 후보·주제 선정</h2>
+      <Editor disabled={busy} label="수동 후보 등록" defaults={{ priority: 50 }} fields={[profileField, categoryField, { name: "keyword", label: "키워드" }, { name: "search_intent", label: "검색 의도" }, { name: "collection_source", label: "수집 출처" }, { name: "rationale", label: "선정 근거" }, { name: "priority", label: "우선순위 1–100", type: "number" }, { name: "expires_at", label: "유효 기한", type: "datetime-local" }]} submit={body => act("keywords", body)}/>
+      {data.keywords.map(k => <article key={str(k, "id")}><h3>{str(k, "keyword")} · {str(k, "language_code")} · {str(k, "status")}</h3>
+        <p>{str(k, "collection_source")} · {str(k, "rationale")} · 검색량 {k.search_volume === null ? "미수집" : str(k, "search_volume")} · CPC {k.cpc === null ? "미수집" : str(k, "cpc")}</p>
+        <button disabled={busy} onClick={() => act(`keywords/${str(k, "id")}`, { status: "selected" }, "PUT")}>선정</button>
+        <button disabled={busy} onClick={() => act(`keywords/${str(k, "id")}`, { status: "excluded" }, "PUT")}>제외</button>
+        <button disabled={busy || k.status !== "selected"} onClick={() => act("jobs", { keyword_id: k.id, idempotency_key: crypto.randomUUID() })}>설정된 Provider로 초안 생성</button>
+        <button disabled={busy || k.status !== "selected"} onClick={() => act("jobs", { keyword_id: k.id, evaluation_only: true, idempotency_key: crypto.randomUUID() })}>실제 AI 평가 초안 생성 (품질 보류)</button>
+      </article>)}
+    </section>
+    <section><h2>수집 출처·검토 이력</h2><p>승인 정정은 새 검토를 추가합니다. 자동 출처 확인과 의미적 사실 검증을 구분하세요.</p>
+      <Editor disabled={busy} label="출처 등록" fields={[{ name: "keyword_id", label: "키워드", options: data.keywords.map(k => ({ value: str(k, "id"), label: str(k, "keyword") })) }, { name: "url", label: "공개 HTTPS URL", type: "url" }, { name: "source_name", label: "출처명" }, { name: "published_at", label: "게시일 (모르면 비움)", type: "datetime-local", optional: true }, { name: "evidence", label: "주요 근거 (최대 1,000자)", type: "textarea" }, { name: "reliability_reason", label: "신뢰성 근거" }, { name: "rights", label: "저작권·사용 범위" }, { name: "access_policy", label: "접근·robots 정책 확인" }, { name: "valid_until", label: "정보 유효 기한", type: "datetime-local" }, { name: "is_primary", label: "공식 1차 자료", type: "checkbox" }]} submit={body => act("sources", body)}/>
+      {data.sources.map(s => <details key={str(s, "id")}><summary>{str(s, "source_name")} · 검토 {s.approved === true ? "승인 기록 있음" : "대기·불충분"} · {str(s, "valid_until")}</summary>
+        <a href={str(s, "url")} target="_blank" rel="noreferrer">원문 출처</a><p>{str(s, "evidence")}</p><p>{str(s, "rights")} · {str(s, "reliability_reason")}</p><p>{str(s, "review_reason")}</p>
+        <Editor disabled={busy} label="새 검토 추가" fields={[{ name: "approved", label: "사실·권리 확인 (미선택은 거부 정정)", type: "checkbox" }, { name: "reason", label: "검토 근거 (10자 이상)" }, { name: "reviewer", label: "검토자" }]} submit={body => act(`sources/${str(s, "id")}/reviews`, body)}/>
+      </details>)}
+    </section>
+    <section><h2>생성 작업·취소·복구</h2><p>스트리밍 중지 시 해당 추론 연결을 닫습니다. 저장한 타깃은 보존하며 재개 시 중복 생성하지 않습니다.</p>
+      {data.jobs.map(j => <article key={str(j, "id")}><p>{str(j, "id")} · {str(j, "status")} · 시도 {str(j, "attempts")} · {str(j, "error_type")}</p>
+        <button disabled={busy || j.status === "succeeded"} onClick={() => act(`jobs/${str(j, "id")}/action`, { action: j.paused ? "resume" : "pause" })}>{j.paused ? "재개" : "중지·현재 추론 취소"}</button>
+        <button disabled={busy || j.status !== "failed" || Number(j.attempts) >= 3} onClick={() => act(`jobs/${str(j, "id")}/action`, { action: "retry" })}>재시도</button></article>)}
+      <details><summary>실패·재시도 이력</summary><pre>{JSON.stringify(data.attempts, null, 2)}</pre></details>
+    </section>
+    <section><h2>원본·언어별 초안·품질·버전 비교</h2><p>quality_held는 품질 미달·미확인 보존본입니다. 내부 점수는 순위·수익 보장이 아니며 모든 발행 준비 상태는 false입니다.</p>
+      {[{ id: left, set: setLeft }, { id: right, set: setRight }].map((item, index) => <label key={index}>비교 {index + 1}<select value={item.id} onChange={e => item.set(e.target.value)}><option value="">초안 선택</option>{data.versions.map(v => <option key={str(v, "id")} value={str(v, "id")}>{str(v, "language")} v{str(v, "version")} · {str(v, "state")} · {str(v, "title")}</option>)}</select></label>)}
+      {versions[0] && versions[1] && <p>추가 행 {str(versions[1], "body").split("\n").filter(line => !str(versions[0]!, "body").split("\n").includes(line)).length} · 삭제 행 {str(versions[0], "body").split("\n").filter(line => !str(versions[1]!, "body").split("\n").includes(line)).length}</p>}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 20 }}>{versions.map((v, index) => v && <article key={index}><h3>{str(v, "title")}</h3><p>{str(v, "language")} · {str(v, "state")} · {str(v, "model")} · 원본 {str(v, "source_version_id") || "본 버전"}</p><pre style={{ whiteSpace: "pre-wrap" }}>{str(v, "body")}</pre><button disabled={busy} onClick={() => act(`versions/${str(v, "id")}/validate`, {})}>품질 검사 다시 실행</button><details open><summary>메타 설명·규칙/모델 검증·처리 시간·CPU/RAM</summary><pre>{JSON.stringify({ generation: v.result_metadata, latest_checks: v.latest_checks, references: v.source_snapshot }, null, 2)}</pre></details></article>)}</div>
+    </section>
+    <section><h2>언어별 모델·프롬프트 정책</h2><p>시험 생성은 품질 평가 완료를 선언하지 않습니다. 언어 지원 검증이 안 된 모델은 정상 자동 처리하지 않습니다. llama.cpp 모델·스레드 변경은 전용 엔진 재시작이 필요합니다.</p>
+      {data.settings.map(s => <article key={str(s, "profile_id")}><h3>{profileLabel(data.profiles.find(p => p.id === s.profile_id) ?? {})}</h3>
+        <Editor disabled={busy} label="언어 실행 정책 저장" defaults={s} fields={[{ name: "provider", label: "Provider", options: [{ value: "mock", label: "Mock 합성 테스트" }, { value: "local", label: "실제 Local" }] }, { name: "engine", label: "로컬 엔진", options: [{ value: "ollama", label: "Ollama 11434" }, { value: "llamacpp", label: "프로젝트 llama.cpp 11435" }] }, { name: "model", label: "설치 모델 이름" }, { name: "prompt_id", label: "프롬프트 버전", options: promptOptions }, { name: "enabled", label: "처리 허용", type: "checkbox" }, { name: "language_verified", label: "언어별 품질 평가 완료 (검증 근거 필수)", type: "checkbox" }, { name: "verification_reason", label: "언어 평가 근거", optional: true }, { name: "daily_limit", label: "일일 작업 한도", type: "number" }, { name: "threads", label: "CPU 스레드 1–4", type: "number" }, { name: "timeout_seconds", label: "타임아웃 5–180초", type: "number" }]} submit={body => act(`settings/${str(s, "profile_id")}`, body, "PUT")}/>
+      </article>)}
+      <Editor disabled={busy} label="새 프롬프트 버전 추가" fields={[{ name: "name", label: "영문 이름" }, { name: "instructions", label: "새 지시문", type: "textarea" }]} submit={body => act("prompts", body)}/>
+    </section>
+    <section><h2>자원·초안 스케줄</h2>
+      <Editor disabled={busy} label="자원 정책 저장" defaults={data.controls} fields={[{ name: "paused", label: "전체 중지", type: "checkbox" }, { name: "max_concurrency", label: "동시 작업 1–2", type: "number" }, { name: "cpu_percent", label: "실행 전 CPU 한도 %", type: "number" }, { name: "ram_percent", label: "실행 전 RAM 한도 %", type: "number" }]} submit={body => act("controls", body, "PUT")}/>
+      <Editor disabled={busy} label="카테고리 초안 스케줄 저장" defaults={{ schedule_cron: "0 9 * * *", timezone: "Asia/Seoul", quantity: 1 }} fields={[categoryField, profileField, { name: "active", label: "활성화", type: "checkbox" }, { name: "schedule_cron", label: "Cron (최소 5분)" }, { name: "timezone", label: "시간대" }, { name: "quantity", label: "회당 수량", type: "number" }]} submit={body => act("schedules", body)}/>
+      <details><summary>등록 스케줄·전달 상태</summary><pre>{JSON.stringify({ schedules: data.schedules, dispatches: data.dispatches }, null, 2)}</pre></details>
+    </section>
+    <details><summary>최근 감사 기록</summary><pre>{JSON.stringify(data.events, null, 2)}</pre></details>
+  </>;
 }

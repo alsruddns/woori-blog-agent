@@ -48,6 +48,9 @@ try:
             "generation_results",
             "generation_targets",
             "research_dispatches",
+            "collection_sources",
+            "collection_items",
+            "model_measurements",
         ]
         counts = {
             table: source.execute(

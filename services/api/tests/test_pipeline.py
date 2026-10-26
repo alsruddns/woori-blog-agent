@@ -32,7 +32,8 @@ def lab(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Any, TestClient, dict
         for module in ("pipeline", "research_routes", "main", "multilingual"):
             monkeypatch.setattr("woori." + module + ".connection", shared)
         monkeypatch.setattr(pipeline, "resources_ok", lambda _: True)
-        conn.execute("UPDATE generation_settings SET daily_limit=50")
+        conn.execute("UPDATE generation_settings SET daily_limit=50,provider='mock',model='mock-v1',engine='ollama'")
+        conn.execute("UPDATE keyword_candidates SET status='excluded'")
         with TestClient(app) as api:
             yield conn, api, HiddenHeaders(Authorization="Bearer " + settings().admin_token)
 
