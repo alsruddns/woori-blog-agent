@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from .config import settings
 from .db import connection
+from .multilingual import router
 
 app = FastAPI(title="Woori Blog Agent", docs_url=None, redoc_url=None, openapi_url=None)
 bearer = HTTPBearer(auto_error=False)
@@ -18,6 +19,9 @@ def authorize(credentials: Annotated[HTTPAuthorizationCredentials | None, Depend
         credentials.credentials, settings().admin_token
     ):
         raise HTTPException(401, "Unauthorized")
+
+
+app.include_router(router, dependencies=[Depends(authorize)])
 
 
 class RunRequest(BaseModel):
@@ -37,10 +41,17 @@ def summary() -> dict[str, Any]:
                 "SELECT * FROM job_runs ORDER BY created_at DESC LIMIT 50"
             ).fetchall()
             events = conn.execute("SELECT * FROM audit_events ORDER BY id DESC LIMIT 50").fetchall()
+            languages = conn.execute(
+                "SELECT code,display_name,active FROM languages ORDER BY code"
+            ).fetchall()
             return {
                 "runs": runs,
                 "events": events,
-                "languages": ["ko", "en", "zh-CN", "ja"],
+                "languages": [row["code"] for row in languages],
+                "language_details": languages,
+                "blogs": conn.execute(
+                    "SELECT * FROM blogger_blogs ORDER BY language_code,url"
+                ).fetchall(),
                 "publishing_enabled": False,
                 "paid_ai_enabled": False,
             }

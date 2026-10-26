@@ -1,0 +1,10 @@
+GRANT INSERT ON categories TO woori_app;
+CREATE TRIGGER category_audit AFTER INSERT ON categories FOR EACH ROW EXECUTE FUNCTION audit_configuration();
+CREATE TRIGGER category_identity BEFORE UPDATE ON categories FOR EACH ROW EXECUTE FUNCTION protect_identity('id','slug');
+CREATE INDEX blog_language_lookup ON blogger_blogs(language_code);
+CREATE INDEX localization_language_lookup ON content_localizations(language_code,target_country);
+CREATE INDEX audit_language_lookup ON audit_events(language_code,id DESC);
+CREATE INDEX publishing_queue_lookup ON publishing_jobs(status,scheduled_at);
+CREATE INDEX performance_lookup ON search_performance(blog_id,period_start,period_end);
+INSERT INTO schema_migrations(version) VALUES(4);
+INSERT INTO audit_events(event_type,payload) VALUES('schema.config.migrated','{"version":4}');

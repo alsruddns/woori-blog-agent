@@ -1,5 +1,6 @@
 """Start real loopback servers, verify responses, and stop the child process trees."""
 
+import socket
 import subprocess
 import time
 from pathlib import Path
@@ -7,6 +8,11 @@ from pathlib import Path
 import httpx
 
 root = Path(__file__).resolve().parents[1]
+# Never test or terminate an unrelated server already using the configured ports.
+for port in (8000, 3000):
+    with socket.socket() as probe:
+        if probe.connect_ex(("127.0.0.1", port)) == 0:
+            raise SystemExit("Smoke test requires free loopback ports 8000 and 3000")
 children = []
 try:
     for args, cwd in [
@@ -46,6 +52,8 @@ try:
             )
         )
     for _ in range(50):
+        if any(child.poll() is not None for child in children):
+            raise SystemExit("A smoke test server exited before startup")
         try:
             assert httpx.get("http://127.0.0.1:8000/health").status_code == 200
             page = httpx.get("http://127.0.0.1:3000/", timeout=5)
@@ -64,7 +72,22 @@ try:
     token = dotenv_values(root / ".env")["ADMIN_TOKEN"]
     assert token not in page.text
     assert httpx.get("http://127.0.0.1:8000/admin/summary").status_code == 401
-    print("Real API/dashboard HTTP smoke passed; live audit data rendered; token absent from HTML.")
+    config = httpx.get("http://127.0.0.1:3000/config", timeout=10)
+    assert config.status_code == 200
+    assert "다국어 운영 설정" in config.text
+    assert "https://trend-journal-en.blogspot.com" in config.text
+    assert "https://trend-zh.blogspot.com" in config.text
+    assert token not in config.text
+    proxy = "http://127.0.0.1:3000/api/config/languages"
+    invalid = {"code": "en_US", "display_name": "Invalid test"}
+    assert httpx.post(proxy, json=invalid).status_code == 403
+    assert (
+        httpx.post(proxy, json=invalid, headers={"Origin": "https://untrusted.example"}).status_code
+        == 403
+    )
+    forwarded = httpx.post(proxy, json=invalid, headers={"Origin": "http://127.0.0.1:3000"})
+    assert forwarded.status_code == 422, (forwarded.status_code, forwarded.text)
+    print("Real API/dashboard/config HTTP smoke passed; proxy origin checks passed; tokens absent.")
 finally:
     for child in children:
         subprocess.run(

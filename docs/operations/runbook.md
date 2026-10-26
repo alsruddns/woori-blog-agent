@@ -17,3 +17,12 @@ Restore rehearsal: create a new explicitly named `woori_blog_agent_restore_YYYYM
 
 ## Branches
 Only main and develop. Develop receives reviewed/tested changes and pushes. Merge to main requires explicit user approval. No remote deletion required in this initial empty repository. main currently contains policy bootstrap only; GitHub has no configured protection rules.
+
+## Multilingual operations
+Back up before running migrate.py; the current schema is version 4. Review the generated migrations and use only .env.migration owner credentials. Runtime remains woori_app. Do not rerun bootstrap against an existing installation.
+
+Use /config from loopback port 3000. Deactivate languages/blogs to pause future selection; existing content, policy references and historical publishing/audit rows remain. Country profile saves replace all policy text fields for that language/country. Blog URL/language and language code are immutable identities; a new identity requires a new record. Current registration accepts only HTTPS blogspot.com roots. Blog IDs and verification timestamps must be populated later by a separately reviewed discovery/verification adapter, never guessed.
+
+All capabilities and automatic publication remain blocked in Phase 1. Setting a schedule or marking a policy active has no external effect. Task Scheduler still runs diagnostic jobs only. Readiness is reported per profile and blog; missing adapter support cannot be bypassed by a configuration flag. Search performance view remains empty until an authorized collector is implemented.
+
+Tests use the owner account only inside rolled-back schema/history verification transactions; general API/Worker paths do not read .env.migration or .env.bootstrap. No actual publication or simulated remote post is persisted by multilingual tests.
