@@ -35,13 +35,28 @@ def test_revision_request_requires_concrete_change_details() -> None:
     assert make_request(disposition="reviewed", requested_changes="").disposition == "reviewed"
 
 
+def test_editorial_approval_requires_positive_human_assessments() -> None:
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="editorial_approval_requires_all_positive_review_checks"):
+        make_request(disposition="approved")
+    approved = make_request(
+        disposition="approved", factual_accuracy="verified",
+        translation_naturalness="acceptable", reader_value="useful",
+    )
+    assert approved.disposition == "approved"
+
+
 def test_human_review_appends_note_without_approving_publication(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import psycopg
     from woori import config, research_routes
 
-    request = make_request()
+    request = make_request(
+        disposition="approved", factual_accuracy="verified",
+        translation_naturalness="acceptable", reader_value="useful",
+    )
     inserted = {
         "id": uuid4(),
         "evaluation_id": request.evaluation_id,

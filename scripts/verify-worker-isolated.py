@@ -165,8 +165,8 @@ def main() -> None:
             schema_created = True
             conn.execute(sql.SQL("SET LOCAL search_path TO {}").format(sql.Identifier(schema)))
             migration_files = sorted((ROOT / "scripts").glob("[0-9][0-9][0-9]_*.sql"))
-            if len(migration_files) != 27 or migration_files[-1].name != "027_article_human_reviews.sql":
-                raise RuntimeError("Expected complete schema migrations 001 through 027")
+            if len(migration_files) != 28 or migration_files[-1].name != "028_editorial_review_decision.sql":
+                raise RuntimeError("Expected complete schema migrations 001 through 028")
             for migration in migration_files:
                 content = migration.read_text(encoding="utf-8").replace("SCHEMA public", "SCHEMA " + schema)
                 conn.execute(content, prepare=False)
@@ -192,7 +192,7 @@ def main() -> None:
         worker_env = dict(os.environ)
         worker_env.update({"DATABASE_URL": app_test_url, "ADMIN_TOKEN": APP_TOKEN,
                            "PYTHONPATH": str(ROOT / "services" / "api")})
-        results["migration"] = "001-027 in isolated schema"
+        results["migration"] = "001-028 in isolated schema"
         results["normal_worker"] = run_worker(["--diagnostic-only", "--run-seconds", "12"], worker_env)
         if results["normal_worker"]["exit_code"] != 0:
             raise RuntimeError("Normal Worker exited abnormally")

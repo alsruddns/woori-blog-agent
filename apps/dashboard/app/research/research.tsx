@@ -12,6 +12,7 @@ export type State = {
   evaluation_results?: { configured?: boolean; available?: boolean; database?: string; baseline_snapshot_at?: string; error_category?: string; worker?: Row | null; quota?: Row[]; runs?: Row[]; stages?: Row[]; events?: Row[]; fed_articles?: Row[]; sec_historical_quality?: Row[]; sec_new_inference?: string };
   prepublication?: { blogger_accounts_connected?: number; blogs?: Row[]; historical_read_verifications?: Row[]; safety?: Row; real_blogger_sync_verified?: boolean; real_writes_enabled?: boolean };
   article_reviews?: Row[];
+  operational_readiness?: { captured_from?: string; items?: { key: string; status: string; evidence: unknown }[] };
 };
 type Field = { name: string; label: string; type?: string; optional?: boolean; options?: { value: string; label: string }[] };
 const str = (row: Row, key: string) => String(row[key] ?? "");
@@ -180,7 +181,8 @@ export default function Research({ initial }: { initial: State }) {
             <label>사실 정확성 <select name="factual_accuracy"><option value="not_assessed">미평가</option><option value="verified">확인</option><option value="issue_found">문제 발견</option><option value="uncertain">불확실</option></select></label>
             <label>번역 자연스러움 <select name="translation_naturalness"><option value="not_assessed">미평가</option><option value="acceptable">수용 가능</option><option value="issue_found">문제 발견</option><option value="uncertain">불확실</option></select></label>
             <label>독자 가치 <select name="reader_value"><option value="not_assessed">미평가</option><option value="useful">유용함</option><option value="insufficient">부족함</option><option value="uncertain">불확실</option></select></label>
-            <label>검토 결과 <select name="disposition"><option value="reviewed">검토 기록</option><option value="revision_requested">수정 요청</option><option value="rejected">반려</option></select></label>
+            <label>검토 결과 <select name="disposition"><option value="reviewed">검토 기록 (승인 아님)</option><option value="approved">편집 품질 승인</option><option value="revision_requested">수정 요청</option><option value="rejected">반려</option></select></label>
+            <p>편집 품질 승인은 사실 확인·번역 자연스러움·독자 가치가 모두 긍정일 때만 기록되며 Blogger 발행 권한을 부여하지 않습니다.</p>
             <label>검토 의견 <textarea name="comments" minLength={10} maxLength={2000} required /></label>
             <label>수정 요청 내용 <textarea name="requested_changes" maxLength={2000} /></label>
             <button disabled={busy}>검토 기록 추가</button>
@@ -202,6 +204,16 @@ export default function Research({ initial }: { initial: State }) {
       })}
       <pre>{JSON.stringify({ ...(data.prepublication?.safety ?? {}), real_writes_enabled: data.prepublication?.real_writes_enabled, publish_ready: false }, null, 2)}</pre>
       <p>미검증: SEC 신규 추론, 실제 Blogger 인증 계정·4개 블로그 조회·게시글 상세/페이지네이션. 운영 발행은 비활성화 상태입니다.</p>
+    </section>
+    <section aria-labelledby="phase4d-readiness">
+      <h2 id="phase4d-readiness">Phase 4-D · 운영 준비 체크리스트</h2>
+      <p>상태는 현재 operations DB, 격리 evaluation DB 스냅샷 및 명시된 과거 테스트 증거를 반영합니다. 사람 검토와 실제 발행 권한은 별도입니다.</p>
+      <table><thead><tr><th>항목</th><th>상태</th><th>근거</th></tr></thead><tbody>
+        {(data.operational_readiness?.items ?? []).map(item => <tr key={item.key}>
+          <th scope="row">{item.key}</th><td>{item.status}</td><td><pre>{JSON.stringify(item.evidence, null, 2)}</pre></td>
+        </tr>)}
+      </tbody></table>
+      <p>별도 운영 발행 승인: 미승인 · publish_ready=false · 실제 Blogger 쓰기 비활성화.</p>
     </section>
     <section><h2>키워드 후보·주제 선정</h2>
       <Editor disabled={busy} label="수동 후보 등록" defaults={{ priority: 50 }} fields={[profileField, categoryField, { name: "keyword", label: "키워드" }, { name: "search_intent", label: "검색 의도" }, { name: "collection_source", label: "수집 출처" }, { name: "rationale", label: "선정 근거" }, { name: "priority", label: "우선순위 1–100", type: "number" }, { name: "expires_at", label: "유효 기한", type: "datetime-local" }]} submit={body => act("keywords", body)}/>

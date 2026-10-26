@@ -341,6 +341,9 @@ def test_worker_heartbeat_records_transitions_append_only(lab: Any, monkeypatch:
     assert {event["payload"]["status"] for event in events} == {"running", "degraded"}
     state = api.get("/admin/research/state", headers=headers).json()
     assert state["worker"]["fresh"] is True and state["worker"]["status"] == "degraded"
+    readiness = {item["key"]: item for item in state["operational_readiness"]["items"]}
+    assert readiness["separate_live_publication_approval"]["status"] == "required_not_granted"
+    assert readiness["blogger_cost"]["status"].startswith("blocked")
     assert all("publish_ready" not in evaluation or not evaluation["publish_ready"]
                for evaluation in state["article_evaluations"])
     conn.execute("UPDATE worker_heartbeats SET last_seen_at=now()-interval '1 minute' WHERE service_name='research_worker'")

@@ -33,7 +33,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "rph": 120,
         "operations": {"blogger_read"},
         "paths": ("/blogger/v3/blogs", "/blogger/v3/users/self/blogs"),
-        "cost": "readonly quota API; no per-call charge found; stop on provider quota",
+        "cost": "Blogger API per-call pricing/free allocation not explicitly established; account billing state unavailable; blocked until reviewed",
         "commercial_use": "terms apply; review before monetized operation",
         "zero_cost_reviewed": False,
     },

@@ -1,5 +1,12 @@
 # Changelog
 
+## Phase 4-D (partial validation; 2026-10-27)
+- Reviewed official Blogger/OAuth/Cloud quota and API Keys pricing references. Blogger per-call pricing/free allocation and the OAuth project's billing attachment remain unverified, so the Blogger read provider stays blocked; no live GET was attempted.
+- Captured the SEC evaluation DB's current quota and safely stopped before model start because English was already at 2/2. Recorded the blocked evaluation and readiness assessment in append-only audit events and a corrected JSON snapshot.
+- Added an operations readiness table backed by current database and provider-gate state, plus cited historical isolated Worker test evidence. It distinguishes machine checks, human review, cost/read gates, Mock publication and separate live publication approval.
+- Added explicit editorial approval separate from Blogger publication permission. Approval requires positive human assessments for factual accuracy, translation naturalness and reader value; no human review was entered in this phase.
+- Added migration 028; Blogger writes, automatic publication and `publish_ready` remain disabled.
+
 ## Phase 4-C (partial validation; 2026-10-27)
 - Add a human review workspace for the four machine-passed Fed C3 language drafts, with full text, paragraph-to-sentence citation display, source facts, dates/numbers, keywords, and append-only review comments/history.
 - Persist editorial feedback in an immutable operations table. Review notes never modify an article version, approve Blogger publication, or change `publish_ready`.

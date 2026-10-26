@@ -187,7 +187,7 @@ class ArticleHumanReview(Input):
     factual_accuracy: Literal["verified", "issue_found", "uncertain", "not_assessed"]
     translation_naturalness: Literal["acceptable", "issue_found", "uncertain", "not_assessed"]
     reader_value: Literal["useful", "insufficient", "uncertain", "not_assessed"]
-    disposition: Literal["reviewed", "revision_requested", "rejected"]
+    disposition: Literal["reviewed", "approved", "revision_requested", "rejected"]
     comments: str = Field(min_length=10, max_length=2000)
     requested_changes: str = Field(default="", max_length=2000)
 
@@ -196,6 +196,12 @@ class ArticleHumanReview(Input):
     def revision_requires_detail(cls, value: str, info: Any) -> str:
         if info.data.get("disposition") == "revision_requested" and len(value.strip()) < 10:
             raise ValueError("revision_requested_requires_change_details")
+        if info.data.get("disposition") == "approved" and (
+            info.data.get("factual_accuracy") != "verified"
+            or info.data.get("translation_naturalness") != "acceptable"
+            or info.data.get("reader_value") != "useful"
+        ):
+            raise ValueError("editorial_approval_requires_all_positive_review_checks")
         return value
 
 
@@ -346,6 +352,7 @@ def state() -> dict[str, Any]:
                 requested_changes,created_at FROM article_human_reviews
                 ORDER BY created_at DESC,id DESC LIMIT 100"""
         ).fetchall()
+        result["operational_readiness"] = _operational_readiness_snapshot(conn, result)
         result["publishing_enabled"] = False
         result["paid_ai_enabled"] = False
         return result
@@ -437,6 +444,14 @@ def _evaluation_results_snapshot() -> dict[str, Any]:
             "quota": quota,
             "worker": evaluation_worker,
             "runs": runs,
+            "sec_c3_runs": [
+                run for run in runs
+                if any(
+                    isinstance(source, dict)
+                    and str(source.get("source_name", "")).startswith("SEC EDGAR")
+                    for source in (run.get("source_snapshot") or [])
+                )
+            ],
             "fed_articles": fed_articles,
             "sec_historical_quality": sec_history,
             "sec_new_inference": sec_gate,
@@ -534,6 +549,114 @@ def _prepublication_snapshot(conn: Any) -> dict[str, Any]:
         "real_blogger_sync_verified": False,
         "real_writes_enabled": False,
     }
+
+
+def _operational_readiness_snapshot(conn: Any, state: dict[str, Any]) -> dict[str, Any]:
+    """Build a fail-closed checklist from current DB/API state and cited test artifacts."""
+    evaluation = state.get("evaluation_results") or {}
+    fed = evaluation.get("fed_articles") or []
+    expected_fed_languages = {
+        str(profile.get("language_code")) for profile in (state.get("profiles") or [])
+        if profile.get("active") and not profile.get("target_country")
+    }
+    if not expected_fed_languages:
+        expected_fed_languages = {str(article.get("language_code")) for article in fed}
+    passed_fed_languages = {
+        str(article.get("language_code")) for article in fed if article.get("machine_passed")
+    }
+    reviews = state.get("article_reviews") or []
+    latest_reviews: dict[str, dict[str, Any]] = {}
+    for review in reviews:
+        latest_reviews.setdefault(str(review.get("evaluation_id")), review)
+    fed_reviewed = sum(
+        1 for article in fed
+        if str(article.get("evaluation_id")) in latest_reviews
+    )
+    fed_review_approved = sum(
+        1 for article in fed
+        if (review := latest_reviews.get(str(article.get("evaluation_id"))))
+        and review.get("disposition") == "approved"
+        and review.get("factual_accuracy") == "verified"
+        and review.get("translation_naturalness") == "acceptable"
+        and review.get("reader_value") == "useful"
+    )
+    sec_runs = evaluation.get("sec_c3_runs") or []
+    sec_machine_passed = 0
+    for run in sec_runs:
+        metadata = run.get("result_metadata") or {}
+        quality = metadata.get("quality") or {}
+        grounding = quality.get("grounding") or {}
+        if run.get("run_status") == "succeeded" and quality.get("structural_pass") and grounding.get("rule_pass") and quality.get("localization_pass", True):
+            sec_machine_passed += 1
+
+    cost_policy = state.get("cost_policy") or {}
+    blogger_provider: dict[str, Any] = next(
+        (item for item in cost_policy.get("providers", []) if item.get("name") == "google_blogger_read"),
+        {},
+    )
+    blogs = (state.get("prepublication") or {}).get("blogs") or []
+    mapped_readonly = sum(
+        1 for blog in blogs
+        if blog.get("active") and blog.get("url")
+        and blog.get("blog_id") and blog.get("oauth_status") == "connected"
+        and "https://www.googleapis.com/auth/blogger.readonly" in (blog.get("scopes") or [])
+    )
+    mock = conn.execute(
+        """SELECT count(*) FILTER (WHERE adapter_type='fake')::int AS attempts,
+            count(*) FILTER (WHERE adapter_type<>'fake')::int AS non_mock_attempts,
+            count(*) FILTER (WHERE adapter_type='fake' AND outcome='succeeded')::int AS mock_successes,
+            count(*) FILTER (WHERE adapter_type='fake' AND outcome<>'succeeded')::int AS mock_non_successes
+        FROM publication_attempts"""
+    ).fetchone()
+
+    worker_evidence = _worker_recovery_evidence()
+    safety = (state.get("prepublication") or {}).get("safety") or {}
+    items = [
+        {"key": "fed_machine", "status": "passed" if expected_fed_languages and expected_fed_languages.issubset(passed_fed_languages) else "incomplete", "evidence": f"{len(expected_fed_languages & passed_fed_languages)}/{len(expected_fed_languages)} active base-profile languages have a current machine-passed Fed draft"},
+        {"key": "fed_human", "status": "pending" if fed_reviewed < len(fed) else "editorially_approved" if fed_review_approved == len(fed) else "reviewed_not_approved", "evidence": f"{fed_reviewed}/{len(fed)} reviewed; {fed_review_approved}/{len(fed)} explicitly approved for editorial quality; review records={len(reviews)}"},
+        {"key": "sec_machine", "status": "blocked_not_run_quota_exhausted" if evaluation.get("sec_new_inference") == "not_run_quota_blocked" else "not_verified", "evidence": f"new SEC C3 runs={len(sec_runs)}, machine pass={sec_machine_passed}; historical SEC evaluations are separate"},
+        {"key": "sec_human", "status": "not_available" if not sec_runs else "pending", "evidence": f"new SEC C3 drafts requiring review={len(sec_runs)}; no human review is inferred"},
+        {"key": "blogger_cost", "status": "blocked_provider_cost_unverified" if blogger_provider.get("block_reason") == "manual_zero_cost_review_required" else "allowed" if blogger_provider.get("calls_allowed") else "blocked", "evidence": f"provider calls_allowed={bool(blogger_provider.get('calls_allowed'))}; reason={blogger_provider.get('block_reason') or 'none'}"},
+        {"key": "blogger_read_connection", "status": "configured_live_read_blocked" if mapped_readonly == len(blogs) and mapped_readonly > 0 and not (state.get("prepublication") or {}).get("real_blogger_sync_verified") else "incomplete", "evidence": f"readonly DB mappings={mapped_readonly}/{len(blogs)}; live GET is independently gated by cost policy"},
+        {"key": "publication_mock", "status": "verified" if mock["attempts"] > 0 and mock["non_mock_attempts"] == 0 else "not_verified", "evidence": f"fake attempts={mock['attempts']}, mock successes={mock['mock_successes']}, mock non-successes={mock['mock_non_successes']}, non-mock attempts={mock['non_mock_attempts']}"},
+        {"key": "worker_recovery", "status": "verified_historical" if worker_evidence.get("passed") else "not_verified", "evidence": worker_evidence},
+        {"key": "operating_write_block", "status": "blocked_safe" if not (state.get("prepublication") or {}).get("real_writes_enabled") and safety.get("non_mock_jobs") == 0 and safety.get("real_publishing_records") == 0 else "needs_investigation", "evidence": {"real_writes_enabled": False, "non_mock_jobs": safety.get("non_mock_jobs"), "real_publishing_records": safety.get("real_publishing_records"), "publish_ready_evaluations": safety.get("publish_ready_evaluations")}},
+        {"key": "additional_cost_block", "status": "policy_active" if not cost_policy.get("blocked_credential_names") else "blocked_credentials_detected", "evidence": {"blocked_credential_names": cost_policy.get("blocked_credential_names", []), "paid_provider_allowlist_entries": 0}},
+        {"key": "separate_live_publication_approval", "status": "required_not_granted", "evidence": {"publishing_enabled": False, "publish_ready": False}},
+    ]
+    return {"captured_from": "current operations DB and isolated evaluation DB snapshot", "items": items}
+
+
+def _worker_recovery_evidence() -> dict[str, Any]:
+    """Summarize immutable, historical isolated-worker test artifacts without changing them."""
+    import json
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[3]
+    artifacts = sorted((root / "docs" / "development").glob("P3-9S-worker-*.json"))
+    valid: list[tuple[str, str]] = []
+    for artifact in artifacts:
+        try:
+            payload = json.loads(artifact.read_text(encoding="utf-8"))
+            jobs = payload.get("jobs") or {}
+            abrupt = payload.get("abrupt_worker") or {}
+            restart = abrupt.get("restart") or {}
+            passed = (
+                payload.get("kind") == "isolated_worker_real_process"
+                and (payload.get("normal_worker") or {}).get("exit_code") == 0
+                and jobs.get("normal") == "succeeded_once"
+                and jobs.get("lease_expired_attempt_1") == "recovered_and_succeeded_attempt_2"
+                and jobs.get("duplicate_idempotency_rows") == 1
+                and restart.get("exit_code") == 0
+                and abrupt.get("final_status") == "stopped"
+                and payload.get("operational_public_schema_rows_for_test_keys") == 0
+            )
+            if passed:
+                valid.append((str(payload.get("captured_at", "")), artifact.name))
+        except (OSError, json.JSONDecodeError, AttributeError):
+            continue
+    latest = max(valid, default=None)
+    return {"passed": latest is not None, "artifact_count": len(valid), "latest_artifact": latest[1] if latest else None, "captured_at": latest[0] if latest else None, "scope": "historical isolated test; not a live worker health claim"}
 
 
 @router.post("/article-reviews", status_code=201)
