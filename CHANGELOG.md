@@ -90,3 +90,7 @@
 ### Changed
 - Blogger read requests now stop immediately on 429 or quota exhaustion instead of retrying.
 - Blogger API reads remain blocked until the Google Cloud project's account-side billing status is manually verified at zero cost.
+# Phase 3.8-C3 (implementation; live evaluation incomplete)
+
+- Added an append-only fact registry stage and per-fact local translation with application-rendered citations and article structure.
+- Added a fixed evaluation-only Qwen3 4B model override that preserves saved settings, uses existing daily limits, and remains behind resource and publication gates.

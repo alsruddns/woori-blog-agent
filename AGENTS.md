@@ -106,3 +106,10 @@ OAuth 토큰·API Key·비밀번호를 코드에 저장하지 않는다. .env �
 - Retry structured-output JSON/schema failures at most once with a new fixed seed. Never repair missing factual fields or accept a partial parse. Store bounded parse-failure response excerpts and the full response hash in the immutable local DB failure-artifact table; audit only the hash, IDs, model, and sanitized error category.
 - Keep thousands-grouping normalization semantics-preserving. Treat proper-name, numeric, date, language/script, citation, SEO-keyword, and internal-ID checks as separate gates with focused regression tests. A detector uncertainty does not grant content approval.
 - Internal source citations may remain only in their designated citation marker; internal UUIDs and run identifiers must not appear in title, summary, or user-facing prose. Model failures remain failed/held; human semantic review stays separate.
+
+## Phase 3.8-C3 fact-first localization rules
+- Append reviewed, exact source spans to `evidence_facts`; retain source ID, BCP 47 source language, entity fingerprints, numbers, dates and citation IDs. Never assert semantic verification from span matching alone.
+- Localize one registered fact span at a time with the local provider. The renderer attaches source IDs and article structure deterministically; a model may not create or rewrite citations.
+- Preserve per-fact machine checks and model-call metrics in stage output. Any unsupported claim, number/name drift, unapproved term, language failure, or missing source remains held. Meaning and naturalness require human review.
+- A local model override is allowed only for evaluation-only runs and the explicitly allowlisted already-installed Qwen3 4B model. It must be audited, must not change saved operational settings, and remains subject to existing per-language daily limits and resource gates.
+- Evaluation-only drafts always keep `publish_ready=false`; test results never activate language verification, production generation, Blogger writes, or automatic publishing.

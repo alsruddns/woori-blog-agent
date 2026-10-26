@@ -9,12 +9,14 @@ from typing import Any
 import httpx
 import pytest
 from test_pipeline import lab as shared_lab
+from test_pipeline import topic as make_topic
 
 lab = shared_lab
-from woori import collection, external_policy, local_inference
+from woori import collection, external_policy, local_inference, pipeline
 from woori.ai import Draft, EngineFailure
 from woori.grounding import inspect, numbers, proper_names
 from woori.local_inference import LlamaCppProvider
+from woori.localization import fact_ledger, localize_fact
 
 
 def test_external_policy_closed_allowlist_and_zero_cost_credentials(
@@ -1075,3 +1077,119 @@ def test_short_secret_uuid_collision_does_not_hide_plaintext() -> None:
     assert contains_secret(public_id + " password=abcd", "abcd")
     assert contains_secret(public_id, public_id)
     assert contains_secret("password=abcd", "abcd")
+
+
+def test_fact_first_localization_renders_citations_from_source_registry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from woori import local_inference
+    from woori.pipeline import render_localized_fact_section
+
+    source = {
+        "id": "src-1", "source_language": "en", "url": "https://example.org/report",
+        "evidence": "The report covers 2026.",
+    }
+    registry = fact_ledger(source)[0]
+    fact = {
+        "fact_id": registry["fact_key"], "source_id": "src-1",
+        "text": registry["source_excerpt"], "source_language": "en",
+        "entities": registry["entities"], "numeric_values": registry["numeric_values"],
+        "date_values": registry["date_values"], "citation_ids": ["src-1"],
+    }
+    monkeypatch.setattr(
+        local_inference, "localized_translation",
+        lambda text, target, glossary, entities, model, timeout, mode="translate": (
+            "??? ??? ?? 2026" if text == source["evidence"]
+            else "??? ??"
+        ),
+    )
+    draft, validation = render_localized_fact_section(
+        [fact], [source], "ko", "English topic", [], "Qwen3-4B-Q4_K_M.gguf", 120, True,
+    )
+    assert draft.body == "??? ??? ?? 2026 [source:src-1]"
+    assert draft.source_ids == ["src-1"]
+    assert draft.title.endswith("??? ??")
+    assert validation["fact_checks"][fact["fact_id"]]["citation_linked"] is True
+    assert draft._metrics["model_calls"] == 2
+
+
+def test_fact_first_model_override_is_evaluation_only_and_bounded(lab: Any) -> None:
+    conn, _api, _headers = lab
+    keyword_id, _profile_ids = make_topic(lab)
+    conn.execute(
+        "UPDATE generation_settings SET provider='local',engine='llamacpp',model='Qwen3-1.7B-Q8_0.gguf'"
+    )
+    job = pipeline.enqueue(
+        uuid.UUID(keyword_id), "fact-first-" + uuid.uuid4().hex,
+        evaluation_only=True, evaluation_model="Qwen3-4B-Q4_K_M.gguf",
+    )
+    snapshots = conn.execute(
+        "SELECT settings_snapshot FROM generation_targets WHERE run_id=%s", (job["id"],)
+    ).fetchall()
+    assert len(snapshots) == 4
+    assert all(
+        row["settings_snapshot"]["model"] == "Qwen3-4B-Q4_K_M.gguf"
+        and row["settings_snapshot"]["evaluation_model_override"] is True
+        and row["settings_snapshot"]["evaluation_only"] is True
+        for row in snapshots
+    )
+    assert conn.execute(
+        "SELECT 1 FROM audit_events WHERE run_id=%s AND event_type='research.evaluation.model.override'",
+        (job["id"],),
+    ).fetchone()
+    with pytest.raises(EngineFailure, match="evaluation_model_override_blocked"):
+        pipeline.enqueue(
+            uuid.UUID(keyword_id), "unsafe-" + uuid.uuid4().hex,
+            evaluation_only=False, evaluation_model="Qwen3-4B-Q4_K_M.gguf",
+        )
+
+
+def test_fact_first_evaluation_uses_shared_daily_generation_limit(lab: Any) -> None:
+    conn, _api, _headers = lab
+    first_keyword, profiles = make_topic(lab)
+    second_keyword, _ = make_topic(lab)
+    conn.execute(
+        "UPDATE generation_settings SET provider='local',engine='llamacpp',model='Qwen3-1.7B-Q8_0.gguf'"
+    )
+    counts = conn.execute(
+        """SELECT t.profile_id,count(*) AS n FROM generation_targets t
+        JOIN generation_jobs j ON j.run_id=t.run_id
+        WHERE j.created_at>=date_trunc('day',now()) GROUP BY t.profile_id"""
+    ).fetchall()
+    baseline = {row["profile_id"]: int(row["n"]) for row in counts}
+    for profile in profiles:
+        conn.execute(
+            "UPDATE generation_settings SET daily_limit=%s WHERE profile_id=%s",
+            (baseline.get(profile, 0) + 1, profile),
+        )
+    pipeline.enqueue(
+        uuid.UUID(first_keyword), "limited-eval-" + uuid.uuid4().hex,
+        evaluation_only=True, evaluation_model="Qwen3-4B-Q4_K_M.gguf",
+    )
+    with pytest.raises(EngineFailure, match="daily_generation_limit"):
+        pipeline.enqueue(
+            uuid.UUID(second_keyword), "over-limit-eval-" + uuid.uuid4().hex,
+            evaluation_only=True, evaluation_model="Qwen3-4B-Q4_K_M.gguf",
+        )
+
+
+def test_fact_first_quote_gate_holds_twenty_five_word_source_copy() -> None:
+    words = "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty twentyone twentytwo twentythree twentyfour twentyfive"
+    draft = Draft(
+        title="Source review", body=words, summary="Internal test only.",
+        keywords=["source"], source_ids=["source-1"],
+    )
+    result = pipeline.direct_quote_gate(draft, [{"evidence": words}])
+    assert result == {"no_mass_direct_quote": False, "longest_source_overlap_words": 25}
+
+
+def test_same_language_local_edit_still_checks_target_language() -> None:
+    fact = {
+        "fact_key": "fact-1", "source_language": "en", "source_excerpt": "An update covers 2026.",
+        "numeric_values": ["2026"], "entities": [], "citation_ids": ["source-1"],
+    }
+    result = localize_fact(
+        fact, "en", translator=lambda *_args: "한국어 내용 2026", force_local=True,
+    )
+    assert result["status"] == "quality_held"
+    assert result["checks"]["language_matches"] is False

@@ -15,6 +15,14 @@ Schema versions 16–18 add the following additive records:
 4. The local provider receives only one excerpt, protects known names and approved glossary terms with fixed placeholders, and restores only the source spelling or approved translation after the model responds. Missing/duplicated placeholders fail closed. Strict JSON schema parsing, timeout, response-size cap, local loopback endpoint, model identity and existing token protections apply. Deterministic checks compare numbers/dates, known source entities, links, citations, repetition, and language script. A held result is retained as an evaluation, not accepted prose.
 5. `build_localized_evidence_template` combines only machine-passed fact spans with supplied title/summary/keyword candidates and re-runs the existing grounding gate. Semantic fidelity, naturalness, rights, and editorial acceptance remain human checks. No function enables publication.
 
+## Fact-first pipeline rendering (Phase 3.8-C3)
+
+The durable content worker appends exact reviewed source spans to `evidence_facts` before planning. The `fact_registry` step is stored in the existing immutable `generation_stage_runs` ledger alongside source collection, extraction, validation, outline, per-section generation/localization, claim checks, SEO checks and persistence.
+
+For local-language output, each source span is sent independently to the local translation adapter. The adapter protects extracted names and approved glossary entries, returns a strict JSON string field, and checks number/date/entity/script/link preservation. The application attaches citation IDs and section structure after translation. A held fact remains visible as held output; it is never converted into an approval. Title candidates are derived from the recorded topic phrase, while meaning, editorial quality, SEO intent and naturalness remain human-review items.
+
+Evaluation-only jobs may use the fixed, already-installed Qwen3 4B Q4 model when the saved profile model differs. The override is captured in each target snapshot and audit event, does not modify generation settings, counts against the same configured daily limit, and remains under the pipeline concurrency and RAM/CPU gates.
+
 The Research dashboard displays original excerpts beside persisted localized output, status/metrics, current glossary approvals, and immutable glossary history. It reports actual stored rows only.
 
 ## Limitations

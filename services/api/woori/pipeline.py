@@ -15,8 +15,12 @@ from croniter import croniter
 from psycopg.types.json import Jsonb
 
 from .ai import Draft, EngineFailure, provider
+from .article_quality import longest_source_overlap
 from .db import connection
-from .grounding import extract_facts, inspect, numbers, proper_names
+from .grounding import inspect, numbers, proper_names
+from .localization import EXTRACTOR_VERSION, fact_ledger, localize_fact
+
+EVALUATION_MODEL_ALLOWLIST = {"Qwen3-4B-Q4_K_M.gguf"}
 
 
 def required(row: dict[str, Any] | None) -> dict[str, Any]:
@@ -33,7 +37,10 @@ def draft_state(provider_name: str, evaluation_only: bool, checks: dict[str, Any
     if provider_name == "mock":
         return "mock_draft"
     grounding = checks.get("grounding", {})
-    if evaluation_only or not checks.get("structural_pass") or not grounding.get("rule_pass"):
+    if (
+        evaluation_only or not checks.get("structural_pass") or not grounding.get("rule_pass")
+        or not checks.get("localization_pass", True)
+    ):
         return "quality_held"
     return "human_review_required"
 
@@ -113,7 +120,14 @@ def run_stage(
             conn.execute(
                 """UPDATE generation_stage_runs SET status=%s,error_category=%s,validation=%s,
                 finished_at=now(),elapsed_ms=%s WHERE id=%s AND status='running'""",
-                (status, category, Jsonb({"passed": False, "error_type": type(exc).__name__}), elapsed, stage_id),
+                (
+                    status, category,
+                    Jsonb({
+                        "passed": False, "error_type": type(exc).__name__,
+                        **({"failure_artifact": exc.failure_artifact} if isinstance(exc, EngineFailure) and exc.failure_artifact else {}),
+                    }),
+                    elapsed, stage_id,
+                ),
             )
             emit(
                 conn, "stage." + status, run_id, stage_id=str(stage_id),
@@ -123,7 +137,7 @@ def run_stage(
         raise
 
 
-def evidence_outline(facts: list[dict[str, str]]) -> list[dict[str, Any]]:
+def evidence_outline(facts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Build a bounded outline only from the facts actually present in reviewed sources."""
     if not facts:
         raise EngineFailure("evidence_extraction_empty")
@@ -141,8 +155,47 @@ def evidence_outline(facts: list[dict[str, str]]) -> list[dict[str, Any]]:
     ]
 
 
+def register_fact_registry(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Append exact reviewed source spans to the shared immutable fact ledger."""
+    registered: list[dict[str, Any]] = []
+    with connection() as conn:
+        for source in sources:
+            source_text = str(source.get("evidence", ""))
+            for fact in fact_ledger(source):
+                if fact["source_excerpt"] not in source_text:
+                    raise EngineFailure("fact_registry_source_span_invalid")
+                params = (
+                    fact["fact_key"], fact["source_id"], fact["source_language"],
+                    fact["source_excerpt"], fact["entity_ids"], Jsonb(fact["numeric_values"]),
+                    Jsonb(fact["date_values"]), fact["citation_ids"], EXTRACTOR_VERSION,
+                )
+                row = conn.execute(
+                    """INSERT INTO evidence_facts(fact_key,source_id,source_language,source_excerpt,entity_ids,
+                        numeric_values,date_values,citation_ids,verification_status,extractor_version)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'source_span_verified',%s)
+                    ON CONFLICT(source_id,fact_key,extractor_version) DO NOTHING RETURNING id""",
+                    params,
+                ).fetchone()
+                if row is None:
+                    row = conn.execute(
+                        "SELECT id FROM evidence_facts WHERE source_id=%s AND fact_key=%s AND extractor_version=%s",
+                        (fact["source_id"], fact["fact_key"], EXTRACTOR_VERSION),
+                    ).fetchone()
+                if row is None:
+                    raise EngineFailure("fact_registry_persistence_failed")
+                registered.append({
+                    "fact_id": fact["fact_key"], "registry_id": str(row["id"]),
+                    "source_id": fact["source_id"], "text": fact["source_excerpt"],
+                    "source_language": fact["source_language"],
+                    "entities": fact["entities"],
+                    "entity_ids": fact["entity_ids"], "numeric_values": fact["numeric_values"],
+                    "date_values": fact["date_values"], "citation_ids": fact["citation_ids"],
+                })
+    return registered
+
+
 def section_response_valid(
-    draft: Draft, facts: list[dict[str, str]], allowed_source_ids: set[str], as_of: str
+    draft: Draft, facts: list[dict[str, Any]], allowed_source_ids: set[str], as_of: str
 ) -> dict[str, Any]:
     material = "\n".join(fact["text"] for fact in facts)
     actual_sources = set(draft.source_ids)
@@ -170,6 +223,102 @@ def section_response_valid(
     }
 
 
+def render_localized_fact_section(
+    facts: list[dict[str, Any]], sources: list[dict[str, Any]], language: str,
+    keyword: str, glossary: list[dict[str, Any]], model: str, timeout: int,
+    include_title: bool,
+) -> tuple[Draft, dict[str, Any]]:
+    """Translate fact spans individually, then attach source citations in code."""
+    from .grounding import proper_names
+    from .local_inference import localized_translation
+
+    copy = {
+        "en": ("Verified source facts: ", "This review draft contains only statements tied to the cited official source."),
+        "ko": ("공식 자료에서 확인한 사실: ", "이 검토용 초안은 인용한 공식 자료에서 확인한 사실만 담습니다."),
+        "zh-CN": ("官方资料核实的要点：", "本审阅草稿仅整理所引官方资料中核实的事实。"),
+        "ja": ("公式資料で確認した事実：", "この確認用草稿は引用した公式資料で確認できる事実のみを整理します。"),
+    }
+    if language not in copy:
+        raise EngineFailure("localized_article_copy_not_configured")
+    started = time.monotonic()
+    source_by_id = {str(source["id"]): source for source in sources}
+    localized_rows: list[dict[str, Any]] = []
+    calls = 0
+    for fact in facts:
+        source_id = str(fact["source_id"])
+        source = source_by_id.get(source_id)
+        if source is None or fact["text"] not in str(source.get("evidence", "")):
+            raise EngineFailure("fact_registry_source_span_invalid")
+        local_fact = {
+            **fact,
+            "fact_key": fact["fact_id"],
+            "source_excerpt": fact["text"],
+            "citation_ids": [source_id],
+            "source_url": str(source["url"]),
+        }
+        translation_mode = (
+            "faithful_paraphrase" if fact["source_language"] == language else "translate"
+        )
+
+        def translate_fact(
+            text: str, target: str, approved: list[dict[str, Any]], entities: list[str],
+            selected_mode: str = translation_mode,
+        ) -> str:
+            return localized_translation(
+                text, target, approved, entities, model, timeout, selected_mode
+            )
+
+        row = localize_fact(
+            local_fact,
+            language,
+            translator=translate_fact,
+            glossary=glossary,
+            force_local=True,
+        )
+        calls += int(row["ai_calls"])
+        localized_rows.append(row)
+
+    prefix, summary = copy[language]
+    if include_title and language != "en":
+        translated_keyword = localized_translation(
+            keyword, language, glossary, sorted(proper_names(keyword)), model, timeout
+        ).strip()
+        calls += 1
+    else:
+        translated_keyword = keyword
+    title = prefix + translated_keyword if include_title else prefix.rstrip()
+    body = "\n\n".join(
+        str(row["text"]).strip() + " " + " ".join(
+            f"[source:{source_id}]" for source_id in row["source_ids"]
+        )
+        for row in localized_rows
+    )
+    source_ids = list(dict.fromkeys(
+        source_id for row in localized_rows for source_id in row["source_ids"]
+    ))
+    draft = Draft(
+        title=title, body=body, summary=summary,
+        keywords=[translated_keyword], source_ids=source_ids,
+    )
+    checks = {
+        row["fact_id"]: {"status": row["status"], **row["checks"]}
+        for row in localized_rows
+    }
+    draft._metrics = {
+        "localization_adapter": "per_fact_local_json_translation",
+        "localization_facts": len(localized_rows), "model_calls": calls,
+        "fact_localization_elapsed_ms": sum(int(row["elapsed_ms"]) for row in localized_rows),
+        "elapsed_ms": round((time.monotonic() - started) * 1000),
+        "localization_checks": checks,
+        "semantic_accuracy": "human_review_required",
+        "naturalness": "human_review_required",
+    }
+    return draft, {
+        "passed": all(row["status"] == "machine_passed" for row in localized_rows),
+        "fact_checks": checks, "ai_calls": calls,
+    }
+
+
 def evidence(keyword_id: UUID) -> list[dict[str, Any]]:
     with connection() as conn:
         rows = conn.execute(
@@ -185,8 +334,13 @@ def evidence(keyword_id: UUID) -> list[dict[str, Any]]:
 
 
 def enqueue(
-    keyword_id: UUID, key: str, profile_ids: list[UUID] | None = None, evaluation_only: bool = False
+    keyword_id: UUID, key: str, profile_ids: list[UUID] | None = None, evaluation_only: bool = False,
+    evaluation_model: str | None = None,
 ) -> dict[str, Any]:
+    if evaluation_model is not None and (
+        not evaluation_only or evaluation_model not in EVALUATION_MODEL_ALLOWLIST
+    ):
+        raise EngineFailure("evaluation_model_override_blocked")
     with connection() as conn:
         conn.execute("SELECT pg_advisory_xact_lock(781203)")
         keyword = conn.execute(
@@ -214,11 +368,16 @@ def enqueue(
             raise EngineFailure("source_profile_required")
         if evaluation_only and any(t["provider"] != "local" for t in targets):
             raise EngineFailure("evaluation_requires_real_local_provider")
-        fingerprint = hashlib.sha256(
-            json.dumps(
-                [str(keyword_id), sorted(str(t["profile_id"]) for t in targets), evaluation_only]
-            ).encode()
-        ).hexdigest()
+        if evaluation_only and evaluation_model is not None and any(
+            t["engine"] != "llamacpp" for t in targets
+        ):
+            raise EngineFailure("evaluation_model_override_engine_invalid")
+        fingerprint_material: list[Any] = [
+            str(keyword_id), sorted(str(t["profile_id"]) for t in targets), evaluation_only,
+        ]
+        if evaluation_model is not None:
+            fingerprint_material.append(evaluation_model)
+        fingerprint = hashlib.sha256(json.dumps(fingerprint_material).encode()).hexdigest()
         old = conn.execute(
             "SELECT r.*,g.request_fingerprint FROM job_runs r JOIN generation_jobs g ON g.run_id=r.id WHERE r.idempotency_key=%s",
             (key,),
@@ -257,23 +416,35 @@ def enqueue(
         for t in targets:
             snapshot = json.loads(json.dumps(t, default=str))
             snapshot["evaluation_only"] = evaluation_only
+            if evaluation_model is not None:
+                snapshot["model"] = evaluation_model
+                snapshot["evaluation_model_override"] = True
             conn.execute(
                 "INSERT INTO generation_targets VALUES (%s,%s,%s)",
                 (run["id"], t["profile_id"], Jsonb(snapshot)),
+            )
+        if evaluation_model is not None:
+            emit(
+                conn, "evaluation.model.override", run["id"],
+                model=evaluation_model, target_count=len(targets),
+                reason="bounded local quality experiment; saved settings unchanged",
             )
         emit(conn, "queued", run["id"], keyword_id=str(keyword_id), targets=len(targets))
         return run
 
 
 def quality(
-    draft: Draft, sources: list[dict[str, Any]], keyword: str, is_mock: bool
+    draft: Draft, sources: list[dict[str, Any]], keyword: str, is_mock: bool,
+    language: str = "en",
 ) -> dict[str, Any]:
     text = draft.title + " " + draft.body
     ids = {str(s["id"]) for s in sources}
+    search_phrase = keyword if language == "en" else (draft.keywords[0] if draft.keywords else "")
     checks = {
         "source_ids_valid": bool(draft.source_ids) and set(draft.source_ids).issubset(ids),
-        "keyword_in_title_and_body": normalized(keyword) in normalized(draft.title)
-        and normalized(keyword) in normalized(draft.body),
+        "keyword_in_title_and_body": bool(search_phrase)
+        and normalized(search_phrase) in normalized(draft.title)
+        and normalized(search_phrase) in normalized(draft.body),
         "structure": "##" in draft.body,
         "as_of_date": datetime.now(UTC).date().isoformat() in draft.body,
         "no_obvious_hype_or_fake_experience": not any(
@@ -301,6 +472,11 @@ def quality(
         "mock": is_mock,
         "publish_ready": False,
     }
+
+
+def direct_quote_gate(draft: Draft, sources: list[dict[str, Any]]) -> dict[str, Any]:
+    overlap = longest_source_overlap(draft.body, sources)
+    return {"no_mass_direct_quote": overlap < 25, "longest_source_overlap_words": overlap}
 
 
 def generate_staged_target(
@@ -349,12 +525,24 @@ def generate_staged_target(
             {"passed": bool(sources), "source_count": len(sources)},
         ),
     )
-    facts = extract_facts(sources)
+    facts = register_fact_registry(sources)
     execute(
         "evidence_extraction",
-        {"source_ids": source_ids, "method": "verbatim_sentence_split_sha256_fact_ids"},
+        {"source_ids": source_ids, "method": "verbatim_source_span_fact_ledger"},
         source_ids,
         lambda: (facts, {"passed": bool(facts), "fact_count": len(facts)}),
+    )
+    execute(
+        "fact_registry",
+        {"source_ids": source_ids, "method": EXTRACTOR_VERSION,
+         "fact_registry_ids": [fact["registry_id"] for fact in facts]},
+        source_ids,
+        lambda: (facts, {
+            "passed": bool(facts) and all(fact["text"] in str(next(
+                s["evidence"] for s in sources if str(s["id"]) == fact["source_id"]
+            )) for fact in facts),
+            "fact_count": len(facts), "source_span_verified": True,
+        }),
     )
     source_text = {str(s["id"]): str(s["evidence"]) for s in sources}
     fact_validation = {
@@ -431,11 +619,9 @@ def generate_staged_target(
         last_errors: list[str] = []
         for stage_attempt in (1, 2):
             instruction = (
-                f"Write exactly one concise section for {target_language}. Do not add a heading. "
-                f"Use only these fact IDs: {[f['fact_id'] for f in section_facts]}. "
-                f"Allowed citation source IDs: {sorted(allowed)}. Put [source:ID] markers in the body. "
-                "Preserve source names, dates, amounts and units exactly; add no background, inference, URL, quote, "
-                "experience or advice. Return the required JSON schema."
+                f"Localize only the supplied exact fact spans into {target_language}; "
+                "preserve their claim relationships, names, numbers, dates and units. "
+                "Do not add background, inference, URLs, quotes, experience or advice."
             )
             if not is_original:
                 instruction += " Translate/localize this exact source section; preserve its claim relationships."
@@ -470,19 +656,29 @@ def generate_staged_target(
 
             def operation(
                 stage_context: dict[str, Any] = context,
-                allowed_facts: list[dict[str, str]] = section_facts,
+                allowed_facts: list[dict[str, Any]] = section_facts,
                 permitted_sources: set[str] = allowed,
+                scoped_source_values: list[dict[str, Any]] = scoped_sources,
+                section_index: int = index,
             ) -> tuple[dict[str, Any], dict[str, Any]]:
-                result = provider(policy["provider"]).generate(stage_context, policy)
                 if policy["provider"] == "mock":
+                    result = provider(policy["provider"]).generate(stage_context, policy)
                     return {"draft": result.model_dump(), "metrics": result._metrics}, {
                         "passed": bool(result.source_ids)
                         and set(result.source_ids).issubset(permitted_sources),
                         "synthetic_mock": True,
                     }
-                return {"draft": result.model_dump(), "metrics": result._metrics}, section_response_valid(
-                    result, allowed_facts, permitted_sources, stage_context["as_of"]
+                rendered, localization_validation = render_localized_fact_section(
+                    allowed_facts, scoped_source_values, target_language,
+                    str(stage_context["keyword"]), glossary, model,
+                    int(policy.get("timeout_seconds", 120)), section_index == 1,
                 )
+                validation = section_response_valid(
+                    rendered, allowed_facts, permitted_sources, stage_context["as_of"]
+                )
+                validation["localization"] = localization_validation
+                validation["passed"] = bool(validation["passed"] and localization_validation["passed"])
+                return {"draft": rendered.model_dump(), "metrics": rendered._metrics}, validation
 
             try:
                 value, validation = execute(
@@ -500,12 +696,19 @@ def generate_staged_target(
                     break
                 result_checks = validation.get("checks", {})
                 last_errors = [name for name, passed in result_checks.items() if not passed]
+                localization_report = validation.get("localization")
+                if localization_report and not localization_report.get("passed"):
+                    last_errors = ["localized_fact_quality_held"]
+                    break
             except EngineFailure as exc:
                 retryable_validation = exc.category in {
-                    "invalid_local_model_response", "local_model_timeout", "model_response_too_large"
+                    "invalid_local_model_response", "local_model_timeout", "model_response_too_large",
+                    "fact_render_contract_size_invalid", "fact_render_contract_marker_invalid",
+                    "fact_render_contract_marker_duplicate", "fact_render_contract_coverage_invalid",
                 }
                 if stage_attempt == 2 or (not exc.retryable and not retryable_validation):
                     raise
+                last_errors = [exc.category]
         if last_draft is None:
             raise EngineFailure("stage_generation_failed")
         generated.append(last_draft)
@@ -513,7 +716,7 @@ def generate_staged_target(
     first = generated[0]
     draft = Draft(
         title=first.title,
-        body="\n\n".join(
+        body=f"## {first.keywords[0]}\n\n" + "\n\n".join(
             f"## {index}\n{section.body.strip()}" for index, section in enumerate(generated, start=1)
         ) + f"\n\n{datetime.now(UTC).date().isoformat()}",
         summary=first.summary,
@@ -532,6 +735,7 @@ def generate_staged_target(
     stage_metrics = {"section_count": len(generated), "model_time_ms": int((time.monotonic() - generation_started) * 1000)}
     return draft, {
         "outline": outline,
+        "fact_registry": facts,
         "section_map": section_map,
         "section_metrics": [s._metrics for s in generated],
         "stage_metrics": stage_metrics,
@@ -595,7 +799,14 @@ def process(run: dict[str, Any]) -> None:
             if snapshot["provider"] == "local" and (
                 (not active["language_verified"] and not snapshot.get("evaluation_only"))
                 or active["provider"] != "local"
-                or active["model"] != snapshot["model"]
+                or (
+                    active["model"] != snapshot["model"]
+                    and not (
+                        snapshot.get("evaluation_only")
+                        and snapshot.get("evaluation_model_override")
+                        and snapshot["model"] in EVALUATION_MODEL_ALLOWLIST
+                    )
+                )
             ):
                 raise EngineFailure("language_support_unverified")
             lease = conn.execute(
@@ -619,7 +830,9 @@ def process(run: dict[str, Any]) -> None:
             )
         with connection() as conn:
             glossary = conn.execute(
-                "SELECT source_term,localized_term,notes FROM glossary_entries WHERE profile_id=%s",
+                """SELECT source_term,localized_term,notes,source_language,target_language,
+                    official_translation,translation_source,approved
+                FROM glossary_entries WHERE profile_id=%s""",
                 (profile_id,),
             ).fetchall()
             category = required(
@@ -651,16 +864,32 @@ def process(run: dict[str, Any]) -> None:
             "keyword": keyword["keyword"],
             "as_of": datetime.now(UTC).date().isoformat(),
             "sources": json.loads(json.dumps(sources, default=str)),
-            "verified_facts": extract_facts(sources),
+            "verified_facts": stage_details["fact_registry"],
             "outline": stage_details["outline"],
             "stage_count": stage_sequence,
             "original_profile_id": str(keyword["profile_id"]),
         }
         with connection() as conn:
             emit(conn, "planning.completed", run_id, profile_id=str(profile_id), plan={"outline": stage_details["outline"]})
-        checks = quality(draft, sources, keyword["keyword"], policy["provider"] == "mock")
+        checks = quality(
+            draft, sources, keyword["keyword"], policy["provider"] == "mock", policy["language_code"]
+        )
         if policy["provider"] == "local":
             checks["grounding"] = inspect(draft, sources, policy["language_code"], context["as_of"])
+            quote_check = direct_quote_gate(draft, sources)
+            grounding_checks = checks["grounding"]["rule_checks"]
+            grounding_checks["no_mass_direct_quote"] = quote_check["no_mass_direct_quote"]
+            checks["grounding"]["rule_pass"] = all(grounding_checks.values())
+            checks["grounding"].update(quote_check)
+            localization_checks = {
+                fact_id: fact_result
+                for section_metrics in stage_details["section_metrics"]
+                for fact_id, fact_result in section_metrics.get("localization_checks", {}).items()
+            }
+            checks["localization"] = localization_checks
+            checks["localization_pass"] = all(
+                result.get("status") == "machine_passed" for result in localization_checks.values()
+            )
         execute_index = stage_sequence + 1
         run_stage(
             run_id, profile_id, attempt, execute_index, 1, "claim_verification",
@@ -669,7 +898,10 @@ def process(run: dict[str, Any]) -> None:
              "source_ids": draft.source_ids}, draft.source_ids,
             lambda current_checks=checks: (
                 current_checks.get("grounding", current_checks),
-                {"passed": bool(current_checks.get("grounding", {}).get("rule_pass", current_checks["structural_pass"]))},
+                {"passed": bool(
+                    current_checks.get("grounding", {}).get("rule_pass", current_checks["structural_pass"])
+                    and current_checks.get("localization_pass", True)
+                )},
             ),
         )
         run_stage(
@@ -679,7 +911,11 @@ def process(run: dict[str, Any]) -> None:
             draft.source_ids,
             lambda current_checks=checks: (
                 current_checks,
-                {"passed": bool(current_checks["structural_pass"] and current_checks.get("grounding", {}).get("rule_pass", True))},
+                {"passed": bool(
+                    current_checks["structural_pass"]
+                    and current_checks.get("grounding", {}).get("rule_pass", True)
+                    and current_checks.get("localization_pass", True)
+                )},
             ),
         )
         if not checks["structural_pass"] and policy["provider"] == "mock":

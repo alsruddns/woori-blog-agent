@@ -17,3 +17,6 @@ The research dashboard reads stage history and category/profile source coverage 
 - One Federal Reserve source/topic was used for the Phase 3.7 live four-language run. That is not a representative seven-category or language-wide quality dataset.
 - Current generator output can still fail name, number, language, SEO, and semantic review. This is expected to remain held until the quality evidence is sufficient.
 - Blogger themes/API support for `hreflang` has not been implemented or claimed.
+# Fact-first source registry
+
+For evidence-led jobs, a `fact_registry` stage follows exact-span extraction and appends the registered fact IDs to the shared immutable fact ledger. Localized facts are translated individually; citation markers and article structure are rendered by application code, then the assembled article passes claim and SEO checks. Machine localization checks are retained per fact, and semantic accuracy stays pending human review.

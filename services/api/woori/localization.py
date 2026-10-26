@@ -65,6 +65,7 @@ def localize_fact(
     fact: dict[str, Any], target_language: str,
     translator: Callable[[str, str, list[dict[str, Any]], list[str]], str] | None = None,
     glossary: list[dict[str, Any]] | None = None,
+    force_local: bool = False,
 ) -> dict[str, Any]:
     """Translate only the excerpt. If no local adapter is supplied, fail closed."""
     if not langcodes.tag_is_valid(target_language):
@@ -74,7 +75,7 @@ def localize_fact(
                 and g.get("translation_source") and g.get("target_language") == target_language
                 and g.get("source_language") == fact["source_language"]]
     started = time.monotonic()
-    if fact["source_language"] == target_language:
+    if fact["source_language"] == target_language and not force_local:
         localized = fact["source_excerpt"]
         calls = 0
     elif translator is None:
@@ -120,7 +121,7 @@ def localize_fact(
     )
     fraction = _script_fraction(localized, target_language)
     threshold = 0.06 if langcodes.Language.get(target_language).maximize().script == "Jpan" else 0.12
-    language_ok = fraction > threshold or fact["source_language"] == target_language
+    language_ok = fraction > threshold
     checks = {
         "language_matches": language_ok,
         "numbers_preserved": source_numbers.issubset(target_numbers) and no_new_numbers,

@@ -1,0 +1,95 @@
+{
+  "phase": "3.8-C3",
+  "record_kind": "final_live_state_and_safety_stop",
+  "batch_id": "6bf912ea-45f0-4dce-85d3-1cd8299c379c",
+  "created_at": "2026-10-26T09:48:06.059771+00:00",
+  "model": {
+    "name": "Qwen3-4B-Q4_K_M.gguf",
+    "engine": "llama.cpp b11889 Vulkan",
+    "execution_of_fact_first_revision": false,
+    "note": "No post-revision inference was run because resource/daily-limit preflight was closed."
+  },
+  "resource_sample": {
+    "available_ram_mib": 5279.4,
+    "ram_used_percent": 83.8,
+    "cpu_percent_sample": 24.1,
+    "preflight_min_available_ram_mib": 6144,
+    "preflight_max_ram_used_percent": 80
+  },
+  "jobs": [
+    {
+      "status": "failed",
+      "error_type": "fact_render_contract_marker_invalid",
+      "attempts": 1,
+      "paused": false,
+      "result_count": 1,
+      "run_id": "b0c6c553-1adf-4534-9e8a-90db8acf97e3",
+      "source_id": "873093a8-085e-42b5-8bb2-657f62f8df94",
+      "source": {
+        "source_name": "Federal Reserve Board press releases",
+        "url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20261013a.htm"
+      },
+      "results": [
+        {
+          "language": "en",
+          "content_version_id": "4c0dc72e-1b03-447d-a356-e9a87a3b094d",
+          "title": "Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026",
+          "body_chars": 910,
+          "state": "quality_held",
+          "elapsed_ms": 112472,
+          "publish_ready": false
+        }
+      ]
+    },
+    {
+      "status": "failed",
+      "error_type": "daily_generation_limit",
+      "attempts": 0,
+      "paused": true,
+      "result_count": 0,
+      "run_id": "a84a7e69-bffd-484a-acdd-8b28f6a11207",
+      "source_id": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+      "source": {
+        "source_name": "SEC EDGAR company submissions and XBRL facts",
+        "url": "https://www.sec.gov/Archives/edgar/data/320193/32019326000020/aapl-20260627.htm"
+      },
+      "results": []
+    }
+  ],
+  "daily_targets": [
+    {
+      "language_code": "en",
+      "targets": 6,
+      "daily_limit": 5
+    },
+    {
+      "language_code": "ja",
+      "targets": 6,
+      "daily_limit": 5
+    },
+    {
+      "language_code": "ko",
+      "targets": 6,
+      "daily_limit": 5
+    },
+    {
+      "language_code": "zh-CN",
+      "targets": 6,
+      "daily_limit": 5
+    }
+  ],
+  "summary": {
+    "saved_drafts": 1,
+    "quality_held_drafts": 1,
+    "failed_runs": 2,
+    "sec_inference_attempts": 0,
+    "new_fact_first_inference_calls": 0,
+    "paid_calls": 0,
+    "external_collection": false,
+    "blogger_writes": 0,
+    "all_saved_publish_ready_false": true,
+    "historical_daily_limit_overage": true,
+    "human_semantic_review_required": true
+  },
+  "integrity_note": "Historical records were preserved. The daily-target counting regression was corrected in code. Existing 6/5 counts remain immutable and block new same-day inference."
+}

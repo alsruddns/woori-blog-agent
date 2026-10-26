@@ -84,3 +84,6 @@ The Phase 3.8-C2 command reads the immutable Phase 3.8-C1 evaluation batch, chec
 ```
 
 It does not call the model or external sources. If an old failed attempt has no response artifact/version, it is reported as not replayable. Future local JSON/schema errors can be retried once with a different seed; the raw response excerpt is capped at 16 KiB, stored only in the local immutable DB table, and never emitted to ordinary logs.
+# Bounded fact-first evaluation
+
+Use `python scripts/run_fact_first_evaluation.py` only when the existing local llama.cpp runtime is already running the allowlisted Qwen3 4B Q4 model, at least 6 GiB RAM is available, the pipeline is not paused, and no unrelated content run is queued or running. The script evaluates the current reviewed Fed and SEC sources across active base language profiles, creates evaluation-only internal drafts, and never calls collection services or Blogger write endpoints. It reuses only its own identifiable unfinished C3 batch after interruption. Keep the configured daily limit and pipeline resource checks in force; do not force a run when they block.
