@@ -2,13 +2,17 @@ import secrets
 from typing import Annotated, Any
 
 import psycopg
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
+from .blogger_routes import router as blogger_router
 from .config import settings
 from .db import connection
+from .google_http import GoogleFailure
 from .multilingual import router
+from .operations import health as operations_health
 
 app = FastAPI(title="Woori Blog Agent", docs_url=None, redoc_url=None, openapi_url=None)
 bearer = HTTPBearer(auto_error=False)
@@ -22,6 +26,20 @@ def authorize(credentials: Annotated[HTTPAuthorizationCredentials | None, Depend
 
 
 app.include_router(router, dependencies=[Depends(authorize)])
+app.include_router(blogger_router, dependencies=[Depends(authorize)])
+
+
+@app.exception_handler(GoogleFailure)
+async def google_error(request: Request, exc: GoogleFailure) -> JSONResponse:
+    status = 429 if exc.category in ("local_rate_limit", "rate_limit") else 409
+    if exc.category.endswith("not_found"):
+        status = 404
+    return JSONResponse({"error": exc.category}, status_code=status)
+
+
+@app.exception_handler(psycopg.Error)
+async def database_error(request: Request, exc: psycopg.Error) -> JSONResponse:
+    return JSONResponse({"error": "Database operation unavailable"}, status_code=503)
 
 
 class RunRequest(BaseModel):
@@ -54,6 +72,7 @@ def summary() -> dict[str, Any]:
                 ).fetchall(),
                 "publishing_enabled": False,
                 "paid_ai_enabled": False,
+                "operations": operations_health(),
             }
     except psycopg.Error:
         raise HTTPException(503, "Database unavailable") from None

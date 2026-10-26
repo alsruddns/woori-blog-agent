@@ -1,6 +1,8 @@
-# Phase 1 architecture
+# Project architecture — Phase 1 / Phase 2
 
-Next.js server components and a local configuration UI -> loopback FastAPI with bearer authentication -> PostgreSQL 16. Dashboard mutation routes keep the token on the server, require JSON, restrict the Host to localhost/127.0.0.1:3000 and require an exactly matching Origin. Local OS users are trusted administrators; external deployment requires separate authentication and TLS.
+Phase 2 update: Dashboard/API now use 3100/8100 with PostgreSQL unchanged at 5432. [Blogger integration](blogger-integration.md) adds readonly OAuth, real Google GET paths, encrypted tokens, local content version controls, API history and language quotas. Statements below about deferred OAuth/read connectors describe Phase 1; actual Google verification results are recorded in the Phase 2 development record. AI, SEO execution, Search Console collection and production publishing remain deferred. Schema is 6; old migrations were not modified. Actual isolated restore and scheduled Worker/Backup execution were verified; reboot itself was not performed.
+
+Next.js server components and a local configuration UI -> loopback FastAPI with bearer authentication -> PostgreSQL 16. Dashboard mutation routes keep the token on the server, require JSON, restrict the Host to localhost/127.0.0.1:3100 and require an exactly matching Origin. Local OS users are trusted administrators; external deployment requires separate authentication and TLS.
 
 Python worker polls durable job_runs with SKIP LOCKED claiming, lease recovery and bounded attempts. It remains a diagnostic worker; it never consumes publishing_jobs or calls Blogger/AI. Waiting jobs survive reboot and expired leases recover on the next tick.
 

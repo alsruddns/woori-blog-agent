@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased - Phase 2 - 2026-10-26
+
+- Add readonly Google OAuth, encrypted tokens, refresh/revocation, browser-bound state and PKCE.
+- Add Blogger GET/ID/post verification, safe API audit/errors, language quotas and Korean management UI.
+- Add Mock-only mutation protocols with durable duplicate/uncertain-write blocking and local content versions.
+- Move Dashboard/API to 3100/8100 and matching OAuth callback; keep PostgreSQL 5432.
+- Verify isolated restore, register/test Worker and daily backup, and display local storage/backup warnings.
+- Resolve deprecated TestClient httpx usage with httpx2. Keep paid AI and production writes blocked.
+
 ## 0.1.0 - 2026-10-26
 - Establish main/develop policy and ten mandatory Codex rules.
 - Add local Next.js dashboard, authenticated FastAPI API and durable diagnostic worker.

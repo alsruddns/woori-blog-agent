@@ -1,6 +1,13 @@
+import { API_BASE } from "../lib/server";
 import Link from "next/link";
 export const dynamic = "force-dynamic";
 type Summary = {
+  operations: {
+    free_disk_percent: number;
+    backup_ok: boolean;
+    backup_stale: boolean;
+    warning: boolean;
+  };
   runs: { id: string; status: string; attempts: number }[];
   events: { id: number; event_type: string; created_at: string }[];
   languages: string[];
@@ -11,7 +18,7 @@ export default async function Page() {
   let data: Summary | null = null;
   try {
     if (process.env.ADMIN_TOKEN) {
-      const response = await fetch("http://127.0.0.1:8000/admin/summary", {
+      const response = await fetch(`${API_BASE}/admin/summary`, {
         headers: { Authorization: `Bearer ${process.env.ADMIN_TOKEN}` },
         cache: "no-store",
         signal: AbortSignal.timeout(3000),
@@ -26,6 +33,9 @@ export default async function Page() {
         <small>PHASE 01 · LOCAL</small>
       </header>
       <h1>블로그 운영 현황</h1>
+      <p>
+        <Link href="/blogger">Google OAuth · Blogger 읽기 관리 →</Link>
+      </p>
       <p>등록된 언어와 블로그를 하나의 운영 공간에서 관리합니다.</p>
       <aside>안전 모드 · 실제 발행 및 AI 호출 차단</aside>
       <p>
@@ -45,6 +55,13 @@ export default async function Page() {
           </article>
         ))}
       </section>
+      {data?.operations?.warning && (
+        <aside role="alert">
+          운영 경고 · 디스크 여유 {data.operations.free_disk_percent}% (기준
+          20%) · 백업 {data.operations.backup_ok ? "성공" : "실패/미확인"}
+          {data.operations.backup_stale ? " · 백업 지연" : ""}
+        </aside>
+      )}
       <h2>작업 실행</h2>
       {data ? (
         <table>

@@ -1,3 +1,4 @@
+import { API_BASE } from "../../lib/server";
 import Link from "next/link";
 import Manager from "./manager";
 import type { Config } from "./types";
@@ -6,7 +7,7 @@ export default async function Configuration() {
   let config: Config | null = null;
   try {
     if (process.env.ADMIN_TOKEN) {
-      const response = await fetch("http://127.0.0.1:8000/admin/config", {
+      const response = await fetch(`${API_BASE}/admin/config`, {
         headers: { Authorization: `Bearer ${process.env.ADMIN_TOKEN}` },
         cache: "no-store",
         signal: AbortSignal.timeout(3000),

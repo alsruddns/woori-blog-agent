@@ -286,6 +286,8 @@ def test_legacy_migration_preserves_content_and_audits() -> None:
             "002_multilingual.sql",
             "003_reference_guards.sql",
             "004_config_permissions.sql",
+            "005_blogger_oauth.sql",
+            "006_content_categories.sql",
         ]:
             content = (
                 (root / "scripts" / migration)

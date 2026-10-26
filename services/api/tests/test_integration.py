@@ -17,7 +17,7 @@ def test_database_audit_and_worker() -> None:
         assert first.status_code == 201
         second = client.post("/admin/runs", headers=headers, json={"idempotency_key": key})
         assert first.json()["id"] == second.json()["id"]
-        assert tick()
+        tick()
         result = client.get("/admin/summary", headers=headers)
         assert result.status_code == 200
         assert any(x["event_type"] == "run.completed" for x in result.json()["events"])

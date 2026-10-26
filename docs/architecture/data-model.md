@@ -1,4 +1,4 @@
-# 다국어 데이터 모델 (schema version 4)
+# 다국어 데이터 모델 (schema version 6)
 
 언어 수는 제한하지 않는다. 초기 ko/en/zh-CN/ja는 시드이며, 코드의 조건 분기가 아니다.
 
@@ -56,3 +56,8 @@ BCP 47은 API의 langcodes/등록 데이터 기반으로 검증·정규화한다
 
 ## 범위 제한
 콘텐츠 편집·비교 UI, SEO 검사 실행기, 성과 수집기, 발행 outbox와 원격 재조정은 후속 단계다. seo_audits.checks는 향후 언어별 키워드·제목·본문·메타데이터·출처·중복·저작권·정책 검증 결과를 버전별로 기록하도록 설계했다. 현재 모델이나 검증기 지원을 추정하여 통과 결과를 만들지 않는다. 예약·발행 기록 테이블은 기반이며 실제 운영 게시 요청을 만들지 않았다.
+
+## Phase 2 추가 (schema 6)
+005는 google_connections(암호화 토큰·최소 scope·만료·안전한 오류 상태), google_oauth_states(일회용 state/바인딩 해시·암호화 verifier), blogger_api_calls(append-only 요청·시도·오류 이력), language_execution_limits(동적 언어별 읽기 허용·분당 한도·페이지 크기), blogger_write_operations(Mock 멱등성 원장)을 추가한다. blogger_blogs는 OAuth 연결 FK, 마지막 검사 시각, 안전한 오류 분류를 추가한다. 새 언어는 DB 트리거로 기본 실행 제한을 받는다.
+
+006은 기존 localization_categories에 로컬 버전 관리용 INSERT 권한만 추가한다. 기존 001–004 SQL은 변경하지 않았다. publishing_enabled/auto_publish_allowed의 DB false 제약과 불변 콘텐츠·감사·발행 기록을 유지한다. 런타임은 여전히 woori_app이며 관리자와 마이그레이션 소유자 설정은 API가 읽지 않는다. OAuth 계정 정보 조회는 암호문조차 반환하지 않는다.

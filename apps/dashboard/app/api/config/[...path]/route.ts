@@ -1,3 +1,4 @@
+import { API_BASE } from "../../../../lib/server";
 import { NextRequest, NextResponse } from "next/server";
 const resources = new Set([
   "languages",
@@ -14,8 +15,11 @@ async function proxy(
 ) {
   const origin = request.headers.get("origin");
   const host = request.headers.get("host");
-  if (!["127.0.0.1:3000", "localhost:3000"].includes(host ?? "") || origin !== `http://${host}`) {
-    return NextResponse.json({error: "Invalid origin"}, {status:403});
+  if (
+    !["127.0.0.1:3100", "localhost:3100"].includes(host ?? "") ||
+    origin !== `http://${host}`
+  ) {
+    return NextResponse.json({ error: "Invalid origin" }, { status: 403 });
   }
   if (!request.headers.get("content-type")?.startsWith("application/json"))
     return NextResponse.json({ error: "JSON required" }, { status: 415 });
@@ -39,7 +43,7 @@ async function proxy(
     if (Buffer.byteLength(text, "utf8") > 16384)
       return NextResponse.json({ error: "Request too large" }, { status: 413 });
     const response = await fetch(
-      `http://127.0.0.1:8000/admin/config/${path.map(encodeURIComponent).join("/")}`,
+      `${API_BASE}/admin/config/${path.map(encodeURIComponent).join("/")}`,
       {
         method: request.method,
         headers: {
