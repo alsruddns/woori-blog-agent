@@ -253,6 +253,79 @@ def test_grounding_normalizes_dates_and_avoids_sentence_boundary_name_false_posi
     assert "Terminated October" not in names
 
 
+def test_number_only_markdown_headings_are_not_factual_numbers() -> None:
+    assert numbers("## 1\n## 2\n## 10") == set()
+    assert numbers("## 1\nThe rate was 5 percent.") == {"5.0"}
+    assert numbers("October 13, 2026") == numbers("2026년 10월 13일")
+    assert numbers("2026-10-13") == numbers("2026年10月13日")
+
+
+def test_repeated_source_markers_do_not_count_as_repeated_content() -> None:
+    from woori.grounding import repeated_sentences
+
+    text = "## Evidence\n> First verified statement [source:source-123456].\n\n"
+    text += "> Second verified statement [source:source-123456].\n\n## Sources\n"
+    text += "- Official source https://example.com/long-reference\n"
+    assert repeated_sentences(text) == []
+
+
+def test_historical_english_headlines_do_not_create_generic_proper_names() -> None:
+    names = proper_names(
+        "Federal Reserve Board Announces Termination of Enforcement Actions "
+        "with Gardner Bancshares, Inc."
+    )
+    assert "Federal Reserve Board" in names
+    assert "Gardner Bancshares" in names
+    assert "Federal Reserve Board Announces" not in names
+    assert "Enforcement Actions" not in names
+    assert "Federal Reserve Board's" in proper_names("Federal Reserve Board's policy")
+
+
+def test_cited_text_prefixed_as_markdown_heading_is_still_validated() -> None:
+    source = {
+        "id": "source-1", "url": "https://example.com/source",
+        "evidence": "Federal Reserve Board issued a public notice.",
+        "rights": "Public domain",
+        "valid_until": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
+    }
+    draft = Draft(
+        title="Federal Reserve Board notice",
+        body="## European Central Bank announced a 9 percent rate change. [source:source-1]",
+        summary="A notice from the Federal Reserve Board.",
+        keywords=["Federal Reserve Board"], source_ids=["source-1"],
+    )
+    result = inspect(draft, [source], "en", "2026-10-26")
+    assert not result["rule_checks"]["no_unsupported_proper_names"]
+    assert not result["rule_checks"]["no_unverified_numbers"]
+    assert "European Central Bank" in result["unsupported_proper_names"]
+
+
+def test_evidence_template_preserves_source_text_and_holds_unlocalized_language() -> None:
+    from woori.evidence_template import build_evidence_template
+
+    source = {
+        "id": "source-1",
+        "source_name": "Federal Reserve Board",
+        "url": "https://example.com/source",
+        "evidence": "Federal Reserve Board terminated the action on October 13, 2026.",
+        "published_at": "2026-10-13",
+        "rights": "Public domain",
+        "valid_until": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
+    }
+    draft, metrics = build_evidence_template([source], "en", "Federal Reserve", "2026-10-26")
+    assert source["evidence"] in draft.body
+    assert "[source:source-1]" in draft.body
+    assert metrics["ai_calls"] == 0
+    checked = inspect(draft, [source], "en", "2026-10-26")
+    assert checked["rule_pass"]
+
+    ko_draft, _ = build_evidence_template([source], "ko", "Federal Reserve", "2026-10-26")
+    ko_checked = inspect(ko_draft, [source], "ko", "2026-10-26")
+    assert not ko_checked["rule_checks"]["language_metadata_matches"]
+    with pytest.raises(ValueError, match="template_language_not_evaluated"):
+        build_evidence_template([source], "ja", "Federal Reserve", "2026-10-26")
+
+
 def test_collection_bounded_and_no_arbitrary_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(EngineFailure, match="collection_endpoint_not_approved"):
         collection.retrieve({"adapter": "fed_rss", "endpoint": "http://127.0.0.1:5432"}, [])

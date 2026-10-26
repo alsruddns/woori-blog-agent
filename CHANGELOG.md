@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased - Phase 3.8-A - 2026-10-26
+
+- Re-evaluate Phase 3.7 saved drafts immutably and separate deterministic false positives from actual repetition, missing localization, and unsupported meaning.
+- Correct Markdown section-number, localized-date, cited-heading, citation-marker repetition, and possessive-name validation regressions without relaxing unsupported-claim checks.
+- Add append-only A/B evaluation history and a deterministic evidence-first template; display real comparison and failure counts on `/research`.
+- Compare the same Federal Reserve source in English and Korean; English template passes mechanical checks, Korean remains held for untranslated source text. Human review and publishing remain disabled.
+
 ## Unreleased - Phase 3.7 - 2026-10-26
 
 - Persist independently auditable source, evidence, outline, per-section generation/localization, claim, SEO, and draft-persistence stages.

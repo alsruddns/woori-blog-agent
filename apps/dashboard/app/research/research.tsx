@@ -6,7 +6,7 @@ export type State = {
   profiles: Row[]; categories: Row[]; keywords: Row[]; sources: Row[]; jobs: Row[];
   versions: Row[]; settings: Row[]; prompts: Row[]; controls: Row; schedules: Row[];
   attempts: Row[]; events: Row[]; dispatches: Row[]; collection_sources: Row[]; cost_policy?: Row;
-  collection_jobs: Row[]; measurements: Row[]; stage_runs: Row[]; coverage: Row[];
+  collection_jobs: Row[]; measurements: Row[]; stage_runs: Row[]; coverage: Row[]; experiments?: Row[];
 };
 type Field = { name: string; label: string; type?: string; optional?: boolean; options?: { value: string; label: string }[] };
 const str = (row: Row, key: string) => String(row[key] ?? "");
@@ -58,7 +58,31 @@ export default function Research({ initial }: { initial: State }) {
   const categoryField: Field = { name: "category_id", label: "카테고리", options: categories };
   const versions = [data.versions.find(v => v.id === left), data.versions.find(v => v.id === right)];
   const measurements = [data.measurements.find(m => m.id === measureLeft), data.measurements.find(m => m.id === measureRight)];
+  const experiments = data.experiments ?? [];
+  const currentExperimentId = experiments[0]?.experiment_id;
+  const currentExperiments = experiments.filter(item => item.experiment_id === currentExperimentId);
+  const experimentFailureCounts = currentExperiments.reduce<Record<string, number>>((counts, item) => {
+    const checks = (item.checks as Row | undefined)?.grounding as Row | undefined;
+    const ruleChecks = (checks?.rule_checks as Row | undefined) ?? {};
+    for (const [name, passed] of Object.entries(ruleChecks)) if (passed === false) counts[name] = (counts[name] ?? 0) + 1;
+    const structure = (item.checks as Row | undefined)?.structure as Row | undefined;
+    const structureChecks = (structure?.checks as Row | undefined) ?? {};
+    for (const [name, passed] of Object.entries(structureChecks)) if (passed === false) counts[name] = (counts[name] ?? 0) + 1;
+    return counts;
+  }, {});
+  const unlinkedEvidenceCount = currentExperiments.filter(item => {
+    const checks = (item.checks as Row | undefined)?.grounding as Row | undefined;
+    const rules = (checks?.rule_checks as Row | undefined) ?? {};
+    return rules.citation_ids_valid !== true || rules.factual_paragraphs_cited !== true;
+  }).length;
   return <>
+    <section><h2>근거 우선 A/B 평가</h2>
+      <p>저장된 Phase 3.7 원고 재평가와 사실 고정 템플릿 실험입니다. 규칙 검사 결과와 사람 검토 대기를 구분하며, 발행 준비는 항상 false입니다.</p>
+      <p>최신 비교 평가 품질 보류: {currentExperiments.filter(e => !e.mechanical_gate_passed).length}건 · 사람 검토 대기: {currentExperiments.filter(e => e.human_review_required).length}건 · 근거 연결 실패: {unlinkedEvidenceCount}건</p>
+      <p>실패 사유별 건수: {Object.entries(experimentFailureCounts).map(([name, count]) => `${name} ${count}`).join(" · ") || "없음"}</p>
+      {experiments.map(e => <details key={str(e, "id")}><summary>{str(e, "language")} · {str(e, "variant")} · {e.mechanical_gate_passed ? "규칙 게이트 통과" : "품질 보류"} · {str(e, "created_at")}</summary>
+        <pre style={{ whiteSpace: "pre-wrap" }}>{JSON.stringify({ experiment_id: e.experiment_id, source_version: e.content_version_id, processing: e.metrics, checks: e.checks, publish_ready: e.publish_ready, output: e.output_snapshot }, null, 2)}</pre></details>)}
+    </section>
     <section><h2>Zero additional cost policy</h2><p>External gate: {data.cost_policy?.external_calls_allowed ? "active; check provider-specific blocks" : "blocked by credential or terms review"}</p><p>Paid fallback and automatic paid upgrades are disabled.</p><pre>{JSON.stringify({ blockedProviders: data.cost_policy?.blocked_providers ?? [], credentialNames: data.cost_policy?.blocked_credential_names ?? [] }, null, 2)}</pre></section>
     <p role="status">{message}</p><button disabled={busy} onClick={() => refresh().catch(() => setMessage("조회 실패"))}>새로 고침</button>
     <section><h2>실제 로컬 AI 상태·성능 측정</h2>

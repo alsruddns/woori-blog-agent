@@ -45,8 +45,28 @@ def numbers(text: str) -> set[str]:
         return value
 
     text = re.sub(r"\b(\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{8})\b", numeric_date, text)
-    text = re.sub(r"https?://\S+|\b[0-9a-f]{8}-[0-9a-f-]{27,}\b", "", text)
-    text = re.sub(r"(?m)^\s*(?:#+\s*)?\d+[.)]\s", "", text)
+
+    def localized_date(match: re.Match[str]) -> str:
+        year, month, day = (int(value) for value in match.groups())
+        if 1 <= month <= 12 and 1 <= day <= 31:
+            dates.add(f"DATE:{year:04d}-{month:02d}-{day:02d}")
+            return " "
+        return match.group(0)
+
+    text = re.sub(
+        r"(?<!\d)(\d{4})\s*(?:년|年)\s*(\d{1,2})\s*(?:월|月)\s*(\d{1,2})\s*(?:일|日)?",
+        localized_date,
+        text,
+    )
+    text = re.sub(
+        r"https?://\S+|\[source:[^\]]+\]|\b[0-9a-f]{8}-[0-9a-f-]{27,}\b",
+        "",
+        text,
+    )
+    # Section labels such as `## 1` are structure, not factual numerals. Keep
+    # stripping numbered-list prefixes as well, without hiding inline numbers.
+    text = re.sub(r"(?m)^\s*#{1,6}\s+\d+\s*$", "", text)
+    text = re.sub(r"(?m)^\s*(?:#{1,6}\s*)?\d+[.)]\s", "", text)
     return dates | {
         str(float(n.replace(",", ""))) for n in re.findall(r"\d+(?:[,\.]\d+)?", text) if len(n) < 20
     }
@@ -55,6 +75,16 @@ def numbers(text: str) -> set[str]:
 _NON_NAME_STARTS = {
     "a", "an", "and", "as", "at", "announced", "by", "for", "from", "in", "on",
     "the", "terminated", "to", "these", "this",
+}
+
+_NON_NAME_ENDS = {
+    "announced", "announcement", "announces", "actions", "analysis", "briefing",
+    "concludes", "conclusion", "explained", "guide", "highlights", "overview",
+    "report", "review", "summary", "terminated", "termination", "update",
+}
+
+_GENERIC_HEADLINE_NAMES = {
+    "enforcement actions", "regulatory measures", "official announcement",
 }
 
 
@@ -66,24 +96,38 @@ def proper_names(text: str) -> set[str]:
         tokens = candidate.split()
         while tokens and tokens[0].casefold() in _NON_NAME_STARTS:
             tokens.pop(0)
+        while tokens and tokens[-1].casefold().strip(".,:;!?()") in _NON_NAME_ENDS:
+            tokens.pop()
         name = " ".join(tokens)
-        if len(tokens) >= 2 and any(len(token.strip(".,'&")) > 2 for token in tokens):
+        if (
+            len(tokens) >= 2
+            and name.casefold() not in _GENERIC_HEADLINE_NAMES
+            and any(len(token.strip(".,'&")) > 2 for token in tokens)
+        ):
             names.add(name)
     return names
 
 
 def repeated_paragraphs(text: str) -> list[str]:
-    text = re.sub(r"(?m)^\s*#{1,6}\s+.*$", "", text)
+    text = prose_without_headings(text)
     paragraphs = [" ".join(p.casefold().split()) for p in re.split(r"\n\s*\n", text)]
     substantive = [p for p in paragraphs if len(re.findall(r"\w+", p)) >= 8]
     return sorted({p for p in substantive if substantive.count(p) > 1})
 
 
 def repeated_sentences(text: str) -> list[str]:
-    text = re.sub(r"(?m)^\s*#{1,6}\s+.*$", "", text)
+    text = prose_without_headings(text)
+    text = re.sub(r"\[source:[^\]]+\]|https?://\S+", "", text)
     sentences = [" ".join(s.casefold().split()) for s in re.split(r"(?<=[.!?。！？])\s+|\n+", text)]
     substantive = [s for s in sentences if len(re.findall(r"\w+", s)) >= 6]
     return sorted({s for s in substantive if substantive.count(s) > 1})
+
+
+def prose_without_headings(text: str) -> str:
+    """Remove actual Markdown headings, while retaining cited text on heading lines."""
+    return re.sub(
+        r"(?m)^\s*#{1,6}\s+(?!.*\[source:[^\]]+\]).*$", "", text
+    )
 
 
 def extract_facts(sources: list[dict[str, Any]]) -> list[dict[str, str]]:
@@ -113,14 +157,22 @@ def inspect(
     allowed_ids = {str(s["id"]) for s in sources}
     allowed_urls = {s["url"].rstrip("/") for s in sources}
     body = draft.title + "\n" + draft.body + "\n" + draft.summary
-    prose_body = re.sub(r"(?m)^\s*#{1,6}\s+.*$", "", draft.body)
+    prose_body = prose_without_headings(draft.body)
     found_urls = {u.rstrip("/.,);]") for u in re.findall(r"https?://[^\s<>]+", body)}
     evidence = "\n".join(str(s["evidence"]) + " " + str(s.get("published_at", "")) for s in sources)
     unexpected_numbers = sorted(numbers(body) - numbers(evidence + " " + as_of))
     evidence_names = proper_names(evidence)
     output_names = proper_names(draft.title + "\n" + prose_body + "\n" + draft.summary)
     missing_names = sorted(evidence_names - output_names)
-    ungrounded_names = sorted(output_names - evidence_names)
+    # A shorter exact phrase such as "Federal Reserve" is supported by the
+    # source's full name "Federal Reserve Board"; added entity tokens still fail.
+    ungrounded_names = sorted(
+        name for name in output_names - evidence_names
+        if not any(
+            re.sub(r"'s$", "", name) in evidence_name
+            for evidence_name in evidence_names
+        )
+    )
     cited_ids = set(re.findall(r"\[source:([^\]]+)\]", draft.body))
     substantive_paragraphs = [
         p.strip() for p in re.split(r"\n\s*\n", prose_body)

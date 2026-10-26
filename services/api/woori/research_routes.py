@@ -221,6 +221,7 @@ def state() -> dict[str, Any]:
                 "collection_jobs": "SELECT r.*,j.source_id FROM job_runs r JOIN collection_jobs j ON j.run_id=r.id ORDER BY r.created_at DESC LIMIT 50",
                 "measurements": "SELECT * FROM model_measurements ORDER BY created_at DESC LIMIT 50",
                 "stage_runs": "SELECT * FROM generation_stage_runs ORDER BY started_at DESC LIMIT 300",
+                "experiments": "SELECT * FROM research_experiment_evaluations ORDER BY created_at DESC LIMIT 200",
             }.items()
         }
         result["coverage"] = conn.execute(
@@ -282,8 +283,8 @@ def revalidate(version_id: UUID) -> dict[str, Any]:
     checks["rule_pass"] = bool(checks["rule_pass"] and checks["input_revision_current"])
     with connection() as conn:
         conn.execute(
-            "INSERT INTO seo_audits(content_version_id,profile_id,passed,validator_adapter,checks) VALUES (%s,%s,false,'grounding-v2',%s)",
-            (version_id, row["profile_id"], Jsonb(checks)),
+            "INSERT INTO seo_audits(content_version_id,profile_id,passed,validator_adapter,checks) VALUES (%s,%s,%s,'grounding-v3-phase38a',%s)",
+            (version_id, row["profile_id"], checks["rule_pass"], Jsonb(checks)),
         )
         pipeline.emit(
             conn, "quality.rechecked", row["run_id"], version_id=str(version_id), checks=checks
