@@ -1073,6 +1073,14 @@ def resources_ok(controls: dict[str, Any]) -> bool:
     )
 
 
+def daily_batch_capacity_available(target_count: int, daily_limit: int, new_jobs: int) -> bool:
+    """Require capacity for the whole bounded batch before enqueueing any of it."""
+    return (
+        target_count >= 0 and daily_limit >= 0 and new_jobs >= 0
+        and target_count + new_jobs <= daily_limit
+    )
+
+
 def tick() -> bool:
     with connection() as conn:
         conn.execute("SELECT pg_advisory_xact_lock(781205)")

@@ -113,6 +113,16 @@ def test_failed_local_quality_gate_is_always_quality_held() -> None:
     assert pipeline.draft_state("local", False, {"structural_pass": True, "grounding": {"rule_pass": True}}) == "human_review_required"
 
 
+@pytest.mark.parametrize(
+    ("current", "limit", "new_jobs", "expected"),
+    [(0, 5, 2, True), (3, 5, 2, True), (4, 5, 2, False), (5, 5, 1, False), (6, 5, 2, False)],
+)
+def test_bounded_evaluation_preflight_requires_capacity_for_whole_batch(
+    current: int, limit: int, new_jobs: int, expected: bool,
+) -> None:
+    assert pipeline.daily_batch_capacity_available(current, limit, new_jobs) is expected
+
+
 def test_unexpected_stage_error_is_recorded_and_job_is_terminalized(
     lab: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

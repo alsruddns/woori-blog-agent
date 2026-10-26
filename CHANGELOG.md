@@ -99,3 +99,7 @@
 ## Unreleased - Phase 3.9 operations
 - Add an audited PostgreSQL heartbeat for the internal research worker and expose freshness, database-backed job/content/evaluation/failure summaries in the research dashboard.
 - Add an append-only deterministic Phase 3.9 recheck of saved article evaluations; no model or external calls are made by that evaluator.
+
+## Unreleased - Phase 3.9-R - 2026-10-26
+- Preflight the full bounded Fed/SEC evaluation batch against per-language daily generation capacity before loading the local model or enqueueing any job; preserve the existing quota and resource gates.
+- Diagnose the shared evaluation/operations quota, idle Vulkan model memory use, live service health, and Worker/queue state in an append-only preflight artifact. Actual inference and real Worker execution remain unverified because quota capacity was exhausted and no isolated Worker runtime was available.

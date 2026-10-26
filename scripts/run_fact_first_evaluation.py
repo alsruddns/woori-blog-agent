@@ -27,25 +27,35 @@ RETRYABLE_JOB_ERRORS = {
 
 
 def main() -> None:
-    model = runtime()
-    if model["model"] != MODEL:
-        raise SystemExit("Expected already installed Qwen3 4B Q4_K_M; downloads are disabled")
-    with connection() as conn:
-        controls = conn.execute("SELECT * FROM pipeline_controls").fetchone()
-        if not controls or controls["paused"] or not pipeline.resources_ok(controls):
-            raise SystemExit("Pipeline/resource gate is closed; no evaluation resumed")
-        over_limit = conn.execute(
-            """SELECT p.language_code,count(*) AS n,max(g.daily_limit) AS daily_limit
-            FROM generation_targets t JOIN language_profiles p ON p.id=t.profile_id
-            JOIN generation_jobs j ON j.run_id=t.run_id JOIN generation_settings g ON g.profile_id=t.profile_id
-            WHERE j.created_at>=date_trunc('day',now()) GROUP BY p.language_code
-            HAVING count(*)>max(g.daily_limit)"""
-        ).fetchall()
-        if over_limit:
-            raise SystemExit("Historical targets exceed a profile daily limit; preserve records and do not infer")
     sources = reviewed_sources()
     if len(sources) != 2:
         raise SystemExit("Expected the two current reviewed Federal Reserve and SEC sources")
+    with connection() as conn:
+        controls = conn.execute("SELECT * FROM pipeline_controls").fetchone()
+        if not controls or controls["paused"]:
+            raise SystemExit("Pipeline is paused; no evaluation resumed")
+        quota_rows = conn.execute(
+            """SELECT p.language_code,count(t.run_id) AS target_count,g.daily_limit
+            FROM language_profiles p JOIN languages l ON l.code=p.language_code AND l.active
+            JOIN generation_settings g ON g.profile_id=p.id
+            LEFT JOIN generation_targets t ON t.profile_id=p.id
+            LEFT JOIN generation_jobs j ON j.run_id=t.run_id AND j.created_at>=date_trunc('day',now())
+            WHERE p.target_country='' AND (t.run_id IS NULL OR j.run_id IS NOT NULL)
+            GROUP BY p.language_code,g.daily_limit ORDER BY p.language_code"""
+        ).fetchall()
+        insufficient = [
+            row for row in quota_rows
+            if not pipeline.daily_batch_capacity_available(
+                int(row["target_count"]), int(row["daily_limit"]), len(sources)
+            )
+        ]
+        if insufficient:
+            raise SystemExit("Daily quota cannot fit the complete two-source batch; no job was enqueued")
+        if not pipeline.resources_ok(controls):
+            raise SystemExit("Pipeline resource gate is closed; no evaluation resumed")
+    model = runtime()
+    if model["model"] != MODEL:
+        raise SystemExit("Expected already installed Qwen3 4B Q4_K_M; downloads are disabled")
     by_source = {str(source["id"]): source for source in sources}
     batch_id = uuid4()
     jobs = []
