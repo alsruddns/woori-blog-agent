@@ -1,0 +1,217 @@
+{
+  "phase": "4-B",
+  "date_kst": "2026-10-27",
+  "database": "woori_blog_agent_eval",
+  "schema_version": 26,
+  "worker_mode": "actual local Python process, evaluation isolation verified, Fake Publisher only",
+  "worker_run_count": 6,
+  "jobs": [
+    {
+      "id": "f1f84507-79c5-4f6c-a7c2-66e17ca66408",
+      "status": "succeeded",
+      "publication_state": "quality_held",
+      "attempts": 1,
+      "retry_count": 0,
+      "max_retries": 2,
+      "last_error_category": null,
+      "mock_scenario": "success"
+    },
+    {
+      "id": "a2ee5a03-8dfb-43f4-8af4-b4f7383d782c",
+      "status": "failed",
+      "publication_state": "quality_held",
+      "attempts": 2,
+      "retry_count": 1,
+      "max_retries": 1,
+      "last_error_category": "timeout",
+      "mock_scenario": "timeout"
+    },
+    {
+      "id": "19c6c036-9200-47af-8507-122c1a8912b0",
+      "status": "failed",
+      "publication_state": "quality_held",
+      "attempts": 1,
+      "retry_count": 0,
+      "max_retries": 2,
+      "last_error_category": "auth_failure",
+      "mock_scenario": "auth_failure"
+    },
+    {
+      "id": "c2b0b683-9dd3-46aa-84ea-81d5661a150a",
+      "status": "uncertain",
+      "publication_state": "quality_held",
+      "attempts": 1,
+      "retry_count": 0,
+      "max_retries": 2,
+      "last_error_category": "uncertain",
+      "mock_scenario": "uncertain"
+    },
+    {
+      "id": "65503d19-9742-4108-9552-23989b6e19c3",
+      "status": "succeeded",
+      "publication_state": "quality_held",
+      "attempts": 2,
+      "retry_count": 1,
+      "max_retries": 2,
+      "last_error_category": null,
+      "mock_scenario": "success"
+    },
+    {
+      "id": "d4713d43-790a-4d36-b2b8-f201cc2f8ade",
+      "status": "cancelled",
+      "publication_state": "cancelled",
+      "attempts": 0,
+      "retry_count": 0,
+      "max_retries": 2,
+      "last_error_category": null,
+      "mock_scenario": "success"
+    }
+  ],
+  "attempts": [
+    {
+      "id": "21ef7a4d-bbbd-4a1d-8538-3f260b14e7e7",
+      "job_id": "f1f84507-79c5-4f6c-a7c2-66e17ca66408",
+      "attempt_no": 1,
+      "attempt_kind": "worker",
+      "scenario": "success",
+      "outcome": "succeeded",
+      "retryable": false,
+      "fake_post_id": "fake-post-a1eb8827-3d77-4c99-8afb-677332e63449"
+    },
+    {
+      "id": "e51b4ca6-fb5d-4278-ae84-9beaed32266e",
+      "job_id": "a2ee5a03-8dfb-43f4-8af4-b4f7383d782c",
+      "attempt_no": 1,
+      "attempt_kind": "worker",
+      "scenario": "timeout",
+      "outcome": "failed",
+      "retryable": true,
+      "fake_post_id": null
+    },
+    {
+      "id": "d5cabfe2-c673-4042-a421-48a8a7f55f90",
+      "job_id": "a2ee5a03-8dfb-43f4-8af4-b4f7383d782c",
+      "attempt_no": 2,
+      "attempt_kind": "worker",
+      "scenario": "timeout",
+      "outcome": "failed",
+      "retryable": true,
+      "fake_post_id": null
+    },
+    {
+      "id": "569aa1b9-b7f2-47a0-bcd8-702bfde3fb8a",
+      "job_id": "19c6c036-9200-47af-8507-122c1a8912b0",
+      "attempt_no": 1,
+      "attempt_kind": "worker",
+      "scenario": "auth_failure",
+      "outcome": "failed",
+      "retryable": false,
+      "fake_post_id": null
+    },
+    {
+      "id": "cb3e1408-9d84-4dd5-ae48-f6e60344a624",
+      "job_id": "c2b0b683-9dd3-46aa-84ea-81d5661a150a",
+      "attempt_no": 1,
+      "attempt_kind": "worker",
+      "scenario": "uncertain",
+      "outcome": "uncertain",
+      "retryable": false,
+      "fake_post_id": null
+    },
+    {
+      "id": "5dfcfe81-5a1c-48b8-b6fb-fabb158ef92d",
+      "job_id": "65503d19-9742-4108-9552-23989b6e19c3",
+      "attempt_no": 2,
+      "attempt_kind": "worker",
+      "scenario": "success",
+      "outcome": "succeeded",
+      "retryable": false,
+      "fake_post_id": "fake-post-d1c6268b-d160-4adc-bebe-0405fdadcb2d"
+    }
+  ],
+  "schedule_events": [
+    {
+      "id": 1,
+      "job_id": "d4713d43-790a-4d36-b2b8-f201cc2f8ade",
+      "action": "scheduled",
+      "scheduled_at": "2026-10-27 02:52:40.184385+09:00",
+      "timezone": "Asia/Seoul"
+    },
+    {
+      "id": 2,
+      "job_id": "d4713d43-790a-4d36-b2b8-f201cc2f8ade",
+      "action": "cancelled",
+      "scheduled_at": null,
+      "timezone": "UTC"
+    }
+  ],
+  "publication_audit_counts": [
+    {
+      "event_type": "publication.mock.cancelled",
+      "n": 1
+    },
+    {
+      "event_type": "publication.mock.scheduled",
+      "n": 1
+    },
+    {
+      "event_type": "publication.sync.checked",
+      "n": 1
+    },
+    {
+      "event_type": "publication.worker.completed",
+      "n": 2
+    },
+    {
+      "event_type": "publication.worker.failed",
+      "n": 3
+    },
+    {
+      "event_type": "publication.worker.lease_recovered",
+      "n": 1
+    },
+    {
+      "event_type": "publication.worker.retry_scheduled",
+      "n": 1
+    },
+    {
+      "event_type": "publication.worker.started",
+      "n": 6
+    }
+  ],
+  "last_heartbeat": {
+    "process_id": 19220,
+    "status": "stopped",
+    "last_seen_at": "2026-10-27 00:51:18.644121+09:00"
+  },
+  "safety": {
+    "real_blogger_writes": 0,
+    "publishing_records": 0,
+    "publish_ready_true": 0,
+    "auto_publish_policy_true": 0,
+    "external_network_calls_by_worker": 0
+  },
+  "verified_scenarios": {
+    "normal_success": "succeeded; domain remained quality_held",
+    "timeout": "one retry after bounded backoff; then failed",
+    "auth_failure": "failed; no retry",
+    "uncertain": "uncertain; no automatic retry",
+    "expired_lease": "recovered and then succeeded on fake attempt 2",
+    "schedule": "future Asia/Seoul schedule, duplicate idempotency and cancellation tested"
+  },
+  "blogger_sync": {
+    "handler": "implemented using existing allowlisted read-only Blogger client; page token exposed; discrepancy never mutates records",
+    "verification": "mock service response only; no real Google Blogger request made",
+    "audit": "publication.sync.checked appended in evaluation DB"
+  },
+  "resource_metrics": {
+    "publication_worker_process_rss": "not sampled",
+    "publication_worker_process_cpu": "not sampled",
+    "separate_existing_worker_isolation_probe": {
+      "ram_available_gib": 13.16,
+      "cpu_sample_percent": 4.9,
+      "disk_free_gib": 189.57
+    }
+  },
+  "mock_blog_url": "https://phase4b-offline-test.blogspot.com"
+}

@@ -132,3 +132,10 @@
 - Add a network-free Fake Publisher and a permanently disabled real Publisher adapter; no route can approve human review or enable live writes.
 - Add the `/publishing` dashboard and same-origin API proxy with blocked request and offline simulation views.
 - Add additive schema migration 025; publication attempts and state history are immutable and `publish_ready` remains disabled.
+
+
+## Unreleased - Phase 4-B - 2026-10-27
+- Add future-only Asia/Seoul-aware mock scheduling, rescheduling, cancellation, and append-only schedule events.
+- Add a lease-based one-job Worker restricted to fake-only runs, with bounded retry, heartbeat, uncertain-result stop, and expired-lease recovery.
+- Add paginated Blogger read-only post reconciliation; mismatches are reported for manual review and no internal publication state is changed.
+- Add explicit mock/worker/sync status to the publication dashboard and schema migration 026.

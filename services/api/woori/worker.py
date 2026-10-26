@@ -19,7 +19,7 @@ def heartbeat(
 ) -> None:
     if status not in {"running", "degraded", "stopped"}:
         raise ValueError("invalid_worker_status")
-    if service_name not in {"research_worker", "evaluation_worker"}:
+    if service_name not in {"research_worker", "evaluation_worker", "publication_worker"}:
         raise ValueError("invalid_worker_service")
     with connection() as conn:
         previous = conn.execute(

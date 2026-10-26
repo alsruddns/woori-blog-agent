@@ -24,7 +24,8 @@ BIN = Path("C:/Program Files/PostgreSQL/16/bin")
 EXCLUDED_DATA = (
     "audit_events", "google_connections", "google_oauth_states", "blogger_blogs",
     "blogger_api_calls", "blogger_write_operations", "publishing_policies",
-    "publishing_jobs", "publishing_records", "search_performance", "worker_heartbeats",
+    "publishing_jobs", "publishing_records", "publication_state_events", "publication_attempts",
+    "publication_schedule_events", "search_performance", "worker_heartbeats",
 )
 
 

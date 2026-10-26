@@ -45,7 +45,7 @@ See [architecture](docs/architecture/overview.md), [operations](docs/operations/
 ## Multilingual configuration
 Open http://127.0.0.1:3100/config to manage languages, multiple blogs per language, country profiles, policy schedules, categories and glossaries. The initial four user-provided Blogspot addresses are registered. Google Blog IDs stay NULL until user-consented API verification succeeds in /blogger. Registering a URL alone makes no external request. API/worker startup never loads administrator or migration-owner credentials.
 
-Apply updates using `.venv/Scripts/python scripts/migrate.py` (latest version: 24). Migrations 001–004 are unchanged. Existing version IDs/content and audit records are preserved. Back up the dedicated database first. Configuration tests roll back synthetic records; diagnostic worker tests still append identifiable run history.
+Apply updates using `.venv/Scripts/python scripts/migrate.py` (latest version: 26). Migrations 001–004 are unchanged. Existing version IDs/content and audit records are preserved. Back up the dedicated database first. Configuration tests roll back synthetic records; diagnostic worker tests still append identifiable run history.
 
 BCP 47 tags are normalized (e.g. pt-br -> pt-BR); language identity cannot be renamed in place. Deactivate an old identity and register a replacement to preserve references. New languages receive a default country profile with every capability unverified. Neither registration nor policy activation enables automatic publishing. Country-specific settings are saved as complete profiles, so review all fields before updating an existing language/country pair.
 
@@ -144,3 +144,6 @@ After the Asia/Seoul daily evaluation quota resets, start the existing model in 
 ### Publication workflow (simulation only)
 
 Open `http://127.0.0.1:3100/publishing` to inspect blocked requests and run an offline Fake Publisher simulation. It cannot approve content or publish to Blogger. Real Blogger writes and `publish_ready` remain disabled in code and schema. Schema migration 025 is applied by `scripts/migrate.py`.
+
+
+Phase 4-B keeps scheduled jobs simulation-only. To process one isolated fake job, run `.venv/Scripts/python.exe scripts/publication-worker.py --evaluation`. The worker checks database isolation before starting. Real Blogger writes remain disabled; Blogger reconciliation is read-only and its live API result is not verified by mock tests.

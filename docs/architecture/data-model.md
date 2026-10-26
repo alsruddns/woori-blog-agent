@@ -1,4 +1,4 @@
-# 다국어 데이터 모델 (schema version 25)
+# 다국어 데이터 모델 (schema version 26)
 
 언어 수는 제한하지 않는다. 초기 ko/en/zh-CN/ja는 시드이며, 코드의 조건 분기가 아니다.
 
@@ -73,7 +73,7 @@ Migration `014_generation_stages.sql` adds `generation_stage_runs`, keyed by a U
 
 Migration 014 is additive; it preserves existing versions, audit events, publication records, and source evidence. Terminal stage records remain queryable for comparison and incident review.
 
-## Phase 3.9-S quota and Worker model (schema version 25)
+## Phase 3.9-S quota and Worker model (schema version 24)
 
 `generation_settings` stores independent `daily_limit` and `evaluation_daily_limit` values per profile. Quota is consumed when a generation target is created; terminal failed/cancelled targets remain counted, while retries reuse the same target. The quota window is explicitly 00:00?00:00 Asia/Seoul. `pipeline_controls.evaluation_isolated` defaults to false. Evaluation work is accepted only when the evaluation runtime proves it is connected to a physically distinct PostgreSQL database from the configured operations database; its worker filters to evaluation jobs, and both modes retain the same global pause/resource/concurrency gates. `worker_heartbeats` has separate `research_worker` and `evaluation_worker` rows. Migration 024 records its schema change as an append-only audit event and does not reset existing quotas or content.
 
@@ -83,3 +83,10 @@ Migration 014 is additive; it preserves existing versions, audit events, publica
 `publishing_jobs` is extended with a domain `publication_state`, structured block reasons, and database-enforced `adapter_type='fake'` / `simulation_only=true`. A request is evaluated against the localized version, active language, mapped blog, latest immutable article quality result, and publication policy. Missing human review, false publish readiness, and the global disabled-write policy keep it blocked. State changes are recorded in immutable `publication_state_events`.
 
 `publication_attempts` records only offline fake-adapter scenarios and uses `fake-post-*` identifiers; it is append-only and separate from `publishing_records`, which remains reserved for actual remote posts. No schema or UI path can set `publish_ready=true` or enable Blogger writes. Migration 025 adds these controls without changing existing content, posts, or audit events.
+
+
+## Phase 4-B schedules and worker (schema version 26)
+
+`publishing_jobs.scheduled_at` is stored as `timestamptz` (UTC); `schedule_timezone` retains the display zone. API validation rejects naive, past, and offset-mismatched timestamps. `publication_schedule_events` is append-only and uses an idempotency key. `publication_worker` claims only due rows constrained to `adapter_type='fake'` and `simulation_only=true`; it never updates a domain state to `published` or writes `publishing_records`. Retryable fake timeout/server scenarios are bounded by `max_retries`; auth errors and uncertain outcomes stop for review. Lease recovery requeues within the same bound.
+
+`publication_attempts` distinguishes interactive simulations from Worker attempts. Actual Blogger sync uses the existing read-only Blogger client, records a sync audit, and reports remote/internal matches without changing internal publication state. Fake post identifiers are kept outside the real `publishing_records` table.
