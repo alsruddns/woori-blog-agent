@@ -8,7 +8,7 @@ import httpx
 import psycopg
 import pytest
 from fastapi.testclient import TestClient
-from woori import pipeline
+from woori import pipeline, worker
 from woori.ai import EngineFailure, LocalProvider, MockProvider, provider
 from woori.config import settings
 from woori.db import connection
@@ -215,7 +215,36 @@ def test_pipeline_n_languages_versions_and_audit(lab: Any, monkeypatch: pytest.M
     assert response.status_code == 200
     state = response.json()
     assert state["stage_runs"] and state["coverage"]
+    assert state["worker"] is None
+    assert {"jobs", "content_states", "quality_evaluations", "recent_failures"} <= set(state["operations_summary"])
     assert all("reviewed_source_count" in row for row in state["coverage"])
+
+
+def test_worker_heartbeat_records_transitions_append_only(lab: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    conn, api, headers = lab
+
+    @contextmanager
+    def shared() -> Iterator[Any]:
+        with conn.transaction():
+            yield conn
+
+    monkeypatch.setattr(worker, "connection", shared)
+    worker.heartbeat()
+    worker.heartbeat()
+    worker.heartbeat("degraded", "database_unavailable")
+    row = conn.execute("SELECT * FROM worker_heartbeats WHERE service_name='research_worker'").fetchone()
+    assert row["status"] == "degraded" and row["last_error_category"] == "database_unavailable"
+    events = conn.execute("SELECT payload FROM audit_events WHERE event_type='worker.status.changed'").fetchall()
+    assert len(events) == 2
+    assert {event["payload"]["status"] for event in events} == {"running", "degraded"}
+    state = api.get("/admin/research/state", headers=headers).json()
+    assert state["worker"]["fresh"] is True and state["worker"]["status"] == "degraded"
+    assert all("publish_ready" not in evaluation or not evaluation["publish_ready"]
+               for evaluation in state["article_evaluations"])
+    conn.execute("UPDATE worker_heartbeats SET last_seen_at=now()-interval '1 minute' WHERE service_name='research_worker'")
+    assert api.get("/admin/research/state", headers=headers).json()["worker"]["fresh"] is False
+    with pytest.raises(ValueError, match="invalid_worker_status"):
+        worker.heartbeat("stopped")
 
 
 def test_evidence_block_and_duplicate_generation(lab: Any) -> None:

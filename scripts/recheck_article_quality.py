@@ -17,7 +17,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE_BATCH = UUID("accda6bd-cf11-4cdc-8f35-801e0fbbbddc")
 
 
-def main() -> None:
+def main(phase: str = "3.8-C2", output_prefix: str = "P3-8C2-regression") -> None:
+    prompt_version = f"p{phase.lower().replace('.', '-')}-deterministic-recheck-v1"
     batch_id = uuid4()
     with connection() as conn:
         originals = conn.execute(
@@ -102,12 +103,12 @@ def main() -> None:
                 (batch_id,topic_key,topic,language_code,content_version_id,title,source_ids,fact_ids,
                  summary,keywords,model,prompt_version,metrics,checks,machine_passed,human_review_required,
                  error_category,status,publish_ready,elapsed_ms,ai_calls)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'p3.8-c2-deterministic-recheck-v1',
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
                  %s,%s,%s,true,%s,%s,false,%s,0) RETURNING id""",
                 (
                     batch_id, original["topic_key"], original["topic"], original["language_code"],
                     original["content_version_id"], title, source_ids, fact_ids, summary, keywords,
-                    original["model"], Jsonb(metrics), Jsonb(checks), machine_passed,
+                    original["model"], prompt_version, Jsonb(metrics), Jsonb(checks), machine_passed,
                     error_category, status, elapsed_ms,
                 ),
             ).fetchone()
@@ -129,7 +130,7 @@ def main() -> None:
         print(json.dumps(outcomes[-1], ensure_ascii=True))
 
     artifact = {
-        "phase": "3.8-C2",
+        "phase": phase,
         "kind": "append_only_deterministic_recheck",
         "batch_id": str(batch_id),
         "source_batch_id": str(SOURCE_BATCH),
@@ -143,7 +144,7 @@ def main() -> None:
             "all_publish_ready_false": all(not item["publish_ready"] for item in outcomes),
         },
     }
-    output = ROOT / "docs" / "development" / "P3-8C2-regression.json"
+    output = ROOT / "docs" / "development" / f"{output_prefix}-{batch_id}.json"
     if output.exists():
         raise SystemExit("Refusing to overwrite an existing recheck artifact")
     output.write_text(json.dumps(artifact, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

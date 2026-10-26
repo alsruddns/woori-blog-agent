@@ -277,6 +277,25 @@ def state() -> dict[str, Any]:
         ).fetchall()
         result["cost_policy"] = external_policy_status()
         result["controls"] = conn.execute("SELECT * FROM pipeline_controls").fetchone()
+        result["worker"] = conn.execute(
+            """SELECT service_name,process_id,status,last_error_category,last_seen_at,
+                last_seen_at>now()-interval '45 seconds' AS fresh
+            FROM worker_heartbeats WHERE service_name='research_worker'"""
+        ).fetchone()
+        result["operations_summary"] = {
+            "jobs": conn.execute(
+                "SELECT task_kind,status,count(*) AS count FROM job_runs GROUP BY task_kind,status ORDER BY task_kind,status"
+            ).fetchall(),
+            "content_states": conn.execute(
+                "SELECT state,count(*) AS count FROM generation_results GROUP BY state ORDER BY state"
+            ).fetchall(),
+            "quality_evaluations": conn.execute(
+                "SELECT status,count(*) AS count,sum((human_review_required)::int) AS human_review_pending FROM article_quality_evaluations GROUP BY status ORDER BY status"
+            ).fetchall(),
+            "recent_failures": conn.execute(
+                "SELECT error_type,count(*) AS count,max(error_at) AS latest_at FROM job_runs WHERE status='failed' AND error_type IS NOT NULL GROUP BY error_type ORDER BY latest_at DESC LIMIT 20"
+            ).fetchall(),
+        }
         result["events"] = conn.execute(
             "SELECT id,run_id,event_type,payload,created_at FROM audit_events WHERE event_type LIKE 'research.%' ORDER BY id DESC LIMIT 100"
         ).fetchall()

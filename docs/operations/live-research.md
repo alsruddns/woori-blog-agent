@@ -87,3 +87,12 @@ It does not call the model or external sources. If an old failed attempt has no 
 # Bounded fact-first evaluation
 
 Use `python scripts/run_fact_first_evaluation.py` only when the existing local llama.cpp runtime is already running the allowlisted Qwen3 4B Q4 model, at least 6 GiB RAM is available, the pipeline is not paused, and no unrelated content run is queued or running. The script evaluates the current reviewed Fed and SEC sources across active base language profiles, creates evaluation-only internal drafts, and never calls collection services or Blogger write endpoints. It reuses only its own identifiable unfinished C3 batch after interruption. Keep the configured daily limit and pipeline resource checks in force; do not force a run when they block.
+
+
+## Phase 3.9 local unattended operation
+
+Start the local llama.cpp service only after checking available memory and the configured resource gate. From the repository PowerShell, use `scripts/run-api.ps1`, `scripts/run-dashboard.ps1`, and `scripts/run-worker.ps1` in their own consoles; verify `/health` and the research dashboard. Do not run `scripts/register-worker.ps1` unless Windows Task Scheduler registration is separately intended and reviewed; Phase 3.9 does not change OS startup settings. The dashboard reports a Worker as current only when its database heartbeat is at most 45 seconds old. If it is missing or stale, inspect the Worker console and database connectivity before resuming queued jobs.
+
+For controlled recovery, inspect job attempts, lease expiry, stage errors and audit events in the dashboard. Resume/retry only the intended job after its failure cause is resolved; retry limits and idempotency remain enforced. To stop the Worker, close its own console or stop that process; do not terminate other project processes. A Worker heartbeat becoming stale after stop is expected. Use `scripts/backup.py` and the isolated `scripts/restore-rehearsal.py` procedure for backups and restore checks. Do not reboot Windows as a test; startup-after-reboot remains a documented manual verification.
+
+The Phase 3.9 deterministic evaluation command (`.venv/Scripts/python scripts/run_phase39_quality_evaluation.py`) uses saved records, makes zero AI/external calls, and writes a new immutable evaluation batch. A machine pass still requires human editorial review; Blogger writes, automatic publication, and paid fallbacks remain disabled.

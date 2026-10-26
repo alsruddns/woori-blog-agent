@@ -1,11 +1,40 @@
 """Durable diagnostic and internal research worker; no external publication."""
 
+import os
+import threading
 import time
 
 import psycopg
+from psycopg.types.json import Jsonb
 
 from . import collection, pipeline
 from .db import connection
+
+
+def heartbeat(status: str = "running", error_category: str | None = None) -> None:
+    if status not in {"running", "degraded"}:
+        raise ValueError("invalid_worker_status")
+    with connection() as conn:
+        previous = conn.execute(
+            "SELECT process_id,status,last_error_category FROM worker_heartbeats WHERE service_name='research_worker'"
+        ).fetchone()
+        conn.execute(
+            """INSERT INTO worker_heartbeats(service_name,process_id,status,last_error_category,last_seen_at,updated_at)
+            VALUES ('research_worker',%s,%s,%s,now(),now())
+            ON CONFLICT(service_name) DO UPDATE SET process_id=EXCLUDED.process_id,status=EXCLUDED.status,
+              last_error_category=EXCLUDED.last_error_category,last_seen_at=now(),updated_at=now()""",
+            (os.getpid(), status, error_category),
+        )
+        if previous is None or (
+            int(previous["process_id"]) != os.getpid()
+            or previous["status"] != status
+            or previous["last_error_category"] != error_category
+        ):
+            conn.execute(
+                "INSERT INTO audit_events(event_type,payload) VALUES ('worker.status.changed',%s)",
+                (Jsonb({"service": "research_worker", "status": status,
+                        "error_category": error_category, "process_id": os.getpid()}),),
+            )
 
 
 def tick() -> bool:
@@ -51,6 +80,20 @@ def tick() -> bool:
 
 
 def main() -> None:
+    stop = threading.Event()
+    degraded = threading.Event()
+
+    def beat() -> None:
+        while not stop.is_set():
+            try:
+                heartbeat("degraded" if degraded.is_set() else "running",
+                          "database_unavailable" if degraded.is_set() else None)
+            except psycopg.Error:
+                degraded.set()
+            stop.wait(15)
+
+    heartbeat_thread = threading.Thread(target=beat, name="research-worker-heartbeat", daemon=True)
+    heartbeat_thread.start()
     while True:
         try:
             collection.schedule_tick()
@@ -59,7 +102,10 @@ def main() -> None:
             pipeline.tick()
             tick()
         except psycopg.Error:
+            degraded.set()
             print("Database unavailable; reconnecting without logging credentials", flush=True)
+        else:
+            degraded.clear()
         time.sleep(5)
 
 

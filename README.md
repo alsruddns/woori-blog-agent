@@ -125,3 +125,8 @@ Phase 3.8-C2 adds append-only rechecks and preserves future bounded JSON/schema 
 # Phase 3.8-C3 fact-first evaluation
 
 The content worker can persist exact source spans in `evidence_facts`, translate each span separately with the local model, attach citations in code, and retain per-fact checks in immutable generation-stage records. Run the bounded Fed/SEC evaluation with `python scripts/run_fact_first_evaluation.py` only when its model and resource preflight pass. This remains evaluation-only and cannot enable Blogger publishing.
+
+
+## Phase 3.9 operations check
+
+The dashboard reports the research worker heartbeat as current only when it was observed within 45 seconds; missing or stale heartbeat is shown as unknown/stale. Evaluation summaries come from stored PostgreSQL rows. To append a deterministic, zero-AI recheck of the saved Phase 3.8-C1 batch, run `.venv/Scripts/python scripts/run_phase39_quality_evaluation.py` from PowerShell. It preserves the source rows, writes new immutable evaluations and a unique artifact, and leaves `publish_ready=false`.

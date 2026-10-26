@@ -20,3 +20,10 @@ The research dashboard reads stage history and category/profile source coverage 
 # Fact-first source registry
 
 For evidence-led jobs, a `fact_registry` stage follows exact-span extraction and appends the registered fact IDs to the shared immutable fact ledger. Localized facts are translated individually; citation markers and article structure are rendered by application code, then the assembled article passes claim and SEO checks. Machine localization checks are retained per fact, and semantic accuracy stays pending human review.
+
+
+## Worker health and automatic quality status (Phase 3.9)
+
+`worker_heartbeats` is a mutable current-state projection for the single local research worker. The process refreshes it every 15 seconds; status transitions, PID changes, and sanitized error-category changes are appended to `audit_events`. The dashboard calls a heartbeat fresh only within 45 seconds. A missing or stale row means health is unknown, never healthy.
+
+Generation stage/SEO checks and immutable full-article evaluation records supply the machine result. A machine pass remains human-review-required, and `publish_ready` is constrained false. Deterministic rechecks create a new evaluation batch and audit events rather than modifying prior results.

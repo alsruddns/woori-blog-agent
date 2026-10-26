@@ -8,7 +8,7 @@ export type State = {
   attempts: Row[]; events: Row[]; dispatches: Row[]; collection_sources: Row[]; cost_policy?: Row;
   collection_jobs: Row[]; measurements: Row[]; stage_runs: Row[]; coverage: Row[]; experiments?: Row[];
   evidence_facts?: Row[]; localizations?: Row[]; glossary?: Row[]; glossary_revisions?: Row[];
-  article_evaluations?: Row[];
+  article_evaluations?: Row[]; worker?: Row | null; operations_summary?: Row;
 };
 type Field = { name: string; label: string; type?: string; optional?: boolean; options?: { value: string; label: string }[] };
 const str = (row: Row, key: string) => String(row[key] ?? "");
@@ -79,6 +79,12 @@ export default function Research({ initial }: { initial: State }) {
     return rules.citation_ids_valid !== true || rules.factual_paragraphs_cited !== true;
   }).length;
   return <>
+    <section><h2>무인 작업 운영 상태</h2>
+      <p>Worker: {data.worker?.fresh ? str(data.worker, "status") : "heartbeat 미확인 또는 45초 이상 오래됨"} · 마지막 확인 {str(data.worker ?? {}, "last_seen_at") || "기록 없음"}</p>
+      {data.worker?.last_error_category ? <p role="alert">최근 Worker 오류 분류: {str(data.worker, "last_error_category")}</p> : null}
+      <p>발행은 계속 차단되어 있고, 기계 품질 통과도 사람 검토 승인을 대신하지 않습니다.</p>
+      <details><summary>실제 DB 작업·초안·품질 집계</summary><pre>{JSON.stringify(data.operations_summary ?? {}, null, 2)}</pre></details>
+    </section>
     <section><h2>근거 우선 A/B 평가</h2>
       <p>저장된 Phase 3.7 원고 재평가와 사실 고정 템플릿 실험입니다. 규칙 검사 결과와 사람 검토 대기를 구분하며, 발행 준비는 항상 false입니다.</p>
       <p>최신 비교 평가 품질 보류: {currentExperiments.filter(e => !e.mechanical_gate_passed).length}건 · 사람 검토 대기: {currentExperiments.filter(e => e.human_review_required).length}건 · 근거 연결 실패: {unlinkedEvidenceCount}건</p>

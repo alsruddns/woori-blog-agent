@@ -94,3 +94,8 @@
 
 - Added an append-only fact registry stage and per-fact local translation with application-rendered citations and article structure.
 - Added a fixed evaluation-only Qwen3 4B model override that preserves saved settings, uses existing daily limits, and remains behind resource and publication gates.
+
+
+## Unreleased - Phase 3.9 operations
+- Add an audited PostgreSQL heartbeat for the internal research worker and expose freshness, database-backed job/content/evaluation/failure summaries in the research dashboard.
+- Add an append-only deterministic Phase 3.9 recheck of saved article evaluations; no model or external calls are made by that evaluator.
