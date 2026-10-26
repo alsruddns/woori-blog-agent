@@ -27,3 +27,9 @@ For evidence-led jobs, a `fact_registry` stage follows exact-span extraction and
 `worker_heartbeats` is a mutable current-state projection for the single local research worker. The process refreshes it every 15 seconds; status transitions, PID changes, and sanitized error-category changes are appended to `audit_events`. The dashboard calls a heartbeat fresh only within 45 seconds. A missing or stale row means health is unknown, never healthy.
 
 Generation stage/SEO checks and immutable full-article evaluation records supply the machine result. A machine pass remains human-review-required, and `publish_ready` is constrained false. Deterministic rechecks create a new evaluation batch and audit events rather than modifying prior results.
+
+## Phase 3.9-S quota and Worker isolation
+
+Operational and evaluation generation targets use independent daily counters. Creating a target consumes its mode's quota even if it later fails or is cancelled; idempotent retries reuse the existing target and do not consume another slot. The daily window resets at 00:00 Asia/Seoul using explicit timezone conversion; dashboard responses include the next reset timestamp. No endpoint resets usage. Both modes continue to share the system pause, resource-admission, and concurrency limits.
+
+Evaluation mode is disabled by default. API enqueue and the evaluation Worker require the explicit `pipeline_controls.evaluation_isolated` flag and an operational database URL that resolves to a different PostgreSQL database name. Evaluation ticks consume/recover only evaluation jobs. A separate quota or queue filter without a separate database is insufficient. The isolated Worker verification harness uses a randomly named schema with a schema-only search path and a test-only diagnostic queue; it does not touch public operational rows and drops that schema after recording the result.

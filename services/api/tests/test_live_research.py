@@ -18,6 +18,8 @@ from woori.grounding import inspect, numbers, proper_names
 from woori.local_inference import LlamaCppProvider
 from woori.localization import fact_ledger, localize_fact
 
+_ORIGINAL_EVALUATION_DB_ISOLATION = pipeline.evaluation_database_isolated
+
 
 def test_external_policy_closed_allowlist_and_zero_cost_credentials(
     monkeypatch: pytest.MonkeyPatch,
@@ -428,6 +430,7 @@ def test_fact_ledger_and_localization_separate_source_language_and_expression() 
 
 def test_localization_blocks_number_date_and_unapproved_entity_drift() -> None:
     from woori.localization import fact_ledger, localize_fact
+
 
     fact = fact_ledger(
         {
@@ -1144,31 +1147,64 @@ def test_fact_first_model_override_is_evaluation_only_and_bounded(lab: Any) -> N
         )
 
 
-def test_fact_first_evaluation_uses_shared_daily_generation_limit(lab: Any) -> None:
+def test_evaluation_and_operations_have_separate_daily_quotas(lab: Any) -> None:
     conn, _api, _headers = lab
     first_keyword, profiles = make_topic(lab)
     second_keyword, _ = make_topic(lab)
+    third_keyword, _ = make_topic(lab)
+    fourth_keyword, _ = make_topic(lab)
     conn.execute(
         "UPDATE generation_settings SET provider='local',engine='llamacpp',model='Qwen3-1.7B-Q8_0.gguf'"
     )
-    counts = conn.execute(
-        """SELECT t.profile_id,count(*) AS n FROM generation_targets t
-        JOIN generation_jobs j ON j.run_id=t.run_id
+    usage = conn.execute(
+        """SELECT t.profile_id,
+        count(*) FILTER (WHERE j.evaluation_only)::int AS evaluation_count,
+        count(*) FILTER (WHERE NOT j.evaluation_only)::int AS operations_count
+        FROM generation_targets t JOIN generation_jobs j ON j.run_id=t.run_id
         WHERE j.created_at>=date_trunc('day',now()) GROUP BY t.profile_id"""
     ).fetchall()
-    baseline = {row["profile_id"]: int(row["n"]) for row in counts}
+    baseline = {row["profile_id"]: (row["evaluation_count"], row["operations_count"]) for row in usage}
     for profile in profiles:
         conn.execute(
-            "UPDATE generation_settings SET daily_limit=%s WHERE profile_id=%s",
-            (baseline.get(profile, 0) + 1, profile),
+            "UPDATE generation_settings SET daily_limit=%s,evaluation_daily_limit=%s WHERE profile_id=%s",
+            (baseline.get(profile, (0, 0))[1] + 1, baseline.get(profile, (0, 0))[0] + 1, profile),
         )
     pipeline.enqueue(
         uuid.UUID(first_keyword), "limited-eval-" + uuid.uuid4().hex,
         evaluation_only=True, evaluation_model="Qwen3-4B-Q4_K_M.gguf",
     )
-    with pytest.raises(EngineFailure, match="daily_generation_limit"):
+    pipeline.enqueue(uuid.UUID(second_keyword), "ops-quota-independent-" + uuid.uuid4().hex)
+    with pytest.raises(EngineFailure, match="daily_evaluation_limit"):
         pipeline.enqueue(
-            uuid.UUID(second_keyword), "over-limit-eval-" + uuid.uuid4().hex,
+            uuid.UUID(third_keyword), "over-limit-eval-" + uuid.uuid4().hex,
+            evaluation_only=True, evaluation_model="Qwen3-4B-Q4_K_M.gguf",
+        )
+    with pytest.raises(EngineFailure, match="daily_generation_limit"):
+        pipeline.enqueue(uuid.UUID(fourth_keyword), "over-limit-ops-" + uuid.uuid4().hex)
+
+
+def test_evaluation_enqueue_fails_closed_without_database_isolation(lab: Any) -> None:
+    conn, _api, _headers = lab
+    keyword_id, _profiles = make_topic(lab)
+    conn.execute("UPDATE generation_settings SET provider='local',engine='llamacpp'")
+    conn.execute("UPDATE pipeline_controls SET evaluation_isolated=false")
+    with pytest.raises(EngineFailure, match="evaluation_database_isolation_required"):
+        pipeline.enqueue(
+            uuid.UUID(keyword_id), "shared-db-eval-" + uuid.uuid4().hex,
+            evaluation_only=True, evaluation_model="Qwen3-4B-Q4_K_M.gguf",
+        )
+
+
+def test_evaluation_enqueue_rejects_same_physical_database(lab: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    conn, _api, _headers = lab
+    keyword_id, _profiles = make_topic(lab)
+    conn.execute("UPDATE generation_settings SET provider='local',engine='llamacpp'")
+    conn.execute("UPDATE pipeline_controls SET evaluation_isolated=true")
+    monkeypatch.setattr(pipeline, "evaluation_database_isolated", _ORIGINAL_EVALUATION_DB_ISOLATION)
+    monkeypatch.setenv("WOORI_OPERATION_DATABASE_URL", conn.info.dsn)
+    with pytest.raises(EngineFailure, match="evaluation_database_isolation_required"):
+        pipeline.enqueue(
+            uuid.UUID(keyword_id), "same-physical-db-eval-" + uuid.uuid4().hex,
             evaluation_only=True, evaluation_model="Qwen3-4B-Q4_K_M.gguf",
         )
 

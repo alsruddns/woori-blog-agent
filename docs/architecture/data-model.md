@@ -1,4 +1,4 @@
-# 다국어 데이터 모델 (schema version 18)
+# 다국어 데이터 모델 (schema version 24)
 
 언어 수는 제한하지 않는다. 초기 ko/en/zh-CN/ja는 시드이며, 코드의 조건 분기가 아니다.
 
@@ -72,3 +72,7 @@ BCP 47은 API의 langcodes/등록 데이터 기반으로 검증·정규화한다
 Migration `014_generation_stages.sql` adds `generation_stage_runs`, keyed by a UUID and linked to a run/profile target. The row records worker attempt, stage sequence and retry, stage name, model and prompt version, JSON input/output snapshots, evidence source IDs, validation JSON, error category, and timing. The lifecycle permits a single update from `running` to a terminal status; identity fields cannot change and deletion/truncation is denied. A recovery process records interrupted in-flight stages as failed with `worker_interrupted`. Audit events are appended for stage start, terminal result, and recovery. Stage snapshots are internal research data and must never contain credentials.
 
 Migration 014 is additive; it preserves existing versions, audit events, publication records, and source evidence. Terminal stage records remain queryable for comparison and incident review.
+
+## Phase 3.9-S quota and Worker model (schema version 24)
+
+`generation_settings` stores independent `daily_limit` and `evaluation_daily_limit` values per profile. Quota is consumed when a generation target is created; terminal failed/cancelled targets remain counted, while retries reuse the same target. The quota window is explicitly 00:00?00:00 Asia/Seoul. `pipeline_controls.evaluation_isolated` defaults to false. Evaluation work is accepted only when the evaluation runtime proves it is connected to a physically distinct PostgreSQL database from the configured operations database; its worker filters to evaluation jobs, and both modes retain the same global pause/resource/concurrency gates. `worker_heartbeats` has separate `research_worker` and `evaluation_worker` rows. Migration 024 records its schema change as an append-only audit event and does not reset existing quotas or content.

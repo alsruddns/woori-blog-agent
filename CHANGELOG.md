@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased - Phase 3.9-S - 2026-10-26
+
+- Separate evaluation and operations daily quotas while retaining shared resource, pause, and concurrency gates; evaluation fails closed unless physical DB isolation is verified.
+- Add per-mode Worker heartbeat/audit state and an isolated diagnostic Worker harness covering completion, retry, lease recovery, duplicate prevention, abnormal exit, and cleanup.
+- Record that C3 inference remains blocked while evaluation shares the operational database and the current evaluation quota is exhausted; no operational rows were reset.
+
 ## Phase 3.8-C2
 - Added append-only deterministic re-evaluation of the eight Phase 3.8-C1 outcomes, preserving the original content versions and recording one prior schema failure as not replayable because its raw output had not been retained.
 - Added bounded structured-output retry (one new seed only for JSON/schema errors), immutable capped parse-failure artifacts, stronger internal-ID/script/keyword checks, and regression coverage for prior false positives.

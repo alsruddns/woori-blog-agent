@@ -32,16 +32,17 @@ def main() -> None:
         raise SystemExit("Expected the two current reviewed Federal Reserve and SEC sources")
     with connection() as conn:
         controls = conn.execute("SELECT * FROM pipeline_controls").fetchone()
-        if not controls or controls["paused"]:
-            raise SystemExit("Pipeline is paused; no evaluation resumed")
+        if not controls or controls["paused"] or not controls["evaluation_isolated"]:
+            raise SystemExit("Pipeline is paused or evaluation database isolation is not confirmed")
         quota_rows = conn.execute(
-            """SELECT p.language_code,count(t.run_id) AS target_count,g.daily_limit
+            """SELECT p.language_code,count(t.run_id) AS target_count,g.evaluation_daily_limit AS daily_limit
             FROM language_profiles p JOIN languages l ON l.code=p.language_code AND l.active
             JOIN generation_settings g ON g.profile_id=p.id
             LEFT JOIN generation_targets t ON t.profile_id=p.id
-            LEFT JOIN generation_jobs j ON j.run_id=t.run_id AND j.created_at>=date_trunc('day',now())
+            LEFT JOIN generation_jobs j ON j.run_id=t.run_id AND j.created_at>=(date_trunc('day',now() AT TIME ZONE 'Asia/Seoul') AT TIME ZONE 'Asia/Seoul')
+                AND j.evaluation_only
             WHERE p.target_country='' AND (t.run_id IS NULL OR j.run_id IS NOT NULL)
-            GROUP BY p.language_code,g.daily_limit ORDER BY p.language_code"""
+            GROUP BY p.language_code,g.evaluation_daily_limit ORDER BY p.language_code"""
         ).fetchall()
         insufficient = [
             row for row in quota_rows
@@ -152,7 +153,7 @@ def main() -> None:
                         )
                 continue
             break
-        if not pipeline.tick():
+        if not pipeline.tick(evaluation_only=True):
             time.sleep(3)
     else:
         raise SystemExit("Bounded 60-minute evaluation window elapsed; durable jobs were left for recovery")

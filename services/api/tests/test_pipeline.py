@@ -32,7 +32,12 @@ def lab(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Any, TestClient, dict
         for module in ("pipeline", "research_routes", "main", "multilingual"):
             monkeypatch.setattr("woori." + module + ".connection", shared)
         monkeypatch.setattr(pipeline, "resources_ok", lambda _: True)
-        conn.execute("UPDATE generation_settings SET daily_limit=50,provider='mock',model='mock-v1',engine='ollama'")
+        monkeypatch.setattr(
+            pipeline, "evaluation_database_isolated",
+            lambda _conn, controls: bool(controls.get("evaluation_isolated")),
+        )
+        conn.execute("UPDATE generation_settings SET daily_limit=50,evaluation_daily_limit=50,provider='mock',model='mock-v1',engine='ollama'")
+        conn.execute("UPDATE pipeline_controls SET evaluation_isolated=true")
         conn.execute("UPDATE keyword_candidates SET status='excluded'")
         with TestClient(app) as api:
             yield conn, api, HiddenHeaders(Authorization="Bearer " + settings().admin_token)
@@ -121,6 +126,28 @@ def test_bounded_evaluation_preflight_requires_capacity_for_whole_batch(
     current: int, limit: int, new_jobs: int, expected: bool,
 ) -> None:
     assert pipeline.daily_batch_capacity_available(current, limit, new_jobs) is expected
+
+
+def test_operational_and_evaluation_workers_consume_separate_queues(
+    lab: Any, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    keyword_operations, _ = topic(lab)
+    keyword_evaluation, _ = topic(lab)
+    conn, _api, _headers = lab
+    conn.execute("UPDATE generation_settings SET provider='local',engine='llamacpp'")
+    operations = pipeline.enqueue(
+        uuid.UUID(keyword_operations), "queue-operations-" + uuid.uuid4().hex,
+    )
+    evaluation = pipeline.enqueue(
+        uuid.UUID(keyword_evaluation), "queue-evaluation-" + uuid.uuid4().hex,
+        evaluation_only=True, evaluation_model="Qwen3-4B-Q4_K_M.gguf",
+    )
+    processed: list[uuid.UUID] = []
+    monkeypatch.setattr(pipeline, "process", lambda run: processed.append(run["id"]))
+    assert pipeline.tick(evaluation_only=False)
+    assert processed == [operations["id"]]
+    assert pipeline.tick(evaluation_only=True)
+    assert processed == [operations["id"], evaluation["id"]]
 
 
 def test_unexpected_stage_error_is_recorded_and_job_is_terminalized(
@@ -253,8 +280,9 @@ def test_worker_heartbeat_records_transitions_append_only(lab: Any, monkeypatch:
                for evaluation in state["article_evaluations"])
     conn.execute("UPDATE worker_heartbeats SET last_seen_at=now()-interval '1 minute' WHERE service_name='research_worker'")
     assert api.get("/admin/research/state", headers=headers).json()["worker"]["fresh"] is False
+    worker.heartbeat("stopped")
     with pytest.raises(ValueError, match="invalid_worker_status"):
-        worker.heartbeat("stopped")
+        worker.heartbeat("starting")
 
 
 def test_evidence_block_and_duplicate_generation(lab: Any) -> None:

@@ -1,10 +1,13 @@
+import os
 from pathlib import Path
 
 import psycopg
 from dotenv import dotenv_values
 
 root = Path(__file__).resolve().parents[1]
-url = dotenv_values(root / ".env.migration")["MIGRATION_DATABASE_URL"]
+url = os.environ.get("MIGRATION_DATABASE_URL") or dotenv_values(root / ".env.migration")[
+    "MIGRATION_DATABASE_URL"
+]
 with psycopg.connect(url) as conn:
     if conn.info.dbname != "woori_blog_agent":
         raise SystemExit("Refusing non-project database")
@@ -13,7 +16,7 @@ with psycopg.connect(url) as conn:
     if not exists:
         conn.execute((root / "scripts/001_initial.sql").read_text(), prepare=False)
     current = conn.execute("SELECT max(version) FROM schema_migrations").fetchone()[0]
-    if current > 23:
+    if current > 24:
         raise SystemExit("Database schema is newer than this application")
     if current < 2:
         conn.execute(
@@ -113,4 +116,9 @@ with psycopg.connect(url) as conn:
             (root / "scripts/023_worker_heartbeats.sql").read_text(encoding="utf-8"),
             prepare=False,
         )
-print("Migration 023 verified")
+    if current < 24:
+        conn.execute(
+            (root / "scripts/024_evaluation_isolation_quotas.sql").read_text(encoding="utf-8"),
+            prepare=False,
+        )
+print("Migration 024 verified")

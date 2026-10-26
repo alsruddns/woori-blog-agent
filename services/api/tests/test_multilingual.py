@@ -316,6 +316,17 @@ def test_legacy_migration_preserves_content_and_audits() -> None:
             "011_live_research.sql",
             "012_source_revisions.sql",
             "013_evaluation_jobs.sql",
+            "014_generation_stages.sql",
+            "015_research_experiment_evaluations.sql",
+            "016_evidence_localization.sql",
+            "017_reviewed_source_language.sql",
+            "018_glossary_revision_backfill.sql",
+            "019_full_article_evaluations.sql",
+            "020_article_keywords.sql",
+            "021_parse_failure_artifacts.sql",
+            "022_fact_registry_stage.sql",
+            "023_worker_heartbeats.sql",
+            "024_evaluation_isolation_quotas.sql",
         ]:
             content = (
                 (root / "scripts" / migration)

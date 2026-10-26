@@ -45,7 +45,7 @@ See [architecture](docs/architecture/overview.md), [operations](docs/operations/
 ## Multilingual configuration
 Open http://127.0.0.1:3100/config to manage languages, multiple blogs per language, country profiles, policy schedules, categories and glossaries. The initial four user-provided Blogspot addresses are registered. Google Blog IDs stay NULL until user-consented API verification succeeds in /blogger. Registering a URL alone makes no external request. API/worker startup never loads administrator or migration-owner credentials.
 
-Apply updates using `.venv/Scripts/python scripts/migrate.py` (latest version: 6). Migrations 001–004 are unchanged. Existing version IDs/content and audit records are preserved. Back up the dedicated database first. Configuration tests roll back synthetic records; diagnostic worker tests still append identifiable run history.
+Apply updates using `.venv/Scripts/python scripts/migrate.py` (latest version: 24). Migrations 001–004 are unchanged. Existing version IDs/content and audit records are preserved. Back up the dedicated database first. Configuration tests roll back synthetic records; diagnostic worker tests still append identifiable run history.
 
 BCP 47 tags are normalized (e.g. pt-br -> pt-BR); language identity cannot be renamed in place. Deactivate an old identity and register a replacement to preserve references. New languages receive a default country profile with every capability unverified. Neither registration nor policy activation enables automatic publishing. Country-specific settings are saved as complete profiles, so review all fields before updating an existing language/country pair.
 
@@ -130,3 +130,7 @@ The content worker can persist exact source spans in `evidence_facts`, translate
 ## Phase 3.9 operations check
 
 The dashboard reports the research worker heartbeat as current only when it was observed within 45 seconds; missing or stale heartbeat is shown as unknown/stale. Evaluation summaries come from stored PostgreSQL rows. To append a deterministic, zero-AI recheck of the saved Phase 3.8-C1 batch, run `.venv/Scripts/python scripts/run_phase39_quality_evaluation.py` from PowerShell. It preserves the source rows, writes new immutable evaluations and a unique artifact, and leaves `publish_ready=false`.
+
+## Phase 3.9-S evaluation safety
+
+Operations and evaluation have separate daily quotas, with shared global resource limits. Evaluation execution remains disabled unless its database is physically separate from operations and the isolation flag is enabled. In the current local configuration it is disabled; do not run actual C3 inference against the shared project database. `scripts/verify-worker-isolated.py` runs a diagnostic-only real Worker against a temporary isolated schema and records its results under `docs/development/`.

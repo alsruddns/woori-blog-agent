@@ -8,7 +8,7 @@ export type State = {
   attempts: Row[]; events: Row[]; dispatches: Row[]; collection_sources: Row[]; cost_policy?: Row;
   collection_jobs: Row[]; measurements: Row[]; stage_runs: Row[]; coverage: Row[]; experiments?: Row[];
   evidence_facts?: Row[]; localizations?: Row[]; glossary?: Row[]; glossary_revisions?: Row[];
-  article_evaluations?: Row[]; worker?: Row | null; operations_summary?: Row;
+  article_evaluations?: Row[]; worker?: Row | null; evaluation_worker?: Row | null; daily_workload?: Row[]; operations_summary?: Row;
 };
 type Field = { name: string; label: string; type?: string; optional?: boolean; options?: { value: string; label: string }[] };
 const str = (row: Row, key: string) => String(row[key] ?? "");
@@ -131,7 +131,7 @@ export default function Research({ initial }: { initial: State }) {
         <button disabled={busy} onClick={() => act(`keywords/${str(k, "id")}`, { status: "selected" }, "PUT")}>선정</button>
         <button disabled={busy} onClick={() => act(`keywords/${str(k, "id")}`, { status: "excluded" }, "PUT")}>제외</button>
         <button disabled={busy || k.status !== "selected"} onClick={() => act("jobs", { keyword_id: k.id, idempotency_key: crypto.randomUUID() })}>설정된 Provider로 초안 생성</button>
-        <button disabled={busy || k.status !== "selected"} onClick={() => act("jobs", { keyword_id: k.id, evaluation_only: true, idempotency_key: crypto.randomUUID() })}>실제 AI 평가 초안 생성 (품질 보류)</button>
+        <button disabled={busy || k.status !== "selected" || !Boolean(data.controls.evaluation_isolated)} onClick={() => act("jobs", { keyword_id: k.id, evaluation_only: true, idempotency_key: crypto.randomUUID() })}>실제 AI 평가 초안 생성 (품질 보류)</button>
       </article>)}
     </section>
     <section><h2>수집 출처·검토 이력</h2><p>승인 정정은 새 검토를 추가합니다. 자동 출처 확인과 의미적 사실 검증을 구분하세요.</p>
@@ -157,6 +157,8 @@ export default function Research({ initial }: { initial: State }) {
       <details><summary>용어집 append-only 변경 이력</summary><pre>{JSON.stringify(data.glossary_revisions ?? [], null, 2)}</pre></details>
     </section>
     <section><h2>생성 작업·취소·복구</h2><p>스트리밍 중지 시 해당 추론 연결을 닫습니다. 저장한 타깃은 보존하며 재개 시 중복 생성하지 않습니다.</p>
+      <p>Evaluation isolation: {Boolean(data.controls.evaluation_isolated) ? "confirmed" : "not confirmed; evaluation runs are blocked"}; evaluation worker: {data.evaluation_worker?.status ? str(data.evaluation_worker, "status") : "not running"}.</p>
+      {(data.daily_workload ?? []).map(q => <p key={str(q, "language_code")}>{str(q, "language_code")}: operations {str(q, "operations_used")}/{str(q, "operations_limit")}, evaluation {str(q, "evaluation_used")}/{str(q, "evaluation_limit")}; resets {str(q, "resets_at")}.</p>)}
       {data.jobs.map(j => <article key={str(j, "id")}><p>{str(j, "id")} · {str(j, "status")} · 시도 {str(j, "attempts")} · {str(j, "error_type")}</p>
         <button disabled={busy || j.status === "succeeded"} onClick={() => act(`jobs/${str(j, "id")}/action`, { action: j.paused ? "resume" : "pause" })}>{j.paused ? "재개" : "중지·현재 추론 취소"}</button>
         <button disabled={busy || j.status !== "failed" || Number(j.attempts) >= 3} onClick={() => act(`jobs/${str(j, "id")}/action`, { action: "retry" })}>재시도</button></article>)}
@@ -177,7 +179,7 @@ export default function Research({ initial }: { initial: State }) {
     </section>
     <section><h2>언어별 모델·프롬프트 정책</h2><p>시험 생성은 품질 평가 완료를 선언하지 않습니다. 언어 지원 검증이 안 된 모델은 정상 자동 처리하지 않습니다. llama.cpp 모델·스레드 변경은 전용 엔진 재시작이 필요합니다.</p>
       {data.settings.map(s => <article key={str(s, "profile_id")}><h3>{profileLabel(data.profiles.find(p => p.id === s.profile_id) ?? {})}</h3>
-        <Editor disabled={busy} label="언어 실행 정책 저장" defaults={s} fields={[{ name: "provider", label: "Provider", options: [{ value: "mock", label: "Mock 합성 테스트" }, { value: "local", label: "실제 Local" }] }, { name: "engine", label: "로컬 엔진", options: [{ value: "ollama", label: "Ollama 11434" }, { value: "llamacpp", label: "프로젝트 llama.cpp 11435" }] }, { name: "model", label: "설치 모델 이름" }, { name: "prompt_id", label: "프롬프트 버전", options: promptOptions }, { name: "enabled", label: "처리 허용", type: "checkbox" }, { name: "language_verified", label: "언어별 품질 평가 완료 (검증 근거 필수)", type: "checkbox" }, { name: "verification_reason", label: "언어 평가 근거", optional: true }, { name: "daily_limit", label: "일일 작업 한도", type: "number" }, { name: "threads", label: "CPU 스레드 1–4", type: "number" }, { name: "timeout_seconds", label: "타임아웃 5–180초", type: "number" }]} submit={body => act(`settings/${str(s, "profile_id")}`, body, "PUT")}/>
+        <Editor disabled={busy} label="언어 실행 정책 저장" defaults={s} fields={[{ name: "provider", label: "Provider", options: [{ value: "mock", label: "Mock 합성 테스트" }, { value: "local", label: "실제 Local" }] }, { name: "engine", label: "로컬 엔진", options: [{ value: "ollama", label: "Ollama 11434" }, { value: "llamacpp", label: "프로젝트 llama.cpp 11435" }] }, { name: "model", label: "설치 모델 이름" }, { name: "prompt_id", label: "프롬프트 버전", options: promptOptions }, { name: "enabled", label: "처리 허용", type: "checkbox" }, { name: "language_verified", label: "언어별 품질 평가 완료 (검증 근거 필수)", type: "checkbox" }, { name: "verification_reason", label: "언어 평가 근거", optional: true }, { name: "daily_limit", label: "일일 작업 한도", type: "number" }, { name: "evaluation_daily_limit", label: "Evaluation daily quota", type: "number" }, { name: "threads", label: "CPU 스레드 1–4", type: "number" }, { name: "timeout_seconds", label: "타임아웃 5–180초", type: "number" }]} submit={body => act(`settings/${str(s, "profile_id")}`, body, "PUT")}/>
       </article>)}
       <Editor disabled={busy} label="새 프롬프트 버전 추가" fields={[{ name: "name", label: "영문 이름" }, { name: "instructions", label: "새 지시문", type: "textarea" }]} submit={body => act("prompts", body)}/>
     </section>

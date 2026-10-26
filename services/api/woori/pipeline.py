@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 import re
 import time
 import unicodedata
@@ -11,6 +12,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import psutil
+import psycopg
 from croniter import croniter
 from psycopg.types.json import Jsonb
 
@@ -368,6 +370,9 @@ def enqueue(
             raise EngineFailure("source_profile_required")
         if evaluation_only and any(t["provider"] != "local" for t in targets):
             raise EngineFailure("evaluation_requires_real_local_provider")
+        controls = conn.execute("SELECT evaluation_isolated FROM pipeline_controls").fetchone()
+        if evaluation_only and (not controls or not evaluation_database_isolated(conn, controls)):
+            raise EngineFailure("evaluation_database_isolation_required")
         if evaluation_only and evaluation_model is not None and any(
             t["engine"] != "llamacpp" for t in targets
         ):
@@ -396,14 +401,17 @@ def enqueue(
         if conn.execute("SELECT 1 FROM job_runs WHERE idempotency_key=%s", (key,)).fetchone():
             raise EngineFailure("idempotency_conflict")
         for t in targets:
+            quota_column = "evaluation_daily_limit" if evaluation_only else "daily_limit"
             count = conn.execute(
                 """SELECT count(*) AS n FROM generation_targets t JOIN generation_jobs j ON j.run_id=t.run_id
-                WHERE t.profile_id=%s AND j.created_at>=date_trunc('day',now())""",
-                (t["profile_id"],),
+                WHERE t.profile_id=%s AND j.evaluation_only=%s AND j.created_at>=(date_trunc('day',now() AT TIME ZONE 'Asia/Seoul') AT TIME ZONE 'Asia/Seoul')""",
+                (t["profile_id"], evaluation_only),
             ).fetchone()
             assert count is not None
-            if count["n"] >= t["daily_limit"]:
-                raise EngineFailure("daily_generation_limit")
+            if count["n"] >= t[quota_column]:
+                raise EngineFailure(
+                    "daily_evaluation_limit" if evaluation_only else "daily_generation_limit"
+                )
         run = conn.execute(
             "INSERT INTO job_runs(idempotency_key,task_kind) VALUES (%s,'content') RETURNING *",
             (key,),
@@ -1081,12 +1089,28 @@ def daily_batch_capacity_available(target_count: int, daily_limit: int, new_jobs
     )
 
 
-def tick() -> bool:
+def evaluation_database_isolated(conn: Any, controls: dict[str, Any]) -> bool:
+    operations_url = os.environ.get("WOORI_OPERATION_DATABASE_URL", "")
+    if not controls.get("evaluation_isolated") or not operations_url:
+        return False
+    current = conn.execute("SELECT current_database() AS name").fetchone()
+    if current is None:
+        return False
+    try:
+        with psycopg.connect(operations_url, connect_timeout=2) as operations:
+            row = operations.execute("SELECT current_database()").fetchone()
+    except psycopg.Error:
+        return False
+    return bool(row and current["name"] != row[0])
+
+
+def tick(evaluation_only: bool = False) -> bool:
     with connection() as conn:
         conn.execute("SELECT pg_advisory_xact_lock(781205)")
-        recovered = conn.execute("""UPDATE job_runs SET status=CASE WHEN attempts>=3 THEN 'failed' ELSE 'queued' END,
+        recovered = conn.execute("""UPDATE job_runs r SET status=CASE WHEN r.attempts>=3 THEN 'failed' ELSE 'queued' END,
             lease_until=NULL,error_type='LeaseExpired',error_message='Content lease expired',error_location='pipeline',error_at=now(),updated_at=now()
-            WHERE task_kind='content' AND status='running' AND lease_until<now() RETURNING id,status,attempts""").fetchall()
+            FROM generation_jobs j WHERE j.run_id=r.id AND r.task_kind='content' AND j.evaluation_only=%s
+            AND r.status='running' AND r.lease_until<now() RETURNING r.id,r.status,r.attempts""", (evaluation_only,)).fetchall()
         for r in recovered:
             emit(conn, "recovered", r["id"], status=r["status"], attempt=r["attempts"])
             interrupted = conn.execute(
@@ -1108,6 +1132,8 @@ def tick() -> bool:
             )
         controls = conn.execute("SELECT * FROM pipeline_controls").fetchone()
         assert controls is not None
+        if evaluation_only and not evaluation_database_isolated(conn, controls):
+            return False
         if controls["paused"] or not resources_ok(controls):
             return False
         running = required(
@@ -1118,8 +1144,8 @@ def tick() -> bool:
         if running >= controls["max_concurrency"]:
             return False
         run = conn.execute("""SELECT r.* FROM job_runs r JOIN generation_jobs j ON j.run_id=r.id
-            WHERE r.task_kind='content' AND r.status='queued' AND NOT j.paused AND r.available_at<=now()
-            ORDER BY r.created_at FOR UPDATE OF r SKIP LOCKED LIMIT 1""").fetchone()
+            WHERE r.task_kind='content' AND j.evaluation_only=%s AND r.status='queued' AND NOT j.paused AND r.available_at<=now()
+            ORDER BY r.created_at FOR UPDATE OF r SKIP LOCKED LIMIT 1""", (evaluation_only,)).fetchone()
         if not run:
             return False
         run = conn.execute(
@@ -1128,7 +1154,16 @@ def tick() -> bool:
             (run["id"],),
         ).fetchone()
         assert run is not None
-        emit(conn, "started", run["id"], attempt=run["attempts"])
+        memory = psutil.virtual_memory()
+        process_memory = psutil.Process().memory_info().rss
+        emit(
+            conn, "started", run["id"], attempt=run["attempts"],
+            evaluation_only=evaluation_only,
+            cpu_percent=psutil.cpu_percent(interval=None),
+            ram_used_percent=memory.percent,
+            ram_available_bytes=memory.available,
+            worker_rss_bytes=process_memory,
+        )
     try:
         process(run)
     except Exception as exc:  # noqa: BLE001 - terminalize the durable job on unexpected failure

@@ -135,6 +135,7 @@ class ModelSettings(Input):
     verification_reason: str = Field(default="", max_length=1000)
     prompt_id: UUID
     daily_limit: int = Field(default=5, ge=1, le=50)
+    evaluation_daily_limit: int = Field(default=2, ge=0, le=50)
     threads: int = Field(default=2, ge=1, le=4)
     timeout_seconds: int = Field(default=30, ge=5, le=180)
 
@@ -282,6 +283,24 @@ def state() -> dict[str, Any]:
                 last_seen_at>now()-interval '45 seconds' AS fresh
             FROM worker_heartbeats WHERE service_name='research_worker'"""
         ).fetchone()
+        result["evaluation_worker"] = conn.execute(
+            """SELECT service_name,process_id,status,last_error_category,last_seen_at,
+                last_seen_at>now()-interval '45 seconds' AS fresh
+            FROM worker_heartbeats WHERE service_name='evaluation_worker'"""
+        ).fetchone()
+        result["daily_workload"] = conn.execute(
+            """SELECT p.language_code,g.daily_limit AS operations_limit,
+                g.evaluation_daily_limit AS evaluation_limit,
+                count(*) FILTER (WHERE NOT j.evaluation_only)::int AS operations_used,
+                count(*) FILTER (WHERE j.evaluation_only)::int AS evaluation_used,
+                (date_trunc('day',now() AT TIME ZONE 'Asia/Seoul') + interval '1 day') AT TIME ZONE 'Asia/Seoul' AS resets_at
+            FROM language_profiles p JOIN languages l ON l.code=p.language_code AND l.active
+            JOIN generation_settings g ON g.profile_id=p.id
+            LEFT JOIN generation_targets t ON t.profile_id=p.id
+            LEFT JOIN generation_jobs j ON j.run_id=t.run_id AND j.created_at>=(date_trunc('day',now() AT TIME ZONE 'Asia/Seoul') AT TIME ZONE 'Asia/Seoul')
+            WHERE p.target_country=''
+            GROUP BY p.language_code,g.daily_limit,g.evaluation_daily_limit ORDER BY p.language_code"""
+        ).fetchall()
         result["operations_summary"] = {
             "jobs": conn.execute(
                 "SELECT task_kind,status,count(*) AS count FROM job_runs GROUP BY task_kind,status ORDER BY task_kind,status"
