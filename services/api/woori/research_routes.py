@@ -392,14 +392,21 @@ def _evaluation_results_snapshot() -> dict[str, Any]:
             ).fetchall()
             runs = conn.execute(
                 """SELECT r.id AS run_id,r.status AS run_status,r.error_type,r.attempts,
-                    r.created_at,j.evaluation_only,g.profile_id,g.state,g.provider,g.model,
+                    r.created_at,j.evaluation_only,t.profile_id,g.state,g.provider,g.model,
                     g.elapsed_ms,g.result_metadata,g.source_snapshot,v.id AS version_id,
-                    v.language AS language_code,v.title,v.body,false AS publish_ready
+                    COALESCE(v.language,p.language_code) AS language_code,v.title,v.body,
+                    EXISTS(SELECT 1 FROM research_sources s
+                      JOIN LATERAL (SELECT approved FROM source_reviews WHERE source_id=s.id
+                        ORDER BY review_sequence DESC LIMIT 1) review ON review.approved
+                      WHERE s.keyword_id=j.keyword_id AND s.source_name LIKE 'SEC EDGAR%%'
+                        AND s.valid_until>now()) AS sec_source,false AS publish_ready
                 FROM job_runs r JOIN generation_jobs j ON j.run_id=r.id
-                JOIN generation_results g ON g.run_id=r.id
+                JOIN generation_targets t ON t.run_id=r.id
+                JOIN language_profiles p ON p.id=t.profile_id
+                LEFT JOIN generation_results g ON g.run_id=r.id AND g.profile_id=t.profile_id
                 LEFT JOIN content_versions v ON v.id=g.content_version_id
                 WHERE j.evaluation_only AND r.created_at>%s
-                ORDER BY r.created_at DESC,g.profile_id LIMIT 32""",
+                ORDER BY r.created_at DESC,t.profile_id LIMIT 32""",
                 (snapshot["snapshot_at"],),
             ).fetchall()
             fed_articles = _fed_article_reviews(conn)
@@ -410,11 +417,43 @@ def _evaluation_results_snapshot() -> dict[str, Any]:
                 WHERE topic ILIKE 'Apple Inc. 10-Q%'
                 GROUP BY language_code,status ORDER BY language_code,status"""
             ).fetchall()
-            english_quota = next((row for row in quota if row["language_code"] == "en"), None)
+            sec_seed = conn.execute(
+                """SELECT s.keyword_id,p.id AS profile_id
+                FROM research_sources s
+                JOIN LATERAL (SELECT approved FROM source_reviews WHERE source_id=s.id
+                    ORDER BY review_sequence DESC LIMIT 1) review ON review.approved
+                JOIN language_profiles p ON p.language_code='en' AND p.target_country=''
+                WHERE s.source_name LIKE 'SEC EDGAR%%' AND s.valid_until>now()
+                  AND NOT EXISTS(SELECT 1 FROM research_sources newer
+                    WHERE newer.keyword_id=s.keyword_id AND newer.url=s.url AND newer.revision>s.revision)
+                ORDER BY s.collected_at DESC LIMIT 1"""
+            ).fetchone()
+            sec_source_draft_available = False
+            if sec_seed:
+                sec_source_draft_available = bool(conn.execute(
+                    """SELECT 1 FROM generation_results g
+                    JOIN generation_jobs j ON j.run_id=g.run_id
+                    JOIN job_runs r ON r.id=g.run_id
+                    WHERE j.keyword_id=%s AND j.evaluation_only AND r.status='succeeded'
+                      AND g.profile_id=%s AND g.content_version_id IS NOT NULL LIMIT 1""",
+                    (sec_seed["keyword_id"], sec_seed["profile_id"]),
+                ).fetchone())
+            sec_locale_availability = _sec_locale_availability(
+                quota, sec_source_draft_available
+            )
             sec_gate = (
-                "not_run_quota_blocked"
-                if english_quota and english_quota["quota_used"] >= english_quota["quota_limit"]
-                else "not_run"
+                "available_for_some_locales"
+                if any(row["status"] == "available" for row in sec_locale_availability)
+                else "blocked_source_locale_prerequisite"
+                if sec_locale_availability and any(
+                    row["status"] == "blocked_source_locale_prerequisite"
+                    for row in sec_locale_availability
+                )
+                else "blocked_quota"
+                if sec_locale_availability and all(
+                    row["status"] == "blocked_quota" for row in sec_locale_availability
+                )
+                else "not_verified"
             )
             stages = conn.execute(
                 """SELECT s.id,s.run_id,s.profile_id,s.stage_name,s.status,s.sequence,
@@ -446,7 +485,7 @@ def _evaluation_results_snapshot() -> dict[str, Any]:
             "runs": runs,
             "sec_c3_runs": [
                 run for run in runs
-                if any(
+                if run.get("sec_source") or any(
                     isinstance(source, dict)
                     and str(source.get("source_name", "")).startswith("SEC EDGAR")
                     for source in (run.get("source_snapshot") or [])
@@ -455,6 +494,8 @@ def _evaluation_results_snapshot() -> dict[str, Any]:
             "fed_articles": fed_articles,
             "sec_historical_quality": sec_history,
             "sec_new_inference": sec_gate,
+            "sec_locale_availability": sec_locale_availability,
+            "sec_source_draft_available": sec_source_draft_available,
             "stages": stages,
             "events": events,
             "publish_ready_forced_false": True,
@@ -551,6 +592,34 @@ def _prepublication_snapshot(conn: Any) -> dict[str, Any]:
     }
 
 
+def _sec_locale_availability(
+    quota: list[dict[str, Any]], source_draft_available: bool
+) -> list[dict[str, Any]]:
+    """Apply per-language quota and the pipeline's English source-draft dependency."""
+    results: list[dict[str, Any]] = []
+    for row in quota:
+        language = str(row["language_code"])
+        limit = int(row["quota_limit"])
+        used = int(row["quota_used"])
+        remaining = max(0, limit - used)
+        if remaining == 0:
+            status = "blocked_quota"
+        elif language != "en" and not source_draft_available:
+            status = "blocked_source_locale_prerequisite"
+        else:
+            status = "available"
+        results.append({
+            "language_code": language,
+            "quota_limit": limit,
+            "quota_used": used,
+            "quota_remaining": remaining,
+            "source_locale_prerequisite": "en" if language != "en" else None,
+            "source_draft_available": source_draft_available if language != "en" else None,
+            "status": status,
+        })
+    return results
+
+
 def _operational_readiness_snapshot(conn: Any, state: dict[str, Any]) -> dict[str, Any]:
     """Build a fail-closed checklist from current DB/API state and cited test artifacts."""
     evaluation = state.get("evaluation_results") or {}
@@ -581,6 +650,7 @@ def _operational_readiness_snapshot(conn: Any, state: dict[str, Any]) -> dict[st
         and review.get("reader_value") == "useful"
     )
     sec_runs = evaluation.get("sec_c3_runs") or []
+    sec_drafts = [run for run in sec_runs if run.get("version_id") and run.get("body")]
     sec_machine_passed = 0
     for run in sec_runs:
         metadata = run.get("result_metadata") or {}
@@ -605,7 +675,8 @@ def _operational_readiness_snapshot(conn: Any, state: dict[str, Any]) -> dict[st
         """SELECT count(*) FILTER (WHERE adapter_type='fake')::int AS attempts,
             count(*) FILTER (WHERE adapter_type<>'fake')::int AS non_mock_attempts,
             count(*) FILTER (WHERE adapter_type='fake' AND outcome='succeeded')::int AS mock_successes,
-            count(*) FILTER (WHERE adapter_type='fake' AND outcome<>'succeeded')::int AS mock_non_successes
+            count(*) FILTER (WHERE adapter_type='fake' AND outcome<>'succeeded')::int AS mock_non_successes,
+            max(created_at) FILTER (WHERE adapter_type='fake') AS latest_attempt_at
         FROM publication_attempts"""
     ).fetchone()
 
@@ -613,12 +684,12 @@ def _operational_readiness_snapshot(conn: Any, state: dict[str, Any]) -> dict[st
     safety = (state.get("prepublication") or {}).get("safety") or {}
     items = [
         {"key": "fed_machine", "status": "passed" if expected_fed_languages and expected_fed_languages.issubset(passed_fed_languages) else "incomplete", "evidence": f"{len(expected_fed_languages & passed_fed_languages)}/{len(expected_fed_languages)} active base-profile languages have a current machine-passed Fed draft"},
-        {"key": "fed_human", "status": "pending" if fed_reviewed < len(fed) else "editorially_approved" if fed_review_approved == len(fed) else "reviewed_not_approved", "evidence": f"{fed_reviewed}/{len(fed)} reviewed; {fed_review_approved}/{len(fed)} explicitly approved for editorial quality; review records={len(reviews)}"},
-        {"key": "sec_machine", "status": "blocked_not_run_quota_exhausted" if evaluation.get("sec_new_inference") == "not_run_quota_blocked" else "not_verified", "evidence": f"new SEC C3 runs={len(sec_runs)}, machine pass={sec_machine_passed}; historical SEC evaluations are separate"},
-        {"key": "sec_human", "status": "not_available" if not sec_runs else "pending", "evidence": f"new SEC C3 drafts requiring review={len(sec_runs)}; no human review is inferred"},
+        {"key": "fed_human", "status": "not_available" if not fed else "pending" if fed_reviewed < len(fed) else "editorially_approved" if fed_review_approved == len(fed) else "reviewed_not_approved", "evidence": f"{fed_reviewed}/{len(fed)} reviewed; {fed_review_approved}/{len(fed)} explicitly approved for editorial quality; review records={len(reviews)}"},
+        {"key": "sec_machine", "status": "passed" if sec_runs and sec_machine_passed == len(sec_runs) else "partially_passed" if sec_machine_passed else "failed_before_draft" if sec_runs else evaluation.get("sec_new_inference", "not_verified"), "evidence": {"new_sec_c3_attempts": len(sec_runs), "drafts_saved": len(sec_drafts), "machine_passed": sec_machine_passed, "failures": [{"language": run.get("language_code"), "status": run.get("run_status"), "error": run.get("error_type")} for run in sec_runs if run.get("run_status") != "succeeded"], "historical_evaluations_separate": True, "locale_availability": evaluation.get("sec_locale_availability", [])}},
+        {"key": "sec_human", "status": "not_available" if not sec_drafts else "pending", "evidence": f"new SEC C3 saved drafts requiring review={len(sec_drafts)}; attempts without a saved draft are not review items"},
         {"key": "blogger_cost", "status": "blocked_provider_cost_unverified" if blogger_provider.get("block_reason") == "manual_zero_cost_review_required" else "allowed" if blogger_provider.get("calls_allowed") else "blocked", "evidence": f"provider calls_allowed={bool(blogger_provider.get('calls_allowed'))}; reason={blogger_provider.get('block_reason') or 'none'}"},
         {"key": "blogger_read_connection", "status": "configured_live_read_blocked" if mapped_readonly == len(blogs) and mapped_readonly > 0 and not (state.get("prepublication") or {}).get("real_blogger_sync_verified") else "incomplete", "evidence": f"readonly DB mappings={mapped_readonly}/{len(blogs)}; live GET is independently gated by cost policy"},
-        {"key": "publication_mock", "status": "verified" if mock["attempts"] > 0 and mock["non_mock_attempts"] == 0 else "not_verified", "evidence": f"fake attempts={mock['attempts']}, mock successes={mock['mock_successes']}, mock non-successes={mock['mock_non_successes']}, non-mock attempts={mock['non_mock_attempts']}"},
+        {"key": "publication_mock", "status": "verified_historical" if mock["attempts"] > 0 and mock["non_mock_attempts"] == 0 else "not_verified", "evidence": {"fake_attempts": mock["attempts"], "mock_successes": mock["mock_successes"], "mock_non_successes": mock["mock_non_successes"], "non_mock_attempts": mock["non_mock_attempts"], "captured_at": mock.get("latest_attempt_at"), "scope": "historical mock evidence; not a live readiness claim"}},
         {"key": "worker_recovery", "status": "verified_historical" if worker_evidence.get("passed") else "not_verified", "evidence": worker_evidence},
         {"key": "operating_write_block", "status": "blocked_safe" if not (state.get("prepublication") or {}).get("real_writes_enabled") and safety.get("non_mock_jobs") == 0 and safety.get("real_publishing_records") == 0 else "needs_investigation", "evidence": {"real_writes_enabled": False, "non_mock_jobs": safety.get("non_mock_jobs"), "real_publishing_records": safety.get("real_publishing_records"), "publish_ready_evaluations": safety.get("publish_ready_evaluations")}},
         {"key": "additional_cost_block", "status": "policy_active" if not cost_policy.get("blocked_credential_names") else "blocked_credentials_detected", "evidence": {"blocked_credential_names": cost_policy.get("blocked_credential_names", []), "paid_provider_allowlist_entries": 0}},

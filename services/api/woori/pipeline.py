@@ -527,6 +527,11 @@ def _evaluation_source_draft(
     return cast(dict[str, Any] | None, draft)
 
 
+def evaluation_source_prerequisite_met(language: str, source_draft_available: bool) -> bool:
+    """Localized evaluation requires a successful source-language draft; English is the source."""
+    return language == "en" or source_draft_available
+
+
 def generate_staged_target(
     run_id: UUID,
     worker_attempt: int,

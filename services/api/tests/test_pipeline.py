@@ -197,6 +197,12 @@ def test_localized_evaluation_reuses_only_a_successful_isolated_source_draft() -
     assert "j.keyword_id=%s" in conn.calls[1][0]
 
 
+def test_localized_evaluation_prerequisite_is_independent_of_locale_quota() -> None:
+    assert pipeline.evaluation_source_prerequisite_met("en", False)
+    assert not pipeline.evaluation_source_prerequisite_met("ko", False)
+    assert pipeline.evaluation_source_prerequisite_met("ko", True)
+
+
 def test_worker_resource_gate_holds_when_project_disk_headroom_is_low(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

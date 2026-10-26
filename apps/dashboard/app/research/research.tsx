@@ -9,7 +9,7 @@ export type State = {
   collection_jobs: Row[]; measurements: Row[]; stage_runs: Row[]; coverage: Row[]; experiments?: Row[];
   evidence_facts?: Row[]; localizations?: Row[]; glossary?: Row[]; glossary_revisions?: Row[];
   article_evaluations?: Row[]; worker?: Row | null; evaluation_worker?: Row | null; daily_workload?: Row[]; operations_summary?: Row;
-  evaluation_results?: { configured?: boolean; available?: boolean; database?: string; baseline_snapshot_at?: string; error_category?: string; worker?: Row | null; quota?: Row[]; runs?: Row[]; stages?: Row[]; events?: Row[]; fed_articles?: Row[]; sec_historical_quality?: Row[]; sec_new_inference?: string };
+  evaluation_results?: { configured?: boolean; available?: boolean; database?: string; baseline_snapshot_at?: string; error_category?: string; worker?: Row | null; quota?: Row[]; runs?: Row[]; stages?: Row[]; events?: Row[]; fed_articles?: Row[]; sec_historical_quality?: Row[]; sec_new_inference?: string; sec_locale_availability?: Row[]; sec_source_draft_available?: boolean };
   prepublication?: { blogger_accounts_connected?: number; blogs?: Row[]; historical_read_verifications?: Row[]; safety?: Row; real_blogger_sync_verified?: boolean; real_writes_enabled?: boolean };
   article_reviews?: Row[];
   operational_readiness?: { captured_from?: string; items?: { key: string; status: string; evidence: unknown }[] };
@@ -192,7 +192,12 @@ export default function Research({ initial }: { initial: State }) {
     </section>
     <section aria-labelledby="phase4c-status">
       <h2 id="phase4c-status">Phase 4-C · SEC·Blogger·발행 안전 점검</h2>
-      <p>SEC 신규 실추론: {data.evaluation_results?.sec_new_inference === "not_run_quota_blocked" ? "미실행 — en 일일 평가 quota 소진" : data.evaluation_results?.sec_new_inference === "not_run" ? "미실행 — 순서상 SEC 평가 시작 전" : "미확인"}. 기존 SEC 평가 기록은 아래에 과거 결과로 표시하며 이번 실추론으로 간주하지 않습니다.</p>
+      <p>SEC evaluation availability and source dependencies appear per language below. Historical SEC evaluations remain separate.</p>
+      <h3>SEC per-language quota and prerequisite</h3>
+      <table><thead><tr><th>Language</th><th>Quota</th><th>English source draft</th><th>Availability</th></tr></thead><tbody>
+        {(data.evaluation_results?.sec_locale_availability ?? []).map(item => <tr key={str(item, "language_code")}><td>{str(item, "language_code")}</td><td>{str(item, "quota_used")}/{str(item, "quota_limit")} ? remaining {str(item, "quota_remaining")}</td><td>{item.source_draft_available === null ? "not required" : String(item.source_draft_available ?? false)}</td><td>{str(item, "status")}</td></tr>)}
+      </tbody></table>
+      <p>Localized SEC runs require a successful English source draft for the same source. English quota is separate; without that source draft, downstream locales remain blocked.</p>
       <details><summary>기존 SEC 품질 기록</summary><pre>{JSON.stringify(data.evaluation_results?.sec_historical_quality ?? [], null, 2)}</pre></details>
       <p>실제 Blogger 읽기 동기화: {data.prepublication?.real_blogger_sync_verified ? "검증됨" : "미검증"} · 연결된 Google 계정 {data.prepublication?.blogger_accounts_connected ?? 0}개</p>
       <p>0원 정책 차단 사유: {JSON.stringify((data.cost_policy?.blocked_providers as Row[] | undefined)?.filter(provider => provider.name === "google_blogger_read") ?? [])}. 외부 GET은 이 정책 차단을 우회하지 않습니다.</p>
@@ -205,8 +210,8 @@ export default function Research({ initial }: { initial: State }) {
       <pre>{JSON.stringify({ ...(data.prepublication?.safety ?? {}), real_writes_enabled: data.prepublication?.real_writes_enabled, publish_ready: false }, null, 2)}</pre>
       <p>미검증: SEC 신규 추론, 실제 Blogger 인증 계정·4개 블로그 조회·게시글 상세/페이지네이션. 운영 발행은 비활성화 상태입니다.</p>
     </section>
-    <section aria-labelledby="phase4d-readiness">
-      <h2 id="phase4d-readiness">Phase 4-D · 운영 준비 체크리스트</h2>
+    <section aria-labelledby="phase4e-readiness">
+      <h2 id="phase4e-readiness">Phase 4-E · 운영 준비 체크리스트</h2>
       <p>상태는 현재 operations DB, 격리 evaluation DB 스냅샷 및 명시된 과거 테스트 증거를 반영합니다. 사람 검토와 실제 발행 권한은 별도입니다.</p>
       <table><thead><tr><th>항목</th><th>상태</th><th>근거</th></tr></thead><tbody>
         {(data.operational_readiness?.items ?? []).map(item => <tr key={item.key}>

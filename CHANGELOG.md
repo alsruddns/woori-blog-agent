@@ -1,5 +1,13 @@
 # Changelog
 
+## Phase 4-E (partial validation; 2026-10-27)
+- Show SEC evaluation quota and source-draft prerequisite per registered language. English quota is independent; downstream localization still requires a successful English draft for the same SEC topic.
+- Fail SEC evaluation before enqueue when that source-language draft is missing, preventing a failed localized run from consuming another locale's daily quota.
+- Keep historical Mock Publisher and Worker evidence explicitly labeled historical, and expose failed SEC attempts without treating them as saved drafts or human-review items.
+- Review Blogger API pricing, project billing association, quota semantics, and public Atom/RSS alternatives from official references. Cost/billing and feed reuse conditions remain unverified, so neither Blogger API GET nor public feed GET was sent.
+- Record four Fed machine-passed drafts as pending human review (0/4 reviewed); editorial review remains separate from publication approval.
+- No schema migration. Operating Blogger writes, automatic publication, and `publish_ready` remain disabled.
+
 ## Phase 4-D (partial validation; 2026-10-27)
 - Reviewed official Blogger/OAuth/Cloud quota and API Keys pricing references. Blogger per-call pricing/free allocation and the OAuth project's billing attachment remain unverified, so the Blogger read provider stays blocked; no live GET was attempted.
 - Captured the SEC evaluation DB's current quota and safely stopped before model start because English was already at 2/2. Recorded the blocked evaluation and readiness assessment in append-only audit events and a corrected JSON snapshot.

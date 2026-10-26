@@ -83,16 +83,38 @@ def main() -> None:
         if used >= profile["evaluation_daily_limit"]:
             stop("evaluation_quota_exhausted", {**preflight, "quota_used": used, "quota_limit": profile["evaluation_daily_limit"]})
 
-        # The SEC seed keyword is English, but its inherited source profile was Korean.
-        # Normalize that one seed in this isolated DB only, with an append-only audit event.
+        # Localized SEC evaluations depend on a successful English source draft for
+        # this exact SEC keyword. This is a data dependency, not shared quota ordering.
         seed_profile = conn.execute(
             "SELECT p.language_code FROM keyword_candidates k JOIN language_profiles p ON p.id=k.profile_id WHERE k.id=%s",
             (source["keyword_id"],),
         ).fetchone()
-        if seed_profile and seed_profile["language_code"] != "en":
-            english = conn.execute(
-                "SELECT id FROM language_profiles WHERE language_code='en' AND target_country=''"
+        english = conn.execute(
+            "SELECT id FROM language_profiles WHERE language_code='en' AND target_country=''"
+        ).fetchone()
+        if args.language != "en":
+            if not english:
+                stop("english_source_profile_missing", preflight)
+            source_draft = conn.execute(
+                """SELECT 1 FROM generation_results g
+                JOIN generation_jobs j ON j.run_id=g.run_id
+                JOIN job_runs r ON r.id=g.run_id
+                WHERE j.keyword_id=%s AND j.evaluation_only AND r.status='succeeded'
+                  AND g.profile_id=%s AND g.content_version_id IS NOT NULL LIMIT 1""",
+                (source["keyword_id"], english["id"]),
             ).fetchone()
+            if not pipeline.evaluation_source_prerequisite_met(
+                args.language, bool(source_draft)
+            ):
+                stop("source_locale_prerequisite_missing", {
+                    **preflight,
+                    "language": args.language,
+                    "prerequisite_language": "en",
+                    "english_quota_is_separate": True,
+                    "quota_used": used,
+                    "quota_limit": profile["evaluation_daily_limit"],
+                })
+        if seed_profile and seed_profile["language_code"] != "en":
             if not english:
                 stop("english_source_profile_missing", preflight)
             conn.execute("UPDATE keyword_candidates SET profile_id=%s WHERE id=%s", (english["id"], source["keyword_id"]))

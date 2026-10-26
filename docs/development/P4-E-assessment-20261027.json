@@ -1,0 +1,249 @@
+{
+  "assessment_id": "42814486-4a41-4713-b6e3-ad371761daeb",
+  "phase": "4-E",
+  "captured_at": "2026-10-27T06:53:17.261237+09:00",
+  "base_commit": "475346c",
+  "sec_evaluation": {
+    "database": "woori_blog_agent_eval",
+    "isolated": true,
+    "runs": [
+      {
+        "run_id": "b8635e8c-8999-4c08-8a15-e01f0290b61e",
+        "language": "ko",
+        "status": "failed",
+        "error_category": "source_version_missing",
+        "saved_draft": false,
+        "model_calls": 0
+      }
+    ],
+    "quota_by_language": [
+      {
+        "language_code": "en",
+        "quota_limit": 2,
+        "quota_used": 2,
+        "quota_remaining": 0,
+        "source_locale_prerequisite": null,
+        "source_draft_available": null,
+        "status": "blocked_quota"
+      },
+      {
+        "language_code": "ja",
+        "quota_limit": 2,
+        "quota_used": 1,
+        "quota_remaining": 1,
+        "source_locale_prerequisite": "en",
+        "source_draft_available": false,
+        "status": "blocked_source_locale_prerequisite"
+      },
+      {
+        "language_code": "ko",
+        "quota_limit": 2,
+        "quota_used": 2,
+        "quota_remaining": 0,
+        "source_locale_prerequisite": "en",
+        "source_draft_available": false,
+        "status": "blocked_quota"
+      },
+      {
+        "language_code": "zh-CN",
+        "quota_limit": 2,
+        "quota_used": 1,
+        "quota_remaining": 1,
+        "source_locale_prerequisite": "en",
+        "source_draft_available": false,
+        "status": "blocked_source_locale_prerequisite"
+      }
+    ],
+    "english_successful_source_draft_available": false,
+    "model": "Qwen3-4B-Q4_K_M.gguf",
+    "engine": "llama.cpp b11889 Vulkan",
+    "model_calls": 0,
+    "generated_drafts": 0,
+    "human_review_required": true,
+    "publish_ready": false
+  },
+  "fed_human_review": {
+    "machine_passed_drafts": 4,
+    "review_records": 0,
+    "reviewed": 0,
+    "editorial_approval_is_publication_approval": false,
+    "current_state": "pending"
+  },
+  "blogger_cost_review": {
+    "provider": {
+      "name": "google_blogger_read",
+      "cost": "Blogger API per-call pricing/free allocation not explicitly established; account billing state unavailable; blocked until reviewed",
+      "usage_limit": "local hard caps 30 calls/minute and 120 calls/hour; provider 429/quota stops immediately",
+      "commercial_use": "terms apply; review before monetized operation",
+      "calls_allowed": false,
+      "block_reason": "manual_zero_cost_review_required"
+    },
+    "api_fee": "unverified; official docs reviewed, no per-call price/free allocation found",
+    "quota": "numeric project quota not verified; quota is not a spend cap",
+    "cloud_billing_account_status": "unknown; readonly Blogger OAuth does not expose Cloud Billing association",
+    "other_billable_project_services": "not verified",
+    "public_feed": "official Atom/RSS feed documented; automated reuse rights, zero-cost guarantee, and cap not established",
+    "oauth_get_requests_sent": 0,
+    "public_feed_get_requests_sent": 0,
+    "writes_sent": 0,
+    "sources": [
+      "https://developers.google.com/blogger/docs/3.0/using",
+      "https://developers.google.com/blogger/docs/3.0/getting_started",
+      "https://docs.cloud.google.com/apis/docs/capping-api-usage",
+      "https://docs.cloud.google.com/billing/docs/how-to/verify-billing-enabled",
+      "https://docs.cloud.google.com/billing/docs/how-to/modify-project",
+      "https://developers.google.com/blogger/docs/2.0/developers_guide_protocol",
+      "https://support.google.com/blogger/answer/97933?hl=en"
+    ]
+  },
+  "readiness": {
+    "fed_machine": {
+      "status": "passed",
+      "evidence": "4/4 active base-profile languages have a current machine-passed Fed draft"
+    },
+    "fed_human": {
+      "status": "pending",
+      "evidence": "0/4 reviewed; 0/4 explicitly approved for editorial quality; review records=0"
+    },
+    "sec_machine": {
+      "status": "failed_before_draft",
+      "evidence": {
+        "new_sec_c3_attempts": 1,
+        "drafts_saved": 0,
+        "machine_passed": 0,
+        "failures": [
+          {
+            "language": "ko",
+            "status": "failed",
+            "error": "source_version_missing"
+          }
+        ],
+        "historical_evaluations_separate": true,
+        "locale_availability": [
+          {
+            "language_code": "en",
+            "quota_limit": 2,
+            "quota_used": 2,
+            "quota_remaining": 0,
+            "source_locale_prerequisite": null,
+            "source_draft_available": null,
+            "status": "blocked_quota"
+          },
+          {
+            "language_code": "ja",
+            "quota_limit": 2,
+            "quota_used": 1,
+            "quota_remaining": 1,
+            "source_locale_prerequisite": "en",
+            "source_draft_available": false,
+            "status": "blocked_source_locale_prerequisite"
+          },
+          {
+            "language_code": "ko",
+            "quota_limit": 2,
+            "quota_used": 2,
+            "quota_remaining": 0,
+            "source_locale_prerequisite": "en",
+            "source_draft_available": false,
+            "status": "blocked_quota"
+          },
+          {
+            "language_code": "zh-CN",
+            "quota_limit": 2,
+            "quota_used": 1,
+            "quota_remaining": 1,
+            "source_locale_prerequisite": "en",
+            "source_draft_available": false,
+            "status": "blocked_source_locale_prerequisite"
+          }
+        ]
+      }
+    },
+    "sec_human": {
+      "status": "not_available",
+      "evidence": "new SEC C3 saved drafts requiring review=0; attempts without a saved draft are not review items"
+    },
+    "blogger_cost": {
+      "status": "blocked_provider_cost_unverified",
+      "evidence": "provider calls_allowed=False; reason=manual_zero_cost_review_required"
+    },
+    "blogger_read_connection": {
+      "status": "configured_live_read_blocked",
+      "evidence": "readonly DB mappings=4/4; live GET is independently gated by cost policy"
+    },
+    "publication_mock": {
+      "status": "verified_historical",
+      "evidence": {
+        "fake_attempts": 1,
+        "mock_successes": 1,
+        "mock_non_successes": 0,
+        "non_mock_attempts": 0,
+        "captured_at": "2026-10-27 00:41:44.129460+09:00",
+        "scope": "historical mock evidence; not a live readiness claim"
+      }
+    },
+    "worker_recovery": {
+      "status": "verified_historical",
+      "evidence": {
+        "passed": true,
+        "artifact_count": 6,
+        "latest_artifact": "P3-9S-worker-c249d3e3-fae9-45dd-8e50-2e0c4ec1fd7a.json",
+        "captured_at": "2026-10-26T17:12:09.518537+00:00",
+        "scope": "historical isolated test; not a live worker health claim"
+      }
+    },
+    "operating_write_block": {
+      "status": "blocked_safe",
+      "evidence": {
+        "real_writes_enabled": false,
+        "non_mock_jobs": 0,
+        "real_publishing_records": 0,
+        "publish_ready_evaluations": 0
+      }
+    },
+    "additional_cost_block": {
+      "status": "policy_active",
+      "evidence": {
+        "blocked_credential_names": [],
+        "paid_provider_allowlist_entries": 0
+      }
+    },
+    "separate_live_publication_approval": {
+      "status": "required_not_granted",
+      "evidence": {
+        "publishing_enabled": false,
+        "publish_ready": false
+      }
+    }
+  },
+  "database_integrity": {
+    "operations": {
+      "database": "woori_blog_agent",
+      "schema_version": 28,
+      "audit_immutable": true
+    },
+    "evaluation": {
+      "database": "woori_blog_agent_eval",
+      "schema_version": 26,
+      "audit_immutable": true
+    },
+    "migration_applied": false,
+    "reason": "No schema change in Phase 4-E; versions inspected read-only."
+  },
+  "safety": {
+    "blogger_write_operations": 0,
+    "publishing_records": 0,
+    "non_mock_publication_jobs": 0,
+    "publish_ready": 0,
+    "auto_publish_policies": 0,
+    "additional_paid_calls": 0,
+    "audit_history_modified_or_deleted": 0
+  },
+  "notes": [
+    "One SEC Korean worker attempt consumed its existing locale quota and failed before model inference because no successful English source draft existed for the same SEC seed.",
+    "The failure was retained in evaluation DB; no retry/quota reset was performed.",
+    "The project-local model process was started and then stopped after the failed pre-inference attempt; no generation request reached llama.cpp.",
+    "Billing credentials were not output or copied into this artifact."
+  ],
+  "operations_audit_event_id": 122923
+}
