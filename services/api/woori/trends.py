@@ -84,11 +84,15 @@ def parse_feed(content: bytes, geo: str, collected_at: datetime | None = None) -
     }
 
 
-def _save_failure(run_id: Any, geo: str, status: str, reason: str) -> dict[str, Any]:
+def _save_failure(
+    run_id: Any, geo: str, status: str, reason: str, http_status: int | None = None
+) -> dict[str, Any]:
     with connection() as conn:
         conn.execute(
-            "INSERT INTO trend_collection_runs(id,provider,geo,status,item_count,failure_category) VALUES (%s,%s,%s,%s,0,%s)",
-            (run_id, PROVIDER, geo, status, reason[:100]),
+            """INSERT INTO trend_collection_runs
+            (id,provider,geo,status,item_count,failure_category,http_status)
+            VALUES (%s,%s,%s,%s,0,%s,%s)""",
+            (run_id, PROVIDER, geo, status, reason[:100], http_status),
         )
         conn.execute(
             "INSERT INTO audit_events(event_type,payload) VALUES ('trend.collection.failed',%s)",
@@ -100,6 +104,7 @@ def _save_failure(run_id: Any, geo: str, status: str, reason: str) -> dict[str, 
                         "geo": geo,
                         "status": status,
                         "failure_category": reason[:100],
+                        "http_status": http_status,
                     }
                 ),
             ),
@@ -110,6 +115,7 @@ def _save_failure(run_id: Any, geo: str, status: str, reason: str) -> dict[str, 
         "status": status,
         "item_count": 0,
         "failure_category": reason[:100],
+        "http_status": http_status,
     }
 
 
@@ -124,6 +130,7 @@ def collect_geo(geo: str) -> dict[str, Any]:
             raise EngineFailure("trend_schema_not_applied")
     run_id = uuid4()
     started = time.monotonic()
+    http_status: int | None = None
     with connection() as conn:
         conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('google_trends_rss',0))")
         quota_row = conn.execute(
@@ -171,16 +178,31 @@ def collect_geo(geo: str) -> dict[str, Any]:
             ) as client,
             client.stream("GET", ENDPOINT, params={"geo": geo}) as response,
         ):
+            http_status = response.status_code
             if response.status_code == 429:
-                raise FreeQuotaExceeded("provider_free_quota_or_rate_limit")
+                return _save_failure(
+                    run_id, geo, "blocked", "provider_quota_or_rate_limit", http_status=429
+                )
             if response.status_code != 200:
-                return _save_failure(run_id, geo, "failed", f"http_{response.status_code}")
+                return _save_failure(
+                    run_id,
+                    geo,
+                    "failed",
+                    f"http_{response.status_code}",
+                    http_status=response.status_code,
+                )
             blocks: list[bytes] = []
             size = 0
             for block in response.iter_bytes(65536):
                 size += len(block)
                 if size > MAX_RESPONSE_BYTES or time.monotonic() - started > 20:
-                    return _save_failure(run_id, geo, "failed", "trend_feed_response_limit")
+                    return _save_failure(
+                        run_id,
+                        geo,
+                        "failed",
+                        "trend_feed_response_limit",
+                        http_status=http_status,
+                    )
                 blocks.append(block)
         raw = b"".join(blocks)
         parsed = parse_feed(raw, geo)
@@ -189,15 +211,15 @@ def collect_geo(geo: str) -> dict[str, Any]:
     except ExternalCallBlocked:
         return _save_failure(run_id, geo, "blocked", "external_policy_blocked")
     except (httpx.HTTPError, OSError):
-        return _save_failure(run_id, geo, "failed", "trend_feed_network_error")
+        return _save_failure(run_id, geo, "failed", "trend_feed_network_error", http_status)
     except ValueError as exc:
-        return _save_failure(run_id, geo, "failed", str(exc))
+        return _save_failure(run_id, geo, "failed", str(exc), http_status)
 
     with connection() as conn:
         conn.execute(
             """INSERT INTO trend_collection_runs
-            (id,provider,geo,status,source_updated_at,response_sha256,item_count)
-            VALUES (%s,%s,%s,'succeeded',%s,%s,%s)""",
+            (id,provider,geo,status,source_updated_at,response_sha256,item_count,http_status)
+            VALUES (%s,%s,%s,'succeeded',%s,%s,%s,200)""",
             (
                 run_id,
                 PROVIDER,
@@ -238,6 +260,7 @@ def collect_geo(geo: str) -> dict[str, Any]:
                         "provider": PROVIDER,
                         "geo": geo,
                         "item_count": len(parsed["items"]),
+                        "http_status": 200,
                         "response_sha256": parsed["response_sha256"],
                         "source_rank_available": False,
                         "source_updated_at": parsed["source_updated_at"].isoformat()
@@ -251,6 +274,7 @@ def collect_geo(geo: str) -> dict[str, Any]:
         "run_id": str(run_id),
         "geo": geo,
         "status": "succeeded",
+        "http_status": 200,
         "item_count": len(parsed["items"]),
         "source_updated_at": parsed["source_updated_at"],
         "response_sha256": parsed["response_sha256"],

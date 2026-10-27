@@ -282,3 +282,9 @@
 - Add a lease-based one-job Worker restricted to fake-only runs, with bounded retry, heartbeat, uncertain-result stop, and expired-lease recovery.
 - Add paginated Blogger read-only post reconciliation; mismatches are reported for manual review and no internal publication state is changed.
 - Add explicit mock/worker/sync status to the publication dashboard and schema migration 026.
+
+## P5-CONTENT-001 (2026-10-27)
+- Added migrations 037?039 for immutable trend-topic clusters, non-merging cross-region proposals, configurable triage scores, append-only editorial/source/grouping reviews, and Research Package snapshots.
+- Added actual HTTP response status capture for future RSS runs; historical statuses remain null where they were never recorded.
+- Extended `/research` with topic assessment, reviewed source linking, package inspection, and event-group review controls.
+- Tested US, JP, TW, HK and SG Google Trends RSS in the isolated test DB: ten observations each; source rank remained null. All 60 candidates are held; no reviewed factual sources were present, so the example package remains `insufficient_evidence`. No article, AI call, Blogger write, or operations DB migration occurred.

@@ -1,6 +1,7 @@
 """Authenticated research management. Every control is backed by durable state."""
 
 import hashlib
+import math
 from datetime import UTC, datetime
 from typing import Any, Literal, Self
 from urllib.parse import urlsplit
@@ -11,7 +12,7 @@ from croniter import croniter
 from fastapi import APIRouter, HTTPException
 from pydantic import Field, field_validator, model_validator
 
-from . import collection, pipeline, trends
+from . import collection, pipeline, topics, trends
 from .ai import Draft, EngineFailure
 from .db import connection
 from .grounding import inspect
@@ -45,6 +46,77 @@ class Selection(Input):
 
 class TrendCollectionRequest(Input):
     geo: Literal["KR", "US", "JP", "TW", "HK", "SG"]
+
+
+class TrendTopicDecision(Input):
+    decision: Literal["selected", "excluded", "hold"]
+    reviewer: str = Field(min_length=2, max_length=120)
+    reason: str = Field(min_length=5, max_length=2000)
+    idempotency_key: str = Field(min_length=12, max_length=160)
+
+
+class TrendTopicSourceLink(Input):
+    source_id: UUID
+    link_reason: str = Field(min_length=5, max_length=1000)
+    linked_by: str = Field(min_length=2, max_length=120)
+    idempotency_key: str = Field(min_length=12, max_length=160)
+
+
+class TrendGroupingReview(Input):
+    decision: Literal["same_event", "different_event", "insufficient_information"]
+    event_group_id: UUID | None = None
+    reviewer: str = Field(min_length=2, max_length=120)
+    rationale: str = Field(min_length=5, max_length=2000)
+    idempotency_key: str = Field(min_length=12, max_length=160)
+
+    @model_validator(mode="after")
+    def group_id_matches_decision(self) -> Self:
+        if (self.decision == "same_event") != (self.event_group_id is not None):
+            raise ValueError("event_group_id_required_only_for_same_event")
+        return self
+
+
+class TrendSourceIndependenceReview(Input):
+    decision: Literal["independent", "same_underlying_source", "uncertain"]
+    reviewer: str = Field(min_length=2, max_length=120)
+    reason: str = Field(min_length=5, max_length=2000)
+    comparison_group: str | None = Field(default=None, max_length=200)
+    idempotency_key: str = Field(min_length=12, max_length=160)
+
+    @model_validator(mode="after")
+    def independent_group_required(self) -> Self:
+        if self.decision == "independent" and not self.comparison_group:
+            raise ValueError("independent_source_comparison_group_required")
+        return self
+
+
+class TrendScoringWeights(Input):
+    source_interest_label: float = Field(ge=0, le=100)
+    freshness: float = Field(ge=0, le=100)
+    specificity: float = Field(ge=0, le=100)
+    reviewed_source_coverage: float = Field(ge=0, le=100)
+    independent_confirmation: float = Field(ge=0, le=100)
+    deduplication_risk: float = Field(ge=0, le=100)
+
+
+class TrendScoringThresholds(Input):
+    minimum_score: float = Field(ge=70, le=100)
+    minimum_sources: int = Field(ge=2, le=20)
+    minimum_verified_facts: int = Field(ge=3, le=100)
+    minimum_independent_sources: int = Field(ge=2, le=20)
+
+
+class TrendScoringConfig(Input):
+    weights: TrendScoringWeights
+    thresholds: TrendScoringThresholds
+    rationale: str = Field(min_length=10, max_length=2000)
+
+    @model_validator(mode="after")
+    def weights_sum_to_hundred(self) -> Self:
+        if not math.isclose(sum(self.weights.model_dump().values()), 100):
+            raise ValueError("trend_scoring_weights_must_sum_to_100")
+        return self
+        return self
 
 
 class Source(Input):
@@ -301,6 +373,76 @@ def collect_trends(request: TrendCollectionRequest) -> dict[str, Any]:
     return trends.collect_geo(request.geo)
 
 
+@router.get("/topics")
+def trend_topics_state() -> dict[str, Any]:
+    return topics.state()
+
+
+@router.post("/topics/scoring-configs", status_code=201)
+def create_trend_scoring_config(request: TrendScoringConfig) -> dict[str, Any]:
+    return topics.record_scoring_config(
+        request.weights.model_dump(), request.thresholds.model_dump(), request.rationale
+    )
+
+
+@router.post("/topics/build", status_code=201)
+def build_trend_topics() -> dict[str, Any]:
+    return topics.build_candidates()
+
+
+@router.post("/grouping-proposals/{proposal_id}/reviews", status_code=201)
+def review_trend_grouping_proposal(
+    proposal_id: UUID, request: TrendGroupingReview
+) -> dict[str, Any]:
+    return topics.record_grouping_review(
+        proposal_id,
+        request.decision,
+        request.event_group_id,
+        request.reviewer,
+        request.rationale,
+        request.idempotency_key,
+    )
+
+
+@router.post("/topics/{topic_id}/assess")
+def assess_trend_topic(topic_id: UUID) -> dict[str, Any]:
+    with connection() as conn:
+        return topics._assess_topic(conn, topic_id)
+
+
+@router.post("/topics/{topic_id}/decisions", status_code=201)
+def decide_trend_topic(topic_id: UUID, request: TrendTopicDecision) -> dict[str, Any]:
+    return topics.record_editorial_decision(
+        topic_id, request.decision, request.reviewer, request.reason, request.idempotency_key
+    )
+
+
+@router.post("/topics/{topic_id}/sources", status_code=201)
+def link_trend_source(topic_id: UUID, request: TrendTopicSourceLink) -> dict[str, Any]:
+    return topics.link_reviewed_source(
+        topic_id, request.source_id, request.link_reason, request.linked_by, request.idempotency_key
+    )
+
+
+@router.post("/topic-sources/{topic_source_id}/independence-reviews", status_code=201)
+def review_trend_source_independence(
+    topic_source_id: UUID, request: TrendSourceIndependenceReview
+) -> dict[str, Any]:
+    return topics.record_independence_review(
+        topic_source_id,
+        request.decision,
+        request.reviewer,
+        request.reason,
+        request.comparison_group,
+        request.idempotency_key,
+    )
+
+
+@router.post("/topics/{topic_id}/package", status_code=201)
+def create_trend_research_package(topic_id: UUID) -> dict[str, Any]:
+    return topics.build_package(topic_id)
+
+
 @router.put("/collections/{source_id}")
 def collection_schedule(source_id: UUID, request: CollectionSchedule) -> dict[str, Any]:
     with connection() as conn:
@@ -405,6 +547,21 @@ def state() -> dict[str, Any]:
         else:
             result["trend_collection_runs"] = []
             result["trend_observations"] = []
+        if trend_schema is not None and trend_schema["table_name"]:
+            topic_state = topics.state()
+            result["trend_topics"] = topic_state["topics"]
+            result["trend_grouping_proposals"] = topic_state["grouping_proposals"]
+            result["trend_research_packages"] = topic_state["research_packages"]
+            result["trend_topic_sources"] = topic_state["topic_sources"]
+            result["trend_scoring_config"] = topic_state["scoring_config"]
+            result["trend_topic_workspace_configured"] = True
+        else:
+            result["trend_topics"] = []
+            result["trend_grouping_proposals"] = []
+            result["trend_research_packages"] = []
+            result["trend_topic_sources"] = []
+            result["trend_scoring_config"] = None
+            result["trend_topic_workspace_configured"] = False
         result["coverage"] = conn.execute(
             """SELECT c.slug AS category,l.code AS language_code,
             coalesce((SELECT count(DISTINCT s.id) FROM language_profiles p

@@ -29,7 +29,7 @@ def lab(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Any, TestClient, dict
             with conn.transaction():
                 yield conn
 
-        for module in ("pipeline", "research_routes", "main", "multilingual"):
+        for module in ("pipeline", "research_routes", "main", "multilingual", "topics"):
             monkeypatch.setattr("woori." + module + ".connection", shared)
         monkeypatch.setattr(pipeline, "resources_ok", lambda _: True)
         monkeypatch.setattr(

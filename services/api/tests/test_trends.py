@@ -97,6 +97,7 @@ def test_trend_collection_persists_actual_pipeline_shape_in_isolated_db(
     assert response.status_code == 200
     result = response.json()
     assert result["status"] == "succeeded"
+    assert result["http_status"] == 200
     assert result["item_count"] == 1
     assert result["rank_available"] is False
     assert (
@@ -117,6 +118,11 @@ def test_trend_collection_persists_actual_pipeline_shape_in_isolated_db(
         "SELECT payload FROM audit_events WHERE event_type='trend.collection.completed' ORDER BY id DESC LIMIT 1"
     ).fetchone()
     assert event["payload"]["collection_run_id"] == result["run_id"]
+    run = conn.execute(
+        "SELECT http_status,status FROM trend_collection_runs WHERE id=%s",
+        (UUID(result["run_id"]),),
+    ).fetchone()
+    assert dict(run) == {"http_status": 200, "status": "succeeded"}
     with pytest.raises(psycopg.errors.RaiseException, match="(?i)append-only"), conn.transaction():
         conn.execute(
             "UPDATE trend_observations SET query='changed' WHERE run_id=%s",

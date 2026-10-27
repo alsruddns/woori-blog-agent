@@ -184,3 +184,9 @@ Phase 4-B keeps scheduled jobs simulation-only. To process one isolated fake job
 ## Phase 4-K model comparison
 
 The existing `Qwen3-4B-Q4_K_M.gguf` remains the default. A separate, pinned `Qwen3-4B-Instruct-2507-Q4_K_M.gguf` is installed for isolated evaluation only; operational generation rejects it. `/research` compares saved Fed/SEC evaluation runs by source, language, model and measured quality. The 2026-10-27 comparison was stopped after repeated held localization checks, so the candidate has no full zh-CN result and is not promoted. All evaluation drafts remain unpublished, require human review, and keep `publish_ready=false`. See [the Phase 4-K evaluation](docs/development/P4-K-results.json), [development record](docs/development/P4-K-001.md), and [pinned model policy](docs/operations/zero-cost-policy.md).
+
+## P5-CONTENT-001: trend research packages
+
+`/research` can group exact query observations within one geography, propose cross-region event matches for human review, apply a versioned publication-value triage rubric, and create immutable Research Packages from existing current reviewed sources and source-span-verified facts. Query clusters do not establish event identity. Scores never approve content. Packages without sufficient independently reviewed evidence remain `insufficient_evidence`; all packages retain human-review-required and `publish_ready=false`.
+
+Migrations 037?039 have been verified on the isolated `woori_blog_agent_test` database only. No operations DB migration was applied. Actual US/JP/TW/HK/SG RSS requests returned ten observations each; RSS did not supply ranks, so rank is null. Across those plus the prior KR sample, all current candidates remain held because the test DB has no topic-linked reviewed sources/facts. No article or Blogger draft was generated.

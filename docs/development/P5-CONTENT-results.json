@@ -1,0 +1,834 @@
+{
+  "phase": "P5-CONTENT-001",
+  "measured_at": "2026-10-27",
+  "environment": {
+    "database": "woori_blog_agent_test",
+    "role": "woori_test_app",
+    "schema_version": 39,
+    "operations_database_written": false,
+    "operations_database_migrated": false
+  },
+  "rss_runs": [
+    {
+      "geo": "HK",
+      "status": "succeeded",
+      "http_status": null,
+      "item_count": 10,
+      "response_sha256": "982f2ccfd3de2d2b018a07f361e67d0650b25fde152a7309c3db9ad019b14f58",
+      "started_at": "2026-10-27T23:26:53.152213+09:00",
+      "finished_at": "2026-10-27T23:26:53.152213+09:00",
+      "http_status_persisted": null
+    },
+    {
+      "geo": "JP",
+      "status": "succeeded",
+      "http_status": null,
+      "item_count": 10,
+      "response_sha256": "e9c8a5efc65339b9069458e512b10df464c594fdf292c0945285d8ac6795fc41",
+      "started_at": "2026-10-27T23:24:46.033810+09:00",
+      "finished_at": "2026-10-27T23:24:46.033810+09:00",
+      "http_status_persisted": null
+    },
+    {
+      "geo": "KR",
+      "status": "succeeded",
+      "http_status": null,
+      "item_count": 10,
+      "response_sha256": "de7b5b564d1d1854e0c2a2e5305e01248dbff195955966c623e1c1dfaceb9def",
+      "started_at": "2026-10-27T22:54:42.381531+09:00",
+      "finished_at": "2026-10-27T22:54:42.381531+09:00",
+      "http_status_persisted": null
+    },
+    {
+      "geo": "SG",
+      "status": "succeeded",
+      "http_status": null,
+      "item_count": 10,
+      "response_sha256": "5629768abed598622299e274edd3afe86b333c7c96167e94d1c797e628893450",
+      "started_at": "2026-10-27T23:27:57.251892+09:00",
+      "finished_at": "2026-10-27T23:27:57.251892+09:00",
+      "http_status_persisted": null
+    },
+    {
+      "geo": "TW",
+      "status": "succeeded",
+      "http_status": null,
+      "item_count": 10,
+      "response_sha256": "c3d00f0f5778baf6cbc76b140337447be2c63705514e0975e488cb3edb15b79c",
+      "started_at": "2026-10-27T23:25:49.458738+09:00",
+      "finished_at": "2026-10-27T23:25:49.458738+09:00",
+      "http_status_persisted": null
+    },
+    {
+      "geo": "US",
+      "status": "succeeded",
+      "http_status": null,
+      "item_count": 10,
+      "response_sha256": "e54a2640e372c92f715725ed21138ff52b9cff6d9d24e1f9039d186cb43d2c85",
+      "started_at": "2026-10-27T23:23:42.729421+09:00",
+      "finished_at": "2026-10-27T23:23:42.729421+09:00",
+      "http_status_persisted": null
+    }
+  ],
+  "observation_count": 60,
+  "observations": [
+    {
+      "geo": "HK",
+      "query": "cityline 陳奕迅",
+      "source_rank": null,
+      "source_volume_label": "200+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T22:50:00+09:00",
+      "collected_at": "2026-10-27T23:26:53.051786+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=HK",
+      "response_sha256": "982f2ccfd3de2d2b018a07f361e67d0650b25fde152a7309c3db9ad019b14f58"
+    },
+    {
+      "geo": "HK",
+      "query": "cuaca besok",
+      "source_rank": null,
+      "source_volume_label": "200+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T22:00:00+09:00",
+      "collected_at": "2026-10-27T23:26:53.051786+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=HK",
+      "response_sha256": "982f2ccfd3de2d2b018a07f361e67d0650b25fde152a7309c3db9ad019b14f58"
+    },
+    {
+      "geo": "HK",
+      "query": "weather tomorrow",
+      "source_rank": null,
+      "source_volume_label": "1000+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T21:30:00+09:00",
+      "collected_at": "2026-10-27T23:26:53.051786+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=HK",
+      "response_sha256": "982f2ccfd3de2d2b018a07f361e67d0650b25fde152a7309c3db9ad019b14f58"
+    },
+    {
+      "geo": "HK",
+      "query": "明天的天氣",
+      "source_rank": null,
+      "source_volume_label": "2000+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T21:40:00+09:00",
+      "collected_at": "2026-10-27T23:26:53.051786+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=HK",
+      "response_sha256": "982f2ccfd3de2d2b018a07f361e67d0650b25fde152a7309c3db9ad019b14f58"
+    },
+    {
+      "geo": "HK",
+      "query": "王楚欽",
+      "source_rank": null,
+      "source_volume_label": "100+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T22:40:00+09:00",
+      "collected_at": "2026-10-27T23:26:53.051786+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=HK",
+      "response_sha256": "982f2ccfd3de2d2b018a07f361e67d0650b25fde152a7309c3db9ad019b14f58"
+    },
+    {
+      "geo": "HK",
+      "query": "蔡天鳳",
+      "source_rank": null,
+      "source_volume_label": "200+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T21:20:00+09:00",
+      "collected_at": "2026-10-27T23:26:53.051786+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=HK",
+      "response_sha256": "982f2ccfd3de2d2b018a07f361e67d0650b25fde152a7309c3db9ad019b14f58"
+    },
+    {
+      "geo": "HK",
+      "query": "彩票",
+      "source_rank": null,
+      "source_volume_label": "200+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T21:50:00+09:00",
+      "collected_at": "2026-10-27T23:26:53.051786+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=HK",
+      "response_sha256": "982f2ccfd3de2d2b018a07f361e67d0650b25fde152a7309c3db9ad019b14f58"
+    },
+    {
+      "geo": "HK",
+      "query": "璀璨之城劇情",
+      "source_rank": null,
+      "source_volume_label": "200+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T22:20:00+09:00",
+      "collected_at": "2026-10-27T23:26:53.051786+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=HK",
+      "response_sha256": "982f2ccfd3de2d2b018a07f361e67d0650b25fde152a7309c3db9ad019b14f58"
+    },
+    {
+      "geo": "HK",
+      "query": "香港",
+      "source_rank": null,
+      "source_volume_label": "500+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T22:50:00+09:00",
+      "collected_at": "2026-10-27T23:26:53.051786+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=HK",
+      "response_sha256": "982f2ccfd3de2d2b018a07f361e67d0650b25fde152a7309c3db9ad019b14f58"
+    },
+    {
+      "geo": "HK",
+      "query": "休班警",
+      "source_rank": null,
+      "source_volume_label": "200+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T22:40:00+09:00",
+      "collected_at": "2026-10-27T23:26:53.051786+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=HK",
+      "response_sha256": "982f2ccfd3de2d2b018a07f361e67d0650b25fde152a7309c3db9ad019b14f58"
+    },
+    {
+      "geo": "JP",
+      "query": "maga",
+      "source_rank": null,
+      "source_volume_label": "200+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T22:30:00+09:00",
+      "collected_at": "2026-10-27T23:24:45.949553+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=JP",
+      "response_sha256": "e9c8a5efc65339b9069458e512b10df464c594fdf292c0945285d8ac6795fc41"
+    },
+    {
+      "geo": "JP",
+      "query": "アサヒビール",
+      "source_rank": null,
+      "source_volume_label": "200+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T22:50:00+09:00",
+      "collected_at": "2026-10-27T23:24:45.949553+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=JP",
+      "response_sha256": "e9c8a5efc65339b9069458e512b10df464c594fdf292c0945285d8ac6795fc41"
+    },
+    {
+      "geo": "JP",
+      "query": "ウルフアロン",
+      "source_rank": null,
+      "source_volume_label": "500+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T22:30:00+09:00",
+      "collected_at": "2026-10-27T23:24:45.949553+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=JP",
+      "response_sha256": "e9c8a5efc65339b9069458e512b10df464c594fdf292c0945285d8ac6795fc41"
+    },
+    {
+      "geo": "JP",
+      "query": "カラバオカップ",
+      "source_rank": null,
+      "source_volume_label": "100+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T23:10:00+09:00",
+      "collected_at": "2026-10-27T23:24:45.949553+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=JP",
+      "response_sha256": "e9c8a5efc65339b9069458e512b10df464c594fdf292c0945285d8ac6795fc41"
+    },
+    {
+      "geo": "JP",
+      "query": "コーニング",
+      "source_rank": null,
+      "source_volume_label": "1000+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T22:30:00+09:00",
+      "collected_at": "2026-10-27T23:24:45.949553+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=JP",
+      "response_sha256": "e9c8a5efc65339b9069458e512b10df464c594fdf292c0945285d8ac6795fc41"
+    },
+    {
+      "geo": "JP",
+      "query": "間宮祥太朗",
+      "source_rank": null,
+      "source_volume_label": "1000+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T22:30:00+09:00",
+      "collected_at": "2026-10-27T23:24:45.949553+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=JP",
+      "response_sha256": "e9c8a5efc65339b9069458e512b10df464c594fdf292c0945285d8ac6795fc41"
+    },
+    {
+      "geo": "JP",
+      "query": "剛力彩芽",
+      "source_rank": null,
+      "source_volume_label": "2000+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T22:50:00+09:00",
+      "collected_at": "2026-10-27T23:24:45.949553+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=JP",
+      "response_sha256": "e9c8a5efc65339b9069458e512b10df464c594fdf292c0945285d8ac6795fc41"
+    },
+    {
+      "geo": "JP",
+      "query": "磯丸水産",
+      "source_rank": null,
+      "source_volume_label": "200+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T22:40:00+09:00",
+      "collected_at": "2026-10-27T23:24:45.949553+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=JP",
+      "response_sha256": "e9c8a5efc65339b9069458e512b10df464c594fdf292c0945285d8ac6795fc41"
+    },
+    {
+      "geo": "JP",
+      "query": "銀",
+      "source_rank": null,
+      "source_volume_label": "500+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T22:40:00+09:00",
+      "collected_at": "2026-10-27T23:24:45.949553+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=JP",
+      "response_sha256": "e9c8a5efc65339b9069458e512b10df464c594fdf292c0945285d8ac6795fc41"
+    },
+    {
+      "geo": "JP",
+      "query": "中田翔",
+      "source_rank": null,
+      "source_volume_label": "2000+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T22:30:00+09:00",
+      "collected_at": "2026-10-27T23:24:45.949553+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=JP",
+      "response_sha256": "e9c8a5efc65339b9069458e512b10df464c594fdf292c0945285d8ac6795fc41"
+    },
+    {
+      "geo": "KR",
+      "query": "afc 챔스",
+      "source_rank": null,
+      "source_volume_label": "200+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T20:30:00+09:00",
+      "collected_at": "2026-10-27T22:54:42.293965+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=KR",
+      "response_sha256": "de7b5b564d1d1854e0c2a2e5305e01248dbff195955966c623e1c1dfaceb9def"
+    },
+    {
+      "geo": "KR",
+      "query": "관광",
+      "source_rank": null,
+      "source_volume_label": "200+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T21:50:00+09:00",
+      "collected_at": "2026-10-27T22:54:42.293965+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=KR",
+      "response_sha256": "de7b5b564d1d1854e0c2a2e5305e01248dbff195955966c623e1c1dfaceb9def"
+    },
+    {
+      "geo": "KR",
+      "query": "단발",
+      "source_rank": null,
+      "source_volume_label": "200+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T21:40:00+09:00",
+      "collected_at": "2026-10-27T22:54:42.293965+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=KR",
+      "response_sha256": "de7b5b564d1d1854e0c2a2e5305e01248dbff195955966c623e1c1dfaceb9def"
+    },
+    {
+      "geo": "KR",
+      "query": "대전 하나 시티즌 대 비셀 고베 순위",
+      "source_rank": null,
+      "source_volume_label": "5000+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T21:00:00+09:00",
+      "collected_at": "2026-10-27T22:54:42.293965+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=KR",
+      "response_sha256": "de7b5b564d1d1854e0c2a2e5305e01248dbff195955966c623e1c1dfaceb9def"
+    },
+    {
+      "geo": "KR",
+      "query": "서울 지하철 7호선",
+      "source_rank": null,
+      "source_volume_label": "200+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T21:30:00+09:00",
+      "collected_at": "2026-10-27T22:54:42.293965+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=KR",
+      "response_sha256": "de7b5b564d1d1854e0c2a2e5305e01248dbff195955966c623e1c1dfaceb9def"
+    },
+    {
+      "geo": "KR",
+      "query": "송가인",
+      "source_rank": null,
+      "source_volume_label": "5000+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T20:30:00+09:00",
+      "collected_at": "2026-10-27T22:54:42.293965+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=KR",
+      "response_sha256": "de7b5b564d1d1854e0c2a2e5305e01248dbff195955966c623e1c1dfaceb9def"
+    },
+    {
+      "geo": "KR",
+      "query": "이재명",
+      "source_rank": null,
+      "source_volume_label": "5000+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T20:10:00+09:00",
+      "collected_at": "2026-10-27T22:54:42.293965+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=KR",
+      "response_sha256": "de7b5b564d1d1854e0c2a2e5305e01248dbff195955966c623e1c1dfaceb9def"
+    },
+    {
+      "geo": "KR",
+      "query": "잇섭",
+      "source_rank": null,
+      "source_volume_label": "100+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T20:50:00+09:00",
+      "collected_at": "2026-10-27T22:54:42.293965+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=KR",
+      "response_sha256": "de7b5b564d1d1854e0c2a2e5305e01248dbff195955966c623e1c1dfaceb9def"
+    },
+    {
+      "geo": "KR",
+      "query": "충주시장",
+      "source_rank": null,
+      "source_volume_label": "100+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T21:40:00+09:00",
+      "collected_at": "2026-10-27T22:54:42.293965+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=KR",
+      "response_sha256": "de7b5b564d1d1854e0c2a2e5305e01248dbff195955966c623e1c1dfaceb9def"
+    },
+    {
+      "geo": "KR",
+      "query": "파주시",
+      "source_rank": null,
+      "source_volume_label": "500+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T20:10:00+09:00",
+      "collected_at": "2026-10-27T22:54:42.293965+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=KR",
+      "response_sha256": "de7b5b564d1d1854e0c2a2e5305e01248dbff195955966c623e1c1dfaceb9def"
+    },
+    {
+      "geo": "SG",
+      "query": "afc champions league",
+      "source_rank": null,
+      "source_volume_label": "200+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T20:20:00+09:00",
+      "collected_at": "2026-10-27T23:27:57.166876+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=SG",
+      "response_sha256": "5629768abed598622299e274edd3afe86b333c7c96167e94d1c797e628893450"
+    },
+    {
+      "geo": "SG",
+      "query": "afghanistan vs zimbabwe",
+      "source_rank": null,
+      "source_volume_label": "200+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T23:20:00+09:00",
+      "collected_at": "2026-10-27T23:27:57.166876+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=SG",
+      "response_sha256": "5629768abed598622299e274edd3afe86b333c7c96167e94d1c797e628893450"
+    },
+    {
+      "geo": "SG",
+      "query": "china ai stocks",
+      "source_rank": null,
+      "source_volume_label": "200+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T22:10:00+09:00",
+      "collected_at": "2026-10-27T23:27:57.166876+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=SG",
+      "response_sha256": "5629768abed598622299e274edd3afe86b333c7c96167e94d1c797e628893450"
+    },
+    {
+      "geo": "SG",
+      "query": "israel election",
+      "source_rank": null,
+      "source_volume_label": "500+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T20:30:00+09:00",
+      "collected_at": "2026-10-27T23:27:57.166876+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=SG",
+      "response_sha256": "5629768abed598622299e274edd3afe86b333c7c96167e94d1c797e628893450"
+    },
+    {
+      "geo": "SG",
+      "query": "kyoto sanga vs newcastle jets",
+      "source_rank": null,
+      "source_volume_label": "100+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T20:10:00+09:00",
+      "collected_at": "2026-10-27T23:27:57.166876+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=SG",
+      "response_sha256": "5629768abed598622299e274edd3afe86b333c7c96167e94d1c797e628893450"
+    },
+    {
+      "geo": "SG",
+      "query": "mcdonald's",
+      "source_rank": null,
+      "source_volume_label": "100+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T20:00:00+09:00",
+      "collected_at": "2026-10-27T23:27:57.166876+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=SG",
+      "response_sha256": "5629768abed598622299e274edd3afe86b333c7c96167e94d1c797e628893450"
+    },
+    {
+      "geo": "SG",
+      "query": "syndicate",
+      "source_rank": null,
+      "source_volume_label": "5000+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T20:30:00+09:00",
+      "collected_at": "2026-10-27T23:27:57.166876+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=SG",
+      "response_sha256": "5629768abed598622299e274edd3afe86b333c7c96167e94d1c797e628893450"
+    },
+    {
+      "geo": "SG",
+      "query": "umrah",
+      "source_rank": null,
+      "source_volume_label": "5000+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T20:00:00+09:00",
+      "collected_at": "2026-10-27T23:27:57.166876+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=SG",
+      "response_sha256": "5629768abed598622299e274edd3afe86b333c7c96167e94d1c797e628893450"
+    },
+    {
+      "geo": "SG",
+      "query": "weather tomorrow",
+      "source_rank": null,
+      "source_volume_label": "10000+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T21:50:00+09:00",
+      "collected_at": "2026-10-27T23:27:57.166876+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=SG",
+      "response_sha256": "5629768abed598622299e274edd3afe86b333c7c96167e94d1c797e628893450"
+    },
+    {
+      "geo": "SG",
+      "query": "zermatt neo restaurant",
+      "source_rank": null,
+      "source_volume_label": "100+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T22:40:00+09:00",
+      "collected_at": "2026-10-27T23:27:57.166876+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=SG",
+      "response_sha256": "5629768abed598622299e274edd3afe86b333c7c96167e94d1c797e628893450"
+    },
+    {
+      "geo": "TW",
+      "query": "anthropic 上市",
+      "source_rank": null,
+      "source_volume_label": "200+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T22:20:00+09:00",
+      "collected_at": "2026-10-27T23:25:49.370626+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=TW",
+      "response_sha256": "c3d00f0f5778baf6cbc76b140337447be2c63705514e0975e488cb3edb15b79c"
+    },
+    {
+      "geo": "TW",
+      "query": "macbook pro",
+      "source_rank": null,
+      "source_volume_label": "200+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T22:40:00+09:00",
+      "collected_at": "2026-10-27T23:25:49.370626+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=TW",
+      "response_sha256": "c3d00f0f5778baf6cbc76b140337447be2c63705514e0975e488cb3edb15b79c"
+    },
+    {
+      "geo": "TW",
+      "query": "npb",
+      "source_rank": null,
+      "source_volume_label": "200+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T21:40:00+09:00",
+      "collected_at": "2026-10-27T23:25:49.370626+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=TW",
+      "response_sha256": "c3d00f0f5778baf6cbc76b140337447be2c63705514e0975e488cb3edb15b79c"
+    },
+    {
+      "geo": "TW",
+      "query": "继承",
+      "source_rank": null,
+      "source_volume_label": "200+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T22:00:00+09:00",
+      "collected_at": "2026-10-27T23:25:49.370626+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=TW",
+      "response_sha256": "c3d00f0f5778baf6cbc76b140337447be2c63705514e0975e488cb3edb15b79c"
+    },
+    {
+      "geo": "TW",
+      "query": "烤雞",
+      "source_rank": null,
+      "source_volume_label": "200+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T21:50:00+09:00",
+      "collected_at": "2026-10-27T23:25:49.370626+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=TW",
+      "response_sha256": "c3d00f0f5778baf6cbc76b140337447be2c63705514e0975e488cb3edb15b79c"
+    },
+    {
+      "geo": "TW",
+      "query": "國 軍 加 薪",
+      "source_rank": null,
+      "source_volume_label": "10000+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T21:30:00+09:00",
+      "collected_at": "2026-10-27T23:25:49.370626+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=TW",
+      "response_sha256": "c3d00f0f5778baf6cbc76b140337447be2c63705514e0975e488cb3edb15b79c"
+    },
+    {
+      "geo": "TW",
+      "query": "豆腐媽媽",
+      "source_rank": null,
+      "source_volume_label": "500+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T22:50:00+09:00",
+      "collected_at": "2026-10-27T23:25:49.370626+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=TW",
+      "response_sha256": "c3d00f0f5778baf6cbc76b140337447be2c63705514e0975e488cb3edb15b79c"
+    },
+    {
+      "geo": "TW",
+      "query": "融資餘額",
+      "source_rank": null,
+      "source_volume_label": "1000+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T22:30:00+09:00",
+      "collected_at": "2026-10-27T23:25:49.370626+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=TW",
+      "response_sha256": "c3d00f0f5778baf6cbc76b140337447be2c63705514e0975e488cb3edb15b79c"
+    },
+    {
+      "geo": "TW",
+      "query": "以色列大選",
+      "source_rank": null,
+      "source_volume_label": "100+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T22:50:00+09:00",
+      "collected_at": "2026-10-27T23:25:49.370626+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=TW",
+      "response_sha256": "c3d00f0f5778baf6cbc76b140337447be2c63705514e0975e488cb3edb15b79c"
+    },
+    {
+      "geo": "TW",
+      "query": "停 水",
+      "source_rank": null,
+      "source_volume_label": "200+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T22:20:00+09:00",
+      "collected_at": "2026-10-27T23:25:49.370626+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=TW",
+      "response_sha256": "c3d00f0f5778baf6cbc76b140337447be2c63705514e0975e488cb3edb15b79c"
+    },
+    {
+      "geo": "US",
+      "query": "afg vs zim",
+      "source_rank": null,
+      "source_volume_label": "1000+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T22:50:00+09:00",
+      "collected_at": "2026-10-27T23:23:42.659953+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=US",
+      "response_sha256": "e54a2640e372c92f715725ed21138ff52b9cff6d9d24e1f9039d186cb43d2c85"
+    },
+    {
+      "geo": "US",
+      "query": "africa",
+      "source_rank": null,
+      "source_volume_label": "500+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T23:10:00+09:00",
+      "collected_at": "2026-10-27T23:23:42.659953+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=US",
+      "response_sha256": "e54a2640e372c92f715725ed21138ff52b9cff6d9d24e1f9039d186cb43d2c85"
+    },
+    {
+      "geo": "US",
+      "query": "googl stock",
+      "source_rank": null,
+      "source_volume_label": "200+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T22:50:00+09:00",
+      "collected_at": "2026-10-27T23:23:42.659953+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=US",
+      "response_sha256": "e54a2640e372c92f715725ed21138ff52b9cff6d9d24e1f9039d186cb43d2c85"
+    },
+    {
+      "geo": "US",
+      "query": "jennifer lawrence",
+      "source_rank": null,
+      "source_volume_label": "500+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T22:30:00+09:00",
+      "collected_at": "2026-10-27T23:23:42.659953+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=US",
+      "response_sha256": "e54a2640e372c92f715725ed21138ff52b9cff6d9d24e1f9039d186cb43d2c85"
+    },
+    {
+      "geo": "US",
+      "query": "jordyn tyson",
+      "source_rank": null,
+      "source_volume_label": "200+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T22:40:00+09:00",
+      "collected_at": "2026-10-27T23:23:42.659953+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=US",
+      "response_sha256": "e54a2640e372c92f715725ed21138ff52b9cff6d9d24e1f9039d186cb43d2c85"
+    },
+    {
+      "geo": "US",
+      "query": "policía",
+      "source_rank": null,
+      "source_volume_label": "200+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T22:40:00+09:00",
+      "collected_at": "2026-10-27T23:23:42.659953+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=US",
+      "response_sha256": "e54a2640e372c92f715725ed21138ff52b9cff6d9d24e1f9039d186cb43d2c85"
+    },
+    {
+      "geo": "US",
+      "query": "royal caribbean cruise",
+      "source_rank": null,
+      "source_volume_label": "1000+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T22:40:00+09:00",
+      "collected_at": "2026-10-27T23:23:42.659953+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=US",
+      "response_sha256": "e54a2640e372c92f715725ed21138ff52b9cff6d9d24e1f9039d186cb43d2c85"
+    },
+    {
+      "geo": "US",
+      "query": "susan saint james",
+      "source_rank": null,
+      "source_volume_label": "5000+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T22:30:00+09:00",
+      "collected_at": "2026-10-27T23:23:42.659953+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=US",
+      "response_sha256": "e54a2640e372c92f715725ed21138ff52b9cff6d9d24e1f9039d186cb43d2c85"
+    },
+    {
+      "geo": "US",
+      "query": "tim daly",
+      "source_rank": null,
+      "source_volume_label": "2000+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T22:30:00+09:00",
+      "collected_at": "2026-10-27T23:23:42.659953+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=US",
+      "response_sha256": "e54a2640e372c92f715725ed21138ff52b9cff6d9d24e1f9039d186cb43d2c85"
+    },
+    {
+      "geo": "US",
+      "query": "today show",
+      "source_rank": null,
+      "source_volume_label": "200+",
+      "source_updated_at": null,
+      "trend_started_at": "2026-10-27T22:30:00+09:00",
+      "collected_at": "2026-10-27T23:23:42.659953+09:00",
+      "source_url": "https://trends.google.com/trending/rss?geo=US",
+      "response_sha256": "e54a2640e372c92f715725ed21138ff52b9cff6d9d24e1f9039d186cb43d2c85"
+    }
+  ],
+  "topic_state": {
+    "total": 60,
+    "held": 60,
+    "topic_memberships": 60,
+    "assessments": 60,
+    "grouping_proposals": 1,
+    "grouping_reviews": 0,
+    "packages": 1,
+    "sources_in_test_db": 0,
+    "example_grouping_proposal": {
+      "method": "same_query_cross_geo",
+      "confidence": "0.800",
+      "rationale": "Exact query text appears in different geographies; event identity is unverified."
+    },
+    "example_candidate": {
+      "id": "976b0912-0819-5d6e-a143-8b8f3caa4d81",
+      "representative_geo": "SG",
+      "representative_query": "israel election",
+      "score": "54.15",
+      "decision": "held",
+      "reasons": [
+        "no_current_reviewed_fact_source_linked",
+        "fewer_than_three_source_span_verified_facts",
+        "two_independent_sources_not_human_verified",
+        "reader_value_and_analysis_fit_require_human_review"
+      ]
+    }
+  },
+  "research_package": {
+    "id": "5890ed80-54e4-4f0b-996f-cb85b0dd4f12",
+    "status": "insufficient_evidence",
+    "verified_fact_count": 0,
+    "independent_source_count": 0,
+    "payload": {
+      "title": "israel election",
+      "sources": [],
+      "timeline": [],
+      "topic_id": "976b0912-0819-5d6e-a143-8b8f3caa4d81",
+      "unknowns": [
+        "Trend ranking was not supplied.",
+        "Trend RSS does not state query language.",
+        "Cross-geography event identity is unconfirmed.",
+        "Source conflicts and semantic support require human review.",
+        "No current reviewed evidence source is linked."
+      ],
+      "background": [],
+      "core_facts": [],
+      "geographies": [
+        "SG"
+      ],
+      "observations": [
+        {
+          "geo": "SG",
+          "query": "israel election",
+          "platform": "google_trends",
+          "source_url": "https://trends.google.com/trending/rss?geo=SG",
+          "started_at": "2026-10-27T20:30:00+09:00",
+          "source_rank": null,
+          "collected_at": "2026-10-27T23:27:57.166876+09:00",
+          "observation_id": "07da9f0a-fdda-4753-8092-0b9a717cb228",
+          "source_interest_label": "500+"
+        }
+      ],
+      "publish_ready": false,
+      "language_status": "not_supplied_by_trends_source",
+      "source_language": "und",
+      "source_conflicts": {
+        "items": [],
+        "status": "human_review_required"
+      },
+      "analytical_angles": [
+        "Explain only implications directly supported by the linked facts; label analysis separately from facts."
+      ],
+      "prohibited_claims": [
+        "Do not infer rank or numeric search volume from RSS order/labels.",
+        "Do not add unsupported statistics, quotations, interviews, causes, forecasts, or first-hand experience.",
+        "Do not claim independent corroboration until distinct-source independence has been reviewed."
+      ],
+      "recommended_outline": [
+        "What the observed search signal says (with geography and collection time)",
+        "Verified facts and source-linked context",
+        "What the available evidence does not establish",
+        "Cautious analysis questions for human editorial review",
+        "References"
+      ],
+      "verified_fact_count": 0,
+      "eligible_source_count": 0,
+      "human_review_required": true,
+      "human_verified_independent_source_groups": 0
+    }
+  },
+  "limitations": [
+    "The topic package has no reviewed factual sources or facts and remains insufficient_evidence.",
+    "RSS does not provide an explicit numeric rank; all source_rank values are null.",
+    "RSS does not supply query-language metadata; stored source_language remains undetermined.",
+    "Historical successful RSS run rows predate migration 038 and retain null http_status; the legacy success path accepted HTTP 200, but the exact response code was not persisted and was not backfilled.",
+    "No full article, localization, or Blogger write was run."
+  ]
+}

@@ -10,6 +10,9 @@ export type State = {
   collection_jobs: Row[]; measurements: Row[]; stage_runs: Row[]; coverage: Row[]; experiments?: Row[];
   trend_sources?: Row[]; trend_collection_runs?: Row[]; trend_observations?: Row[];
   trend_collection_configured?: boolean;
+  trend_topics?: Row[]; trend_grouping_proposals?: Row[]; trend_research_packages?: Row[]; trend_topic_sources?: Row[];
+  trend_scoring_config?: Row | null;
+  trend_topic_workspace_configured?: boolean;
   evidence_facts?: Row[]; localizations?: Row[]; glossary?: Row[]; glossary_revisions?: Row[];
   article_evaluations?: Row[]; worker?: Row | null; evaluation_worker?: Row | null; daily_workload?: Row[]; operations_summary?: Row;
   manuscript_publications?: Row[];
@@ -136,6 +139,74 @@ export default function Research({ initial }: { initial: State }) {
         {(["KR", "US", "JP", "TW", "HK", "SG"] as const).map(geo => <button key={geo} disabled={busy || !data.trend_collection_configured} onClick={() => void act("trends/collect", { geo })}>{geo} 트렌드 1회 수집</button>)}
         <h4>최근 수집 실행</h4><pre>{JSON.stringify(data.trend_collection_runs ?? [], null, 2)}</pre>
         <h4>저장된 검색어 (최대 300건)</h4><pre>{JSON.stringify(data.trend_observations ?? [], null, 2)}</pre>
+        <h4>주제 후보 그룹화 및 게시 가치 평가</h4>
+        <p>같은 지역의 정규화된 동일 검색어만 묶습니다. 지역 간 유사 검색어는 사건 동일성을 확인할 수 없어 검토 제안으로만 남깁니다. 자동 선택·게시 승인 기능은 없습니다.</p>
+        {!data.trend_topic_workspace_configured && <p role="status">주제 및 자료 패키지 스키마가 적용되지 않았습니다.</p>}
+        {data.trend_scoring_config && <>
+          <p>Scoring rubric v{str(data.trend_scoring_config, "version")}: weights and conservative evidence thresholds are versioned in the database. Thresholds cannot be lowered below the safety baseline. Scores do not approve content.</p>
+          <pre>{JSON.stringify(data.trend_scoring_config, null, 2)}</pre>
+          <Editor disabled={busy} label="Create scoring rubric version" defaults={data.trend_scoring_config.weights as Row}
+            fields={[...(["source_interest_label", "freshness", "specificity", "reviewed_source_coverage", "independent_confirmation", "deduplication_risk"].map(name => ({ name, label: name, type: "number" }))), { name: "rationale", label: "Change rationale", type: "textarea" }]}
+            submit={body => { const { rationale, ...weights } = body; return act("topics/scoring-configs", {
+              weights, thresholds: data.trend_scoring_config?.thresholds ?? {}, rationale,
+            }); }}/>
+        </>}
+        <button disabled={busy || !data.trend_topic_workspace_configured} onClick={() => void act("topics/build", {})}>최근 7일 주제 그룹화 및 평가</button>
+        {(data.trend_topics ?? []).map(topic => {
+          const assessment = (topic.latest_assessment as Row | null) ?? {};
+          const editorial = (topic.latest_editorial_decision as Row | null) ?? {};
+          const pack = (topic.latest_package as Row | null) ?? {};
+          const observations = (topic.observations as Row[] | null) ?? [];
+          const topicSourceLinks = (data.trend_topic_sources ?? []).filter(link => link.topic_id === topic.id);
+          const reviewedSourceOptions = data.sources.filter(source => source.approved === true).map(source => ({ value: str(source, "id"), label: `${str(source, "source_name")} · ${str(source, "url")}` }));
+          return <article key={str(topic, "id")}>
+            <h5>{str(topic, "representative_query")} · {str(topic, "representative_geo")} · {str(assessment, "decision") || "미평가"}</h5>
+            <p>Topic ID {str(topic, "id")} · 언어 {str(topic, "source_language")} · 그룹 방식 {str(topic, "grouping_method")} · 신뢰도 {str(topic, "grouping_confidence")} · 사건 동일성 확정 여부: 아니오</p>
+            <p>평가 점수 {str(assessment, "score") || "미평가"}/100 · 검토 판단 {str(editorial, "decision") || "대기"} · 사람 검토 필수</p>
+            {Array.isArray(assessment.reasons) && <p>보류·검토 사유: {(assessment.reasons as string[]).join(" · ")}</p>}
+            <button disabled={busy} onClick={() => void act(`topics/${str(topic, "id")}/assess`, {})}>현재 근거로 재평가</button>
+            <button disabled={busy} onClick={() => void act(`topics/${str(topic, "id")}/package`, {})}>근거 패키지 생성</button>
+            <Editor disabled={busy} label="주제 선정·보류·제외 결정 기록" defaults={{ decision: "hold", reviewer: "", reason: "" }}
+              fields={[{ name: "decision", label: "편집 판단", options: [{ value: "selected", label: "선정" }, { value: "hold", label: "보류" }, { value: "excluded", label: "제외" }] }, { name: "reviewer", label: "검토자" }, { name: "reason", label: "사유", type: "textarea" }]}
+              submit={body => act(`topics/${str(topic, "id")}/decisions`, { ...body, idempotency_key: crypto.randomUUID() })}/>
+            <Editor disabled={busy || reviewedSourceOptions.length === 0} label="기존 승인·근거 검증된 출처 연결" defaults={{ link_reason: "", linked_by: "" }}
+              fields={[{ name: "source_id", label: "승인된 출처", options: reviewedSourceOptions }, { name: "link_reason", label: "주제 관련성 사유" }, { name: "linked_by", label: "연결자" }]}
+              submit={body => act(`topics/${str(topic, "id")}/sources`, { ...body, idempotency_key: crypto.randomUUID() })}/>
+            {topicSourceLinks.map(link => <div key={str(link, "id")}>
+              <p>출처: {str(link, "source_name")} · 사실 {str(link, "verified_fact_count")}건 · 승인 {String(link.latest_approved ?? false)} · 독립성 {str(link, "independence_decision") || "미검토"}</p>
+              <Editor disabled={busy} label="출처 독립성 검토 기록" defaults={{ decision: "uncertain", reviewer: "", reason: "", comparison_group: "" }}
+                fields={[{ name: "decision", label: "독립성", options: [{ value: "independent", label: "독립 출처" }, { value: "same_underlying_source", label: "동일 원출처" }, { value: "uncertain", label: "불확실" }] }, { name: "reviewer", label: "검토자" }, { name: "reason", label: "비교 근거", type: "textarea" }, { name: "comparison_group", label: "비교 그룹", optional: true }]}
+                submit={body => act(`topic-sources/${str(link, "id")}/independence-reviews`, { ...body, idempotency_key: crypto.randomUUID() })}/>
+            </div>)}
+            <p>관측 {observations.length}건 · 관련 교차지역 그룹화 제안 {str(topic, "grouping_proposal_count")}건</p>
+            <details><summary>검색어 관측과 원천 자료</summary><pre>{JSON.stringify(observations, null, 2)}</pre></details>
+            <details><summary>최신 게시 가치 평가</summary><pre>{JSON.stringify(assessment, null, 2)}</pre></details>
+            <details><summary>최신 Research Package</summary><pre>{JSON.stringify(pack, null, 2)}</pre></details>
+          </article>;
+        })}
+        <h4>사건 동일성 검토 제안</h4>{(data.trend_grouping_proposals ?? []).map(proposal => {
+          const leftObservation = (proposal.left_observation as Row | null) ?? {};
+          const rightObservation = (proposal.right_observation as Row | null) ?? {};
+          const latestReview = (proposal.latest_review as Row | null) ?? {};
+          return <article key={str(proposal, "id")}>
+            <p>{str(leftObservation, "geo")} ? {str(leftObservation, "query")} ? {str(rightObservation, "geo")} ? {str(rightObservation, "query")}</p>
+            <p>{str(proposal, "method")} ? confidence {str(proposal, "confidence")} ? {str(proposal, "rationale")}</p>
+            <p>Review: {str(latestReview, "decision") || "pending"} ? event group {str(latestReview, "event_group_id") || "unassigned"}</p>
+            <Editor disabled={busy} label="Record grouping review" defaults={{ decision: "insufficient_information", reviewer: "", rationale: "", event_group_id: "" }}
+              fields={[
+                { name: "decision", label: "Decision", options: [
+                  { value: "same_event", label: "Same event" },
+                  { value: "different_event", label: "Different events" },
+                  { value: "insufficient_information", label: "Insufficient information" },
+                ] },
+                { name: "event_group_id", label: "Event group UUID (required for same event)", optional: true },
+                { name: "reviewer", label: "Reviewer" },
+                { name: "rationale", label: "Evidence and rationale", type: "textarea" },
+              ]}
+              submit={body => act(`grouping-proposals/${str(proposal, "id")}/reviews`, { ...body, idempotency_key: crypto.randomUUID() })}/>
+          </article>;
+        })}
+        <h4>Research Package 이력</h4><pre>{JSON.stringify(data.trend_research_packages ?? [], null, 2)}</pre>
       </article>
       <p>Fed·SEC 공식 자료와 Wikidata CC0 구조화 메타데이터만 허용합니다. Wikidata 후보는 공식 발표·시세·영업·효능 검증 자료가 아니며 승인 대기입니다. 검색량·경쟁도·CPC는 미수집입니다.</p>
       {data.collection_sources.map(s => <article key={str(s, "id")}><h3>{str(s, "name")}</h3><p>{str(s, "endpoint")}</p><p>{str(s, "rights")} · <a href={str(s, "terms_url")} target="_blank" rel="noreferrer">이용 조건</a></p>

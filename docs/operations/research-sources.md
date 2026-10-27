@@ -47,3 +47,9 @@ On 2026-10-27, two live KR RSS GET requests returned successfully. The first res
 ## AI provider eligibility
 
 The existing local Qwen3 provider remains the only enabled content-generation provider. Gemini API documentation describes a free tier for selected models, but free-tier eligibility is project-specific, the free-tier content handling differs from paid tier, and paid use is activated by linking billing; a project API key alone does not prove that calls remain free. No Gemini credential, billing state, or no-paid-fallback guard was verified for this deployment, so Gemini remains disabled. No remote AI API was called.
+
+## P5-CONTENT-001 topic evidence gate (2026-10-27)
+
+Trend observations are query-interest signals only. The topic workspace groups exact normalized queries only within their source geography, keeps event identity unconfirmed, and sends cross-region overlaps to a human-review proposal. A versioned score is triage only. A Research Package can reference only existing current reviewed source records and `source_span_verified` facts; it does not fetch arbitrary URLs. To become evidence-ready it requires at least two reviewed current sources, at least two human-reviewed independent-source groups, and at least three verified facts, while excluding broad generic queries. Reader value, analysis, source rights and semantic support still need human review. All packages retain `publish_ready=false`.
+
+Live RSS regions US, JP, TW, HK and SG were fetched once each for P5-CONTENT-001; each returned 10 items via the successful HTTP 200 path. Historical DB rows predate HTTP-status persistence and keep null status; migration 038 does not backfill. Actual ranks were absent and stay null. No suitable trend topic had a linked source/fact in the isolated DB, so no article-ready package was produced. The project did not use Google Trends RSS as article evidence. RSS reuse in monetized content remains subject to source-specific rights review.
