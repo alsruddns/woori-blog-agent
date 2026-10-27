@@ -140,3 +140,8 @@ OAuth 토큰·API Key·비밀번호를 코드에 저장하지 않는다. .env �
 - Default publication mode is manual. Editing approval, publication approval, and actual Blogger write permission are separate. Keep live Blogger create/update/delete and automatic publication blocked until a separate explicit operations approval; do not set `publish_ready=true`.
 - If a published Blogger post ID exists, future edits must be modeled as updates to that same blog/post identity, not as a duplicate insert. Read-only synchronization is the only Blogger integration allowed before approval; never fabricate remote post IDs or treat Mock IDs as real.
 - Preserve external service cost gates and append-only audit events for revisions, review decisions, publication state, and settings. Scheduling, preview, and editor saves do not bypass quality or human approval.
+
+## Database-backed integration test isolation
+- Tests that create content, jobs, revisions, or audit events must run in an explicitly disposable isolated database or inside a forced-rollback outer transaction. API and Worker connections used by the same test must share that isolation boundary.
+- Tests must verify that operational content and audit counts remain unchanged after teardown. Never rely on test names, random keys, or later cleanup to make writes to the operational `.env` database safe.
+- Do not delete leaked test rows from immutable operational tables. Diagnose and preserve them, then fix the test isolation before rerunning.

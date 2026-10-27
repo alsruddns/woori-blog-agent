@@ -1,5 +1,11 @@
 # Changelog
 
+## Phase 5-B (operations DB integrity and editor integration; 2026-10-27)
+- Traced the 12 operational content versions after the 348-row checkpoint to four unisolated runs of the direct-SQL lease recovery integration test; preserved the immutable fixture rows and associated diagnostic audit history.
+- Changed the integration-test API/Worker connections to share a forced-rollback transaction and added persisted content/audit count assertions; added a permanent AGENTS.md rule against committed test fixtures in the operational database.
+- Verified separate operations/evaluation database identities, least-privilege runtime roles, immutable content/audit protections, and the existing publication fail-closed state. No Blogger request or AI/API inference was performed.
+- Current 3100/8100 listeners remain on older code; no forced restart was attempted. Latest browser editor integration remains pending a controlled graceful restart.
+
 ## Phase 5-A (manuscript editing and publishing preparation; 2026-10-27)
 - Added a filtered manuscript workbench for source-backed Fed/SEC drafts with locale, registered blog, category, editorial/publication state, title search, and modified-time sorting; keeps the full stored sample visible.
 - Added a versioned human editor for title, safe formatted HTML, SEO description, keywords, Blogger labels, locale-matched blog target, manual/draft/scheduled intent, and KST planned time. Every save re-runs existing quality checks, rejects stale bases, and appends rather than overwrites.

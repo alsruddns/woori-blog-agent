@@ -1,0 +1,250 @@
+{
+  "phase": "5-B",
+  "work_id": "P5-B-001",
+  "recorded_at": "2026-10-27",
+  "timezone": "Asia/Seoul",
+  "branch": "develop",
+  "baseline_commit": "1315ec023b3d9c78b634cfdade3f0250d95e7489",
+  "operational_version_increase": {
+    "checkpoint_count": 348,
+    "checkpoint_as_of": "2026-10-27T13:20:28.201341+09:00",
+    "current_count": 360,
+    "delta": 12,
+    "cause": "Four persisted runs of services/api/tests/test_integration.py::test_content_versions_and_lease_recovery each inserted three direct SQL test fixtures without rollback.",
+    "human_editor_requests": 0,
+    "evaluation_drafts_mixed_into_operations": false,
+    "automatic_content_retry": false,
+    "idempotency_defect_in_editor_api": false,
+    "test_isolation_defect": true,
+    "content_rows_modified_or_deleted": 0,
+    "versions": [
+      {
+        "id": "7d47e7a8-7915-9153-1957ecb668be",
+        "group_id": "52caf665-9d78-444e-8f9c-b17cff65aa7a",
+        "locale": "ko",
+        "version": 1,
+        "fixture": "original",
+        "created_at": "2026-10-27T13:53:05.203233+09:00"
+      },
+      {
+        "id": "677fb908-2674-4130-9083-4010648abad3",
+        "group_id": "52caf665-9d78-444e-8f9c-b17cff65aa7a",
+        "locale": "en",
+        "version": 1,
+        "fixture": "localized",
+        "created_at": "2026-10-27T13:53:05.203233+09:00"
+      },
+      {
+        "id": "820ef556-f78a-453b-9e1b-a864b771de97",
+        "group_id": "52caf665-9d78-444e-8f9c-b17cff65aa7a",
+        "locale": "ko",
+        "version": 2,
+        "fixture": "revised",
+        "created_at": "2026-10-27T13:53:05.203233+09:00"
+      },
+      {
+        "id": "720f3be5-fdd6-4fe1-993d-af2c5f62ef37",
+        "group_id": "149bde4d-54e2-49aa-8d13-42f8a0f58be6",
+        "locale": "ko",
+        "version": 1,
+        "fixture": "original",
+        "created_at": "2026-10-27T13:56:15.291977+09:00"
+      },
+      {
+        "id": "6f951f8a-d7ad-4354-be52-8d027dd82c07",
+        "group_id": "149bde4d-54e2-49aa-8d13-42f8a0f58be6",
+        "locale": "en",
+        "version": 1,
+        "fixture": "localized",
+        "created_at": "2026-10-27T13:56:15.291977+09:00"
+      },
+      {
+        "id": "a56579c1-1394-4524-a346-f1049611ac6a",
+        "group_id": "149bde4d-54e2-49aa-8d13-42f8a0f58be6",
+        "locale": "ko",
+        "version": 2,
+        "fixture": "revised",
+        "created_at": "2026-10-27T13:56:15.291977+09:00"
+      },
+      {
+        "id": "f6c433af-5c0d-498d-8033-9ea3d10a6ac7",
+        "group_id": "12a59a7c-d80a-4c3d-8b18-4f4b6f205c53",
+        "locale": "ko",
+        "version": 1,
+        "fixture": "original",
+        "created_at": "2026-10-27T13:58:58.031553+09:00"
+      },
+      {
+        "id": "f364ad62-1561-4dda-9285-a7bcd82d68ae",
+        "group_id": "12a59a7c-d80a-4c3d-8b18-4f4b6f205c53",
+        "locale": "en",
+        "version": 1,
+        "fixture": "localized",
+        "created_at": "2026-10-27T13:58:58.031553+09:00"
+      },
+      {
+        "id": "34ea52fc-3708-4ccb-9777-469c0e5d497e",
+        "group_id": "12a59a7c-d80a-4c3d-8b18-4f4b6f205c53",
+        "locale": "ko",
+        "version": 2,
+        "fixture": "revised",
+        "created_at": "2026-10-27T13:58:58.031553+09:00"
+      },
+      {
+        "id": "4eb9810b-58cc-4ff4-bb35-2f143224bbc6",
+        "group_id": "e94fa6cc-312a-45f2-b2a4-a9389fb9be37",
+        "locale": "ko",
+        "version": 1,
+        "fixture": "original",
+        "created_at": "2026-10-27T14:03:29.818802+09:00"
+      },
+      {
+        "id": "c626b79a-b153-4ba3-a624-9982f10e41aa",
+        "group_id": "e94fa6cc-312a-45f2-b2a4-a9389fb9be37",
+        "locale": "en",
+        "version": 1,
+        "fixture": "localized",
+        "created_at": "2026-10-27T14:03:29.818802+09:00"
+      },
+      {
+        "id": "f432e01b-707a-41ab-9930-e30302f14443",
+        "group_id": "e94fa6cc-312a-45f2-b2a4-a9389fb9be37",
+        "locale": "ko",
+        "version": 2,
+        "fixture": "revised",
+        "created_at": "2026-10-27T14:03:29.818802+09:00"
+      }
+    ],
+    "test_fixture_runs": [
+      {
+        "created_at": "2026-10-27T13:53:05.203233+09:00",
+        "job_run_id": "fd79e8a9-4ef8-4e66-aeb2-4f7319517776",
+        "task_kind": "diagnostic",
+        "status": "failed",
+        "attempts": 3,
+        "error": "LeaseExpired",
+        "audit_event_id": 160304
+      },
+      {
+        "created_at": "2026-10-27T13:56:15.291977+09:00",
+        "job_run_id": "a3e1aa0d-b41c-4e2e-8052-9df27f15096e",
+        "task_kind": "diagnostic",
+        "status": "failed",
+        "attempts": 3,
+        "error": "LeaseExpired",
+        "audit_event_id": 162097
+      },
+      {
+        "created_at": "2026-10-27T13:58:58.031553+09:00",
+        "job_run_id": "23f2d515-f3dc-40e8-b462-1af460a46ba3",
+        "task_kind": "diagnostic",
+        "status": "failed",
+        "attempts": 3,
+        "error": "LeaseExpired",
+        "audit_event_id": 163889
+      },
+      {
+        "created_at": "2026-10-27T14:03:29.818802+09:00",
+        "job_run_id": "bb0ef980-185b-4c68-ab35-71e27423cbbd",
+        "task_kind": "diagnostic",
+        "status": "failed",
+        "attempts": 3,
+        "error": "LeaseExpired",
+        "audit_event_id": 165730
+      }
+    ],
+    "generation_job_links": 0,
+    "version_created_audit_events": 0,
+    "creator_or_request_path_column_available": false
+  },
+  "database_isolation": {
+    "operations_database": "woori_blog_agent",
+    "operations_app_role": "woori_app",
+    "evaluation_database": "woori_blog_agent_eval",
+    "evaluation_runtime_role": "woori_eval_reader",
+    "database_targets_distinct": true,
+    "operations_app_content_version_update_delete": false,
+    "operations_immutable_content_and_audit_triggers": true,
+    "evaluation_reader_select_only": true,
+    "before_test_operations_versions": 360,
+    "after_targeted_rollback_test_operations_versions": 360,
+    "before_test_operations_audits": 1305,
+    "after_targeted_rollback_test_operations_audits": 1305,
+    "evaluation_versions": 260,
+    "evaluation_audits": 655,
+    "migration_applied": false,
+    "after_completion_audit_event_audits": 1306,
+    "completion_audit_event_id": 169253,
+    "completion_audit_event_type": "development.phase5b.test_isolation_fixed",
+    "content_versions_after_completion_audit_event": 360
+  },
+  "runtime": {
+    "dashboard": {
+      "port": 3100,
+      "pid": 37740,
+      "started_at": "2026-10-27T10:51:10+09:00",
+      "http_research": 200,
+      "latest_editor_ui": false,
+      "process_restarted": false
+    },
+    "api": {
+      "port": 8100,
+      "pid": 32432,
+      "started_at": "2026-10-27T10:51:09+09:00",
+      "health": 200,
+      "research_state": 200,
+      "summary": 200,
+      "latest_editor_fields": false,
+      "process_restarted": false
+    },
+    "active_external_client_sessions_observed": 0,
+    "latest_browser_editor_save_flow_verified": false,
+    "restart_reason_not_performed": "Existing console process had no controlled graceful-shutdown channel; forced termination was avoided.",
+    "temporary_server_started": false
+  },
+  "editorial_review": {
+    "rollback_api_save_test": "passed",
+    "targeted_integration_tests": "2 passed",
+    "full_suite_tests": "171 passed",
+    "latest_production_build": "passed",
+    "human_review_rows": 0,
+    "human_review_auto_approved": false,
+    "publish_ready_true_rows": 0,
+    "operational_publish_approval": "not_implemented",
+    "live_write_enabled": false,
+    "automatic_publication_enabled": false
+  },
+  "blogger": {
+    "active_locale_mappings_with_blog_ids": 4,
+    "oauth_scope": "blogger.readonly",
+    "cost_status": "provider_cost_unverified",
+    "api_requests_this_phase": 0,
+    "live_write_requests_this_phase": 0,
+    "real_writer": "fails closed with production_writes_disabled",
+    "fake_writer_requires_mock_transport": true
+  },
+  "verification": {
+    "verify_script": "scripts/verify.ps1",
+    "ruff": "passed",
+    "mypy": "passed (28 source files)",
+    "pytest": "passed (171 tests)",
+    "wheel": "passed (isolated build)",
+    "dashboard_eslint": "passed",
+    "dashboard_typecheck": "passed",
+    "dashboard_production_build": "passed",
+    "git_diff_check": "passed",
+    "secrets_scan": "passed (scripts/verify-secrets.py)",
+    "database_migration": "not needed",
+    "paid_api_calls": 0,
+    "blogger_writes": 0
+  },
+  "phase_audit_event_id": 169253,
+  "commit": null,
+  "push": null,
+  "limitations": [
+    "Live 3100/8100 listeners are older than current develop; a controlled graceful restart is pending.",
+    "Latest browser-based editor save/compare flow was not verified; persistence/API save was verified only in a rollback transaction.",
+    "Human review remains pending for all drafts.",
+    "Blogger cost remains unverified and live write permission remains disabled."
+  ]
+}
