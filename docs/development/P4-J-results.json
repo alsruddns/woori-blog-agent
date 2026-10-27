@@ -370,5 +370,11 @@
     "docs/development/P3-9T-run-sec-ko-b78ef69b-def8-48cb-aecc-dcfe0e2537c9.json",
     "docs/development/P3-9T-run-sec-ja-0650f35c-35d1-42c1-a49c-9f6e7c99f510.json",
     "docs/development/P3-9T-run-sec-zh-CN-6d8319ad-ed3b-4976-a1a7-d13a2ee3ca5d.json"
-  ]
+  ],
+  "git": {
+    "phase_results_commit": "b2ce99ccb28572ea90c14b0f76cc59494a05617a",
+    "branch": "develop",
+    "origin_push": "pending_documentation_commit",
+    "main_modified": false
+  }
 }
