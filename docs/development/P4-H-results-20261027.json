@@ -162,8 +162,11 @@
   },
   "git": {
     "branch": "develop",
+    "implementation_commit": "8e202d3d3a4edb51547628d033d033963db46bb1",
+    "origin_develop_pushed": true,
+    "main_commit": "96c7ae5d23f48db0774066a87a8f3259f9c20c97",
+    "origin_main_commit": "96c7ae5d23f48db0774066a87a8f3259f9c20c97",
     "main_changed": false,
-    "commit": null,
-    "origin_develop_pushed": false
+    "working_tree_after_implementation_commit": "clean"
   }
 }
