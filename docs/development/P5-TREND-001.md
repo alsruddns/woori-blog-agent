@@ -72,4 +72,5 @@
 
 - Costs: no added service cost; two public RSS GETs only.
 - Blogger: no API requests or writes.
-- Commit/push: to be recorded after this phase commit.
+- Implementation commit: `580f42a` (`Add : [Research] Collect regional Google Trends RSS`).
+- Push: `origin/develop` succeeded (`28a20f6..580f42a`).

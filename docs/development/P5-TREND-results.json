@@ -99,7 +99,7 @@
     "verify_script_rerun": "passed on final tree",
     "secret_scan_final": "passed"
   },
-  "commit": null,
-  "push": null,
+  "commit": "580f42a",
+  "push": "origin/develop succeeded; 28a20f6..580f42a",
   "main_changed": false
 }
