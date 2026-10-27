@@ -11,7 +11,7 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
   if (!allowed) return NextResponse.json({ error: "Unsupported operation" }, { status: 404 });
   try {
     const body = request.method === "GET" ? undefined : await request.text();
-    const bodyLimit = route === "article-revisions" ? 60000 : 20000;
+    const bodyLimit = route === "article-revisions" ? 150000 : 20000;
     if (body && Buffer.byteLength(body) > bodyLimit) return NextResponse.json({ error: "Request too large" }, { status: 413 });
     const response = await fetch(`${API_BASE}/admin/research/${path.map(encodeURIComponent).join("/")}`, {
       method: request.method, headers: headers(), body, cache: "no-store", signal: AbortSignal.timeout(15000),

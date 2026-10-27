@@ -1,5 +1,14 @@
 # Changelog
 
+## Phase 5-A (manuscript editing and publishing preparation; 2026-10-27)
+- Added a filtered manuscript workbench for source-backed Fed/SEC drafts with locale, registered blog, category, editorial/publication state, title search, and modified-time sorting; keeps the full stored sample visible.
+- Added a versioned human editor for title, safe formatted HTML, SEO description, keywords, Blogger labels, locale-matched blog target, manual/draft/scheduled intent, and KST planned time. Every save re-runs existing quality checks, rejects stale bases, and appends rather than overwrites.
+- Added sandboxed mobile/desktop preview and server-side allowlist HTML sanitation; scripts, event attributes, active embeds and unsafe links are dropped.
+- Added existing Blogger post-ID mapping visibility for future updates; no live adapter was enabled and selecting a target or schedule does not dispatch a post.
+- Migrations 030–032 record editor metadata, base-version links/body hashes, and any verified existing Blogger post ID. A published draft cannot be retargeted to another blog; Blogger writes, automatic publication, paid API calls, and `publish_ready` activation remain blocked.
+- Preserved every saved Fed/SEC content version in the review list (18 distinct versions observed) instead of collapsing older versions by topic and locale. The isolated evaluation DB remains the source of draft bodies; edits are append-only in the operations DB.
+- Fixed the missing optimistic-base-hash column with migration 032 and removed an unnecessary row-update lock that prevented the least-privilege app role from saving editor revisions.
+
 ## Phase 4-M (editorial review and verifier analysis; 2026-10-27)
 - Rechecked the immutable 12-draft Fed/SEC sample read-only: detector false positives were isolated and 10 now pass machine checks; two real output problems remain held. All 12 still need human review and remain non-publishable.
 - Fixed date-bearing query terms being mistaken for internal IDs, `Q Apple Inc` being extracted from `10-Q`, and source-supported `USD` wording being treated as an unsupported proper name. Added focused regression tests without relaxing unsupported-number, quote, or language gates.

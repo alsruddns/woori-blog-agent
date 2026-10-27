@@ -1,14 +1,14 @@
 """Authenticated research management. Every control is backed by durable state."""
 
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Any, Literal, Self
 from urllib.parse import urlsplit
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from croniter import croniter
 from fastapi import APIRouter, HTTPException
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from . import collection, pipeline
 from .ai import Draft, EngineFailure
@@ -216,13 +216,39 @@ class ArticleReviewProgress(Input):
 class ArticleEditorialRevision(Input):
     evaluation_id: UUID
     content_version_id: UUID
+    base_editorial_version_id: UUID | None = None
     idempotency_key: str = Field(min_length=16, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
     reviewer_name: str = Field(min_length=2, max_length=80)
     reason: str = Field(min_length=10, max_length=2000)
     title: str = Field(min_length=1, max_length=500)
-    body: str = Field(min_length=1, max_length=50000)
+    body: str = Field(default="", max_length=50000)
+    html_body: str = Field(default="", max_length=100000)
     summary: str = Field(min_length=1, max_length=3000)
+    seo_description: str | None = Field(default=None, max_length=500)
     keywords: list[str] = Field(min_length=1, max_length=6)
+    blogger_labels: list[str] = Field(default_factory=list, max_length=20)
+    target_blog_id: UUID | None = None
+    existing_remote_post_id: str | None = Field(default=None, min_length=1, max_length=500)
+    publication_mode: Literal["draft", "manual", "scheduled"] = "manual"
+    planned_publish_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def valid_editorial_body_and_schedule(self) -> Self:
+        if not self.body.strip() and not self.html_body.strip():
+            raise ValueError("editorial_body_required")
+        if self.publication_mode == "scheduled":
+            if self.planned_publish_at is None or self.planned_publish_at.tzinfo is None:
+                raise ValueError("scheduled_editorial_requires_timezone_aware_future_date")
+            if self.planned_publish_at <= datetime.now(UTC):
+                raise ValueError("scheduled_editorial_requires_timezone_aware_future_date")
+        elif self.planned_publish_at is not None and self.planned_publish_at.tzinfo is None:
+            raise ValueError("planned_publish_at_requires_timezone")
+        labels = [" ".join(label.casefold().split()) for label in self.blogger_labels]
+        if any(not label.strip() or len(label) > 200 for label in self.blogger_labels):
+            raise ValueError("blogger_labels_must_be_bounded")
+        if len(labels) != len(set(labels)):
+            raise ValueError("blogger_labels_must_be_unique")
+        return self
 
     @field_validator("keywords")
     @classmethod
@@ -391,8 +417,22 @@ def state() -> dict[str, Any]:
         result["article_editorial_versions"] = conn.execute(
             """SELECT id,evaluation_id,base_content_version_id,revision_number,idempotency_key,
                 reviewer_name,reason,title,body,summary,keywords,machine_checks,machine_passed,
-                quality_status,body_sha256,created_at
+                quality_status,body_sha256,html_body,html_body_sha256,seo_description,blogger_labels,
+                target_blog_id,publication_mode,planned_publish_at,base_editorial_version_id,
+                base_body_sha256,existing_remote_post_id,created_at
             FROM article_editorial_versions ORDER BY created_at DESC,id DESC LIMIT 100"""
+        ).fetchall()
+        result["manuscript_publications"] = conn.execute(
+            """SELECT j.id,j.content_version_id,j.blog_id,b.language_code,b.url,j.status,
+                j.publication_state,j.scheduled_at,j.updated_at,j.simulation_only,j.adapter_type
+            FROM publishing_jobs j JOIN blogger_blogs b ON b.id=j.blog_id
+            ORDER BY j.updated_at DESC,j.id DESC LIMIT 200"""
+        ).fetchall()
+        result["manuscript_publication_records"] = conn.execute(
+            """SELECT r.content_version_id,r.blog_id,r.remote_post_id,r.published_at,
+                b.language_code,b.url FROM publishing_records r
+            JOIN blogger_blogs b ON b.id=r.blog_id
+            ORDER BY r.published_at DESC,r.id DESC LIMIT 500"""
         ).fetchall()
         evaluation_result = result.get("evaluation_results") or {}
         editorial_articles = evaluation_result.get("editorial_articles") or []
@@ -413,6 +453,14 @@ def state() -> dict[str, Any]:
                 dict(revision) for revision in result["article_editorial_versions"]
                 if str(revision["evaluation_id"]) == evaluation_id
                 and str(revision["base_content_version_id"]) == version_id
+            ]
+            article["publication_jobs"] = [
+                dict(job) for job in result["manuscript_publications"]
+                if str(job["content_version_id"]) == version_id
+            ]
+            article["published_mappings"] = [
+                dict(record) for record in result["manuscript_publication_records"]
+                if str(record["content_version_id"]) == version_id
             ]
             newest_event = article["review_events"][0] if article["review_events"] else None
             newest_review = article["review_history"][0] if article["review_history"] else None
@@ -733,17 +781,17 @@ def _fed_article_reviews(conn: Any) -> list[dict[str, Any]]:
 def _editorial_article_reviews(conn: Any) -> list[dict[str, Any]]:
     """Expose the latest stored Fed/SEC evaluation per topic and locale for review."""
     rows = conn.execute(
-        """SELECT DISTINCT ON (q.topic_key,q.language_code) q.id AS evaluation_id,
+        """SELECT DISTINCT ON (q.content_version_id) q.id AS evaluation_id,
             q.content_version_id,q.language_code,q.topic,q.topic_key,q.title,q.summary,
             q.keywords,q.source_ids,q.fact_ids,q.model,q.prompt_version,q.metrics,q.checks,
             q.machine_passed,q.human_review_required,q.status,q.created_at,
-            v.body,v.version AS content_version
+            v.body,v.version AS content_version,
+            CASE WHEN q.topic ILIKE 'Apple Inc. 10-Q%%' THEN 'stocks' ELSE 'finance' END AS category_slug
         FROM article_quality_evaluations q
         JOIN content_versions v ON v.id=q.content_version_id
-        WHERE q.topic_key LIKE 'phase39t:%%'
-          AND (q.topic ILIKE 'Federal Reserve%%' OR q.topic ILIKE 'Apple Inc. 10-Q%%')
+        WHERE (q.topic ILIKE 'Federal Reserve%%' OR q.topic ILIKE 'Apple Inc. 10-Q%%')
           AND q.content_version_id IS NOT NULL
-        ORDER BY q.topic_key,q.language_code,q.created_at DESC,q.id DESC"""
+        ORDER BY q.content_version_id,q.created_at DESC,q.id DESC"""
     ).fetchall()
     articles: list[dict[str, Any]] = []
     for row in rows:
@@ -1053,12 +1101,30 @@ def save_article_revision(request: ArticleEditorialRevision) -> dict[str, Any]:
     from psycopg.types.json import Jsonb
 
     from .article_quality import evaluate
+    from .editorial_html import plain_text_as_html, sanitize_editorial_html
 
     source = _evaluation_article(request.evaluation_id, request.content_version_id)
+    seo_description = (request.seo_description or request.summary).strip()
+    if not seo_description:
+        raise HTTPException(422, "SEO description cannot be empty")
+    if request.html_body:
+        try:
+            safe_html, body_text = sanitize_editorial_html(request.html_body)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+    else:
+        body_text = request.body
+        safe_html, _ = sanitize_editorial_html(plain_text_as_html(body_text))
+    if len(request.title.strip()) < 3 or len(request.title) > 200:
+        raise HTTPException(422, "Article title must be between 3 and 200 characters")
+    if len(body_text.strip()) < 20 or len(body_text) > 20_000:
+        raise HTTPException(422, "Article text must be between 20 and 20000 characters after HTML sanitization")
+    if len(seo_description) < 10:
+        raise HTTPException(422, "SEO description must be at least 10 characters")
     draft = Draft(
         title=request.title,
-        body=request.body,
-        summary=request.summary,
+        body=body_text,
+        summary=seo_description,
         keywords=request.keywords,
         source_ids=[str(source_id) for source_id in source["source_ids"]],
     )
@@ -1069,7 +1135,8 @@ def save_article_revision(request: ArticleEditorialRevision) -> dict[str, Any]:
         datetime.now(UTC).date().isoformat(),
         len(source["facts"]),
     )
-    body_hash = hashlib.sha256(request.body.encode("utf-8")).hexdigest()
+    body_hash = hashlib.sha256(body_text.encode("utf-8")).hexdigest()
+    html_hash = hashlib.sha256(safe_html.encode("utf-8")).hexdigest()
     with connection() as conn:
         existing = conn.execute(
             "SELECT * FROM article_editorial_versions WHERE idempotency_key=%s",
@@ -1078,6 +1145,50 @@ def save_article_revision(request: ArticleEditorialRevision) -> dict[str, Any]:
         if existing:
             return {"revision": dict(existing), "duplicate": True, "publish_ready": False}
         conn.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (str(request.evaluation_id),))
+        latest = conn.execute(
+            """SELECT id,body_sha256 FROM article_editorial_versions
+            WHERE evaluation_id=%s AND base_content_version_id=%s
+            ORDER BY revision_number DESC LIMIT 1""",
+            (request.evaluation_id, request.content_version_id),
+        ).fetchone()
+        latest_id = latest["id"] if latest else None
+        if (str(latest_id) if latest_id else None) != (
+            str(request.base_editorial_version_id) if request.base_editorial_version_id else None
+        ):
+            raise HTTPException(409, "Manuscript changed since this editor version was loaded")
+        base_body_hash = (
+            str(latest["body_sha256"]).strip()
+            if latest
+            else hashlib.sha256(str(source.get("saved_body", "")).encode("utf-8")).hexdigest()
+        )
+        existing_records = conn.execute(
+            "SELECT blog_id,remote_post_id FROM publishing_records WHERE content_version_id=%s",
+            (request.content_version_id,),
+        ).fetchall()
+        existing_post_id = None
+        if existing_records and not request.target_blog_id:
+            raise HTTPException(409, "An existing published post requires its registered blog target")
+        if request.target_blog_id:
+            target = conn.execute(
+                "SELECT id,language_code,active FROM blogger_blogs WHERE id=%s",
+                (request.target_blog_id,),
+            ).fetchone()
+            if not target:
+                raise HTTPException(422, "Registered target blog not found")
+            if not target["active"] or target["language_code"] != source["language_code"]:
+                raise HTTPException(409, "Target blog must be active and match the manuscript language")
+            mapping = next(
+                (record for record in existing_records if record["blog_id"] == request.target_blog_id),
+                None,
+            )
+            if existing_records and mapping is None:
+                raise HTTPException(409, "Published edits must stay linked to the existing Blogger blog")
+            if mapping:
+                existing_post_id = str(mapping["remote_post_id"])
+                if request.existing_remote_post_id and request.existing_remote_post_id != existing_post_id:
+                    raise HTTPException(409, "Published edit post ID does not match the immutable publication record")
+            elif request.existing_remote_post_id:
+                raise HTTPException(409, "A remote post ID requires a verified publication record")
         revision_number = required(conn.execute(
             """SELECT COALESCE(max(revision_number),0)+1 AS next
             FROM article_editorial_versions WHERE evaluation_id=%s AND base_content_version_id=%s""",
@@ -1086,12 +1197,17 @@ def save_article_revision(request: ArticleEditorialRevision) -> dict[str, Any]:
         row = conn.execute(
             """INSERT INTO article_editorial_versions(evaluation_id,base_content_version_id,
                 revision_number,idempotency_key,reviewer_name,reason,title,body,summary,keywords,
-                machine_checks,machine_passed,quality_status,body_sha256)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
+                machine_checks,machine_passed,quality_status,body_sha256,html_body,html_body_sha256,
+                seo_description,blogger_labels,target_blog_id,publication_mode,planned_publish_at,
+                base_editorial_version_id,base_body_sha256,existing_remote_post_id)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
             (request.evaluation_id,request.content_version_id,revision_number,request.idempotency_key,
-             request.reviewer_name,request.reason,request.title,request.body,request.summary,
+             request.reviewer_name,request.reason,request.title,body_text,seo_description,
              request.keywords,Jsonb(quality["checks"]),quality["machine_passed"],
-             "machine_checked_review_required" if quality["machine_passed"] else "quality_held",body_hash),
+             "machine_checked_review_required" if quality["machine_passed"] else "quality_held",body_hash,
+             safe_html,html_hash,seo_description,request.blogger_labels,request.target_blog_id,
+             request.publication_mode,request.planned_publish_at,request.base_editorial_version_id,base_body_hash,
+             existing_post_id),
         ).fetchone()
         if row is None:
             raise HTTPException(409, "Editorial revision conflict")
@@ -1108,7 +1224,10 @@ def save_article_revision(request: ArticleEditorialRevision) -> dict[str, Any]:
             (Jsonb({"revision_id": str(row["id"]), "review_event_id": str(event["id"]),
                 "evaluation_id": str(request.evaluation_id), "base_content_version_id": str(request.content_version_id),
                 "revision_number": revision_number, "body_sha256": body_hash,
-                "machine_passed": quality["machine_passed"], "publish_ready": False}),),
+                "html_body_sha256": html_hash, "target_blog_id": str(request.target_blog_id) if request.target_blog_id else None,
+                "existing_remote_post_id": existing_post_id,
+                "publication_mode": request.publication_mode, "machine_passed": quality["machine_passed"],
+                "publish_ready": False}),),
         )
         return {"revision": dict(row), "duplicate": False, "publish_ready": False,
             "content_version_changed": False}

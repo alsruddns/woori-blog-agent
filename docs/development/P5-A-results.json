@@ -1,0 +1,88 @@
+{
+  "phase": "5-A",
+  "work_id": "P5-A-001",
+  "recorded_at": "2026-10-27",
+  "timezone": "Asia/Seoul",
+  "branch": "develop",
+  "baseline_commit": "480aef08fc170e6a4564fa4154b72c11ebccd3e7",
+  "implementation": {
+    "manuscript_manager": true,
+    "dynamic_locale_blog_category_filters": true,
+    "status_search_sort_and_version_compare": true,
+    "versioned_html_editor": true,
+    "server_html_sanitization": true,
+    "isolated_mobile_desktop_preview": true,
+    "human_review_separate_from_publication_approval": true,
+    "manual_publication_default": true,
+    "planned_time_creates_no_job": true,
+    "existing_verified_remote_post_mapping_required_for_published_edits": true,
+    "live_blogger_writes_enabled": false,
+    "automatic_publication_enabled": false,
+    "publish_ready_enabled": false
+  },
+  "database": {
+    "identity": "woori_blog_agent / woori_owner",
+    "schema_version": 32,
+    "migrations": [30, 31, 32],
+    "content_versions_at_initial_checkpoint": 348,
+    "content_versions_final_read": 360,
+    "audit_events_final_read": 1305,
+    "phase_audit_event_id": 167439,
+    "audit_update_delete_protection": "passed; both mutation attempts rejected and event remained present",
+    "content_version_delta_attribution": "12-row increase observed while diagnostic jobs/events were also being appended; exact attribution unresolved; no content was deleted or overwritten by this work",
+    "editorial_versions_final": 0,
+    "human_reviews_final": 0,
+    "publication_records_final": 0,
+    "publish_ready_quality_rows_final": 0,
+    "backup_catalog_verified": true,
+    "isolated_restore_rehearsal": "passed at schema 32; temporary restore DB removed after ownership/prefix checks"
+  },
+  "stored_manuscripts": {
+    "query": "latest evaluation per saved content-version ID for stored Fed/SEC articles",
+    "count": 18,
+    "by_locale": {"en": 7, "ko": 4, "ja": 4, "zh-CN": 3},
+    "machine_passed": 5,
+    "quality_held": 13,
+    "human_review_completed": 0,
+    "publish_ready": false
+  },
+  "dashboard_runtime": {
+    "port_3100": "old UI still running; not restarted",
+    "port_8100": "old API process still running; not restarted",
+    "isolated_dashboard_port": 3110,
+    "isolated_production_page": "rendered manuscript manager on loopback 3110; process stopped after read-only check; proxy data not verified from that host",
+    "current_listener_integration": "not verified; old 8100 state response lacks new editor fields"
+  },
+  "actual_actions": {
+    "human_editorial_saves_persisted": 0,
+    "test_editorial_save": "passed inside rollback-only API transaction",
+    "ai_inference_calls": 0,
+    "paid_api_calls": 0,
+    "blogger_write_requests": 0,
+    "automatic_publication": false,
+    "evaluation_quota_consumed": 0
+  },
+  "verification": {
+    "verify_script": "scripts/verify.ps1",
+    "ruff": "passed",
+    "mypy": "passed (28 source files)",
+    "pytest": "passed (171 tests)",
+    "python_wheel": "passed (isolated; no test harness or secrets)",
+    "dashboard_eslint": "passed",
+    "dashboard_production_build": "passed",
+    "dashboard_typecheck": "passed",
+    "database_migration": "passed through schema 32",
+    "isolated_restore": "passed",
+    "secret_and_http_scan": "passed",
+    "git_diff_check": "passed"
+  },
+  "limitations": [
+    "No human review was performed; all 18 drafts remain pending editorial review.",
+    "The current 3100/8100 listeners need a planned restart before the new integrated UI/API is available there.",
+    "No scheduled publication job is created from editor metadata; real Blogger posting, editing, deletion, and automatic publication remain blocked.",
+    "Blogger API cost verification remains provider_cost_unverified.",
+    "AdSense public-post and site-policy checks remain unverified."
+  ],
+  "commit": "pending",
+  "push": "pending"
+}

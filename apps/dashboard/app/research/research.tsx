@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState, type FormEvent } from "react";
+import ManuscriptManager from "./manuscript-manager";
 
 type Row = Record<string, unknown>;
 export type State = {
@@ -9,9 +10,11 @@ export type State = {
   collection_jobs: Row[]; measurements: Row[]; stage_runs: Row[]; coverage: Row[]; experiments?: Row[];
   evidence_facts?: Row[]; localizations?: Row[]; glossary?: Row[]; glossary_revisions?: Row[];
   article_evaluations?: Row[]; worker?: Row | null; evaluation_worker?: Row | null; daily_workload?: Row[]; operations_summary?: Row;
+  manuscript_publications?: Row[];
+  manuscript_publication_records?: Row[];
   evaluation_results?: { configured?: boolean; available?: boolean; database?: string; baseline_snapshot_at?: string; error_category?: string; worker?: Row | null; quota?: Row[]; runs?: Row[]; stages?: Row[]; events?: Row[]; fed_articles?: Row[]; editorial_articles?: Row[]; sec_historical_quality?: Row[]; sec_new_inference?: string; sec_locale_availability?: Row[]; sec_source_draft_available?: boolean; sec_english_quota_reservation?: Row };
   adsense_readiness?: { captured_at?: string; approval_prediction?: string; blogs?: Row[]; internal_recommendations?: Row; official_references?: string[] };
-  prepublication?: { blogger_accounts_connected?: number; blogs?: Row[]; historical_read_verifications?: Row[]; safety?: Row; real_blogger_sync_verified?: boolean; real_writes_enabled?: boolean };
+  prepublication?: { blogs?: Row[]; blogger_accounts_connected?: number; historical_read_verifications?: Row[]; safety?: Row; real_blogger_sync_verified?: boolean; real_writes_enabled?: boolean };
   article_reviews?: Row[];
   article_review_events?: Row[];
   article_editorial_versions?: Row[];
@@ -138,145 +141,7 @@ export default function Research({ initial }: { initial: State }) {
         <details><summary>기계 검사와 자원 측정</summary><pre>{JSON.stringify({ checks: a.checks, metrics: a.metrics }, null, 2)}</pre></details>
       </article>)}
     </section>
-    <section aria-labelledby="phase4m-editorial">
-      <h2 id="phase4m-editorial">Phase 4-M · Fed/SEC 편집 검토 작업대</h2>
-      <p>저장된 Fed·SEC 원고를 버전 단위로 검토합니다. 검토 시작·수정본·검토 의견은 append-only 기록이며, 편집 검토는 발행 승인을 부여하지 않습니다.</p>
-      {(data.evaluation_results?.editorial_articles ?? []).map(article => {
-        const evaluationId = str(article, "evaluation_id"), versionId = str(article, "content_version_id");
-        const sources = (article.sources as Row[] | undefined) ?? [], facts = (article.facts as Row[] | undefined) ?? [];
-        const revisions = (article.editorial_versions as Row[] | undefined) ?? [];
-        const history = (article.review_history as Row[] | undefined) ?? [];
-        const events = (article.review_events as Row[] | undefined) ?? [];
-        const checkPayload = (article.checks as Row | undefined) ?? {};
-        const checks = (checkPayload.checks as Row | undefined) ?? checkPayload;
-        const failures = Object.entries(checks).filter(([, passed]) => passed === false);
-        const labels: Record<string, string> = { unreviewed: "미검토", in_review: "검토 중", revision_needed: "수정 필요", reviewed_not_passed: "검토 기록 있음 · 미통과", editorial_review_passed: "편집 검토 통과" };
-        const body = str(article, "body");
-        const submitReview = (event: FormEvent<HTMLFormElement>) => {
-          event.preventDefault(); const form = new FormData(event.currentTarget);
-          const editorialVersion = String(form.get("editorial_version_id") ?? "");
-          void act("article-reviews", {
-            evaluation_id: evaluationId, content_version_id: versionId,
-            editorial_version_id: editorialVersion || null, idempotency_key: crypto.randomUUID(),
-            reviewer_name: String(form.get("reviewer_name") ?? ""),
-            factual_accuracy: String(form.get("factual_accuracy") ?? "not_assessed"),
-            translation_naturalness: String(form.get("translation_naturalness") ?? "not_assessed"),
-            reader_value: String(form.get("reader_value") ?? "not_assessed"),
-            disposition: String(form.get("disposition") ?? "reviewed"),
-            comments: String(form.get("comments") ?? ""), requested_changes: String(form.get("requested_changes") ?? ""),
-          });
-        };
-        return <article key={evaluationId}>
-          <h3>{str(article, "topic")} · {str(article, "language_code")} · v{str(article, "content_version")}</h3>
-          <p>편집 상태: {labels[str(article, "editorial_status")] ?? "미검토"} · 기계 검사: {article.machine_passed ? "통과" : "보류"} · 발행 준비: false</p>
-          <p>모델 {str(article, "model")} · 생성 시각 {str(article, "created_at")} · 본문 {body.length}자 / {body.trim().split(/\s+/).filter(Boolean).length} 공백 구분 토큰</p>
-          <h4>{str(article, "title")}</h4><p>{str(article, "summary")}</p>
-          <details open><summary>저장 원고 전문</summary><pre style={{ whiteSpace: "pre-wrap" }}>{body}</pre></details>
-          <details><summary>품질 실패 사유 ({failures.length}) 및 메타데이터</summary>
-            {failures.length ? <ul>{failures.map(([name]) => <li key={name}>{name}</li>)}</ul> : <p>현재 평가의 기계 검사 실패 없음. 의미 정확성과 자연스러움은 별도 사람 검토 대상입니다.</p>}
-            <p>키워드: {JSON.stringify(article.keywords ?? [])}</p><pre>{JSON.stringify({ details: checkPayload.details, proper_name_candidates: article.proper_name_candidates, metrics: article.metrics }, null, 2)}</pre>
-          </details>
-          <details><summary>근거·사실 원장 ({facts.length})</summary>
-            {facts.map(fact => <section key={str(fact, "id")}><h5>{str(fact, "fact_key")} · {str(fact, "verification_status")}</h5>
-              <p>원문 근거: {str(fact, "source_excerpt")}</p>
-              <p>고유명사: {JSON.stringify(fact.entity_ids ?? [])} · 숫자: {JSON.stringify(fact.numeric_values ?? [])} · 날짜: {JSON.stringify(fact.date_values ?? [])}</p>
-              <p>연결 출처: {JSON.stringify((fact.citation_ids as string[] | undefined)?.map(id => sources.find(source => str(source, "id") === id)?.source_name ?? id) ?? [])}</p>
-            </section>)}
-            {sources.map(source => <p key={str(source, "id")}>{str(source, "source_name")} · 기준일 {str(source, "published_at")} · 수집 {str(source, "collected_at")} · 권리 {str(source, "rights")} · <a href={str(source, "url")} target="_blank" rel="noreferrer">공식 출처</a></p>)}
-          </details>
-          <details><summary>편집 수정본 이력 ({revisions.length})</summary>{revisions.map(revision => <section key={str(revision, "id")}>
-            <h5>편집 v{str(revision, "revision_number")} · {str(revision, "quality_status")} · {str(revision, "created_at")}</h5>
-            <p>작성자 {str(revision, "reviewer_name")} · 사유 {str(revision, "reason")} · SHA-256 {str(revision, "body_sha256")}</p>
-            <h6>{str(revision, "title")}</h6><p>{str(revision, "summary")}</p>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem" }}><section style={{ flex: "1 1 320px" }}><h6>원본 v{str(article, "content_version")}</h6><pre style={{ whiteSpace: "pre-wrap" }}>{body}</pre></section><section style={{ flex: "1 1 320px" }}><h6>편집 v{str(revision, "revision_number")}</h6><pre style={{ whiteSpace: "pre-wrap" }}>{str(revision, "body")}</pre></section></div>
-            <pre>{JSON.stringify(revision.machine_checks, null, 2)}</pre>
-          </section>)}</details>
-          <details><summary>검토 의견·수정 요청 ({history.length})</summary>{history.map(review => <p key={str(review, "id")}>{str(review, "reviewer_name")} · {str(review, "disposition")} · 사실 {str(review, "factual_accuracy")} · 번역 {str(review, "translation_naturalness")} · 독자 가치 {str(review, "reader_value")} · {str(review, "created_at")}<br/>{str(review, "comments")}<br/>수정 요청: {str(review, "requested_changes") || "없음"}</p>)}</details>
-          <form onSubmit={event => { event.preventDefault(); const form = new FormData(event.currentTarget); void act("article-review-events", { evaluation_id: evaluationId, content_version_id: versionId, idempotency_key: crypto.randomUUID(), reviewer_name: String(form.get("reviewer_name") ?? "") }); }}>
-            <label>검토 시작자 <input name="reviewer_name" required minLength={2} maxLength={80}/></label><button disabled={busy}>검토 시작 기록</button>
-          </form>
-          <form onSubmit={event => { event.preventDefault(); const form = new FormData(event.currentTarget); const revision = { evaluation_id: evaluationId, content_version_id: versionId, idempotency_key: crypto.randomUUID(), reviewer_name: String(form.get("reviewer_name") ?? ""), reason: String(form.get("reason") ?? ""), title: String(form.get("title") ?? ""), summary: String(form.get("summary") ?? ""), keywords: String(form.get("keywords") ?? "").split("|").map(item => item.trim()).filter(Boolean), body: String(form.get("body") ?? "") }; void act("article-revisions", revision); }}>
-            <h4>새 편집 버전 작성</h4><label>편집자 <input name="reviewer_name" required minLength={2} maxLength={80}/></label><label>수정 사유 <textarea name="reason" required minLength={10} maxLength={2000}/></label>
-            <label>제목 <input name="title" defaultValue={str(article, "title")} required maxLength={500}/></label><label>요약 <textarea name="summary" defaultValue={str(article, "summary")} required maxLength={3000}/></label>
-            <label>키워드 (| 구분) <input name="keywords" defaultValue={(article.keywords as string[] | undefined)?.join(" | ") ?? ""} required/></label><label>본문 <textarea name="body" defaultValue={body} required maxLength={50000} rows={12}/></label>
-            <p>저장 시 기존 출처와 언어 정책으로 기계 검사를 다시 수행합니다. 검사 실패본도 quality_held로만 보존하고 원문 버전을 변경하지 않습니다.</p><button disabled={busy}>새 편집 버전 저장 및 검사</button>
-          </form>
-          <form onSubmit={submitReview}>
-            <h4>사람 검토 결과 기록</h4><label>검토자 <input name="reviewer_name" required minLength={2} maxLength={80}/></label>
-            <label>검토 대상 <select name="editorial_version_id"><option value="">원본 v{str(article, "content_version")}</option>{revisions.filter(revision => Boolean(revision.machine_passed)).map(revision => <option key={str(revision, "id")} value={str(revision, "id")}>편집 v{str(revision, "revision_number")} · 기계 검사 통과</option>)}</select></label>
-            <label>사실 정확성 <select name="factual_accuracy"><option value="not_assessed">미평가</option><option value="verified">확인</option><option value="issue_found">문제 발견</option><option value="uncertain">불확실</option></select></label>
-            <label>번역 자연스러움 <select name="translation_naturalness"><option value="not_assessed">미평가</option><option value="acceptable">수용 가능</option><option value="issue_found">문제 발견</option><option value="uncertain">불확실</option></select></label>
-            <label>독자 가치 <select name="reader_value"><option value="not_assessed">미평가</option><option value="useful">유용</option><option value="insufficient">부족</option><option value="uncertain">불확실</option></select></label>
-            <label>편집 결과 <select name="disposition"><option value="reviewed">검토 기록</option><option value="revision_requested">수정 필요</option><option value="rejected">반려</option><option value="approved">편집 검토 통과</option></select></label>
-            <label>검토 메모 <textarea name="comments" required minLength={10} maxLength={2000}/></label><label>수정 요청 <textarea name="requested_changes" maxLength={2000}/></label>
-            <p>편집 검토 통과는 실제 검토자가 선택하고 사실·번역·독자 가치 확인이 모두 긍정적일 때만 기록됩니다. Blogger 발행 승인은 별도이며 현재 비활성화입니다.</p><button disabled={busy}>검토 기록 추가</button>
-          </form>
-          <details><summary>최근 편집 이벤트 ({events.length})</summary>{events.map(item => <p key={str(item, "id")}>{str(item, "event_type")} · {str(item, "reviewer_name")} · {str(item, "created_at")}</p>)}</details>
-        </article>;
-      })}
-    </section>
-    <section aria-labelledby="phase4c-review">
-      <h2 id="phase4c-review">Phase 4-C · Fed 원고 사람 검토</h2>
-      <p>기계 검사 통과 원고 {data.evaluation_results?.fed_articles?.length ?? 0}개를 검토 대상으로 표시합니다. 제출한 편집 검토는 Blogger 발행 승인이 아니며 원고 버전을 변경하지 않습니다.</p>
-      {(data.evaluation_results?.fed_articles ?? []).map(article => {
-        const evaluationId = str(article, "evaluation_id");
-        const history = (data.article_reviews ?? []).filter(item => str(item, "evaluation_id") === evaluationId);
-        const latestReview = history[0];
-        const sources = (article.sources as Row[] | undefined) ?? [];
-        const facts = (article.facts as Row[] | undefined) ?? [];
-        const paragraphs = str(article, "body").split(/\n\s*\n/).filter(Boolean);
-        return <article key={evaluationId}>
-          <h3>{str(article, "language_code")} · {str(article, "title")}</h3>
-          <p>기계 검사 통과 · 사람 검토 {latestReview ? str(latestReview, "disposition") : "대기"} · 게시 승인 없음 · 버전 {str(article, "content_version")}</p>
-          <p>{str(article, "summary")}</p>
-          <h4>전체 원고 및 문장별 출처 연결 (문단 근거 표식 적용)</h4>
-          {paragraphs.map((paragraph, index) => {
-            const cited = [...paragraph.matchAll(/\[source:([0-9a-f-]{36})\]/gi)].map(match => match[1]);
-            const sentences = paragraph.split(/(?<=[.!?。！？])\s+|(?<=[。！？])/u).filter(Boolean);
-            return <div key={`${evaluationId}-${index}`}>
-              {sentences.map((sentence, sentenceIndex) => <p key={`${evaluationId}-${index}-${sentenceIndex}`} style={{ whiteSpace: "pre-wrap" }}>
-                {sentence.replace(/\[source:([0-9a-f-]{36})\]/gi, (_marker, id: string) => `〔${sources.find(source => str(source, "id") === id)?.source_name ?? "출처 참조 확인 필요"}〕`)}
-                <small>　출처: {cited.length ? cited.map(id => sources.find(source => str(source, "id") === id)?.source_name ?? "출처 참조 확인 필요").join(", ") : "표식 미검출 — 근거 목록에서 확인 필요"}</small>
-              </p>)}
-            </div>;
-          })}
-          <details><summary>사실·근거 원문 및 날짜·숫자·고유명사 비교 ({facts.length})</summary>
-            {facts.map(fact => <section key={str(fact, "id")}>
-              <h5>사실 {facts.indexOf(fact) + 1} · {str(fact, "verification_status")}</h5>
-              <p>근거 원문: {str(fact, "source_excerpt")}</p>
-              <p>검사기 고유명사 후보: {JSON.stringify(article.proper_name_candidates ?? [])} · 근거 숫자: {JSON.stringify(fact.numeric_values ?? [])} · 근거 날짜: {JSON.stringify(fact.date_values ?? [])}</p>
-              <p>연결 출처: {JSON.stringify((fact.citation_ids as string[] | undefined)?.map(id => sources.find(source => str(source, "id") === id)?.source_name ?? "출처 참조 확인 필요") ?? [])}</p>
-            </section>)}
-            {sources.map(source => <p key={str(source, "id")}>{str(source, "source_name")} · <a href={str(source, "url")} target="_blank" rel="noreferrer">원문 열기</a> · 게시 {str(source, "published_at")} · 수집 {str(source, "collected_at")} · 권리 {str(source, "rights")}</p>)}
-          </details>
-          <details><summary>제목·키워드·기계 검사</summary><p>{JSON.stringify(article.keywords ?? [])}</p><pre>{JSON.stringify({ checks: article.checks, model: article.model, prompt: article.prompt_version, publish_ready: false }, null, 2)}</pre></details>
-          <h4>사람 검토 이력 ({history.length})</h4>
-          {history.map(item => <details key={str(item, "id")}><summary>{str(item, "reviewer_name")} · {str(item, "disposition")} · {str(item, "created_at")}</summary>
-            <p>사실 정확성 {str(item, "factual_accuracy")} · 번역 자연스러움 {str(item, "translation_naturalness")} · 독자 가치 {str(item, "reader_value")}</p>
-            <p>{str(item, "comments")}</p><p>수정 요청: {str(item, "requested_changes") || "없음"}</p>
-          </details>)}
-          <form onSubmit={event => { event.preventDefault(); const form = new FormData(event.currentTarget); void act("article-reviews", {
-            evaluation_id: evaluationId, content_version_id: article.content_version_id,
-            idempotency_key: crypto.randomUUID(), reviewer_name: String(form.get("reviewer_name") ?? ""),
-            factual_accuracy: String(form.get("factual_accuracy") ?? "not_assessed"),
-            translation_naturalness: String(form.get("translation_naturalness") ?? "not_assessed"),
-            reader_value: String(form.get("reader_value") ?? "not_assessed"),
-            disposition: String(form.get("disposition") ?? "reviewed"),
-            comments: String(form.get("comments") ?? ""), requested_changes: String(form.get("requested_changes") ?? ""),
-          }); }}>
-            <label>검토자 이름 <input name="reviewer_name" minLength={2} maxLength={80} required /></label>
-            <label>사실 정확성 <select name="factual_accuracy"><option value="not_assessed">미평가</option><option value="verified">확인</option><option value="issue_found">문제 발견</option><option value="uncertain">불확실</option></select></label>
-            <label>번역 자연스러움 <select name="translation_naturalness"><option value="not_assessed">미평가</option><option value="acceptable">수용 가능</option><option value="issue_found">문제 발견</option><option value="uncertain">불확실</option></select></label>
-            <label>독자 가치 <select name="reader_value"><option value="not_assessed">미평가</option><option value="useful">유용함</option><option value="insufficient">부족함</option><option value="uncertain">불확실</option></select></label>
-            <label>검토 결과 <select name="disposition"><option value="reviewed">검토 기록 (승인 아님)</option><option value="approved">편집 품질 승인</option><option value="revision_requested">수정 요청</option><option value="rejected">반려</option></select></label>
-            <p>편집 품질 승인은 사실 확인·번역 자연스러움·독자 가치가 모두 긍정일 때만 기록되며 Blogger 발행 권한을 부여하지 않습니다.</p>
-            <label>검토 의견 <textarea name="comments" minLength={10} maxLength={2000} required /></label>
-            <label>수정 요청 내용 <textarea name="requested_changes" maxLength={2000} /></label>
-            <button disabled={busy}>검토 기록 추가</button>
-          </form>
-        </article>;
-      })}
-    </section>
+    <ManuscriptManager articles={data.evaluation_results?.editorial_articles ?? []} blogs={data.prepublication?.blogs ?? []} categories={data.categories} busy={busy} publications={data.manuscript_publications ?? []} submit={act}/>
     <section aria-labelledby="phase4c-status">
       <h2 id="phase4c-status">Phase 4-C · SEC·Blogger·발행 안전 점검</h2>
       <p>SEC evaluation availability and source dependencies appear per language below. Historical SEC evaluations remain separate.</p>

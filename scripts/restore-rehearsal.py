@@ -40,6 +40,7 @@ try:
         tables = [
             "content_versions",
             "audit_events",
+            "schema_migrations",
             "blogger_blogs",
             "google_connections",
             "keyword_candidates",
@@ -51,6 +52,11 @@ try:
             "collection_sources",
             "collection_items",
             "model_measurements",
+            "article_human_reviews",
+            "article_review_events",
+            "article_editorial_versions",
+            "publishing_jobs",
+            "publishing_records",
         ]
         counts = {
             table: source.execute(

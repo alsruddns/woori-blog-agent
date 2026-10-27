@@ -6,6 +6,14 @@
 
 Migration 029 creates the append-only review progress and editorial revision records. Apply it with `scripts/migrate.py` before using the new review controls. The current 3100 Dashboard process may need a planned restart to serve the updated UI; this phase did not interrupt an existing session.
 
+## Phase 5-A manuscript editing
+
+`/research` includes a manuscript manager for stored Fed/SEC drafts, with language/blog/category/status filters, title search, modified-time ordering, original and revision comparison, evidence/quality details, and human review history. A human editor can save a new version with H2/H3, lists, emphasis, HTTPS links, SEO description, Blogger labels, a locale-matched blog target, and a planned KST publication time. The server sanitizes HTML and re-runs the existing quality checks; stale base versions receive a conflict instead of overwriting another editor's work.
+
+Preview uses a sandboxed iframe. Publication intent and planned time are metadata only: they do not enqueue real publication. If an actual Blogger post mapping exists, its ID is shown so a future approved edit can target the existing post. This phase does not enable Blogger writes, publishing approval, automatic publishing, or `publish_ready`.
+
+Migrations 030–032 add append-only editor metadata, bind edits of an already published source version to its recorded Blogger blog/post identity, and store the optimistic base-body hash. Back up the dedicated database before `scripts/migrate.py`. Backup and isolated restore steps are in [the operations runbook](docs/operations/runbook.md). The current Dashboard listener is left running when a session-safe restart cannot be verified; use the documented planned restart steps after preserving editor state.
+
 Windows 로컬 다국어 Blogger 운영 에이전트입니다. Phase 1 기반을 유지하며 Phase 2에서 읽기 전용 Google OAuth, Blogger 정보·ID·게시글 조회, 로컬 불변 콘텐츠 버전 관리와 API 감사 이력을 추가했습니다. 운영 Blogger 쓰기·자동 발행·유료 AI 호출은 계속 차단됩니다.
 
 Dashboard: http://127.0.0.1:3100 · Blogger 관리: http://127.0.0.1:3100/blogger · API health: http://127.0.0.1:8100/health · PostgreSQL: 기존 localhost:5432. 다른 프로젝트의 3000/8000 포트는 사용하지 않습니다. 브라우저는 동일 출처 Next 프록시를 사용하며 API CORS는 열지 않습니다.
@@ -51,7 +59,7 @@ See [architecture](docs/architecture/overview.md), [operations](docs/operations/
 ## Multilingual configuration
 Open http://127.0.0.1:3100/config to manage languages, multiple blogs per language, country profiles, policy schedules, categories and glossaries. The initial four user-provided Blogspot addresses are registered. Google Blog IDs stay NULL until user-consented API verification succeeds in /blogger. Registering a URL alone makes no external request. API/worker startup never loads administrator or migration-owner credentials.
 
-Apply updates using `.venv/Scripts/python scripts/migrate.py` (latest version: 26). Migrations 001–004 are unchanged. Existing version IDs/content and audit records are preserved. Back up the dedicated database first. Configuration tests roll back synthetic records; diagnostic worker tests still append identifiable run history.
+Apply updates using `.venv/Scripts/python scripts/migrate.py` (latest version: 32). Migrations 001–004 are unchanged. Existing version IDs/content and audit records are preserved. Back up the dedicated database first. Configuration tests roll back synthetic records; diagnostic worker tests still append identifiable run history.
 
 BCP 47 tags are normalized (e.g. pt-br -> pt-BR); language identity cannot be renamed in place. Deactivate an old identity and register a replacement to preserve references. New languages receive a default country profile with every capability unverified. Neither registration nor policy activation enables automatic publishing. Country-specific settings are saved as complete profiles, so review all fields before updating an existing language/country pair.
 

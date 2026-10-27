@@ -185,6 +185,8 @@ def test_editorial_revision_rechecks_quality_and_appends_without_changing_base(
                 return SimpleNamespace(fetchone=lambda: None)
             if "max(revision_number)" in sql:
                 return SimpleNamespace(fetchone=lambda: {"next": 1})
+            if "FROM publishing_records" in sql:
+                return SimpleNamespace(fetchall=list)
             if "INSERT INTO article_editorial_versions" in sql:
                 return SimpleNamespace(fetchone=lambda: {
                     "id": revision_id, "evaluation_id": evaluation_id,
@@ -230,6 +232,173 @@ def test_phase4m_migration_defines_append_only_review_history() -> None:
     assert "article_editorial_versions_immutable" in sql
     assert "GRANT SELECT,INSERT" in sql
     assert '"publish_ready_changes":false' in sql
+
+
+def test_phase5a_hash_migration_and_manuscript_list_keep_each_saved_version() -> None:
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[3]
+    migration = (root / "scripts/032_editorial_base_hash.sql").read_text(encoding="utf-8")
+    route = (root / "services/api/woori/research_routes.py").read_text(encoding="utf-8")
+    assert "base_body_sha256 char(64)" in migration
+    assert "article_editorial_base_body_sha256_format" in migration
+    assert "INSERT INTO schema_migrations(version) VALUES(32)" in migration
+    assert "DISTINCT ON (q.content_version_id)" in route
+
+
+def test_editorial_html_allowlist_preserves_formatting_and_drops_active_content() -> None:
+    from woori.editorial_html import sanitize_editorial_html
+
+    safe, plain = sanitize_editorial_html(
+        '<h2 onclick="run()">Facts</h2><p><strong>Verified</strong> [source:123]</p>'
+        '<a href="javascript:alert(1)" onmouseover="run()">unsafe</a>'
+        '<a href="https://example.gov/source">official source</a><script>alert(1)</script>'
+    )
+    assert "<h2>Facts</h2>" in safe
+    assert "<strong>Verified</strong>" in safe
+    assert "onclick" not in safe and "onmouseover" not in safe
+    assert "javascript:" not in safe and "<script" not in safe and "alert(1)" not in safe
+    assert 'href="https://example.gov/source" rel="nofollow noopener noreferrer"' in safe
+    assert "[source:123]" in plain and "official source" in plain
+
+
+def test_editorial_revision_rejects_stale_base_without_inserting_a_version(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from contextlib import contextmanager
+    from datetime import UTC, datetime, timedelta
+    from types import SimpleNamespace
+
+    from fastapi import HTTPException
+    from woori import article_quality, research_routes
+
+    source = {
+        "source_ids": ["source-1"], "language_code": "en", "facts": [{}], "saved_body": "Original draft",
+        "sources": [{"id": "source-1", "source_name": "Federal Reserve Board",
+            "url": "https://www.federalreserve.gov/test.htm",
+            "evidence": "The Federal Reserve Board issued an official notice for readers.",
+            "rights": "Official source; cite the Board.",
+            "valid_until": (datetime.now(UTC) + timedelta(days=1)).isoformat()}],
+    }
+    latest_id = uuid4()
+    statements: list[str] = []
+
+    class FakeConnection:
+        def execute(self, sql: str, _params: Any = None) -> Any:
+            statements.append(sql)
+            if "SELECT * FROM article_editorial_versions" in sql:
+                return SimpleNamespace(fetchone=lambda: None)
+            if "SELECT id,body_sha256 FROM article_editorial_versions" in sql:
+                return SimpleNamespace(fetchone=lambda: {"id": latest_id, "body_sha256": "a" * 64})
+            return SimpleNamespace(fetchone=lambda: None)
+
+    @contextmanager
+    def fake_connection() -> Any:
+        yield FakeConnection()
+
+    monkeypatch.setattr(research_routes, "_evaluation_article", lambda *_args: source)
+    monkeypatch.setattr(article_quality, "evaluate", lambda *_args: {"checks": {}, "machine_passed": True})
+    monkeypatch.setattr(research_routes, "connection", fake_connection)
+    request = research_routes.ArticleEditorialRevision(
+        evaluation_id=uuid4(), content_version_id=uuid4(), idempotency_key="stale-editor-000001",
+        reviewer_name="Human editor", reason="Update from an older open browser tab.", title="Edited title",
+        summary="A search description.", keywords=["Federal Reserve"],
+        html_body="<p>The revised editorial body has enough content.</p>",
+        base_editorial_version_id=None,
+    )
+    with pytest.raises(HTTPException) as error:
+        research_routes.save_article_revision(request)
+    assert error.value.status_code == 409
+    assert not any("INSERT INTO article_editorial_versions" in statement for statement in statements)
+
+
+def test_editorial_schedule_requires_future_timezone_and_labels_are_unique() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from pydantic import ValidationError
+    from woori.research_routes import ArticleEditorialRevision
+
+    base = {
+        "evaluation_id": uuid4(), "content_version_id": uuid4(), "idempotency_key": "revision-fields-0001",
+        "reviewer_name": "Human editor", "reason": "Improve the outline and source descriptions.",
+        "title": "A verified title", "body": "Body", "summary": "Search description.",
+        "keywords": ["verified topic"],
+    }
+    with pytest.raises(ValidationError, match="scheduled_editorial_requires_timezone_aware_future_date"):
+        ArticleEditorialRevision(**base, publication_mode="scheduled")
+    scheduled = ArticleEditorialRevision(
+        **base, publication_mode="scheduled", planned_publish_at=datetime.now(UTC) + timedelta(days=1)
+    )
+    assert scheduled.publication_mode == "scheduled"
+    with pytest.raises(ValidationError, match="blogger_labels_must_be_unique"):
+        ArticleEditorialRevision(**base, blogger_labels=["Finance", " finance "])
+
+
+def test_phase5a_migration_persists_editor_metadata_without_publication_permission() -> None:
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[3]
+    sql = (root / "scripts/030_manuscript_editing_metadata.sql").read_text(encoding="utf-8")
+    for column in ("html_body", "seo_description", "blogger_labels", "publication_mode",
+                   "planned_publish_at", "target_blog_id", "base_editorial_version_id"):
+        assert f"ADD COLUMN {column}" in sql
+    assert '"publish_ready_changes":false' in sql
+    link_sql = (root / "scripts/031_editorial_existing_post_link.sql").read_text(encoding="utf-8")
+    assert "existing_remote_post_id" in link_sql
+    assert '"live_writes_enabled":false' in link_sql
+
+
+def test_published_editorial_revision_cannot_be_retargeted_to_another_blog(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from contextlib import contextmanager
+    from datetime import UTC, datetime, timedelta
+    from types import SimpleNamespace
+
+    from fastapi import HTTPException
+    from woori import article_quality, research_routes
+
+    target_blog_id, original_blog_id = uuid4(), uuid4()
+    source = {
+        "source_ids": ["source-1"], "language_code": "en", "facts": [{}], "saved_body": "Original draft",
+        "sources": [{"id": "source-1", "source_name": "Federal Reserve Board",
+            "url": "https://www.federalreserve.gov/test.htm",
+            "evidence": "The Federal Reserve Board issued an official notice for readers.",
+            "rights": "Official source; cite the Board.",
+            "valid_until": (datetime.now(UTC) + timedelta(days=1)).isoformat()}],
+    }
+    statements: list[str] = []
+
+    class FakeConnection:
+        def execute(self, sql: str, _params: Any = None) -> Any:
+            statements.append(sql)
+            if "SELECT * FROM article_editorial_versions" in sql:
+                return SimpleNamespace(fetchone=lambda: None)
+            if "SELECT id,body_sha256 FROM article_editorial_versions" in sql:
+                return SimpleNamespace(fetchone=lambda: None)
+            if "SELECT blog_id,remote_post_id FROM publishing_records" in sql:
+                return SimpleNamespace(fetchall=lambda: [{"blog_id": original_blog_id, "remote_post_id": "real-post-id"}])
+            if "SELECT id,language_code,active FROM blogger_blogs" in sql:
+                return SimpleNamespace(fetchone=lambda: {"id": target_blog_id, "language_code": "en", "active": True})
+            return SimpleNamespace(fetchone=lambda: None)
+
+    @contextmanager
+    def fake_connection() -> Any:
+        yield FakeConnection()
+
+    monkeypatch.setattr(research_routes, "_evaluation_article", lambda *_args: source)
+    monkeypatch.setattr(article_quality, "evaluate", lambda *_args: {"checks": {}, "machine_passed": True})
+    monkeypatch.setattr(research_routes, "connection", fake_connection)
+    request = research_routes.ArticleEditorialRevision(
+        evaluation_id=uuid4(), content_version_id=uuid4(), idempotency_key="retarget-editor-00001",
+        reviewer_name="Human editor", reason="Change a published article target blog.", title="Edited title",
+        summary="A search description.", keywords=["Federal Reserve"],
+        html_body="<p>The revised body has enough readable content.</p>", target_blog_id=target_blog_id,
+    )
+    with pytest.raises(HTTPException) as error:
+        research_routes.save_article_revision(request)
+    assert error.value.status_code == 409
+    assert not any("INSERT INTO article_editorial_versions" in statement for statement in statements)
 
 
 def test_editorial_source_reader_rejects_non_readonly_evaluation_role(

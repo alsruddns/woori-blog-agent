@@ -306,6 +306,52 @@ def test_adsense_readiness_is_per_blog_and_never_claims_public_or_approval_statu
     assert after == before
 
 
+def test_phase5a_editorial_save_roundtrips_in_rollback_transaction(
+    lab: Any, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from woori import article_quality, research_routes
+
+    conn, api, headers = lab
+    source = {
+        "source_ids": ["source-1"], "language_code": "en", "facts": [{}],
+        "saved_body": "Original immutable source-backed draft.",
+        "sources": [{
+            "id": "source-1", "source_name": "Federal Reserve Board",
+            "url": "https://www.federalreserve.gov/example.htm",
+            "evidence": "The Federal Reserve Board published an official explanatory notice.",
+            "rights": "Official source; attribution required.",
+            "valid_until": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
+        }],
+    }
+    monkeypatch.setattr(research_routes, "_evaluation_article", lambda *_: source)
+    monkeypatch.setattr(article_quality, "evaluate", lambda *_: {
+        "checks": {"fixture": True}, "machine_passed": True,
+    })
+    evaluation_id, content_version_id = uuid.uuid4(), uuid.uuid4()
+    response = api.post("/admin/research/article-revisions", headers=headers, json={
+        "evaluation_id": str(evaluation_id), "content_version_id": str(content_version_id),
+        "idempotency_key": "phase5a-roundtrip-" + uuid.uuid4().hex,
+        "reviewer_name": "Phase 5-A integration test", "reason": "Rollback-only editor roundtrip.",
+        "title": "Federal Reserve notice overview",
+        "summary": "A concise overview of the official notice.",
+        "keywords": ["Federal Reserve notice"],
+        "html_body": "<h2>Overview</h2><p>Read the official notice. [source:source-1]</p><script>unsafe()</script>",
+        "publication_mode": "manual", "blogger_labels": ["finance"],
+    })
+    assert response.status_code == 201, response.text
+    payload = response.json()
+    assert payload["publish_ready"] is False
+    assert payload["revision"]["publication_mode"] == "manual"
+    assert "<h2>Overview</h2>" in payload["revision"]["html_body"]
+    assert "<script" not in payload["revision"]["html_body"]
+    assert conn.execute(
+        "SELECT count(*) AS n FROM article_editorial_versions WHERE evaluation_id=%s",
+        (evaluation_id,),
+    ).fetchone()["n"] == 1
+
+
 def test_localized_evaluation_reuses_only_a_successful_isolated_source_draft() -> None:
     class FakeResult:
         def __init__(self, row: Any) -> None:
