@@ -203,6 +203,65 @@ def test_localized_evaluation_prerequisite_is_independent_of_locale_quota() -> N
     assert pipeline.evaluation_source_prerequisite_met("ko", True)
 
 
+def test_sec_localization_prerequisite_blocks_before_quota_and_audits(lab: Any) -> None:
+    keyword_id, _ = topic(lab)
+    conn, api, headers = lab
+    conn.execute("UPDATE generation_settings SET provider='local',engine='llamacpp'")
+    source = api.post(
+        "/admin/research/sources",
+        headers=headers,
+        json={
+            "keyword_id": keyword_id,
+            "url": "https://example.com/sec/" + uuid.uuid4().hex,
+            "source_name": "SEC EDGAR synthetic fixture",
+            "evidence": "Synthetic SEC evidence fixture only; not a real filing.",
+            "reliability_reason": "Synthetic test fixture only",
+            "rights": "Authored fixture; no external document text",
+            "access_policy": "No network collection performed",
+            "valid_until": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
+            "is_primary": False,
+        },
+    )
+    assert source.status_code == 201, source.text
+    review = api.post(
+        "/admin/research/sources/" + source.json()["id"] + "/reviews",
+        headers=headers,
+        json={"approved": True, "reason": "Synthetic fixture only", "reviewer": "Mock tester"},
+    )
+    assert review.status_code == 201, review.text
+    korean = conn.execute(
+        "SELECT id FROM language_profiles WHERE language_code='ko' AND target_country=''"
+    ).fetchone()
+    assert korean is not None
+    before_targets = conn.execute(
+        "SELECT count(*) AS n FROM generation_targets WHERE profile_id=%s", (korean["id"],)
+    ).fetchone()["n"]
+    before_events = conn.execute(
+        "SELECT count(*) AS n FROM audit_events WHERE event_type='research.evaluation.source_locale.prerequisite_blocked'"
+    ).fetchone()["n"]
+
+    with pytest.raises(pipeline.EngineFailure, match="source_locale_prerequisite_missing"):
+        pipeline.enqueue(
+            uuid.UUID(keyword_id), "sec-prerequisite-" + uuid.uuid4().hex,
+            profile_ids=[korean["id"]], evaluation_only=True,
+        )
+
+    after_targets = conn.execute(
+        "SELECT count(*) AS n FROM generation_targets WHERE profile_id=%s", (korean["id"],)
+    ).fetchone()["n"]
+    after_events = conn.execute(
+        "SELECT count(*) AS n FROM audit_events WHERE event_type='research.evaluation.source_locale.prerequisite_blocked'"
+    ).fetchone()["n"]
+    event = conn.execute(
+        "SELECT payload FROM audit_events WHERE event_type='research.evaluation.source_locale.prerequisite_blocked' ORDER BY created_at DESC LIMIT 1"
+    ).fetchone()
+    assert after_targets == before_targets
+    assert after_events == before_events + 1
+    assert event is not None
+    assert event["payload"]["quota_consumed"] is False
+    assert event["payload"]["model_calls"] == 0
+
+
 def test_worker_resource_gate_holds_when_project_disk_headroom_is_low(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

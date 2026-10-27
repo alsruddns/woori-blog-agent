@@ -1,0 +1,70 @@
+{
+  "phase": "4-F",
+  "record_id": "P4-F-001",
+  "assessed_at": "2026-10-27T09:53:00+09:00",
+  "credential_security": {
+    "status": "rotation_completed",
+    "scope": "evaluation_migration_role_only",
+    "fresh_connection_validated": true,
+    "secret_values_logged": false,
+    "append_only_audit_event_count": 1,
+    "evaluation_database": "woori_blog_agent_eval",
+    "operations_database_connect_allowed": false,
+    "role_superuser": false,
+    "role_createdb": false,
+    "role_createrole": false,
+    "other_active_sessions_before_rotation": 0
+  },
+  "sec_dependency": {
+    "successful_english_source_version_present": false,
+    "localized_generation_blocked_before_target_creation": true,
+    "blocked_preflight_consumes_quota": false,
+    "blocked_preflight_model_calls": 0,
+    "prior_failure_category": "source_version_missing"
+  },
+  "evaluation_quota": {
+    "window": "Asia/Seoul 2026-10-27",
+    "en": {"used": 2, "limit": 2, "remaining": 0},
+    "ko": {"used": 2, "limit": 2, "remaining": 0},
+    "ja": {"used": 1, "limit": 2, "remaining": 1},
+    "zh-CN": {"used": 1, "limit": 2, "remaining": 1},
+    "manual_reset": false
+  },
+  "sec_inference": {
+    "actual_runs": 0,
+    "status": "blocked_quota_and_source_prerequisite",
+    "model": "not_started",
+    "quality_passed": 0,
+    "quality_held": 0
+  },
+  "blogger_cost": {
+    "provider_cost_unverified": true,
+    "blogger_api_price_or_free_allocation_confirmed": false,
+    "google_cloud_billing_attachment_verified": false,
+    "blogger_get_requests": 0,
+    "blogger_write_requests": 0,
+    "evidence": [
+      "https://developers.google.com/blogger/docs/3.0/using",
+      "https://docs.cloud.google.com/apis/docs/capping-api-usage",
+      "https://docs.cloud.google.com/billing/docs/how-to/verify-billing-enabled"
+    ],
+    "checked_at": "2026-10-27"
+  },
+  "publication": {
+    "automatic_publish_enabled": false,
+    "publish_ready": false,
+    "operational_write_approval": false
+  },
+  "tests": {
+    "focused": "31 passed",
+    "pytest": "152 passed",
+    "ruff": "passed",
+    "mypy": "passed for 27 source files",
+    "wheel": "passed",
+    "dashboard_lint": "passed",
+    "dashboard_typecheck": "passed",
+    "dashboard_production_build": "passed",
+    "secret_scan": "passed",
+    "git_diff_check": "passed"
+  }
+}

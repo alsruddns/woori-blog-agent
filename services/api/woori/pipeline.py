@@ -351,6 +351,10 @@ def enqueue(
         not evaluation_only or evaluation_model not in EVALUATION_MODEL_ALLOWLIST
     ):
         raise EngineFailure("evaluation_model_override_blocked")
+    if evaluation_only and _sec_localization_prerequisite_missing(
+        keyword_id, key, profile_ids
+    ):
+        raise EngineFailure("source_locale_prerequisite_missing")
     with connection() as conn:
         conn.execute("SELECT pg_advisory_xact_lock(781203)")
         keyword = conn.execute(
@@ -457,6 +461,70 @@ def enqueue(
             )
         emit(conn, "queued", run["id"], keyword_id=str(keyword_id), targets=len(targets))
         return run
+
+
+def _sec_localization_prerequisite_missing(
+    keyword_id: UUID, idempotency_key: str, profile_ids: list[UUID] | None
+) -> bool:
+    """Block SEC localizations before target creation, so no inference quota is consumed."""
+    with connection() as conn:
+        # Idempotent retries return their existing job through the normal enqueue path.
+        if conn.execute(
+            "SELECT 1 FROM job_runs WHERE idempotency_key=%s", (idempotency_key,)
+        ).fetchone():
+            return False
+        keyword = conn.execute(
+            "SELECT profile_id FROM keyword_candidates WHERE id=%s", (keyword_id,)
+        ).fetchone()
+        if not keyword:
+            return False
+        query = """SELECT p.id,p.language_code FROM generation_settings g
+            JOIN language_profiles p ON p.id=g.profile_id
+            JOIN languages l ON l.code=p.language_code
+            WHERE l.active AND g.enabled"""
+        params: tuple[Any, ...] = ()
+        if profile_ids is not None:
+            query += " AND p.id=ANY(%s)"
+            params = (profile_ids,)
+        query += " AND p.language_code<>'en'"
+        locales = conn.execute(query, params).fetchall()
+        requested_locales = sorted({str(row["language_code"]) for row in locales})
+        if not any(locale != "en" for locale in requested_locales):
+            return False
+        sec_source = conn.execute(
+            """SELECT 1 FROM research_sources s
+            JOIN LATERAL (SELECT approved FROM source_reviews WHERE source_id=s.id
+                ORDER BY review_sequence DESC LIMIT 1) review ON review.approved
+            WHERE s.keyword_id=%s AND s.source_name LIKE 'SEC EDGAR%%'
+              AND s.valid_until>now()
+              AND NOT EXISTS (SELECT 1 FROM research_sources newer
+                WHERE newer.keyword_id=s.keyword_id AND newer.url=s.url AND newer.revision>s.revision)
+            LIMIT 1""",
+            (keyword_id,),
+        ).fetchone()
+        if not sec_source:
+            return False
+        source_draft = conn.execute(
+            """SELECT 1 FROM generation_results g
+            JOIN generation_jobs j ON j.run_id=g.run_id
+            JOIN job_runs r ON r.id=g.run_id
+            WHERE j.keyword_id=%s AND j.evaluation_only AND r.status='succeeded'
+              AND g.profile_id=%s AND g.content_version_id IS NOT NULL LIMIT 1""",
+            (keyword_id, keyword["profile_id"]),
+        ).fetchone()
+        if source_draft:
+            return False
+        emit(
+            conn,
+            "evaluation.source_locale.prerequisite_blocked",
+            None,
+            keyword_id=str(keyword_id),
+            requested_locales=requested_locales,
+            prerequisite="successful_english_source_draft",
+            quota_consumed=False,
+            model_calls=0,
+        )
+        return True
 
 
 def quality(

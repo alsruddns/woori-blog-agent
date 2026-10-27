@@ -1,5 +1,12 @@
 # Changelog
 
+## Phase 4-F (security and SEC preflight; 2026-10-27)
+- Rotated the isolated evaluation migration-role credential after an ignored environment-file value appeared in an earlier tool result; validated the replacement connection without printing credential material. Added password redaction regression coverage and a metadata-only config report command.
+- Confirmed the migration role has no superuser/database-role creation privileges, cannot connect to the operations DB, and had no other active sessions. No migration was run.
+- Block SEC localized evaluation requests before generation-target creation when the successful English source draft is absent. Record the block without consuming quota or invoking a model.
+- Current SEC English quota is exhausted (2/2), with no successful English source version, so new SEC inference remains blocked. Blogger API pricing/free allowance and the Cloud project's billing attachment remain unverified; Blogger GET and all writes remain disabled.
+- `publish_ready=false`, automatic publication, and Blogger writes remain disabled.
+
 ## Phase 4-E (partial validation; 2026-10-27)
 - Show SEC evaluation quota and source-draft prerequisite per registered language. English quota is independent; downstream localization still requires a successful English draft for the same SEC topic.
 - Fail SEC evaluation before enqueue when that source-language draft is missing, preventing a failed localized run from consuming another locale's daily quota.
