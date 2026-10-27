@@ -1,5 +1,11 @@
 # Changelog
 
+## Phase 4-J (local AI recovery and SEC evaluation; 2026-10-27)
+- Diagnosed `local_engine_unavailable` as stale runtime PID metadata; verified pinned model/archive hashes and RX 570 Vulkan visibility, restarted the existing local model and confirmed authenticated health/model-list responses.
+- Ran actual Apple SEC evaluations in the isolated evaluation DB for en, ko, ja and zh-CN. All four runs stored new drafts; only English passed machine checks. All remain `quality_held` and `publish_ready=false`; human review remains required.
+- Replaced only verified project-owned stale Dashboard/API processes with current develop servers after confirming both queues idle. Validated latest state via API and research SSR, including per-blog AdSense checks, SEC source status, quota, worker, cost and publication gates.
+- No Blogger requests, paid calls, quota resets or operational quota changes. Detailed metrics and per-language failures are in P4-J-results JSON and linked run artifacts.
+
 ## Phase 4-I (evaluation policy and AdSense preparation; 2026-10-27)
 - Raised only the isolated evaluation database's active base-language quota from 2 to 10 per KST day after reviewing two measured Qwen3 4B runs and current machine headroom. Preserved existing usage and added one SEC English reservation inside the ten-slot limit; global concurrency remains one and shared CPU/RAM/disk gates remain active.
 - Enforced the SEC reservation in evaluation admission so Fed work cannot consume the reserved English target. Added read-only quota, reserved-volume, and remaining-capacity fields to the Dashboard API.

@@ -1,0 +1,374 @@
+{
+  "phase": "4-J",
+  "recorded_at": "2026-10-27",
+  "timezone": "Asia/Seoul",
+  "baseline_commit": "39889d23f0ce790ce755b80f72bc85b59fc07c3d",
+  "git_branch": "develop",
+  "root_cause": {
+    "category": "stale_runtime_pid",
+    "recorded_pid": 28804,
+    "pid_alive": false,
+    "runtime_metadata_model": "Qwen3-4B-Q4_K_M.gguf",
+    "model_sha256_matches_manifest": true,
+    "vulkan_archive_sha256_matches_manifest": true,
+    "llama_cpp": "b11889",
+    "license": "MIT",
+    "model_license": "Apache-2.0",
+    "vulkan_devices": [
+      "Radeon RX 570 Series"
+    ],
+    "runtime_ready_after_start": true,
+    "health_status": 200,
+    "loaded_models_status": 200,
+    "model_id": "Qwen3-4B-Q4_K_M.gguf",
+    "started_pid": 40364,
+    "backend": "vulkan",
+    "gpu_layers": 20,
+    "threads": 4,
+    "new_download": false
+  },
+  "resource": {
+    "before": {
+      "available_ram_mib": 13533,
+      "ram_total_mib": 32671,
+      "disk_free_gib": 187.87,
+      "gpu_vram_free_mib_reported": 3463
+    },
+    "during": {
+      "rss_peak_mib": 3783.46,
+      "system_cpu_peak_observed_percent": 100.0,
+      "per_process_cpu_mean_max_percent": 20.91,
+      "gpu_utilization_observed": true
+    },
+    "after": {
+      "idle_process_rss_mib": 3783.59,
+      "available_ram_mib": 10485,
+      "cpu_percent_sample": 19.79
+    },
+    "initial_korean_preflight_block": {
+      "reason": "resource_gate_closed",
+      "cpu_percent": 80.8,
+      "ram_percent": 75.1,
+      "available_ram_mib": 8140,
+      "quota_consumed": false,
+      "model_calls": 0
+    },
+    "shared_concurrency_limit": 1
+  },
+  "evaluation": {
+    "database": "woori_blog_agent_eval",
+    "operations_database": "woori_blog_agent",
+    "isolated": true,
+    "execution_order": [
+      "en",
+      "ko",
+      "ja",
+      "zh-CN"
+    ],
+    "quota_before": {
+      "en": 2,
+      "ko": 2,
+      "ja": 1,
+      "zh-CN": 1
+    },
+    "quota_after": {
+      "en": 3,
+      "ko": 3,
+      "ja": 2,
+      "zh-CN": 2
+    },
+    "daily_limit_each": 10,
+    "sec_english_reserved_slot_used": true,
+    "evaluation_artifacts": {
+      "en": {
+        "artifact": "docs/development/P3-9T-run-sec-en-06381042-9ab9-4f4a-9474-253bc9f83acb.json",
+        "evaluation_id": "06381042-9ab9-4f4a-9474-253bc9f83acb",
+        "run_status": "succeeded",
+        "draft_state": "quality_held",
+        "machine_quality_passed": true,
+        "human_review_required": true,
+        "publish_ready": false,
+        "model_calls": 4,
+        "completion_tokens": 173,
+        "elapsed_seconds": 25.83,
+        "tokens_per_second": 8.04,
+        "rss_peak_mib": 3528.52,
+        "cpu_mean_samples": [
+          11.01,
+          15.18,
+          17.68,
+          14.0
+        ],
+        "gpu_utilization_samples": [
+          76.31,
+          47.99,
+          49.28,
+          47.8
+        ],
+        "rule_failures": [],
+        "unexpected_numbers": [],
+        "unsupported_proper_names": [],
+        "language_fields": {
+          "body": true,
+          "title": true,
+          "summary": true,
+          "keywords": true
+        },
+        "failed_fact_ids": [],
+        "longest_source_overlap_words": 12
+      },
+      "ko": {
+        "artifact": "docs/development/P3-9T-run-sec-ko-b78ef69b-def8-48cb-aecc-dcfe0e2537c9.json",
+        "evaluation_id": "b78ef69b-def8-48cb-aecc-dcfe0e2537c9",
+        "run_status": "succeeded",
+        "draft_state": "quality_held",
+        "machine_quality_passed": false,
+        "human_review_required": true,
+        "publish_ready": false,
+        "model_calls": 5,
+        "completion_tokens": 243,
+        "elapsed_seconds": 44.58,
+        "tokens_per_second": 6.08,
+        "rss_peak_mib": 3636.75,
+        "cpu_mean_samples": [
+          0.0,
+          10.79,
+          11.02,
+          15.97,
+          13.16
+        ],
+        "gpu_utilization_samples": [
+          44.13,
+          50.8,
+          47.73
+        ],
+        "rule_failures": [
+          "no_unverified_numbers",
+          "language_metadata_matches"
+        ],
+        "unexpected_numbers": [
+          "2026.0",
+          "27.0",
+          "31.0",
+          "6.0",
+          "7.0"
+        ],
+        "unsupported_proper_names": [],
+        "language_fields": {
+          "body": true,
+          "title": true,
+          "summary": true,
+          "keywords": false
+        },
+        "failed_fact_ids": [
+          "37ec392c847b4023be5f",
+          "e4abce8f39418f69032d"
+        ],
+        "longest_source_overlap_words": 4
+      },
+      "ja": {
+        "artifact": "docs/development/P3-9T-run-sec-ja-0650f35c-35d1-42c1-a49c-9f6e7c99f510.json",
+        "evaluation_id": "0650f35c-35d1-42c1-a49c-9f6e7c99f510",
+        "run_status": "succeeded",
+        "draft_state": "quality_held",
+        "machine_quality_passed": false,
+        "human_review_required": true,
+        "publish_ready": false,
+        "model_calls": 5,
+        "completion_tokens": 227,
+        "elapsed_seconds": 30.23,
+        "tokens_per_second": 8.66,
+        "rss_peak_mib": 3710.7,
+        "cpu_mean_samples": [
+          0.0,
+          13.42,
+          13.93,
+          20.91,
+          14.05
+        ],
+        "gpu_utilization_samples": [
+          35.68,
+          38.18,
+          44.55,
+          52.3,
+          45.34
+        ],
+        "rule_failures": [
+          "no_unverified_numbers",
+          "no_unsupported_proper_names"
+        ],
+        "unexpected_numbers": [
+          "2026.0",
+          "31.0",
+          "7.0"
+        ],
+        "unsupported_proper_names": [
+          "Q Apple Inc",
+          "United States Dollar"
+        ],
+        "language_fields": {
+          "body": true,
+          "title": true,
+          "summary": true,
+          "keywords": true
+        },
+        "failed_fact_ids": [
+          "37ec392c847b4023be5f",
+          "d80fd6abeae9063202bd",
+          "e4abce8f39418f69032d"
+        ],
+        "longest_source_overlap_words": 3
+      },
+      "zh-CN": {
+        "artifact": "docs/development/P3-9T-run-sec-zh-CN-6d8319ad-ed3b-4976-a1a7-d13a2ee3ca5d.json",
+        "evaluation_id": "6d8319ad-ed3b-4976-a1a7-d13a2ee3ca5d",
+        "run_status": "succeeded",
+        "draft_state": "quality_held",
+        "machine_quality_passed": false,
+        "human_review_required": true,
+        "publish_ready": false,
+        "model_calls": 5,
+        "completion_tokens": 217,
+        "elapsed_seconds": 27.97,
+        "tokens_per_second": 9.04,
+        "rss_peak_mib": 3783.46,
+        "cpu_mean_samples": [
+          0.0,
+          14.1,
+          13.95,
+          19.22,
+          13.69
+        ],
+        "gpu_utilization_samples": [
+          31.77,
+          50.13,
+          50.37,
+          49.31,
+          50.81
+        ],
+        "rule_failures": [
+          "no_unsupported_proper_names"
+        ],
+        "unexpected_numbers": [],
+        "unsupported_proper_names": [
+          "Q Apple Inc"
+        ],
+        "language_fields": {
+          "body": true,
+          "title": true,
+          "summary": true,
+          "keywords": true
+        },
+        "failed_fact_ids": [
+          "37ec392c847b4023be5f"
+        ],
+        "longest_source_overlap_words": 3
+      }
+    },
+    "totals": {
+      "executions_succeeded": 4,
+      "articles_persisted": 4,
+      "machine_quality_passed": 1,
+      "quality_held": 4,
+      "human_review_required": 4,
+      "publish_ready": false,
+      "model_calls": 19,
+      "completion_tokens": 860,
+      "elapsed_seconds": 128.61,
+      "model_stage_ms": 114633,
+      "weighted_completion_tokens_per_second": 7.5
+    }
+  },
+  "dashboard": {
+    "old_processes": {
+      "dashboard_pid": 28888,
+      "api_pid": 25576,
+      "both_project_owned": true,
+      "active_jobs_ops": 0,
+      "active_jobs_eval": 0,
+      "dashboard_browser_session_open": false
+    },
+    "restarted": true,
+    "new_processes": {
+      "api_pid": 32432,
+      "dashboard_pid": 37740
+    },
+    "api_health": 200,
+    "api_state": 200,
+    "dashboard_research": 200,
+    "dashboard_proxy_state": 200,
+    "ui_ssr_has_adsense": true,
+    "api_fields": {
+      "adsense_blogs": 4,
+      "checks_per_blog": 14,
+      "fed_articles": 4,
+      "new_sec_runs": 4,
+      "evaluation_quota": {
+        "en": {
+          "used": 3,
+          "limit": 10,
+          "reserved": 0,
+          "remaining": 7
+        },
+        "ko": {
+          "used": 3,
+          "limit": 10,
+          "reserved": 0,
+          "remaining": 7
+        },
+        "ja": {
+          "used": 2,
+          "limit": 10,
+          "reserved": 0,
+          "remaining": 8
+        },
+        "zh-CN": {
+          "used": 2,
+          "limit": 10,
+          "reserved": 0,
+          "remaining": 8
+        }
+      },
+      "sec_english_source_draft_available": true,
+      "worker_status": "stopped",
+      "publishing_enabled": false,
+      "paid_ai_enabled": false,
+      "blogger_read_allowed": false,
+      "sec_c3_runs_total_in_state": 5,
+      "new_sec_runs_in_phase": 4,
+      "sec_c3_runs_includes_older_failed_attempt": true
+    },
+    "browser_visual": "unavailable_surface"
+  },
+  "safety": {
+    "blogger_api_gets": 0,
+    "blogger_api_writes": 0,
+    "paid_api_calls": 0,
+    "additional_cost": 0,
+    "human_reviews_completed": 0,
+    "publish_ready_changes": 0,
+    "operations_quota_modified": false,
+    "quota_reset": false
+  },
+  "verification": {
+    "full_suite": "passed",
+    "pytest_passed": 155,
+    "ruff": "passed",
+    "mypy": "passed_27_source_files",
+    "wheel": "passed",
+    "dashboard_eslint": "passed",
+    "dashboard_typecheck": "passed",
+    "dashboard_production_build": "passed",
+    "git_diff_check": "passed",
+    "secret_scan": "passed",
+    "database_migration": "not_required"
+  },
+  "changed_code": false,
+  "development_record": "docs/development/P4-J-001.md",
+  "artifacts": [
+    "docs/development/P3-9T-run-sec-en-06381042-9ab9-4f4a-9474-253bc9f83acb.json",
+    "docs/development/P3-9T-run-sec-ko-b78ef69b-def8-48cb-aecc-dcfe0e2537c9.json",
+    "docs/development/P3-9T-run-sec-ja-0650f35c-35d1-42c1-a49c-9f6e7c99f510.json",
+    "docs/development/P3-9T-run-sec-zh-CN-6d8319ad-ed3b-4976-a1a7-d13a2ee3ca5d.json"
+  ]
+}
