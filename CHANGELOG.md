@@ -1,5 +1,11 @@
 # Changelog
 
+## Blogger OAuth writer permission (2026-10-27)
+- Added a separate, user-consented Blogger `blogger` OAuth connection while retaining the existing read-only flow and existing blog-to-connection mappings.
+- OAuth state now binds the requested scope; callback validation requires the returned scope to match exactly. Tokens remain Fernet-encrypted, refresh-token rotation preserves the previous refresh token when Google omits a replacement, and failed/denied writer consent only marks the new connection failed.
+- Added Dashboard controls and per-connection/per-blog permission, expiry, and verification indicators. The UI states that OAuth write scope does not enable live posting.
+- Added migration 034 for requested OAuth scopes on short-lived state records. Blogger write calls, automatic publication, and the unverified zero-cost provider gate remain disabled.
+
 ## Phase 5-F (operational transition and Migration 033; 2026-10-27)
 - Confirmed user-stopped Dashboard/FastAPI processes and their old process trees were gone; ports 3100/8100 were free. Kept the existing Qwen3 llama.cpp server on 11435 running and unchanged.
 - Revalidated operations/test DB identities and test-role CONNECT denial to operations. Created a fresh operations custom-format backup and completed a real restore rehearsal into an owned temporary database; archive and restored snapshot checks passed, audit mutation was blocked, and only the temporary restore DB was removed.

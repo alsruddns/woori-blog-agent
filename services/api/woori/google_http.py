@@ -14,6 +14,7 @@ BASE = "https://www.googleapis.com/blogger/v3"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 REVOKE_URL = "https://oauth2.googleapis.com/revoke"
 READ_SCOPE = "https://www.googleapis.com/auth/blogger.readonly"
+WRITE_SCOPE = "https://www.googleapis.com/auth/blogger"
 
 
 class GoogleFailure(RuntimeError):

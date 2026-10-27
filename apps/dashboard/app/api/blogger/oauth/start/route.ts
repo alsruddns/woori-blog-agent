@@ -6,12 +6,23 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid origin" }, { status: 403 });
   if (!process.env.ADMIN_TOKEN)
     return NextResponse.json({ error: "API unavailable" }, { status: 503 });
+  let permission: "read" | "write" = "read";
+  try {
+    const body = await request.json();
+    if (body.permission !== undefined) {
+      if (body.permission !== "read" && body.permission !== "write")
+        return NextResponse.json({ error: "Invalid OAuth permission" }, { status: 400 });
+      permission = body.permission;
+    }
+  } catch {
+    return NextResponse.json({ error: "Invalid request" }, { status: 400 });
+  }
   const binding = randomBytes(32).toString("base64url");
   try {
     const response = await fetch(`${API_BASE}/admin/blogger/oauth/start`, {
       method: "POST",
       headers: headers(),
-      body: JSON.stringify({ binding, label: "Google Blogger 읽기 연결" }),
+      body: JSON.stringify({ binding, permission }),
       cache: "no-store",
       signal: AbortSignal.timeout(5000),
     });

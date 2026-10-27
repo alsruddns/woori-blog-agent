@@ -336,6 +336,7 @@ def test_legacy_migration_preserves_content_and_audits() -> None:
             "031_editorial_existing_post_link.sql",
             "032_editorial_base_hash.sql",
             "033_publication_approval.sql",
+            "034_oauth_write_scope.sql",
         ]:
             content = (
                 (root / "scripts" / migration)

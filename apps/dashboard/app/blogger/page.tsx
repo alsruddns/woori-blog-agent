@@ -30,7 +30,7 @@ export default async function Blogger({
       {query.oauth && (
         <p role="status">
           {query.oauth === "connected"
-            ? "Google 읽기 권한 연결을 완료했습니다. 블로그별 연결을 검증하세요."
+            ? "Google OAuth 연결을 완료했습니다. 허가된 권한과 블로그별 연결 상태를 확인하세요."
             : "Google 인증을 완료하지 못했습니다. 설정과 권한을 확인하고 다시 시작하세요."}
         </p>
       )}

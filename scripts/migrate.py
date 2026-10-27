@@ -167,4 +167,9 @@ with psycopg.connect(url) as conn:
             (root / "scripts/033_publication_approval.sql").read_text(encoding="utf-8"),
             prepare=False,
         )
-print("Migration 033 verified")
+    if current < 34:
+        conn.execute(
+            (root / "scripts/034_oauth_write_scope.sql").read_text(encoding="utf-8"),
+            prepare=False,
+        )
+print("Migration 034 verified")

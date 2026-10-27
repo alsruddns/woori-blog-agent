@@ -18,6 +18,7 @@ router = APIRouter(prefix="/admin/blogger")
 class Start(Input):
     binding: str = Field(min_length=32, max_length=128, pattern=r"^[a-zA-Z0-9_-]+$")
     label: str = Field(default="Google Blogger", min_length=1, max_length=100)
+    permission: Literal["read", "write"] = "read"
 
 
 class Callback(Start):
@@ -47,7 +48,8 @@ def status() -> dict[str, Any]:
             "connections": conn.execute(
                 "SELECT id,label,status,scopes,expires_at,error_category,updated_at FROM google_connections ORDER BY created_at DESC"
             ).fetchall(),
-            "blogs": conn.execute("""SELECT b.*,l.active AS language_active,g.status AS oauth_status
+            "blogs": conn.execute("""SELECT b.*,l.active AS language_active,g.status AS oauth_status,
+                    g.scopes AS oauth_scopes,g.expires_at AS oauth_expires_at
                     FROM blogger_blogs b JOIN languages l ON l.code=b.language_code
                     LEFT JOIN google_connections g ON g.id=b.oauth_connection_id ORDER BY b.language_code,b.url""").fetchall(),
             "limits": conn.execute(
@@ -64,7 +66,8 @@ def status() -> dict[str, Any]:
 
 @router.post("/oauth/start")
 def start(request: Start) -> dict[str, str]:
-    return oauth.start(request.binding, request.label)
+    label = "Google Blogger 쓰기 권한 연결" if request.permission == "write" else "Google Blogger 읽기 연결"
+    return oauth.start(request.binding, label, request.permission)
 
 
 @router.post("/oauth/callback")

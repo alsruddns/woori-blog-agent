@@ -31,6 +31,7 @@ MIGRATIONS = [ROOT / "scripts" / f"{i:03d}_{name}.sql" for i, name in [
     (29, "editorial_versions_and_progress"), (30, "manuscript_editing_metadata"),
     (31, "editorial_existing_post_link"), (32, "editorial_base_hash"),
     (33, "publication_approval"),
+    (34, "oauth_write_scope"),
 ]]
 
 
@@ -115,7 +116,7 @@ with psycopg.connect(owner_url, connect_timeout=5) as conn:
     identity = conn.execute(
         "SELECT current_database(),current_user,inet_server_addr()::text"
     ).fetchone()
-    assert version == 33 and identity[0] == DB_NAME and identity[1] == OWNER_ROLE
+    assert version == len(MIGRATIONS) and identity[0] == DB_NAME and identity[1] == OWNER_ROLE
 
 app_identity_ok = False
 with psycopg.connect(app_url, connect_timeout=5) as app_conn:
@@ -148,5 +149,5 @@ except psycopg.OperationalError as exc:
 if not ops_denied:
     raise SystemExit("Test login can connect to the operations DB; access isolation did not validate.")
 
-print("Test DB ready: woori_blog_agent_test, schema 33; isolated app and owner roles verified.")
+print(f"Test DB ready: {DB_NAME}, schema {len(MIGRATIONS)}; isolated app and owner roles verified.")
 print("Operations DB connection denial for the test app role: verified.")

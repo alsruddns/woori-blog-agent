@@ -12,11 +12,15 @@ type Blog = {
   connection_verified_at: string | null;
   oauth_status: string | null;
   connection_error: string | null;
+  oauth_scopes: string[] | null;
+  oauth_expires_at: string | null;
 };
 type Connection = {
   id: string;
   label: string;
   status: string;
+  scopes: string[];
+  expires_at: string | null;
   error_category: string | null;
 };
 type Post = {
@@ -103,12 +107,14 @@ export default function Manager({ initial }: { initial: State }) {
       setBusy(false);
     }
   }
-  async function start() {
+  async function start(permission: "read" | "write") {
     setBusy(true);
     setMessage("");
     try {
       const response = await fetch("/api/blogger/oauth/start", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ permission }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
@@ -208,13 +214,23 @@ export default function Manager({ initial }: { initial: State }) {
           </a>
         </p>
       )}
-      <button disabled={busy || !initial.configured} onClick={start}>
+      <button disabled={busy || !initial.configured} onClick={() => start("read")}>
         Google 읽기 권한 연결
       </button>
+      <button disabled={busy || !initial.configured} onClick={() => start("write")}>
+        Blogger 쓰기 권한 연결 (Google 동의 화면)
+      </button>
+      <p>
+        쓰기 권한 연결은 별도 OAuth 연결을 추가합니다. 연결된 Google 계정의 신원은 확인·추정하지 않습니다.
+        게시·수정·삭제와 자동 발행은 계속 차단되며, 쓰기 API 요청은 수행하지 않습니다.
+      </p>
       <ul>
         {initial.connections.map((c) => (
           <li key={c.id}>
             {c.label} · {c.status}
+            {` · 읽기 ${c.scopes?.some((scope) => scope === "https://www.googleapis.com/auth/blogger.readonly" || scope === "https://www.googleapis.com/auth/blogger") ? "허용" : "없음"}`}
+            {` · 쓰기 ${c.scopes?.includes("https://www.googleapis.com/auth/blogger") ? "OAuth 범위 있음" : "없음"}`}
+            {` · 만료 ${c.expires_at ?? "미확인"}`}
             {c.error_category && ` · ${c.error_category}`}{" "}
             {c.status !== "disconnected" && (
               <button
@@ -271,6 +287,12 @@ export default function Manager({ initial }: { initial: State }) {
               {b.connection_verified_at && b.oauth_status === "connected"
                 ? "읽기 연결 검증 완료"
                 : "미연결 / 재검증 필요"}
+            </p>
+            <p>
+              매핑된 연결 권한: 읽기 {b.oauth_scopes?.some((scope) => scope === "https://www.googleapis.com/auth/blogger.readonly" || scope === "https://www.googleapis.com/auth/blogger") ? "허용" : "없음"}
+              {" · 쓰기 "}
+              {b.oauth_scopes?.includes("https://www.googleapis.com/auth/blogger") ? "OAuth 범위 있음 (쓰기 API 미검증·차단)" : "없음"}
+              {" · 토큰 만료 "}{b.oauth_expires_at ?? "미확인"}
             </p>
             {b.connection_error && <p role="alert">{b.connection_error}</p>}
             <div className="actions">

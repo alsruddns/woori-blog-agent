@@ -17,7 +17,9 @@ from .config import settings
 from .db import connection
 from .external_policy import FreeQuotaExceeded
 from .external_policy import client as external_client
-from .google_http import READ_SCOPE, REVOKE_URL, TOKEN_URL, GoogleFailure
+from .google_http import READ_SCOPE, REVOKE_URL, TOKEN_URL, WRITE_SCOPE, GoogleFailure
+
+ALLOWED_SCOPE_SETS = (frozenset({READ_SCOPE}), frozenset({WRITE_SCOPE}))
 
 
 def client() -> httpx.Client:
@@ -66,9 +68,12 @@ def audit(
     )
 
 
-def start(binding: str, label: str) -> dict[str, str]:
+def start(binding: str, label: str, permission: str = "read") -> dict[str, str]:
     if not configured():
         raise GoogleFailure("oauth_not_configured")
+    if permission not in ("read", "write"):
+        raise GoogleFailure("invalid_oauth_permission")
+    requested_scopes = [READ_SCOPE] if permission == "read" else [WRITE_SCOPE]
     state, verifier = secrets.token_urlsafe(32), secrets.token_urlsafe(48)
     challenge = (
         base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
@@ -80,16 +85,16 @@ def start(binding: str, label: str) -> dict[str, str]:
         assert row is not None
         connection_id = row["id"]
         conn.execute(
-            """INSERT INTO google_oauth_states(state_hash,binding_hash,connection_id,verifier_ciphertext,expires_at)
-            VALUES (%s,%s,%s,%s,now()+interval '10 minutes')""",
-            (digest(state), digest(binding), connection_id, encrypt(verifier)),
+            """INSERT INTO google_oauth_states(state_hash,binding_hash,connection_id,verifier_ciphertext,
+            requested_scopes,expires_at) VALUES (%s,%s,%s,%s,%s,now()+interval '10 minutes')""",
+            (digest(state), digest(binding), connection_id, encrypt(verifier), requested_scopes),
         )
-        audit(conn, "oauth.started", connection_id)
+        audit(conn, "oauth.started", connection_id, "write" if permission == "write" else "read")
     params = {
         "client_id": settings().google_client_id,
         "redirect_uri": settings().google_redirect_uri,
         "response_type": "code",
-        "scope": READ_SCOPE,
+        "scope": " ".join(requested_scopes),
         "state": state,
         "access_type": "offline",
         "prompt": "consent",
@@ -103,7 +108,13 @@ def start(binding: str, label: str) -> dict[str, str]:
     }
 
 
-def exchange(data: dict[str, str], transport: httpx.Client) -> dict[str, Any]:
+def exchange(
+    data: dict[str, str],
+    transport: httpx.Client,
+    expected_scopes: list[str] | tuple[str, ...] = (READ_SCOPE,),
+    *,
+    require_scope: bool = False,
+) -> dict[str, Any]:
     data = {
         **data,
         "client_id": settings().google_client_id,
@@ -126,7 +137,16 @@ def exchange(data: dict[str, str], transport: httpx.Client) -> dict[str, Any]:
         raise GoogleFailure(category, response.status_code)
     if not isinstance(body.get("access_token"), str) or not body["access_token"]:
         raise GoogleFailure("oauth_invalid_response")
-    if set(str(body.get("scope", READ_SCOPE)).split()) != {READ_SCOPE}:
+    received_scope = body.get("scope")
+    if received_scope is None and not require_scope:
+        body["scope"] = " ".join(expected_scopes)
+        received_scope = body["scope"]
+    expected = frozenset(expected_scopes)
+    if (
+        not isinstance(received_scope, str)
+        or frozenset(received_scope.split()) != expected
+        or expected not in ALLOWED_SCOPE_SETS
+    ):
         raise GoogleFailure("insufficient_or_excess_scope")
     try:
         lifetime = int(body["expires_in"])
@@ -158,7 +178,7 @@ def callback(state: str, binding: str, code: str, denied: bool = False) -> UUID:
         row = conn.execute(
             """UPDATE google_oauth_states SET consumed=true
             WHERE state_hash=%s AND binding_hash=%s AND NOT consumed AND expires_at>now()
-            RETURNING connection_id,verifier_ciphertext""",
+            RETURNING connection_id,verifier_ciphertext,requested_scopes""",
             (digest(state), digest(binding)),
         ).fetchone()
         if row is None:
@@ -181,6 +201,8 @@ def callback(state: str, binding: str, code: str, denied: bool = False) -> UUID:
                     "code_verifier": decrypt(row["verifier_ciphertext"]),
                 },
                 transport,
+                tuple(row["requested_scopes"]),
+                require_scope=True,
             )
         if not isinstance(body.get("refresh_token"), str) or not body["refresh_token"]:
             raise GoogleFailure("refresh_token_missing")
@@ -189,7 +211,7 @@ def callback(state: str, binding: str, code: str, denied: bool = False) -> UUID:
             saved = conn.execute(
                 """UPDATE google_connections SET status='connected',access_ciphertext=%s,
                 refresh_ciphertext=%s,expires_at=%s,scopes=%s,error_category=NULL,updated_at=now() WHERE id=%s AND status='pending' RETURNING id""",
-                (access, refresh, body["expires_at"], [READ_SCOPE], connection_id),
+                (access, refresh, body["expires_at"], body["scope"].split(), connection_id),
             )
             saved_row = saved.fetchone()
             audit(conn, "oauth.connected" if saved_row else "oauth.cancelled", connection_id)
@@ -223,6 +245,7 @@ def access_token(connection_id: UUID, force: bool = False) -> str:
                         "refresh_token": decrypt(row["refresh_ciphertext"]),
                     },
                     transport,
+                    tuple(row["scopes"]),
                 )
             token = body["access_token"]
             refresh = (

@@ -16,7 +16,7 @@ from woori import google_oauth as oauth
 from woori.blogger_writes import BloggerWriter
 from woori.config import settings
 from woori.db import connection
-from woori.google_http import READ_SCOPE, BloggerReader, GoogleFailure, classify
+from woori.google_http import READ_SCOPE, WRITE_SCOPE, BloggerReader, GoogleFailure, classify
 from woori.main import app
 
 
@@ -48,7 +48,9 @@ def sandbox(monkeypatch: pytest.MonkeyPatch) -> Iterator[psycopg.Connection[dict
         settings.cache_clear()
 
 
-def google_mock(monkeypatch: pytest.MonkeyPatch) -> list[httpx.Request]:
+def google_mock(
+    monkeypatch: pytest.MonkeyPatch, token_scope: str = READ_SCOPE
+) -> list[httpx.Request]:
     calls: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -60,7 +62,7 @@ def google_mock(monkeypatch: pytest.MonkeyPatch) -> list[httpx.Request]:
                     "access_token": "secret-access",
                     "refresh_token": "secret-refresh",
                     "expires_in": 3600,
-                    "scope": READ_SCOPE,
+                    "scope": token_scope,
                 },
             )
         if request.url.path == "/revoke":
@@ -145,6 +147,179 @@ def test_oauth_state_encryption_refresh_and_disconnect(
         and "secret-refresh" not in payloads
         and "fake-code" not in payloads
     )
+
+
+def test_write_oauth_is_separate_scope_and_keeps_existing_read_connection(
+    sandbox: psycopg.Connection[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    google_mock(monkeypatch)
+    old_id, _, _ = authorize()
+    blog_id = sandbox.execute(
+        "SELECT id FROM blogger_blogs WHERE language_code='ko' ORDER BY url LIMIT 1"
+    ).fetchone()["id"]
+    sandbox.execute(
+        "UPDATE blogger_blogs SET oauth_connection_id=%s WHERE id=%s", (old_id, blog_id)
+    )
+
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        if request.url.path == "/token":
+            return httpx.Response(
+                200,
+                json={
+                    "access_token": "writer-secret-access",
+                    "refresh_token": "writer-secret-refresh",
+                    "expires_in": 3600,
+                    "scope": WRITE_SCOPE,
+                },
+            )
+        return httpx.Response(200)
+
+    monkeypatch.setattr(
+        oauth, "client", lambda: httpx.Client(transport=httpx.MockTransport(handler))
+    )
+    binding = "writer-binding-" + uuid.uuid4().hex
+    flow = oauth.start(binding, "ignored label", permission="write")
+    params = parse_qs(urlsplit(flow["authorization_url"]).query)
+    assert params["scope"] == [WRITE_SCOPE]
+    assert params["prompt"] == ["consent"]
+    assert params["access_type"] == ["offline"]
+
+    state = params["state"][0]
+    writer_id = oauth.callback(state, binding, "writer-code")
+    writer = sandbox.execute(
+        "SELECT status,scopes,access_ciphertext,refresh_ciphertext FROM google_connections WHERE id=%s",
+        (writer_id,),
+    ).fetchone()
+    old = sandbox.execute(
+        "SELECT status,scopes,access_ciphertext FROM google_connections WHERE id=%s", (old_id,)
+    ).fetchone()
+    assert writer["status"] == "connected" and writer["scopes"] == [WRITE_SCOPE]
+    assert "writer-secret-access" not in writer["access_ciphertext"]
+    assert "writer-secret-refresh" not in writer["refresh_ciphertext"]
+    assert old["status"] == "connected" and old["scopes"] == [READ_SCOPE]
+    assert sandbox.execute(
+        "SELECT oauth_connection_id FROM blogger_blogs WHERE id=%s", (blog_id,)
+    ).fetchone()["oauth_connection_id"] == old_id
+    assert oauth.access_token(writer_id, force=True) == "writer-secret-access"
+    refresh = [request for request in calls if request.url.path == "/token"][-1]
+    assert b"grant_type=refresh_token" in refresh.content
+
+
+def test_api_exposes_distinct_read_and_write_consent_scopes(
+    sandbox: psycopg.Connection[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = google_mock(monkeypatch)
+    headers = {"Authorization": "Bearer " + settings().admin_token}
+    with TestClient(app) as api:
+        read = api.post(
+            "/admin/blogger/oauth/start",
+            headers=headers,
+            json={"binding": "read-binding-" + uuid.uuid4().hex, "permission": "read"},
+        )
+        write = api.post(
+            "/admin/blogger/oauth/start",
+            headers=headers,
+            json={"binding": "write-binding-" + uuid.uuid4().hex, "permission": "write"},
+        )
+        assert read.status_code == write.status_code == 200
+        assert parse_qs(urlsplit(read.json()["authorization_url"]).query)["scope"] == [READ_SCOPE]
+        assert parse_qs(urlsplit(write.json()["authorization_url"]).query)["scope"] == [WRITE_SCOPE]
+        assert read.json()["authorization_url"].startswith(
+            "https://accounts.google.com/o/oauth2/v2/auth?"
+        )
+        assert write.json()["authorization_url"].startswith(
+            "https://accounts.google.com/o/oauth2/v2/auth?"
+        )
+    assert not calls
+
+
+@pytest.mark.parametrize("failure", ["wrong_scope", "denied"])
+def test_failed_write_oauth_preserves_existing_read_connection(
+    sandbox: psycopg.Connection[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+) -> None:
+    google_mock(monkeypatch)
+    old_id, _, _ = authorize()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "access_token": "unexpected-scope-access",
+                "refresh_token": "unexpected-scope-refresh",
+                "expires_in": 3600,
+                "scope": READ_SCOPE,
+            },
+        )
+
+    monkeypatch.setattr(
+        oauth, "client", lambda: httpx.Client(transport=httpx.MockTransport(handler))
+    )
+    binding = "writer-binding-" + uuid.uuid4().hex
+    flow = oauth.start(binding, "writer", permission="write")
+    state = parse_qs(urlsplit(flow["authorization_url"]).query)["state"][0]
+    with pytest.raises(GoogleFailure):
+        if failure == "denied":
+            oauth.callback(state, binding, "", denied=True)
+        else:
+            oauth.callback(state, binding, "wrong-scope-code")
+    old = sandbox.execute(
+        "SELECT status,scopes,access_ciphertext,refresh_ciphertext FROM google_connections WHERE id=%s",
+        (old_id,),
+    ).fetchone()
+    assert old["status"] == "connected" and old["scopes"] == [READ_SCOPE]
+    assert old["access_ciphertext"] and old["refresh_ciphertext"]
+    pending = sandbox.execute(
+        "SELECT status,access_ciphertext,refresh_ciphertext FROM google_connections WHERE id=%s",
+        (flow["connection_id"],),
+    ).fetchone()
+    assert pending["status"] == "error"
+    assert pending["access_ciphertext"] is None and pending["refresh_ciphertext"] is None
+
+
+def test_write_oauth_refresh_keeps_old_refresh_token_when_google_omits_rotation(
+    sandbox: psycopg.Connection[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        if b"grant_type=authorization_code" in request.content:
+            return httpx.Response(
+                200,
+                json={
+                    "access_token": "writer-access-initial",
+                    "refresh_token": "writer-refresh-stable",
+                    "expires_in": 3600,
+                    "scope": WRITE_SCOPE,
+                },
+            )
+        return httpx.Response(
+            200,
+            json={"access_token": "writer-access-rotated", "expires_in": 3600},
+        )
+
+    monkeypatch.setattr(
+        oauth, "client", lambda: httpx.Client(transport=httpx.MockTransport(handler))
+    )
+    binding = "writer-binding-" + uuid.uuid4().hex
+    flow = oauth.start(binding, "writer", permission="write")
+    state = parse_qs(urlsplit(flow["authorization_url"]).query)["state"][0]
+    connection_id = oauth.callback(state, binding, "code")
+    row_before = sandbox.execute(
+        "SELECT refresh_ciphertext FROM google_connections WHERE id=%s", (connection_id,)
+    ).fetchone()
+    assert oauth.access_token(connection_id, force=True) == "writer-access-rotated"
+    row_after = sandbox.execute(
+        "SELECT scopes,refresh_ciphertext FROM google_connections WHERE id=%s", (connection_id,)
+    ).fetchone()
+    assert row_after["scopes"] == [WRITE_SCOPE]
+    assert row_after["refresh_ciphertext"] == row_before["refresh_ciphertext"]
+    assert "writer-refresh-stable" not in row_after["refresh_ciphertext"]
 
 
 def test_oauth_denied_expired_scope_and_revocation(
