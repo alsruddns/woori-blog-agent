@@ -72,7 +72,7 @@
     "NVIDIA Build model comparison"
   ],
   "git": {
-    "commit": null,
-    "push": null
+    "implementation_commit": "7b10874",
+    "push": "pending"
   }
 }
