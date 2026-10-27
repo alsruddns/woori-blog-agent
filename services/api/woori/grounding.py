@@ -84,7 +84,13 @@ def numbers(text: str) -> set[str]:
             return " "
         return value
 
-    text = re.sub(r"\b(\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{8})\b", numeric_date, text)
+    # ASCII boundaries keep localized particles (e.g. Korean 조사) outside the
+    # date token while still recognizing the complete ISO date.
+    text = re.sub(
+        r"(?<![A-Za-z0-9])(\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{8})(?![A-Za-z0-9])",
+        numeric_date,
+        text,
+    )
 
     text = re.sub(
         r"https?://\S+|\[source:[^\]]+\]|\b[0-9a-f]{8}-[0-9a-f-]{27,}\b",

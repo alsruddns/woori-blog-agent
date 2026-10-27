@@ -1,5 +1,11 @@
 # Changelog
 
+## Phase 4-L (multilingual fact preservation; 2026-10-27)
+- Protect verified numeric tokens and full date spans with typed placeholders during local translation; missing, duplicate, collision, and leaked markers fail closed. Exact values are restored before deterministic checks.
+- Correct ISO-date token boundaries when Korean/Japanese particles follow the date. Regression tests distinguish display/grouping normalization from changed numeric or date values without weakening the quality gate.
+- Rechecked 12 stored latest Fed/SEC model-language drafts append-only. The corrected detector removed false `no_unverified_numbers` failures; 4 passed machine checks and 8 remain held for quote, keyword, localization, or unsupported-name checks. All require human review.
+- Ran one actual SEC Korean Qwen3 4B evaluation (5 model calls, 256 completion tokens, 37.14 seconds); it remains held for language/keyword quality. No new model was downloaded; Blogger writes and paid API calls were zero.
+
 ## Phase 4-K (local model comparison; 2026-10-27)
 - Added a checksum-pinned Qwen3-4B-Instruct-2507 Q4_K_M artifact as evaluation-only. The existing Qwen3-4B-Q4_K_M remains the operational default; the candidate is rejected for operational runs even if settings are changed.
 - Compared actual Fed and SEC C3 outputs where allowed. Candidate SEC English passed machine checks; candidate Fed English, SEC Korean and SEC Japanese remained held. Repeated numerical/proper-name/localization failures stopped remaining candidate locales; all drafts remain unpublished and require human review.

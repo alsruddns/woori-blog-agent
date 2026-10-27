@@ -1,0 +1,479 @@
+{
+  "phase": "4-L",
+  "kind": "append_only_deterministic_recheck",
+  "batch_id": "f6f850e2-b08d-47bf-b64c-85f969824912",
+  "database": "woori_blog_agent_eval",
+  "recorded_at": "2026-10-27T03:45:31.020307+00:00",
+  "elapsed_seconds": 1.353,
+  "ai_calls": 0,
+  "results": [
+    {
+      "evaluation_id": "09146e42-893c-4581-bbfb-b17368818ed9",
+      "source_run_id": "c2edfa85-0b48-4302-a12d-97f040936f3a",
+      "source_content_version_id": "6844c74a-0888-4e50-82fc-5b343bcc0a64",
+      "topic": "Apple Inc. 10-Q filed 2026-07-31",
+      "language": "en",
+      "model": "Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+      "status": "quality_held",
+      "machine_passed": false,
+      "checks": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": false,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "details": {
+        "numeric_values_missing": [],
+        "numeric_values_added": [],
+        "proper_name_candidates": [
+          "Apple Inc",
+          "SEC Form"
+        ],
+        "missing_proper_names": [],
+        "unsupported_proper_names": [],
+        "source_overlap_words_max": 16,
+        "source_ids": [
+          "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+        ],
+        "fact_ids": [
+          "726d7444-a2ff-45de-b821-c31c2d1c069f",
+          "97594ff5-5eca-4def-8ba8-4105d6b00e9e",
+          "72fb57bf-8bb3-4c52-bd70-75c2782bf0f3",
+          "e16aad33-6a8c-4b5d-8e4f-9be42e768a23"
+        ]
+      },
+      "elapsed_ms": 97,
+      "ai_calls": 0,
+      "human_review_required": true,
+      "publish_ready": false
+    },
+    {
+      "evaluation_id": "0b433819-8b2a-4598-98f6-9448a5f20768",
+      "source_run_id": "40012cc2-4755-4b76-a8e2-ce2f08446c62",
+      "source_content_version_id": "16ae97df-e9a5-4727-8c9e-4d2c896e76b2",
+      "topic": "Apple Inc. 10-Q filed 2026-07-31",
+      "language": "en",
+      "model": "Qwen3-4B-Q4_K_M.gguf",
+      "status": "quality_held",
+      "machine_passed": false,
+      "checks": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": false,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "details": {
+        "numeric_values_missing": [],
+        "numeric_values_added": [],
+        "proper_name_candidates": [
+          "Apple Inc",
+          "SEC Form"
+        ],
+        "missing_proper_names": [],
+        "unsupported_proper_names": [],
+        "source_overlap_words_max": 12,
+        "source_ids": [
+          "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+        ],
+        "fact_ids": [
+          "726d7444-a2ff-45de-b821-c31c2d1c069f",
+          "97594ff5-5eca-4def-8ba8-4105d6b00e9e",
+          "72fb57bf-8bb3-4c52-bd70-75c2782bf0f3",
+          "e16aad33-6a8c-4b5d-8e4f-9be42e768a23"
+        ]
+      },
+      "elapsed_ms": 85,
+      "ai_calls": 0,
+      "human_review_required": true,
+      "publish_ready": false
+    },
+    {
+      "evaluation_id": "882ef729-6fbf-44a1-87e3-dc09a52c2bb4",
+      "source_run_id": "607276cc-39be-42b2-85e0-e9c18e890233",
+      "source_content_version_id": "7463b92b-4c07-46d2-afba-60bd5a6adb86",
+      "topic": "Apple Inc. 10-Q filed 2026-07-31",
+      "language": "ja",
+      "model": "Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+      "status": "quality_held",
+      "machine_passed": false,
+      "checks": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": false,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": false,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": false,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "details": {
+        "numeric_values_missing": [],
+        "numeric_values_added": [
+          "2026.0",
+          "27.0",
+          "31.0",
+          "6.0",
+          "7.0"
+        ],
+        "proper_name_candidates": [
+          "Apple Inc",
+          "SEC Form"
+        ],
+        "missing_proper_names": [],
+        "unsupported_proper_names": [
+          "Q Apple Inc",
+          "United States Dollar"
+        ],
+        "source_overlap_words_max": 3,
+        "source_ids": [
+          "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+        ],
+        "fact_ids": [
+          "726d7444-a2ff-45de-b821-c31c2d1c069f",
+          "97594ff5-5eca-4def-8ba8-4105d6b00e9e",
+          "72fb57bf-8bb3-4c52-bd70-75c2782bf0f3",
+          "e16aad33-6a8c-4b5d-8e4f-9be42e768a23"
+        ]
+      },
+      "elapsed_ms": 72,
+      "ai_calls": 0,
+      "human_review_required": true,
+      "publish_ready": false
+    },
+    {
+      "evaluation_id": "85ede80d-51f3-43d1-828b-ac591c4f3beb",
+      "source_run_id": "80f5fe2a-368b-49e1-b424-3fdb23b4818b",
+      "source_content_version_id": "305fba32-4f09-42c1-bb74-e5a824082424",
+      "topic": "Apple Inc. 10-Q filed 2026-07-31",
+      "language": "ja",
+      "model": "Qwen3-4B-Q4_K_M.gguf",
+      "status": "quality_held",
+      "machine_passed": false,
+      "checks": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": false,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": false,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "details": {
+        "numeric_values_missing": [],
+        "numeric_values_added": [
+          "2026.0",
+          "31.0",
+          "7.0"
+        ],
+        "proper_name_candidates": [
+          "Apple Inc",
+          "SEC Form"
+        ],
+        "missing_proper_names": [],
+        "unsupported_proper_names": [
+          "Q Apple Inc",
+          "United States Dollar"
+        ],
+        "source_overlap_words_max": 3,
+        "source_ids": [
+          "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+        ],
+        "fact_ids": [
+          "726d7444-a2ff-45de-b821-c31c2d1c069f",
+          "97594ff5-5eca-4def-8ba8-4105d6b00e9e",
+          "72fb57bf-8bb3-4c52-bd70-75c2782bf0f3",
+          "e16aad33-6a8c-4b5d-8e4f-9be42e768a23"
+        ]
+      },
+      "elapsed_ms": 77,
+      "ai_calls": 0,
+      "human_review_required": true,
+      "publish_ready": false
+    },
+    {
+      "evaluation_id": "cfa318c2-2b5c-4b71-9fde-578eb48245b9",
+      "source_run_id": "820da8dc-f1f0-4316-ac46-ba5361e06b71",
+      "source_content_version_id": "9073e983-1b78-4f1c-92fa-e64a53720ccd",
+      "topic": "Apple Inc. 10-Q filed 2026-07-31",
+      "language": "ko",
+      "model": "Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+      "status": "quality_held",
+      "machine_passed": false,
+      "checks": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": false,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": false,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "details": {
+        "numeric_values_missing": [
+          "DATE:2026-07-31"
+        ],
+        "numeric_values_added": [
+          "2026.0",
+          "27.0",
+          "31.0",
+          "6.0",
+          "7.0"
+        ],
+        "proper_name_candidates": [
+          "Apple Inc",
+          "SEC Form"
+        ],
+        "missing_proper_names": [],
+        "unsupported_proper_names": [
+          "Q Apple Inc"
+        ],
+        "source_overlap_words_max": 4,
+        "source_ids": [
+          "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+        ],
+        "fact_ids": [
+          "726d7444-a2ff-45de-b821-c31c2d1c069f",
+          "97594ff5-5eca-4def-8ba8-4105d6b00e9e",
+          "72fb57bf-8bb3-4c52-bd70-75c2782bf0f3",
+          "e16aad33-6a8c-4b5d-8e4f-9be42e768a23"
+        ]
+      },
+      "elapsed_ms": 73,
+      "ai_calls": 0,
+      "human_review_required": true,
+      "publish_ready": false
+    },
+    {
+      "evaluation_id": "a720908e-babe-44c1-83b4-705c776c6405",
+      "source_run_id": "a2d2f59d-08ba-4470-8edb-ab519243de7b",
+      "source_content_version_id": "be196fb1-8f2e-471f-855d-c3d9652f2c01",
+      "topic": "Apple Inc. 10-Q filed 2026-07-31",
+      "language": "ko",
+      "model": "Qwen3-4B-Q4_K_M.gguf",
+      "status": "quality_held",
+      "machine_passed": false,
+      "checks": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": false,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": false,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": false,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "details": {
+        "numeric_values_missing": [],
+        "numeric_values_added": [
+          "2026.0",
+          "27.0",
+          "31.0",
+          "6.0",
+          "7.0"
+        ],
+        "proper_name_candidates": [
+          "Apple Inc",
+          "SEC Form"
+        ],
+        "missing_proper_names": [],
+        "unsupported_proper_names": [],
+        "source_overlap_words_max": 4,
+        "source_ids": [
+          "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+        ],
+        "fact_ids": [
+          "726d7444-a2ff-45de-b821-c31c2d1c069f",
+          "97594ff5-5eca-4def-8ba8-4105d6b00e9e",
+          "72fb57bf-8bb3-4c52-bd70-75c2782bf0f3",
+          "e16aad33-6a8c-4b5d-8e4f-9be42e768a23"
+        ]
+      },
+      "elapsed_ms": 74,
+      "ai_calls": 0,
+      "human_review_required": true,
+      "publish_ready": false
+    },
+    {
+      "evaluation_id": "2853e3c2-bf8d-4bed-a03a-d4ae8ebcc342",
+      "source_run_id": "5f01182b-8803-4ddc-b82a-c002f1c848fc",
+      "source_content_version_id": "122859c3-d3ac-4d7f-97bf-15d84dfe7257",
+      "topic": "Apple Inc. 10-Q filed 2026-07-31",
+      "language": "zh-CN",
+      "model": "Qwen3-4B-Q4_K_M.gguf",
+      "status": "quality_held",
+      "machine_passed": false,
+      "checks": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": false,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": false,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "details": {
+        "numeric_values_missing": [],
+        "numeric_values_added": [],
+        "proper_name_candidates": [
+          "Apple Inc",
+          "SEC Form"
+        ],
+        "missing_proper_names": [],
+        "unsupported_proper_names": [
+          "Q Apple Inc"
+        ],
+        "source_overlap_words_max": 3,
+        "source_ids": [
+          "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+        ],
+        "fact_ids": [
+          "726d7444-a2ff-45de-b821-c31c2d1c069f",
+          "97594ff5-5eca-4def-8ba8-4105d6b00e9e",
+          "72fb57bf-8bb3-4c52-bd70-75c2782bf0f3",
+          "e16aad33-6a8c-4b5d-8e4f-9be42e768a23"
+        ]
+      },
+      "elapsed_ms": 79,
+      "ai_calls": 0,
+      "human_review_required": true,
+      "publish_ready": false
+    }
+  ],
+  "summary": {
+    "drafts_rechecked": 7,
+    "machine_passed_review_required": 0,
+    "quality_held": 7,
+    "human_review_pending": 7,
+    "publish_ready_true": 0
+  }
+}

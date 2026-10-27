@@ -684,6 +684,85 @@ def test_local_translation_protects_entity_spans_and_fails_if_marker_is_lost(
         execute("기관이 공지를 발표했습니다.")
 
 
+def test_local_translation_locks_dates_and_numbers_and_rejects_missing_or_duplicate_markers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from woori import local_inference as inference
+
+    monkeypatch.setattr(inference, "runtime", lambda: {"model": "local-test-model"})
+    monkeypatch.setattr(inference, "auth_headers", dict)
+    base_client = httpx.Client
+    observed: list[dict[str, Any]] = []
+
+    def execute(response_text: str) -> str:
+        def handler(request: httpx.Request) -> httpx.Response:
+            payload = json.loads(request.content)
+            observed.append(json.loads(payload["messages"][1]["content"]))
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {"message": {"content": json.dumps({"localized_text": response_text})}}
+                    ]
+                },
+            )
+
+        monkeypatch.setattr(
+            inference.httpx,
+            "Client",
+            lambda *args, **kwargs: base_client(transport=httpx.MockTransport(handler), **kwargs),
+        )
+        return inference.localized_translation(
+            "On June 17, 2026, the board reported 1,234 items and a 3.5 percent change.",
+            "ko",
+            [],
+            [],
+            "local-test-model",
+            10,
+        )
+
+    # The exact source date remains immutable. Localized display conversion is
+    # a separate deterministic presentation concern and is not model-authored.
+    expected = "June 17, 2026에 위원회는 1,234개 항목과 3.5 퍼센트 변화를 보고했습니다."
+    response = (
+        "[[LOCKED_DATE_0001]]에 위원회는 [[LOCKED_NUMBER_0002]]개 항목과 "
+        "[[LOCKED_NUMBER_0003]] 퍼센트 변화를 보고했습니다."
+    )
+    assert execute(response) == expected
+    payload = observed[-1]
+    assert "[[LOCKED_DATE_0001]]" in payload["source_excerpt"]
+    assert "[[LOCKED_NUMBER_0002]]" in payload["source_excerpt"]
+    assert "[[LOCKED_NUMBER_0003]]" in payload["source_excerpt"]
+    assert len(payload["protected_values"]) == 3
+    assert "[[LOCKED_" not in expected
+
+    with pytest.raises(EngineFailure, match="localization_protected_value_placeholder_error"):
+        execute("[[LOCKED_DATE_0001]]에 위원회는 [[LOCKED_NUMBER_0002]]개 항목을 보고했습니다.")
+
+    with pytest.raises(EngineFailure, match="localization_protected_value_placeholder_error"):
+        execute(
+            "[[LOCKED_DATE_0001]]에 위원회는 [[LOCKED_NUMBER_0002]]개와 "
+            "[[LOCKED_NUMBER_0002]]개 항목을 보고했습니다."
+        )
+
+    with pytest.raises(EngineFailure, match="localization_protected_value_placeholder_error"):
+        execute(
+            "[[LOCKED_DATE_0001]]에 위원회는 [[LOCKED_NUMBER_0002]]개 항목과 "
+            "[[LOCKED_NUMBER_0003]] 퍼센트 변화를 보고했습니다. [[LOCKED_NUMBER_99999]]"
+        )
+
+
+def test_numeric_and_date_formatting_normalization_does_not_hide_value_changes() -> None:
+    from woori.grounding import numbers
+
+    assert numbers("The reported amount was 1,234.") == numbers("보고 금액은 1234입니다.")
+    assert numbers("The date was October 27, 2026.") == numbers("기준일은 2026년 10월 27일입니다.")
+    assert numbers("The filing date was 2026-07-31.") == numbers("공시는 2026-07-31에 제출됐습니다.")
+    assert numbers("The reported amount was 1,234.") != numbers("보고 금액은 1,235입니다.")
+    assert numbers("The date was October 27, 2026.") != numbers("기준일은 2026년 10월 28일입니다.")
+    assert numbers("The filing date was 2026-07-31.") != numbers("공시는 2026-07-30에 제출됐습니다.")
+
+
 def test_reviewed_source_facts_and_localization_are_durable_and_fail_closed(lab: Any) -> None:
     from test_pipeline import topic
 

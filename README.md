@@ -114,7 +114,7 @@ Research generation runs through persisted source, evidence, outline, section, l
 
 ## Evidence-preserving localization
 
-Current source excerpts, reviewed source language, fact snapshots, approved glossary revisions, and per-language localization evaluations are stored separately and append-only. Original-language excerpts do not count as target-language prose. Cross-language generation uses only the already installed local model; if it is unavailable or the target language is unsupported, the result remains held. The `/research` screen shows source/output comparisons and review status. See [the localization architecture](docs/architecture/evidence-localization.md), [Phase 3.8-B record](docs/development/P3-8B-001.md), and [measured evaluation](docs/development/P3-8B-evaluation.json).
+Current source excerpts, reviewed source language, fact snapshots, approved glossary revisions, and per-language localization evaluations are stored separately and append-only. Numeric/date values are placeholder-protected during local translation, and `/research` displays the stored values beside each source excerpt. Original-language excerpts do not count as target-language prose. Cross-language generation uses only the already installed local model; if it is unavailable or the target language is unsupported, the result remains held. The screen shows source/output comparisons, glossary revisions, and review status. See [the localization architecture](docs/architecture/evidence-localization.md), [Phase 3.8-B record](docs/development/P3-8B-001.md), and [measured evaluation](docs/development/P3-8B-evaluation.json).
 
 
 ## Phase 3.8-C1 finance/stock article evaluation

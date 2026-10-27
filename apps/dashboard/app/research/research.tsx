@@ -268,7 +268,8 @@ export default function Research({ initial }: { initial: State }) {
       <p>사실 원장 {data.evidence_facts?.length ?? 0}건 · 현지화 평가 {data.localizations?.length ?? 0}건 · 용어집 변경 이력 {data.glossary_revisions?.length ?? 0}건</p>
       <label>대상 언어 <select value={targetLanguage} onChange={e => setTargetLanguage(e.target.value)}><option value="">언어 선택</option>{Array.from(new Set(data.profiles.map(p => str(p, "language_code")))).map(code => <option key={code} value={code}>{code}</option>)}</select></label>
       {(data.evidence_facts ?? []).map(f => <article key={str(f, "id")}><h3>{str(f, "source_language")} · 사실 {str(f, "fact_key")}</h3>
-        <p>{str(f, "source_excerpt")}</p><p>출처 연결: {JSON.stringify(f.citation_ids)} · {str(f, "verification_status")}</p>
+        <p>{str(f, "source_excerpt")}</p><p>보호된 숫자: {JSON.stringify(f.numeric_values ?? [])} · 보호된 날짜: {JSON.stringify(f.date_values ?? [])}</p>
+        <p>출처 연결: {JSON.stringify(f.citation_ids)} · {str(f, "verification_status")}</p>
         <button disabled={busy || !targetLanguage} onClick={() => act("localizations", { fact_id: f.id, target_language: targetLanguage })}>이 근거 현지화</button>
       </article>)}
       {(data.localizations ?? []).map(item => { const output = item.output_snapshot as Row | undefined; const fact = data.evidence_facts?.find(f => f.id === item.fact_id); return <details key={str(item, "id")}><summary>{str(item, "target_language")} · {item.machine_passed ? "기계 검사 통과" : "품질 보류"} · 사람 검토 대기</summary>

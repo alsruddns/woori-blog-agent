@@ -1,0 +1,765 @@
+{
+  "phase": "4-L",
+  "kind": "append_only_deterministic_recheck",
+  "batch_id": "448d6fa9-c87d-4038-b97d-04727b612dbd",
+  "database": "woori_blog_agent_eval",
+  "recorded_at": "2026-10-27T03:49:48.500585+00:00",
+  "elapsed_seconds": 3.968,
+  "ai_calls": 0,
+  "results": [
+    {
+      "evaluation_id": "260e488a-0425-4c25-80f3-d1f7465d9d34",
+      "source_run_id": "9afab489-3628-463a-9c0d-f61ee426f176",
+      "source_content_version_id": "35e30c7f-33ec-4ee5-8d45-660c8dc4a18f",
+      "topic": "Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026",
+      "language": "en",
+      "model": "Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+      "status": "quality_held",
+      "machine_passed": false,
+      "checks": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": false
+      },
+      "details": {
+        "numeric_values_missing": [],
+        "numeric_values_added": [],
+        "proper_name_candidates": [
+          "Federal Open Market Committee",
+          "Federal Reserve Board"
+        ],
+        "missing_proper_names": [],
+        "unsupported_proper_names": [],
+        "source_overlap_words_max": 28,
+        "source_ids": [
+          "873093a8-085e-42b5-8bb2-657f62f8df94"
+        ],
+        "fact_ids": [
+          "03cd3abc-ae35-49c8-b2eb-82b6872fa4c4",
+          "be9de8b6-7b07-4e95-a682-36e702afcd84",
+          "bd8bf8c0-bda7-4d13-b199-7e52d54251e8",
+          "5a9afa07-567c-483f-aece-b117a4c6cc15",
+          "85184003-7d9f-412a-9b38-cb60b33d02a5"
+        ]
+      },
+      "elapsed_ms": 107,
+      "ai_calls": 0,
+      "human_review_required": true,
+      "publish_ready": false
+    },
+    {
+      "evaluation_id": "3964f85e-a38b-4cb0-bdb5-74c41714207d",
+      "source_run_id": "ea3d0ef8-6b0a-4668-8563-786d0c25959a",
+      "source_content_version_id": "f0d52644-7a9b-4d1c-b7c5-a01548e4ca84",
+      "topic": "Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026",
+      "language": "en",
+      "model": "Qwen3-4B-Q4_K_M.gguf",
+      "status": "machine_passed_review_required",
+      "machine_passed": true,
+      "checks": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "details": {
+        "numeric_values_missing": [],
+        "numeric_values_added": [],
+        "proper_name_candidates": [
+          "Federal Open Market Committee",
+          "Federal Reserve Board"
+        ],
+        "missing_proper_names": [],
+        "unsupported_proper_names": [],
+        "source_overlap_words_max": 17,
+        "source_ids": [
+          "873093a8-085e-42b5-8bb2-657f62f8df94"
+        ],
+        "fact_ids": [
+          "03cd3abc-ae35-49c8-b2eb-82b6872fa4c4",
+          "be9de8b6-7b07-4e95-a682-36e702afcd84",
+          "bd8bf8c0-bda7-4d13-b199-7e52d54251e8",
+          "5a9afa07-567c-483f-aece-b117a4c6cc15",
+          "85184003-7d9f-412a-9b38-cb60b33d02a5"
+        ]
+      },
+      "elapsed_ms": 90,
+      "ai_calls": 0,
+      "human_review_required": true,
+      "publish_ready": false
+    },
+    {
+      "evaluation_id": "d753a6d9-1057-4461-bc93-3a32007f2a75",
+      "source_run_id": "a2434d90-4357-4870-88a9-fd480be090c7",
+      "source_content_version_id": "dedd68e3-1829-4d2c-8ec2-c783911b765f",
+      "topic": "Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026",
+      "language": "ja",
+      "model": "Qwen3-4B-Q4_K_M.gguf",
+      "status": "machine_passed_review_required",
+      "machine_passed": true,
+      "checks": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "details": {
+        "numeric_values_missing": [],
+        "numeric_values_added": [],
+        "proper_name_candidates": [
+          "Federal Open Market Committee",
+          "Federal Reserve Board"
+        ],
+        "missing_proper_names": [],
+        "unsupported_proper_names": [],
+        "source_overlap_words_max": 4,
+        "source_ids": [
+          "873093a8-085e-42b5-8bb2-657f62f8df94"
+        ],
+        "fact_ids": [
+          "03cd3abc-ae35-49c8-b2eb-82b6872fa4c4",
+          "be9de8b6-7b07-4e95-a682-36e702afcd84",
+          "bd8bf8c0-bda7-4d13-b199-7e52d54251e8",
+          "5a9afa07-567c-483f-aece-b117a4c6cc15",
+          "85184003-7d9f-412a-9b38-cb60b33d02a5"
+        ]
+      },
+      "elapsed_ms": 90,
+      "ai_calls": 0,
+      "human_review_required": true,
+      "publish_ready": false
+    },
+    {
+      "evaluation_id": "734990da-6a26-4ce2-ab40-9a260e21a779",
+      "source_run_id": "37e40f06-3653-46c1-a861-50d1d089b19d",
+      "source_content_version_id": "57a0f484-48cc-40c5-92f5-b6365000b284",
+      "topic": "Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026",
+      "language": "ko",
+      "model": "Qwen3-4B-Q4_K_M.gguf",
+      "status": "machine_passed_review_required",
+      "machine_passed": true,
+      "checks": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "details": {
+        "numeric_values_missing": [],
+        "numeric_values_added": [],
+        "proper_name_candidates": [
+          "Federal Open Market Committee",
+          "Federal Reserve Board"
+        ],
+        "missing_proper_names": [],
+        "unsupported_proper_names": [],
+        "source_overlap_words_max": 4,
+        "source_ids": [
+          "873093a8-085e-42b5-8bb2-657f62f8df94"
+        ],
+        "fact_ids": [
+          "03cd3abc-ae35-49c8-b2eb-82b6872fa4c4",
+          "be9de8b6-7b07-4e95-a682-36e702afcd84",
+          "bd8bf8c0-bda7-4d13-b199-7e52d54251e8",
+          "5a9afa07-567c-483f-aece-b117a4c6cc15",
+          "85184003-7d9f-412a-9b38-cb60b33d02a5"
+        ]
+      },
+      "elapsed_ms": 102,
+      "ai_calls": 0,
+      "human_review_required": true,
+      "publish_ready": false
+    },
+    {
+      "evaluation_id": "d506f38a-63e4-4682-ade0-694f27a62326",
+      "source_run_id": "ee2a4dbe-2c29-4006-a981-b4b4efa693a6",
+      "source_content_version_id": "35615057-3e01-490f-8234-0e7d9684c65c",
+      "topic": "Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026",
+      "language": "zh-CN",
+      "model": "Qwen3-4B-Q4_K_M.gguf",
+      "status": "machine_passed_review_required",
+      "machine_passed": true,
+      "checks": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "details": {
+        "numeric_values_missing": [],
+        "numeric_values_added": [],
+        "proper_name_candidates": [
+          "Federal Open Market Committee",
+          "Federal Reserve Board"
+        ],
+        "missing_proper_names": [],
+        "unsupported_proper_names": [],
+        "source_overlap_words_max": 4,
+        "source_ids": [
+          "873093a8-085e-42b5-8bb2-657f62f8df94"
+        ],
+        "fact_ids": [
+          "03cd3abc-ae35-49c8-b2eb-82b6872fa4c4",
+          "be9de8b6-7b07-4e95-a682-36e702afcd84",
+          "bd8bf8c0-bda7-4d13-b199-7e52d54251e8",
+          "5a9afa07-567c-483f-aece-b117a4c6cc15",
+          "85184003-7d9f-412a-9b38-cb60b33d02a5"
+        ]
+      },
+      "elapsed_ms": 100,
+      "ai_calls": 0,
+      "human_review_required": true,
+      "publish_ready": false
+    },
+    {
+      "evaluation_id": "c394a7c6-3872-439a-a2f2-d9646dec90d2",
+      "source_run_id": "c2edfa85-0b48-4302-a12d-97f040936f3a",
+      "source_content_version_id": "6844c74a-0888-4e50-82fc-5b343bcc0a64",
+      "topic": "Apple Inc. 10-Q filed 2026-07-31",
+      "language": "en",
+      "model": "Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+      "status": "quality_held",
+      "machine_passed": false,
+      "checks": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": false,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "details": {
+        "numeric_values_missing": [],
+        "numeric_values_added": [],
+        "proper_name_candidates": [
+          "Apple Inc",
+          "SEC Form"
+        ],
+        "missing_proper_names": [],
+        "unsupported_proper_names": [],
+        "source_overlap_words_max": 16,
+        "source_ids": [
+          "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+        ],
+        "fact_ids": [
+          "726d7444-a2ff-45de-b821-c31c2d1c069f",
+          "97594ff5-5eca-4def-8ba8-4105d6b00e9e",
+          "72fb57bf-8bb3-4c52-bd70-75c2782bf0f3",
+          "e16aad33-6a8c-4b5d-8e4f-9be42e768a23"
+        ]
+      },
+      "elapsed_ms": 108,
+      "ai_calls": 0,
+      "human_review_required": true,
+      "publish_ready": false
+    },
+    {
+      "evaluation_id": "deeec6b6-7e4d-4410-8dd9-6f3b8bb524b2",
+      "source_run_id": "40012cc2-4755-4b76-a8e2-ce2f08446c62",
+      "source_content_version_id": "16ae97df-e9a5-4727-8c9e-4d2c896e76b2",
+      "topic": "Apple Inc. 10-Q filed 2026-07-31",
+      "language": "en",
+      "model": "Qwen3-4B-Q4_K_M.gguf",
+      "status": "quality_held",
+      "machine_passed": false,
+      "checks": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": false,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "details": {
+        "numeric_values_missing": [],
+        "numeric_values_added": [],
+        "proper_name_candidates": [
+          "Apple Inc",
+          "SEC Form"
+        ],
+        "missing_proper_names": [],
+        "unsupported_proper_names": [],
+        "source_overlap_words_max": 12,
+        "source_ids": [
+          "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+        ],
+        "fact_ids": [
+          "726d7444-a2ff-45de-b821-c31c2d1c069f",
+          "97594ff5-5eca-4def-8ba8-4105d6b00e9e",
+          "72fb57bf-8bb3-4c52-bd70-75c2782bf0f3",
+          "e16aad33-6a8c-4b5d-8e4f-9be42e768a23"
+        ]
+      },
+      "elapsed_ms": 95,
+      "ai_calls": 0,
+      "human_review_required": true,
+      "publish_ready": false
+    },
+    {
+      "evaluation_id": "469b2bea-5051-43a3-b553-d3a97bf54b35",
+      "source_run_id": "607276cc-39be-42b2-85e0-e9c18e890233",
+      "source_content_version_id": "7463b92b-4c07-46d2-afba-60bd5a6adb86",
+      "topic": "Apple Inc. 10-Q filed 2026-07-31",
+      "language": "ja",
+      "model": "Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+      "status": "quality_held",
+      "machine_passed": false,
+      "checks": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": false,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": false,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "details": {
+        "numeric_values_missing": [],
+        "numeric_values_added": [],
+        "proper_name_candidates": [
+          "Apple Inc",
+          "SEC Form"
+        ],
+        "missing_proper_names": [],
+        "unsupported_proper_names": [
+          "Q Apple Inc",
+          "United States Dollar"
+        ],
+        "source_overlap_words_max": 3,
+        "source_ids": [
+          "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+        ],
+        "fact_ids": [
+          "726d7444-a2ff-45de-b821-c31c2d1c069f",
+          "97594ff5-5eca-4def-8ba8-4105d6b00e9e",
+          "72fb57bf-8bb3-4c52-bd70-75c2782bf0f3",
+          "e16aad33-6a8c-4b5d-8e4f-9be42e768a23"
+        ]
+      },
+      "elapsed_ms": 159,
+      "ai_calls": 0,
+      "human_review_required": true,
+      "publish_ready": false
+    },
+    {
+      "evaluation_id": "0199b7d9-bd6b-41e3-be47-cd40f2c23f94",
+      "source_run_id": "80f5fe2a-368b-49e1-b424-3fdb23b4818b",
+      "source_content_version_id": "305fba32-4f09-42c1-bb74-e5a824082424",
+      "topic": "Apple Inc. 10-Q filed 2026-07-31",
+      "language": "ja",
+      "model": "Qwen3-4B-Q4_K_M.gguf",
+      "status": "quality_held",
+      "machine_passed": false,
+      "checks": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": false,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "details": {
+        "numeric_values_missing": [],
+        "numeric_values_added": [],
+        "proper_name_candidates": [
+          "Apple Inc",
+          "SEC Form"
+        ],
+        "missing_proper_names": [],
+        "unsupported_proper_names": [
+          "Q Apple Inc",
+          "United States Dollar"
+        ],
+        "source_overlap_words_max": 3,
+        "source_ids": [
+          "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+        ],
+        "fact_ids": [
+          "726d7444-a2ff-45de-b821-c31c2d1c069f",
+          "97594ff5-5eca-4def-8ba8-4105d6b00e9e",
+          "72fb57bf-8bb3-4c52-bd70-75c2782bf0f3",
+          "e16aad33-6a8c-4b5d-8e4f-9be42e768a23"
+        ]
+      },
+      "elapsed_ms": 166,
+      "ai_calls": 0,
+      "human_review_required": true,
+      "publish_ready": false
+    },
+    {
+      "evaluation_id": "354daa8c-c147-4b1a-a568-82aa7b336ca1",
+      "source_run_id": "820da8dc-f1f0-4316-ac46-ba5361e06b71",
+      "source_content_version_id": "9073e983-1b78-4f1c-92fa-e64a53720ccd",
+      "topic": "Apple Inc. 10-Q filed 2026-07-31",
+      "language": "ko",
+      "model": "Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+      "status": "quality_held",
+      "machine_passed": false,
+      "checks": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": false,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "details": {
+        "numeric_values_missing": [],
+        "numeric_values_added": [],
+        "proper_name_candidates": [
+          "Apple Inc",
+          "SEC Form"
+        ],
+        "missing_proper_names": [],
+        "unsupported_proper_names": [
+          "Q Apple Inc"
+        ],
+        "source_overlap_words_max": 4,
+        "source_ids": [
+          "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+        ],
+        "fact_ids": [
+          "726d7444-a2ff-45de-b821-c31c2d1c069f",
+          "97594ff5-5eca-4def-8ba8-4105d6b00e9e",
+          "72fb57bf-8bb3-4c52-bd70-75c2782bf0f3",
+          "e16aad33-6a8c-4b5d-8e4f-9be42e768a23"
+        ]
+      },
+      "elapsed_ms": 290,
+      "ai_calls": 0,
+      "human_review_required": true,
+      "publish_ready": false
+    },
+    {
+      "evaluation_id": "27300cf8-b3b2-48c7-8078-c6400e350b8d",
+      "source_run_id": "72152fce-1acf-454a-8a51-5d86ffab8930",
+      "source_content_version_id": "33c8e90a-c2ef-44e2-a5f0-20011c43009b",
+      "topic": "Apple Inc. 10-Q filed 2026-07-31",
+      "language": "ko",
+      "model": "Qwen3-4B-Q4_K_M.gguf",
+      "status": "quality_held",
+      "machine_passed": false,
+      "checks": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": false,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": false,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "details": {
+        "numeric_values_missing": [],
+        "numeric_values_added": [],
+        "proper_name_candidates": [
+          "Apple Inc",
+          "SEC Form"
+        ],
+        "missing_proper_names": [],
+        "unsupported_proper_names": [],
+        "source_overlap_words_max": 4,
+        "source_ids": [
+          "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+        ],
+        "fact_ids": [
+          "726d7444-a2ff-45de-b821-c31c2d1c069f",
+          "97594ff5-5eca-4def-8ba8-4105d6b00e9e",
+          "72fb57bf-8bb3-4c52-bd70-75c2782bf0f3",
+          "e16aad33-6a8c-4b5d-8e4f-9be42e768a23"
+        ]
+      },
+      "elapsed_ms": 190,
+      "ai_calls": 0,
+      "human_review_required": true,
+      "publish_ready": false
+    },
+    {
+      "evaluation_id": "f69cab58-1287-4057-b4bb-dbae4412a957",
+      "source_run_id": "5f01182b-8803-4ddc-b82a-c002f1c848fc",
+      "source_content_version_id": "122859c3-d3ac-4d7f-97bf-15d84dfe7257",
+      "topic": "Apple Inc. 10-Q filed 2026-07-31",
+      "language": "zh-CN",
+      "model": "Qwen3-4B-Q4_K_M.gguf",
+      "status": "quality_held",
+      "machine_passed": false,
+      "checks": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": false,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": false,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "details": {
+        "numeric_values_missing": [],
+        "numeric_values_added": [],
+        "proper_name_candidates": [
+          "Apple Inc",
+          "SEC Form"
+        ],
+        "missing_proper_names": [],
+        "unsupported_proper_names": [
+          "Q Apple Inc"
+        ],
+        "source_overlap_words_max": 3,
+        "source_ids": [
+          "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+        ],
+        "fact_ids": [
+          "726d7444-a2ff-45de-b821-c31c2d1c069f",
+          "97594ff5-5eca-4def-8ba8-4105d6b00e9e",
+          "72fb57bf-8bb3-4c52-bd70-75c2782bf0f3",
+          "e16aad33-6a8c-4b5d-8e4f-9be42e768a23"
+        ]
+      },
+      "elapsed_ms": 305,
+      "ai_calls": 0,
+      "human_review_required": true,
+      "publish_ready": false
+    }
+  ],
+  "summary": {
+    "drafts_rechecked": 12,
+    "machine_passed_review_required": 4,
+    "quality_held": 8,
+    "human_review_pending": 12,
+    "publish_ready_true": 0
+  }
+}
