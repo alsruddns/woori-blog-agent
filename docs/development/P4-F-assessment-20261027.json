@@ -55,6 +55,18 @@
     "publish_ready": false,
     "operational_write_approval": false
   },
+  "operational_database_counts": {
+    "blogger_write_operations": 0,
+    "publishing_records": 0,
+    "active_or_completed_publication_jobs": 0,
+    "automatic_publication_policies": 0,
+    "publish_ready_results": 0
+  },
+  "git": {
+    "branch": "develop",
+    "main_changed": false,
+    "origin_develop_after_initial_push": "a09d6637b5b0511aad2e6e54956b92968e7d4a8f"
+  },
   "tests": {
     "focused": "31 passed",
     "pytest": "152 passed",
