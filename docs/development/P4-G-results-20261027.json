@@ -1,0 +1,125 @@
+{
+  "phase": "4-G",
+  "record_id": "P4-G-001",
+  "captured_at": "2026-10-27T10:02:33+09:00",
+  "assessment_run_id": "8449ee26-1fc5-443c-9f10-becb0bee3f6d",
+  "evaluation_database": {
+    "name": "woori_blog_agent_eval",
+    "runtime_role": "woori_eval_app",
+    "migration_role": "woori_eval_owner",
+    "runtime_connected": true,
+    "migration_credential_authenticated": true,
+    "migration_role_superuser": false,
+    "migration_role_createdb": false,
+    "migration_role_createrole": false,
+    "operations_database_connect_allowed": false,
+    "evaluation_isolated_flag": true,
+    "paused": false,
+    "max_concurrency": 1,
+    "other_sessions": 0,
+    "pending_or_running_jobs": 0,
+    "old_credential_direct_denial_verified": false,
+    "old_credential_denial_note": "Former credential was not retained; no old-secret attempt was made",
+    "secrets_printed_or_recorded": false
+  },
+  "quota_window": {
+    "timezone": "Asia/Seoul",
+    "date": "2026-10-27",
+    "languages": {
+      "en": {"used": 2, "limit": 2, "remaining": 0},
+      "ko": {"used": 2, "limit": 2, "remaining": 0},
+      "ja": {"used": 1, "limit": 2, "remaining": 1},
+      "zh-CN": {"used": 1, "limit": 2, "remaining": 1}
+    }
+  },
+  "sec_source": {
+    "current_reviewed_sources": 1,
+    "successful_english_source_drafts": 0,
+    "localization_prerequisite_met": false
+  },
+  "sec_inference": {
+    "model_expected": "Qwen3-4B-Q4_K_M.gguf",
+    "model_started": false,
+    "actual_runs": 0,
+    "languages_attempted": [],
+    "status": "blocked_before_enqueue",
+    "blocking_reasons": ["english_evaluation_quota_exhausted", "successful_sec_english_source_draft_missing"],
+    "generation_targets_created": 0,
+    "json_success": 0,
+    "machine_quality_passed": 0,
+    "quality_held": 0,
+    "model_calls": 0,
+    "tokens": null,
+    "tokens_per_second": null,
+    "elapsed_seconds": null
+  },
+  "resources": {
+    "ram_total_gib": 31.91,
+    "ram_available_gib": 15.68,
+    "ram_used_percent": 50.8,
+    "cpu_percent_sample": 26.5,
+    "disk_free_gib": 188.79,
+    "llama_cpp_port_11435_listening": false,
+    "inference_resource_gate_alone_would_pass": true
+  },
+  "fed_human_review": {
+    "eligible_machine_passed_drafts": 4,
+    "by_language": {"en": 1, "ko": 1, "ja": 1, "zh-CN": 1},
+    "review_records": 0,
+    "reviewed": 0,
+    "pending": 4,
+    "approvals_fabricated": false
+  },
+  "dashboard": {
+    "live_get_status": 200,
+    "current_live_state_includes_evaluation_fields": false,
+    "checked_out_source_includes_review_and_readiness_features": true,
+    "services_restarted": false
+  },
+  "blogger": {
+    "provider_cost_status": "provider_cost_unverified",
+    "read_provider_blocked": true,
+    "requests_this_phase": 0,
+    "historical_logged_calls": 117,
+    "historical_operation_types": ["get_blog", "get_by_url", "list_account_blogs", "list_posts"],
+    "write_calls_this_phase": 0,
+    "publishing_records": 0,
+    "non_mock_jobs": 0,
+    "auto_publish_policies": 0,
+    "publish_ready_evaluations": 0
+  },
+  "audit": {
+    "event_type": "operations.phase4g.assessment_recorded",
+    "event_id": 84682,
+    "append_only": true,
+    "secret_values_included": false
+  },
+  "safety": {
+    "additional_cost": 0,
+    "paid_api_calls": 0,
+    "blogger_writes": 0,
+    "automatic_publish_enabled": false,
+    "publish_ready": false,
+    "existing_rows_updated_or_deleted": 0
+  },
+  "validation": {
+    "verify_ps1": "passed",
+    "pytest": "152 passed",
+    "ruff": "passed",
+    "mypy": "passed for 27 source files",
+    "wheel": "passed",
+    "dashboard_lint_typecheck_build": "passed",
+    "secret_audit_check": "passed",
+    "git_diff_check": "passed",
+    "operations_schema_version": 28,
+    "evaluation_schema_version": 26,
+    "database_migration_executed": false,
+    "evaluation_audit_immutable": true
+  },
+  "git": {
+    "branch": "develop",
+    "main_changed": false,
+    "commit": null,
+    "origin_develop_pushed": false
+  }
+}

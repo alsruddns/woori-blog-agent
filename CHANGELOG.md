@@ -1,5 +1,12 @@
 # Changelog
 
+## Phase 4-G (SEC evaluation preflight; 2026-10-27)
+- Revalidated the rotated evaluation migration credential using the ignored configuration without printing secret values. The new credential connects only to the evaluation database; operational database CONNECT is denied. The former credential was not retained, so a direct old-password rejection attempt was not made.
+- Confirmed the Asia/Seoul quota window has not reset: SEC English is 2/2 and no successful English SEC source draft exists. Actual Qwen3 inference and all dependent locales were safely stopped before model startup; remaining Japanese and Chinese quota was not used.
+- Confirmed four Fed language drafts remain machine-passed and pending human review (0/4 review records). Dashboard source contains the review workflow, but the already-running local services return a pre-Phase-4-F state payload; they were not restarted.
+- Kept Blogger reads blocked under `provider_cost_unverified`; no new cost research or Blogger request was made. Existing logged Blogger operations are GET-only; real writes, automatic publishing, and `publish_ready` remain disabled.
+- Recorded this assessment as an append-only evaluation audit event and a separate sanitized JSON result.
+
 ## Phase 4-F (security and SEC preflight; 2026-10-27)
 - Rotated the isolated evaluation migration-role credential after an ignored environment-file value appeared in an earlier tool result; validated the replacement connection without printing credential material. Added password redaction regression coverage and a metadata-only config report command.
 - Confirmed the migration role has no superuser/database-role creation privileges, cannot connect to the operations DB, and had no other active sessions. No migration was run.
