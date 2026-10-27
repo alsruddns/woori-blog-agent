@@ -1,18 +1,27 @@
-"""Opt-in project-only official CPU engine/model downloads with pinned hashes."""
+"""Opt-in project-only engine/model downloads with pinned hashes."""
 
 import argparse
 import hashlib
 import json
 import shutil
+import sys
 from pathlib import Path
 from zipfile import ZipFile
 
-from woori.external_policy import client as external_client
+from dotenv import load_dotenv
 
-root = Path(__file__).resolve().parents[1] / ".local"
+root_path = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(root_path / "services" / "api"))
 parser = argparse.ArgumentParser()
 parser.add_argument("--with-vulkan", action="store_true", help="Install a separate project-local Vulkan engine")
+parser.add_argument("--with-qwen3-4b-instruct-2507", action="store_true", help="Install the pinned evaluation-only comparison model")
+parser.add_argument("--evaluation-only", action="store_true", help="Use the isolated evaluation DB for install audit events")
 args = parser.parse_args()
+if args.evaluation_only and not load_dotenv(root_path / ".env.evaluation", override=True):
+    raise SystemExit("Evaluation database settings are required; no artifact request was made")
+from woori.external_policy import client as external_client
+
+root = root_path / ".local"
 root.mkdir(exist_ok=True)
 if shutil.disk_usage(root).free < 20 * 1024**3:
     raise SystemExit("At least 20 GiB free required; no model download attempted")
@@ -85,6 +94,35 @@ with external_client("artifact_setup", "artifact_download", timeout=120, follow_
                 "repo": repo,
                 "quantization": "Q4_K_M",
                 "size_bytes": bytes_on_disk,
+            }
+        )
+    if args.with_qwen3_4b_instruct_2507:
+        revision = "ae44f08e1392f39c0e474af10c3ff8355c8b6688"
+        repo = "bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF"
+        filename = "Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf"
+        digest = "2fde00ce69dd4899c70d020845e2638353015bba0fdf161b3eb965f2bca4464e"
+        size_bytes = 2497280736
+        info = client.get(
+            f"https://huggingface.co/api/models/{repo}/revision/{revision}",
+            params={"blobs": "true"},
+        )
+        info.raise_for_status()
+        metadata = next(s for s in info.json()["siblings"] if s["rfilename"] == filename)
+        if metadata.get("lfs", {}).get("sha256") != digest or metadata.get("size") != size_bytes:
+            raise SystemExit("Pinned comparison-model metadata changed; no model was installed")
+        downloads.append(
+            (f"https://huggingface.co/{repo}/resolve/{revision}/{filename}", filename, digest)
+        )
+        models.append(
+            {
+                "name": filename,
+                "revision": revision,
+                "sha256": digest,
+                "license": "Apache-2.0 (upstream Qwen weights; derivative quantization)",
+                "repo": repo,
+                "quantization": "Q4_K_M",
+                "size_bytes": size_bytes,
+                "evaluation_only": True,
             }
         )
     for url, filename, digest in downloads:

@@ -47,8 +47,7 @@ with socket.socket() as probe:
 with (folder / name).open("rb") as weights:
     if hashlib.file_digest(weights, "sha256").hexdigest() != model["sha256"]:
         raise SystemExit("Model checksum mismatch")
-process = subprocess.Popen(
-    [
+command = [
         str(engine / "llama-server.exe"),
         "-m",
         str(folder / name),
@@ -69,13 +68,17 @@ process = subprocess.Popen(
         "--alias",
         name,
         "--jinja",
-        "--chat-template-kwargs",
-        json.dumps({"enable_thinking": False}),
         "--no-webui",
         "--log-disable",
         "--api-key-file",
         str(key_path),
-    ],
+    ]
+if name != "Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf":
+    command[command.index("--no-webui"):command.index("--no-webui")] = [
+        "--chat-template-kwargs", json.dumps({"enable_thinking": False}),
+    ]
+process = subprocess.Popen(
+    command,
     cwd=root,
     stdout=subprocess.DEVNULL,
     stderr=subprocess.DEVNULL,

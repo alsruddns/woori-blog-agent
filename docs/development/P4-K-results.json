@@ -1,0 +1,809 @@
+{
+  "phase": "4-K",
+  "recorded_at": "2026-10-27",
+  "timezone": "Asia/Seoul",
+  "evaluation_database": "woori_blog_agent_eval",
+  "operational_database_modified": false,
+  "model_candidates": [
+    {
+      "role": "baseline",
+      "name": "Qwen3-4B-Q4_K_M.gguf",
+      "revision": "bc640142c66e1fdd12af0bd68f40445458f3869b",
+      "repo": "Qwen/Qwen3-4B-GGUF",
+      "sha256": "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5",
+      "license": "Apache-2.0",
+      "quantization": "Q4_K_M",
+      "kept_as_operational_default": true
+    },
+    {
+      "role": "evaluation_only_candidate",
+      "name": "Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+      "revision": "ae44f08e1392f39c0e474af10c3ff8355c8b6688",
+      "repo": "bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF",
+      "sha256": "2fde00ce69dd4899c70d020845e2638353015bba0fdf161b3eb965f2bca4464e",
+      "size_bytes": 2497280736,
+      "quantization": "Q4_K_M",
+      "license_basis": "Official Qwen upstream model card Apache-2.0; quantizer README identifies source model; quantizer repository has no separate license metadata. Local evaluation only; no redistribution.",
+      "installed_hash_verified": true,
+      "evaluation_only": true
+    }
+  ],
+  "conditions": {
+    "same_source_keyword_and_source_revision": true,
+    "same_current_pipeline_and_quality_gates": true,
+    "same_local_backend": "llama.cpp b11889 Vulkan",
+    "threads": 4,
+    "gpu_layers": 20,
+    "max_concurrency": 1,
+    "external_inference": false,
+    "paid_api_calls": 0,
+    "blogger_writes": 0,
+    "human_review_required": true,
+    "publish_ready": false,
+    "model_specific_template": "Qwen3 Instruct-2507 uses documented ChatML without enable_thinking template kwarg; baseline retained its existing non-thinking template setting."
+  },
+  "gemma_review": {
+    "candidate": "Gemma 3 4B",
+    "model_card": "https://huggingface.co/google/gemma-3-4b-it",
+    "terms": "https://ai.google.dev/gemma/terms",
+    "llama_cpp_support_documented": true,
+    "access_requires_accepting_google_terms": true,
+    "downloaded": false,
+    "evaluated": false,
+    "reason": "Separate model-use terms require acceptance; no account acceptance was performed and minimum candidate set focused on public Apache Qwen weights."
+  },
+  "candidate_runs": 4,
+  "candidate_languages": [
+    "en",
+    "ko",
+    "ja"
+  ],
+  "candidate_machine_pass_count": 1,
+  "comparisons": [
+    {
+      "source": "fed",
+      "topic_keyword_id": "08c47279-652f-4dd6-89ce-9b5bfcc41973",
+      "source_id": "873093a8-085e-42b5-8bb2-657f62f8df94",
+      "language": "en",
+      "baseline": {
+        "run_id": "ea3d0ef8-6b0a-4668-8563-786d0c25959a",
+        "version_id": "f0d52644-7a9b-4d1c-b7c5-a01548e4ca84",
+        "run_status": "succeeded",
+        "draft_state": "quality_held",
+        "created_at": "2026-10-27T00:28:34.141241+09:00",
+        "source_ids": [
+          "873093a8-085e-42b5-8bb2-657f62f8df94"
+        ],
+        "quality": {
+          "machine_pass": true,
+          "structural_pass": true,
+          "grounding_pass": true,
+          "localization_pass": true,
+          "failed_checks": [],
+          "longest_source_overlap_words": 17,
+          "human_review_required": true,
+          "publish_ready": false
+        },
+        "metrics": {
+          "model_calls": 5,
+          "completion_tokens": 198,
+          "inference_seconds": 23.772,
+          "aggregate_tokens_per_second": 8.33,
+          "total_run_seconds": 25.72,
+          "rss_peak_mib": 4880.57,
+          "process_cpu_mean_percent_samples": [
+            11.63,
+            12.31,
+            14.44,
+            13.38,
+            13.86
+          ],
+          "gpu_utilization_percent_samples": [
+            78.65,
+            45.86,
+            49.8,
+            46.04,
+            48.55
+          ],
+          "gpu_utilization_observed": true
+        }
+      },
+      "candidate": {
+        "artifact": "P4-K-run-fed-en-instruct2507-26cdb4fd-65c5-4a7d-ba58-70ea5775450c.json",
+        "evaluation_id": "26cdb4fd-65c5-4a7d-ba58-70ea5775450c",
+        "run_id": "9afab489-3628-463a-9c0d-f61ee426f176",
+        "version_id": "35e30c7f-33ec-4ee5-8d45-660c8dc4a18f",
+        "run_status": "succeeded",
+        "draft_state": "quality_held",
+        "source_id": "873093a8-085e-42b5-8bb2-657f62f8df94",
+        "quality": {
+          "machine_pass": false,
+          "structural_pass": true,
+          "grounding_pass": false,
+          "localization_pass": false,
+          "failed_checks": [
+            "localization:f9ae6848c43ac7d43601:no_mass_direct_quote",
+            "no_mass_direct_quote"
+          ],
+          "longest_source_overlap_words": 28,
+          "human_review_required": true,
+          "publish_ready": false
+        },
+        "metrics": {
+          "model_calls": 5,
+          "completion_tokens": 205,
+          "inference_seconds": 27.575,
+          "aggregate_tokens_per_second": 7.43,
+          "total_run_seconds": 33.08,
+          "rss_peak_mib": 3479.35,
+          "process_cpu_mean_percent_samples": [
+            15.14,
+            12.91,
+            13.05,
+            12.64,
+            11.74
+          ],
+          "gpu_utilization_percent_samples": [
+            74.99,
+            44.25,
+            45.64,
+            44.48,
+            45.34
+          ],
+          "gpu_utilization_observed": true
+        },
+        "quota": {
+          "used_before": 4,
+          "used_after": 5,
+          "limit": 10,
+          "count_policy": "target counted at creation; failures and cancellation remain counted; retries reuse target"
+        }
+      },
+      "candidate_status": "measured"
+    },
+    {
+      "source": "fed",
+      "topic_keyword_id": "08c47279-652f-4dd6-89ce-9b5bfcc41973",
+      "source_id": "873093a8-085e-42b5-8bb2-657f62f8df94",
+      "language": "ko",
+      "baseline": {
+        "run_id": "37e40f06-3653-46c1-a861-50d1d089b19d",
+        "version_id": "57a0f484-48cc-40c5-92f5-b6365000b284",
+        "run_status": "succeeded",
+        "draft_state": "quality_held",
+        "created_at": "2026-10-27T00:29:22.681976+09:00",
+        "source_ids": [
+          "873093a8-085e-42b5-8bb2-657f62f8df94"
+        ],
+        "quality": {
+          "machine_pass": false,
+          "structural_pass": true,
+          "grounding_pass": false,
+          "localization_pass": true,
+          "failed_checks": [
+            "proper_names_preserved"
+          ],
+          "longest_source_overlap_words": 4,
+          "human_review_required": true,
+          "publish_ready": false
+        },
+        "metrics": {
+          "model_calls": 6,
+          "completion_tokens": 275,
+          "inference_seconds": 27.613,
+          "aggregate_tokens_per_second": 9.96,
+          "total_run_seconds": 47.23,
+          "rss_peak_mib": 4960.61,
+          "process_cpu_mean_percent_samples": [
+            14.59,
+            14.15,
+            15.33,
+            13.11,
+            13.62,
+            13.96
+          ],
+          "gpu_utilization_percent_samples": [
+            50.15,
+            49.64,
+            27.19,
+            50.8,
+            54.48,
+            51.35
+          ],
+          "gpu_utilization_observed": true
+        }
+      },
+      "candidate": null,
+      "candidate_status": "not_run_after_candidate_inference_stopped"
+    },
+    {
+      "source": "fed",
+      "topic_keyword_id": "08c47279-652f-4dd6-89ce-9b5bfcc41973",
+      "source_id": "873093a8-085e-42b5-8bb2-657f62f8df94",
+      "language": "ja",
+      "baseline": {
+        "run_id": "a2434d90-4357-4870-88a9-fd480be090c7",
+        "version_id": "dedd68e3-1829-4d2c-8ec2-c783911b765f",
+        "run_status": "succeeded",
+        "draft_state": "quality_held",
+        "created_at": "2026-10-27T00:32:17.882308+09:00",
+        "source_ids": [
+          "873093a8-085e-42b5-8bb2-657f62f8df94"
+        ],
+        "quality": {
+          "machine_pass": true,
+          "structural_pass": true,
+          "grounding_pass": true,
+          "localization_pass": true,
+          "failed_checks": [],
+          "longest_source_overlap_words": 4,
+          "human_review_required": true,
+          "publish_ready": false
+        },
+        "metrics": {
+          "model_calls": 6,
+          "completion_tokens": 274,
+          "inference_seconds": 29.496,
+          "aggregate_tokens_per_second": 9.29,
+          "total_run_seconds": 31.65,
+          "rss_peak_mib": 3663.77,
+          "process_cpu_mean_percent_samples": [
+            13.33,
+            18.44,
+            0.0,
+            13.58,
+            13.18,
+            14.1
+          ],
+          "gpu_utilization_percent_samples": [
+            44.08,
+            49.33,
+            48.25,
+            49.56,
+            45.05,
+            49.93
+          ],
+          "gpu_utilization_observed": true
+        }
+      },
+      "candidate": null,
+      "candidate_status": "not_run_after_candidate_inference_stopped"
+    },
+    {
+      "source": "fed",
+      "topic_keyword_id": "08c47279-652f-4dd6-89ce-9b5bfcc41973",
+      "source_id": "873093a8-085e-42b5-8bb2-657f62f8df94",
+      "language": "zh-CN",
+      "baseline": {
+        "run_id": "ee2a4dbe-2c29-4006-a981-b4b4efa693a6",
+        "version_id": "35615057-3e01-490f-8234-0e7d9684c65c",
+        "run_status": "succeeded",
+        "draft_state": "quality_held",
+        "created_at": "2026-10-27T00:33:03.041640+09:00",
+        "source_ids": [
+          "873093a8-085e-42b5-8bb2-657f62f8df94"
+        ],
+        "quality": {
+          "machine_pass": true,
+          "structural_pass": true,
+          "grounding_pass": true,
+          "localization_pass": true,
+          "failed_checks": [],
+          "longest_source_overlap_words": 4,
+          "human_review_required": true,
+          "publish_ready": false
+        },
+        "metrics": {
+          "model_calls": 6,
+          "completion_tokens": 195,
+          "inference_seconds": 25.561,
+          "aggregate_tokens_per_second": 7.63,
+          "total_run_seconds": 27.66,
+          "rss_peak_mib": 3657.31,
+          "process_cpu_mean_percent_samples": [
+            12.93,
+            13.7,
+            0.0,
+            13.87,
+            14.18,
+            13.84
+          ],
+          "gpu_utilization_percent_samples": [
+            44.18,
+            47.26,
+            12.48,
+            49.06,
+            45.52,
+            47.73
+          ],
+          "gpu_utilization_observed": true
+        }
+      },
+      "candidate": null,
+      "candidate_status": "not_run_after_candidate_inference_stopped"
+    },
+    {
+      "source": "sec",
+      "topic_keyword_id": "7da37a9c-529c-4935-b45d-23570584462b",
+      "source_id": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+      "language": "en",
+      "baseline": {
+        "run_id": "40012cc2-4755-4b76-a8e2-ce2f08446c62",
+        "version_id": "16ae97df-e9a5-4727-8c9e-4d2c896e76b2",
+        "run_status": "succeeded",
+        "draft_state": "quality_held",
+        "created_at": "2026-10-27T10:45:27.832739+09:00",
+        "source_ids": [
+          "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+        ],
+        "quality": {
+          "machine_pass": true,
+          "structural_pass": true,
+          "grounding_pass": true,
+          "localization_pass": true,
+          "failed_checks": [],
+          "longest_source_overlap_words": 12,
+          "human_review_required": true,
+          "publish_ready": false
+        },
+        "metrics": {
+          "model_calls": 4,
+          "completion_tokens": 173,
+          "inference_seconds": 21.53,
+          "aggregate_tokens_per_second": 8.04,
+          "total_run_seconds": 23.8,
+          "rss_peak_mib": 3528.52,
+          "process_cpu_mean_percent_samples": [
+            11.01,
+            15.18,
+            17.68,
+            14.0
+          ],
+          "gpu_utilization_percent_samples": [
+            76.31,
+            47.99,
+            49.28,
+            47.8
+          ],
+          "gpu_utilization_observed": true
+        }
+      },
+      "candidate": {
+        "artifact": "P4-K-run-sec-en-instruct2507-04915d1e-809f-4da9-8692-307e51dd63ee.json",
+        "evaluation_id": "04915d1e-809f-4da9-8692-307e51dd63ee",
+        "run_id": "c2edfa85-0b48-4302-a12d-97f040936f3a",
+        "version_id": "6844c74a-0888-4e50-82fc-5b343bcc0a64",
+        "run_status": "succeeded",
+        "draft_state": "quality_held",
+        "source_id": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+        "quality": {
+          "machine_pass": true,
+          "structural_pass": true,
+          "grounding_pass": true,
+          "localization_pass": true,
+          "failed_checks": [],
+          "longest_source_overlap_words": 16,
+          "human_review_required": true,
+          "publish_ready": false
+        },
+        "metrics": {
+          "model_calls": 4,
+          "completion_tokens": 193,
+          "inference_seconds": 19.687,
+          "aggregate_tokens_per_second": 9.8,
+          "total_run_seconds": 23.68,
+          "rss_peak_mib": 3527.6,
+          "process_cpu_mean_percent_samples": [
+            0.0,
+            13.32,
+            18.8,
+            14.47
+          ],
+          "gpu_utilization_percent_samples": [
+            46.73,
+            48.7,
+            49.11,
+            49.33
+          ],
+          "gpu_utilization_observed": true
+        },
+        "quota": {
+          "used_before": 5,
+          "used_after": 6,
+          "limit": 10,
+          "count_policy": "target counted at creation; failures and cancellation remain counted; retries reuse target"
+        }
+      },
+      "candidate_status": "measured"
+    },
+    {
+      "source": "sec",
+      "topic_keyword_id": "7da37a9c-529c-4935-b45d-23570584462b",
+      "source_id": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+      "language": "ko",
+      "baseline": {
+        "run_id": "a2d2f59d-08ba-4470-8edb-ab519243de7b",
+        "version_id": "be196fb1-8f2e-471f-855d-c3d9652f2c01",
+        "run_status": "succeeded",
+        "draft_state": "quality_held",
+        "created_at": "2026-10-27T10:46:56.980457+09:00",
+        "source_ids": [
+          "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+        ],
+        "quality": {
+          "machine_pass": false,
+          "structural_pass": true,
+          "grounding_pass": false,
+          "localization_pass": false,
+          "failed_checks": [
+            "language_metadata_matches",
+            "localization:37ec392c847b4023be5f:language_matches",
+            "localization:e4abce8f39418f69032d:numbers_preserved",
+            "no_unverified_numbers"
+          ],
+          "longest_source_overlap_words": 4,
+          "human_review_required": true,
+          "publish_ready": false
+        },
+        "metrics": {
+          "model_calls": 5,
+          "completion_tokens": 243,
+          "inference_seconds": 39.94,
+          "aggregate_tokens_per_second": 6.08,
+          "total_run_seconds": 42.41,
+          "rss_peak_mib": 3636.75,
+          "process_cpu_mean_percent_samples": [
+            0.0,
+            10.79,
+            11.02,
+            15.97,
+            13.16
+          ],
+          "gpu_utilization_percent_samples": [
+            44.13,
+            50.8,
+            47.73
+          ],
+          "gpu_utilization_observed": true
+        }
+      },
+      "candidate": {
+        "artifact": "P4-K-run-sec-ko-instruct2507-6ee545a8-c839-4a8c-aab7-503625b8d8de.json",
+        "evaluation_id": "6ee545a8-c839-4a8c-aab7-503625b8d8de",
+        "run_id": "820da8dc-f1f0-4316-ac46-ba5361e06b71",
+        "version_id": "9073e983-1b78-4f1c-92fa-e64a53720ccd",
+        "run_status": "succeeded",
+        "draft_state": "quality_held",
+        "source_id": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+        "quality": {
+          "machine_pass": false,
+          "structural_pass": true,
+          "grounding_pass": false,
+          "localization_pass": false,
+          "failed_checks": [
+            "localization:37ec392c847b4023be5f:language_matches",
+            "localization:e4abce8f39418f69032d:numbers_preserved",
+            "no_unsupported_proper_names",
+            "no_unverified_numbers"
+          ],
+          "longest_source_overlap_words": 4,
+          "human_review_required": true,
+          "publish_ready": false
+        },
+        "metrics": {
+          "model_calls": 5,
+          "completion_tokens": 244,
+          "inference_seconds": 27.359,
+          "aggregate_tokens_per_second": 8.92,
+          "total_run_seconds": 31.4,
+          "rss_peak_mib": 3632.96,
+          "process_cpu_mean_percent_samples": [
+            11.49,
+            13.92,
+            18.46,
+            18.74,
+            13.87
+          ],
+          "gpu_utilization_percent_samples": [
+            62.64,
+            47.33,
+            50.02,
+            48.06,
+            50.26
+          ],
+          "gpu_utilization_observed": true
+        },
+        "quota": {
+          "used_before": 3,
+          "used_after": 4,
+          "limit": 10,
+          "count_policy": "target counted at creation; failures and cancellation remain counted; retries reuse target"
+        }
+      },
+      "candidate_status": "measured"
+    },
+    {
+      "source": "sec",
+      "topic_keyword_id": "7da37a9c-529c-4935-b45d-23570584462b",
+      "source_id": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+      "language": "ja",
+      "baseline": {
+        "run_id": "80f5fe2a-368b-49e1-b424-3fdb23b4818b",
+        "version_id": "305fba32-4f09-42c1-bb74-e5a824082424",
+        "run_status": "succeeded",
+        "draft_state": "quality_held",
+        "created_at": "2026-10-27T10:48:35.159030+09:00",
+        "source_ids": [
+          "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+        ],
+        "quality": {
+          "machine_pass": false,
+          "structural_pass": true,
+          "grounding_pass": false,
+          "localization_pass": false,
+          "failed_checks": [
+            "localization:37ec392c847b4023be5f:language_matches",
+            "localization:d80fd6abeae9063202bd:no_unverified_entity_added",
+            "localization:e4abce8f39418f69032d:numbers_preserved",
+            "no_unsupported_proper_names",
+            "no_unverified_numbers"
+          ],
+          "longest_source_overlap_words": 3,
+          "human_review_required": true,
+          "publish_ready": false
+        },
+        "metrics": {
+          "model_calls": 5,
+          "completion_tokens": 227,
+          "inference_seconds": 26.206,
+          "aggregate_tokens_per_second": 8.66,
+          "total_run_seconds": 28.19,
+          "rss_peak_mib": 3710.7,
+          "process_cpu_mean_percent_samples": [
+            0.0,
+            13.42,
+            13.93,
+            20.91,
+            14.05
+          ],
+          "gpu_utilization_percent_samples": [
+            35.68,
+            38.18,
+            44.55,
+            52.3,
+            45.34
+          ],
+          "gpu_utilization_observed": true
+        }
+      },
+      "candidate": {
+        "artifact": "P4-K-run-sec-ja-instruct2507-13ad1f29-489b-4e1b-bd68-b424ba025225.json",
+        "evaluation_id": "13ad1f29-489b-4e1b-bd68-b424ba025225",
+        "run_id": "607276cc-39be-42b2-85e0-e9c18e890233",
+        "version_id": "7463b92b-4c07-46d2-afba-60bd5a6adb86",
+        "run_status": "succeeded",
+        "draft_state": "quality_held",
+        "source_id": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+        "quality": {
+          "machine_pass": false,
+          "structural_pass": true,
+          "grounding_pass": false,
+          "localization_pass": false,
+          "failed_checks": [
+            "localization:37ec392c847b4023be5f:language_matches",
+            "localization:d80fd6abeae9063202bd:no_unverified_entity_added",
+            "localization:e4abce8f39418f69032d:numbers_preserved",
+            "no_unsupported_proper_names",
+            "no_unverified_numbers"
+          ],
+          "longest_source_overlap_words": 3,
+          "human_review_required": true,
+          "publish_ready": false
+        },
+        "metrics": {
+          "model_calls": 5,
+          "completion_tokens": 234,
+          "inference_seconds": 23.905,
+          "aggregate_tokens_per_second": 9.79,
+          "total_run_seconds": 27.75,
+          "rss_peak_mib": 3707.12,
+          "process_cpu_mean_percent_samples": [
+            0.0,
+            13.21,
+            13.7,
+            18.12,
+            15.23
+          ],
+          "gpu_utilization_percent_samples": [
+            40.81,
+            48.46,
+            47.43,
+            50.23,
+            50.66
+          ],
+          "gpu_utilization_observed": true
+        },
+        "quota": {
+          "used_before": 2,
+          "used_after": 3,
+          "limit": 10,
+          "count_policy": "target counted at creation; failures and cancellation remain counted; retries reuse target"
+        }
+      },
+      "candidate_status": "measured"
+    },
+    {
+      "source": "sec",
+      "topic_keyword_id": "7da37a9c-529c-4935-b45d-23570584462b",
+      "source_id": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+      "language": "zh-CN",
+      "baseline": {
+        "run_id": "5f01182b-8803-4ddc-b82a-c002f1c848fc",
+        "version_id": "122859c3-d3ac-4d7f-97bf-15d84dfe7257",
+        "run_status": "succeeded",
+        "draft_state": "quality_held",
+        "created_at": "2026-10-27T10:49:18.751842+09:00",
+        "source_ids": [
+          "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+        ],
+        "quality": {
+          "machine_pass": false,
+          "structural_pass": true,
+          "grounding_pass": false,
+          "localization_pass": false,
+          "failed_checks": [
+            "localization:37ec392c847b4023be5f:language_matches",
+            "no_unsupported_proper_names"
+          ],
+          "longest_source_overlap_words": 3,
+          "human_review_required": true,
+          "publish_ready": false
+        },
+        "metrics": {
+          "model_calls": 5,
+          "completion_tokens": 217,
+          "inference_seconds": 24.014,
+          "aggregate_tokens_per_second": 9.04,
+          "total_run_seconds": 26.01,
+          "rss_peak_mib": 3783.46,
+          "process_cpu_mean_percent_samples": [
+            0.0,
+            14.1,
+            13.95,
+            19.22,
+            13.69
+          ],
+          "gpu_utilization_percent_samples": [
+            31.77,
+            50.13,
+            50.37,
+            49.31,
+            50.81
+          ],
+          "gpu_utilization_observed": true
+        }
+      },
+      "candidate": null,
+      "candidate_status": "not_run_after_repeated_quality_failures"
+    }
+  ],
+  "baseline_duplicate_attempt": {
+    "artifact": "P4-K-run-fed-en-baseline-b463111f-2086-4e8b-a377-17a1912a8bd4.json",
+    "run_id": "579e7ac5-6d3b-427d-921f-f01b2a5170a6",
+    "run_status": "failed",
+    "error_type": "duplicate_content",
+    "draft_persisted": false,
+    "model_calls": 0,
+    "completion_tokens": 0,
+    "inference_seconds": 27.74,
+    "duplicate_gate_preserved": true
+  },
+  "execution_stop_reason": "Stopped after candidate SEC Korean and Japanese both repeated number/proper-name/localization quality failures; no remaining locales were inferred. Candidate Fed English independently failed no_mass_direct_quote.",
+  "daily_quota_after": {
+    "en": 6,
+    "ko": 4,
+    "ja": 3,
+    "zh-CN": 2,
+    "per_language_limit": 10,
+    "reset_timezone": "Asia/Seoul",
+    "quota_reset_or_override": false
+  },
+  "runtime_restoration": {
+    "baseline_model": "Qwen3-4B-Q4_K_M.gguf",
+    "restored": true,
+    "publish_ready": false
+  },
+  "quota_after": [
+    {
+      "language": "en",
+      "used": 6,
+      "limit": 10
+    },
+    {
+      "language": "ko",
+      "used": 4,
+      "limit": 10
+    },
+    {
+      "language": "ja",
+      "used": 3,
+      "limit": 10
+    },
+    {
+      "language": "zh-CN",
+      "used": 2,
+      "limit": 10
+    }
+  ],
+  "runtime_restored": {
+    "model": "Qwen3-4B-Q4_K_M.gguf",
+    "pid": 39500,
+    "backend": "vulkan",
+    "threads": 4,
+    "gpu_layers": 20,
+    "health_status": 200,
+    "props_status": 200,
+    "sha256": "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5",
+    "manifest_match": true
+  },
+  "api_snapshot_validation": {
+    "database": "woori_blog_agent_eval",
+    "candidate_runs_visible": 4,
+    "tagged_fed_sec_runs": 15,
+    "keyword_id_present": true,
+    "model_field_present": true
+  },
+  "audit_event": {
+    "event_type": "research.model.comparison.completed",
+    "id": 85018,
+    "created_at": "2026-10-27T11:27:46.115685+09:00",
+    "append_only_trigger_verified": true
+  },
+  "conclusion": {
+    "promote_candidate": false,
+    "reason": "Only 4 candidate runs: one English SEC mechanical pass, one Fed English citation-overlap failure, and two non-English SEC failures. Candidate did not establish consistent multilingual improvement; human review remains pending.",
+    "operational_default_unchanged": true,
+    "publish_ready": false
+  },
+  "dashboard_validation": {
+    "built_latest_version_on_isolated_port": 3110,
+    "research_http_status": 200,
+    "comparison_heading_present": true,
+    "candidate_model_visible": true,
+    "quality_held_visible": true,
+    "publish_ready_false_visible": true,
+    "standard_port_3100_process_restarted": false,
+    "standard_port_3100_serves_comparison_heading": false,
+    "reason_not_restarted": "Existing project process was left untouched; restart required to serve newly built code."
+  },
+  "operational_safety_verified": {
+    "operations_database": "woori_blog_agent",
+    "operations_db_distinct_from_evaluation_db": true,
+    "blogger_write_audit_events": 0,
+    "auto_publish_policies_enabled": 0,
+    "language_publishing_enabled": 0,
+    "publish_ready_evaluations": 0,
+    "operational_generation_model": "Qwen3-1.7B-Q8_0.gguf",
+    "active_local_inference_model": "Qwen3-4B-Q4_K_M.gguf",
+    "baseline_sha256": "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5",
+    "candidate_sha256": "2fde00ce69dd4899c70d020845e2638353015bba0fdf161b3eb965f2bca4464e",
+    "paid_api_calls": 0,
+    "publish_ready": false
+  },
+  "test_results": {
+    "verify_ps1": "passed",
+    "ruff": "passed",
+    "mypy": "passed, 27 source files",
+    "pytest": "155 passed",
+    "wheel": "passed; sha256 606361c5efa71fe75d0aaf08ce0721b34b16ebb1cbd593f99440496dc9759bf1",
+    "dashboard_eslint": "passed",
+    "dashboard_typecheck": "passed",
+    "dashboard_production_build": "passed",
+    "secret_scan": "passed",
+    "audit_immutability": "passed",
+    "blogger_write_block": "verified; 0 operation audit events and all publish flags disabled",
+    "paid_api_block": "passed via existing automated tests and provider gate",
+    "git_diff_check": "passed",
+    "database_migration": "not_applicable; no schema change"
+  }
+}

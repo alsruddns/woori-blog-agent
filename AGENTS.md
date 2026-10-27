@@ -111,7 +111,7 @@ OAuth 토큰·API Key·비밀번호를 코드에 저장하지 않는다. .env �
 - Append reviewed, exact source spans to `evidence_facts`; retain source ID, BCP 47 source language, entity fingerprints, numbers, dates and citation IDs. Never assert semantic verification from span matching alone.
 - Localize one registered fact span at a time with the local provider. The renderer attaches source IDs and article structure deterministically; a model may not create or rewrite citations.
 - Preserve per-fact machine checks and model-call metrics in stage output. Any unsupported claim, number/name drift, unapproved term, language failure, or missing source remains held. Meaning and naturalness require human review.
-- A local model override is allowed only for evaluation-only runs and the explicitly allowlisted already-installed Qwen3 4B model. It must be audited, must not change saved operational settings, and remains subject to existing per-language daily limits and resource gates.
+- A local model override is allowed only for evaluation-only runs and an explicitly allowlisted, already-installed, checksum-pinned local Qwen 4B evaluation model. The Instruct-2507 comparison model is evaluation-only and must be rejected by operational generation even if an admin setting is changed. Overrides must be audited, must not change saved operational settings, and remain subject to existing per-language daily limits and resource gates.
 - Evaluation-only drafts always keep `publish_ready=false`; test results never activate language verification, production generation, Blogger writes, or automatic publishing.
 
 

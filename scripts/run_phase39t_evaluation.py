@@ -28,7 +28,7 @@ from woori.ai import EngineFailure
 from woori.db import connection
 from woori.local_inference import auth_headers, runtime
 
-EXPECTED_MODEL = "Qwen3-4B-Q4_K_M.gguf"
+DEFAULT_MODEL = "Qwen3-4B-Q4_K_M.gguf"
 SEQUENCE = {"en": 0, "ko": 1, "ja": 2, "zh-CN": 3}
 SOURCE_SEQUENCE = {"fed": "fed_rss", "sec": "sec_edgar"}
 
@@ -37,7 +37,9 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", choices=SOURCE_SEQUENCE, required=True)
     parser.add_argument("--language", choices=SEQUENCE, required=True)
+    parser.add_argument("--model", choices=sorted(pipeline.EVALUATION_MODEL_ALLOWLIST), default=DEFAULT_MODEL)
     args = parser.parse_args()
+    model_name = args.model
     adapter = SOURCE_SEQUENCE[args.source]
     evaluation_id = uuid4()
     preflight = resource_snapshot()
@@ -129,8 +131,8 @@ def main() -> None:
             )
 
     model = runtime()
-    if model.get("model") != EXPECTED_MODEL or not Path(ROOT / ".local" / EXPECTED_MODEL).is_file():
-        stop("expected_existing_local_model_unavailable", preflight)
+    if model.get("model") != model_name or not Path(ROOT / ".local" / model_name).is_file():
+        stop("requested_evaluation_model_unavailable", {**preflight, "model": model_name})
     with httpx.Client(timeout=3, trust_env=False, headers=auth_headers()) as client:
         if client.get("http://127.0.0.1:11435/health").status_code != 200:
             stop("local_inference_health_failed", preflight)
@@ -138,12 +140,12 @@ def main() -> None:
     if not loaded_resources["resource_gate_passed"]:
         stop("resource_gate_closed_after_model_start", loaded_resources)
 
-    key = f"p39t-{args.source}-{args.language}-{evaluation_id.hex}"
+    key = f"p4k-{args.source}-{args.language}-{model_name}-{evaluation_id.hex}"
     started = time.monotonic()
     try:
         job = pipeline.enqueue(
             source["keyword_id"], key, profile_ids=[profile["id"]],
-            evaluation_only=True, evaluation_model=EXPECTED_MODEL,
+            evaluation_only=True, evaluation_model=model_name,
         )
     except EngineFailure as exc:
         stop("enqueue_failed_" + exc.category, preflight)
@@ -182,6 +184,26 @@ def main() -> None:
     quality = metadata.get("quality", {}) if isinstance(metadata, dict) else {}
     grounding = quality.get("grounding", {}) if isinstance(quality, dict) else {}
     metrics = metadata.get("metrics", {}) if isinstance(metadata, dict) else {}
+    if not result:
+        # Failed persistence (for example a valid duplicate-content rejection)
+        # still has immutable per-stage inference evidence. Preserve its true
+        # model calls and mechanical checks without pretending a draft was saved.
+        for stage in stages:
+            snapshot = stage.get("output_snapshot")
+            if not isinstance(snapshot, dict):
+                continue
+            if stage.get("stage_name") == "seo_quality":
+                quality = snapshot
+            elif stage.get("stage_name") == "claim_verification":
+                grounding = snapshot
+        metrics = {
+            "stage_metrics": [
+                stage["output_snapshot"]["metrics"]
+                for stage in stages
+                if isinstance(stage.get("output_snapshot"), dict)
+                and isinstance(stage["output_snapshot"].get("metrics"), dict)
+            ]
+        }
     model_samples = metric_samples(metrics)
     token_total = int(sum(numeric(item.get("completion_tokens")) or 0 for item in model_samples))
     model_seconds = sum(numeric(item.get("wall_seconds")) or 0 for item in model_samples)
@@ -191,29 +213,31 @@ def main() -> None:
         if (sample := numeric(item.get("rss_peak_mib"))) is not None
     ]
     manifest = json.loads((ROOT / ".local" / "manifest.json").read_text(encoding="utf-8"))
-    model_record = next(item for item in manifest["models"] if item["name"] == EXPECTED_MODEL)
+    model_record = next(item for item in manifest["models"] if item["name"] == model_name)
     rss_samples = [
         item["payload"].get("worker_rss_bytes")
         for item in events
         if isinstance(item.get("payload"), dict) and item["payload"].get("worker_rss_bytes")
     ]
     artifact = {
-        "phase": "3.9-T",
+        "phase": "4-K",
         "evaluation_id": str(evaluation_id),
         "created_at": datetime.now(UTC).isoformat(),
         "source": {"adapter": adapter, "source_id": str(source["id"]), "source_name": source["source_name"], "url": source["url"], "keyword_id": str(source["keyword_id"])},
+        "comparison_key": f"phase4k:{adapter}:{source['keyword_id']}:{args.language}",
         "language": args.language,
-        "model": {"name": EXPECTED_MODEL, "runtime": model, "sha256": model_record["sha256"], "license": model_record["license"], "size_bytes": model_record["size_bytes"]},
+        "model": {"name": model_name, "runtime": model, "revision": model_record.get("revision"), "repo": model_record.get("repo"), "sha256": model_record["sha256"], "license": model_record["license"], "size_bytes": model_record["size_bytes"], "quantization": model_record.get("quantization")},
         "isolation": {"database": "woori_blog_agent_eval", "evaluation_only": True, "worker_exit_code": worker.returncode},
         "quota": {"used_before": used, "used_after": quota_after["n"] if quota_after else None, "limit": profile["evaluation_daily_limit"], "count_policy": "target counted at creation; failures and cancellation remain counted; retries reuse target"},
         "resources": {"before": preflight, "after": resource_snapshot(), "worker_max_rss_bytes_observed_in_job_events": max(rss_samples, default=None), "cpu_percent_during_run_sampled": psutil.cpu_percent(interval=None), "gpu_engine_percent": metrics.get("gpu_engine_percent")},
         "run": dict(run),
         "draft": ({"version_id": str(result["version_id"]) if result["version_id"] else None, "title": result["title"], "body": result["body"], "state": result["state"], "publish_ready": False} if result else None),
-        "checks": {"machine_quality_passed": bool(quality.get("structural_pass") and grounding.get("rule_pass") and quality.get("localization_pass", True)), "quality": quality, "grounding": grounding, "human_review_required": True, "publish_ready": False},
+        "checks": {"machine_quality_passed": bool(run["status"] == "succeeded" and quality.get("structural_pass") and grounding.get("rule_pass") and quality.get("localization_pass", True)), "stage_quality_snapshot_available": bool(quality), "persistence_succeeded": run["status"] == "succeeded", "quality": quality, "grounding": grounding, "human_review_required": True, "publish_ready": False},
         "metrics": {"elapsed_seconds": elapsed, "model_metrics": metrics, "model_call_count": sum(1 for item in model_samples if "completion_tokens" in item) or sum(int(numeric(item.get("model_calls")) or 1) for item in model_samples if "model_calls" in item), "completion_tokens": token_total, "tokens_per_second_aggregate": round(token_total / model_seconds, 2) if model_seconds else None, "rss_peak_mib": max(rss_values, default=None), "process_cpu_mean_percent_machine_samples": [item.get("process_cpu_mean_percent_machine") for item in model_samples if item.get("process_cpu_mean_percent_machine") is not None], "gpu_utilization_percent_samples": [item.get("gpu_utilization_percent") for item in model_samples if item.get("gpu_utilization_percent") is not None], "stage_runs": [dict(item) for item in stages], "audit_event_types": [item["event_type"] for item in events], "worker_process_exit_code": worker.returncode},
         "safety": {"paid_api_calls": 0, "external_data_calls": 0, "blogger_writes": 0, "publish_ready": False},
     }
-    out = ROOT / "docs" / "development" / f"P3-9T-run-{args.source}-{args.language}-{evaluation_id}.json"
+    model_tag = "baseline" if model_name == DEFAULT_MODEL else "instruct2507"
+    out = ROOT / "docs" / "development" / f"P4-K-run-{args.source}-{args.language}-{model_tag}-{evaluation_id}.json"
     out.write_text(json.dumps(artifact, ensure_ascii=False, indent=2, default=str) + "\n", encoding="utf-8")
     print(json.dumps({"artifact": str(out.relative_to(ROOT)), "source": adapter, "language": args.language, "run_status": run["status"], "machine_quality_passed": artifact["checks"]["machine_quality_passed"], "elapsed_seconds": elapsed, "publish_ready": False}, ensure_ascii=True))
     if worker.returncode != 0 or run["status"] != "succeeded":

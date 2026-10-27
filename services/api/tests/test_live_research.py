@@ -106,6 +106,22 @@ def test_model_artifact_gate_is_narrowly_scoped(monkeypatch: pytest.MonkeyPatch)
     external_policy._authorize(
         "artifact_setup",
         "artifact_download",
+        httpx.Request(
+            "GET",
+            "https://huggingface.co/bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF/resolve/ae44f08e1392f39c0e474af10c3ff8355c8b6688/Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+        ),
+    )
+    external_policy._authorize(
+        "artifact_setup",
+        "artifact_download",
+        httpx.Request(
+            "GET",
+            "https://huggingface.co/api/models/bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF/revision/ae44f08e1392f39c0e474af10c3ff8355c8b6688?blobs=true",
+        ),
+    )
+    external_policy._authorize(
+        "artifact_setup",
+        "artifact_download",
         httpx.Request("GET", "https://us.aws.cdn.hf.co/xet-bridge-us/immutable-object-id"),
     )
     with pytest.raises(
@@ -1272,10 +1288,36 @@ def test_fact_first_model_override_is_evaluation_only_and_bounded(lab: Any) -> N
         "SELECT 1 FROM audit_events WHERE run_id=%s AND event_type='research.evaluation.model.override'",
         (job["id"],),
     ).fetchone()
+    candidate = pipeline.enqueue(
+        uuid.UUID(keyword_id), "candidate-model-" + uuid.uuid4().hex,
+        evaluation_only=True, evaluation_model="Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+    )
+    candidate_models = conn.execute(
+        "SELECT settings_snapshot FROM generation_targets WHERE run_id=%s", (candidate["id"],)
+    ).fetchall()
+    assert all(
+        row["settings_snapshot"]["model"] == "Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf"
+        and row["settings_snapshot"]["evaluation_model_override"] is True
+        for row in candidate_models
+    )
     with pytest.raises(EngineFailure, match="evaluation_model_override_blocked"):
         pipeline.enqueue(
             uuid.UUID(keyword_id), "unsafe-" + uuid.uuid4().hex,
             evaluation_only=False, evaluation_model="Qwen3-4B-Q4_K_M.gguf",
+        )
+
+    with pytest.raises(EngineFailure, match="evaluation_model_override_blocked"):
+        pipeline.enqueue(
+            uuid.UUID(keyword_id), "unsafe-candidate-" + uuid.uuid4().hex,
+            evaluation_only=False, evaluation_model="Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+        )
+    conn.execute(
+        "UPDATE generation_settings SET model='Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf'"
+    )
+    with pytest.raises(EngineFailure, match="evaluation_only_model_blocked"):
+        pipeline.enqueue(
+            uuid.UUID(keyword_id), "unsafe-configured-candidate-" + uuid.uuid4().hex,
+            evaluation_only=False,
         )
 
 

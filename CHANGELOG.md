@@ -1,5 +1,11 @@
 # Changelog
 
+## Phase 4-K (local model comparison; 2026-10-27)
+- Added a checksum-pinned Qwen3-4B-Instruct-2507 Q4_K_M artifact as evaluation-only. The existing Qwen3-4B-Q4_K_M remains the operational default; the candidate is rejected for operational runs even if settings are changed.
+- Compared actual Fed and SEC C3 outputs where allowed. Candidate SEC English passed machine checks; candidate Fed English, SEC Korean and SEC Japanese remained held. Repeated numerical/proper-name/localization failures stopped remaining candidate locales; all drafts remain unpublished and require human review.
+- Added model/run comparisons to the read-only research Dashboard from isolated evaluation DB results, including model identity, measured checks and runtime; source and quality gates remain unchanged.
+- Gemma 3 4B was reviewed but not downloaded because access requires accepting separate Google model terms. No Blogger writes or paid inference/API calls were made.
+
 ## Phase 4-J (local AI recovery and SEC evaluation; 2026-10-27)
 - Diagnosed `local_engine_unavailable` as stale runtime PID metadata; verified pinned model/archive hashes and RX 570 Vulkan visibility, restarted the existing local model and confirmed authenticated health/model-list responses.
 - Ran actual Apple SEC evaluations in the isolated evaluation DB for en, ko, ja and zh-CN. All four runs stored new drafts; only English passed machine checks. All remain `quality_held` and `publish_ready=false`; human review remains required.

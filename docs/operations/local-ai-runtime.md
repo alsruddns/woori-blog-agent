@@ -1,6 +1,6 @@
 # Local AI runtime operations
 
-Use only the project-local llama.cpp binaries and the already verified model under `.local/`. No hosted model fallback is enabled. The pinned llama.cpp build is b11889 (MIT) and Qwen3-4B-Q4_K_M is Apache-2.0; verify the checked-in ignored local manifest hashes before troubleshooting. Do not download another model as part of recovery.
+Use only the project-local llama.cpp binaries and checksum-verified models under `.local/`. No hosted model fallback is enabled. The pinned llama.cpp build is b11889 (MIT), and the baseline Qwen3-4B-Q4_K_M weights are Apache-2.0. A separate Qwen3-4B-Instruct-2507 Q4_K_M artifact is pinned for evaluation-only comparison; it cannot be selected for operational generation. Verify the ignored local manifest hashes before troubleshooting. Do not download models during recovery.
 
 ## Start and confirm readiness
 
@@ -9,6 +9,14 @@ From the repository root, check port 11435, available RAM, project disk space, G
 ```powershell
 .\.venv\Scripts\python.exe scripts\start_evaluation_ai.py Qwen3-4B-Q4_K_M.gguf 4 vulkan
 ```
+
+Phase 4-K's comparison artifact can be installed only for a planned model evaluation. Use `scripts\setup-local-ai.py --with-qwen3-4b-instruct-2507 --evaluation-only`; it uses the pinned public artifact, the shared zero-cost outbound gate, a 20 GiB free-space guard, file checksum verification, and the isolated evaluation DB for its audit event. Start the comparison model only after the baseline server is confirmed idle and stopped:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\start_evaluation_ai.py Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf 4 vulkan
+```
+
+The comparison model uses the Qwen ChatML template documented by its quantization repository and does not receive the legacy Qwen3 `enable_thinking` template option. The pinned upstream source model is Apache-2.0; retain source attribution and the local manifest entry. The artifact is evaluation-only.
 
 This selects the evaluation DB for startup audit. It starts the local server on loopback only and writes the runtime PID/model/backend metadata. Confirm `.local/runtime.json` points to a live process whose executable is the project `.local/llama-b11889-vulkan/llama-server.exe`; then use the authorized local health and model-list checks. The inference API key comes from `.local/inference.key`; never print it. llama.cpp exposes `--list-devices` for detecting Vulkan devices; see the [upstream build documentation](https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md).
 

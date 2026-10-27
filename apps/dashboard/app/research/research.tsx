@@ -69,6 +69,13 @@ export default function Research({ initial }: { initial: State }) {
   const experiments = data.experiments ?? [];
   const currentExperimentId = experiments[0]?.experiment_id;
   const currentExperiments = experiments.filter(item => item.experiment_id === currentExperimentId);
+  const c3ModelComparisons = (data.evaluation_results?.runs ?? []).filter(run => run.sec_source || run.fed_source)
+    .reduce<Record<string, Row[]>>((groups, run) => {
+      const source = run.sec_source ? "SEC" : "Federal Reserve";
+      const key = `${source}:${str(run, "keyword_id")}:${str(run, "language_code")}`;
+      (groups[key] ??= []).push(run);
+      return groups;
+    }, {});
   const experimentFailureCounts = currentExperiments.reduce<Record<string, number>>((counts, item) => {
     const checks = (item.checks as Row | undefined)?.grounding as Row | undefined;
     const ruleChecks = (checks?.rule_checks as Row | undefined) ?? {};
@@ -282,6 +289,22 @@ export default function Research({ initial }: { initial: State }) {
       {data.evaluation_results?.error_category ? <p role="alert">{data.evaluation_results.error_category}</p> : null}
       {(data.evaluation_results?.quota ?? []).map(q => <p key={str(q, "language_code")}>Evaluation quota {str(q, "language_code")}: used {str(q, "quota_used")}/{str(q, "quota_limit")}; reserved {str(q, "reserved_slots")}; remaining after reservation {str(q, "remaining_after_reservation")}; resets {str(q, "resets_at")}.</p>)}
       <p>SEC English slot reservation: {String(data.evaluation_results?.sec_english_quota_reservation?.active ?? false)}; it is reserved within the daily cap, not added to it.</p>
+      <h3>Fed·SEC 모델별 C3 비교 (실제 격리 평가 실행만)</h3>
+      <p>같은 키워드·언어 그룹 안의 저장된 실행을 나란히 보여줍니다. 기계 검사 통과는 사람의 의미·자연스러움 검토나 발행 승인이 아닙니다.</p>
+      {Object.entries(c3ModelComparisons).map(([key, group]) => <details key={key}>
+        <summary>{group[0]?.sec_source ? "SEC" : "Federal Reserve"} · {str(group[0] ?? {}, "language_code")} · {group.length}개 실행</summary>
+        <div style={{ overflowX: "auto" }}><table><thead><tr><th>모델</th><th>체크섬</th><th>실행 상태</th><th>초안 상태</th><th>경과 ms</th><th>기계 검사</th><th>측정</th></tr></thead><tbody>
+          {group.map((run, index) => {
+            const modelName = str(run, "model");
+            const installed = ((local.installed_models as Row[] | undefined) ?? []).find(item => str(item, "name") === modelName);
+            const metadata = (run.result_metadata as Row | undefined) ?? {};
+            const quality = (metadata.quality as Row | undefined) ?? {};
+            const grounding = (quality.grounding as Row | undefined) ?? {};
+            const passed = run.run_status === "succeeded" && quality.structural_pass === true && grounding.rule_pass === true && quality.localization_pass !== false;
+            return <tr key={`${str(run, "run_id")}-${index}`}><td>{modelName || "미기록"}</td><td>{str(installed ?? {}, "sha256") || "평가 산출물 참조"}</td><td>{str(run, "run_status")}</td><td>{str(run, "state") || "저장 초안 없음"}</td><td>{str(run, "elapsed_ms") || "미측정"}</td><td>{passed ? "통과" : "보류 또는 미측정"}</td><td><pre>{JSON.stringify(quality.metrics ?? metadata.metrics ?? {}, null, 2)}</pre></td></tr>;
+          })}
+        </tbody></table></div>
+      </details>)}
       {(data.evaluation_results?.runs ?? []).map((run, index) => <details key={`${str(run, "run_id")}-${index}`}>
         <summary>{str(run, "language_code")} | {str(run, "run_status")} | {str(run, "state")} | {str(run, "model")} | {str(run, "created_at")}</summary>
         <h3>{str(run, "title") || "No saved draft"}</h3>

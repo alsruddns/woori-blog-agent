@@ -110,6 +110,8 @@ PROVIDERS: dict[str, dict[str, Any]] = {
                 "/Qwen/Qwen3-1.7B-GGUF/resolve/",
                 "/Qwen/Qwen3-4B-GGUF/resolve/",
                 "/Qwen/Qwen3-8B-GGUF/resolve/",
+                "/api/models/bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF/revision/",
+                "/bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF/resolve/",
             ),
             "objects.githubusercontent.com": ("/",),
             "release-assets.githubusercontent.com": ("/",),

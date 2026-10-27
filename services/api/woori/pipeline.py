@@ -23,7 +23,11 @@ from .db import connection
 from .grounding import inspect, numbers, proper_names
 from .localization import EXTRACTOR_VERSION, fact_ledger, localize_fact
 
-EVALUATION_MODEL_ALLOWLIST = {"Qwen3-4B-Q4_K_M.gguf"}
+EVALUATION_MODEL_ALLOWLIST = {
+    "Qwen3-4B-Q4_K_M.gguf",
+    "Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+}
+EVALUATION_ONLY_MODELS = {"Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf"}
 EVALUATION_QUOTA_LIMIT = 10
 SEC_ENGLISH_PRIORITY_RESERVED_SLOTS = 1
 
@@ -382,6 +386,8 @@ def enqueue(
                 raise EngineFailure("inactive_or_unknown_target")
         if not targets:
             raise EngineFailure("source_profile_required")
+        if not evaluation_only and any(t["model"] in EVALUATION_ONLY_MODELS for t in targets):
+            raise EngineFailure("evaluation_only_model_blocked")
         if evaluation_only:
             source_profile = conn.execute(
                 """SELECT 1 FROM language_profiles p JOIN languages l ON l.code=p.language_code

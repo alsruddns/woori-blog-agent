@@ -395,14 +395,21 @@ def _evaluation_results_snapshot() -> dict[str, Any]:
             ).fetchall()
             runs = conn.execute(
                 """SELECT r.id AS run_id,r.status AS run_status,r.error_type,r.attempts,
-                    r.created_at,j.evaluation_only,t.profile_id,g.state,g.provider,g.model,
+                    r.created_at,j.evaluation_only,t.profile_id,g.state,g.provider,
+                    COALESCE(g.model,t.settings_snapshot->>'model') AS model,
+                    j.keyword_id,
                     g.elapsed_ms,g.result_metadata,g.source_snapshot,v.id AS version_id,
                     COALESCE(v.language,p.language_code) AS language_code,v.title,v.body,
                     EXISTS(SELECT 1 FROM research_sources s
                       JOIN LATERAL (SELECT approved FROM source_reviews WHERE source_id=s.id
                         ORDER BY review_sequence DESC LIMIT 1) review ON review.approved
                       WHERE s.keyword_id=j.keyword_id AND s.source_name LIKE 'SEC EDGAR%%'
-                        AND s.valid_until>now()) AS sec_source,false AS publish_ready
+                        AND s.valid_until>now()) AS sec_source,
+                    EXISTS(SELECT 1 FROM research_sources s
+                      JOIN LATERAL (SELECT approved FROM source_reviews WHERE source_id=s.id
+                        ORDER BY review_sequence DESC LIMIT 1) review ON review.approved
+                      WHERE s.keyword_id=j.keyword_id AND s.source_name LIKE 'Federal Reserve%%'
+                        AND s.valid_until>now()) AS fed_source,false AS publish_ready
                 FROM job_runs r JOIN generation_jobs j ON j.run_id=r.id
                 JOIN generation_targets t ON t.run_id=r.id
                 JOIN language_profiles p ON p.id=t.profile_id
