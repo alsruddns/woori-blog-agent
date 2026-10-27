@@ -169,3 +169,103 @@ def test_blogger_cost_gate_blocks_before_draft_confirm_database_or_network(
             UUID("00000000-0000-0000-0000-000000000001"),
             blogger_drafts.CONFIRMATION_PHRASE,
         )
+
+
+def test_duplicate_draft_title_is_detected_before_any_insert(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pages = iter(
+        [
+            {"items": [], "nextPageToken": "page-2"},
+            {"items": [{"id": "post-77", "title": "fixed test title"}]},
+        ]
+    )
+    calls: list[tuple[str, int, str, str]] = []
+
+    def fake_read(blog, connection_id, action):
+        del action
+        calls.append((blog["blog_id"], 50, "draft", str(connection_id)))
+        return next(pages)
+
+    monkeypatch.setattr(blogger_drafts.service, "read", fake_read)
+    page_count, duplicate_id = blogger_drafts._find_existing_test_draft(
+        {"blog_id": "123", "language_code": "ko"},
+        UUID("00000000-0000-0000-0000-000000000002"),
+        "fixed test title",
+    )
+    assert (page_count, duplicate_id) == (2, "post-77")
+    assert len(calls) == 2
+
+
+def test_duplicate_pagination_cycle_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    page = {"items": [], "nextPageToken": "same-token"}
+    monkeypatch.setattr(blogger_drafts.service, "read", lambda *args: page)
+    with pytest.raises(blogger_drafts.GoogleFailure, match="duplicate_check_pagination_limit"):
+        blogger_drafts._find_existing_test_draft(
+            {"blog_id": "123", "language_code": "ko"},
+            UUID("00000000-0000-0000-0000-000000000003"),
+            "fixed test title",
+        )
+
+
+def test_remote_duplicate_blocks_insert_and_commits_audit(monkeypatch: pytest.MonkeyPatch) -> None:
+    preview_id = UUID("00000000-0000-0000-0000-000000000004")
+    connection_id = UUID("00000000-0000-0000-0000-000000000005")
+    blog_id = UUID("00000000-0000-0000-0000-000000000006")
+    result = {
+        "preview_id": str(preview_id),
+        "connection_id": str(connection_id),
+        "blog_record_id": str(blog_id),
+        "blog_id": "123",
+        "language_code": "ko",
+        "title": "fixed test title",
+        "content": "fixed body",
+        "payload_sha256": "fingerprint",
+    }
+    executed: list[tuple[str, object]] = []
+
+    class FakeConnection:
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def execute(self, query: str, params: object = None) -> "FakeConnection":
+            executed.append((query, params))
+            return self
+
+        def fetchone(self) -> dict[str, object]:
+            return {
+                "idempotency_key": "live-draft:key",
+                "request_fingerprint": "fingerprint",
+                "status": "pending",
+                "result": result,
+            }
+
+    monkeypatch.setattr(blogger_drafts, "connection", lambda: FakeConnection())
+    monkeypatch.setattr(blogger_drafts, "_require_cost_approval", lambda: None)
+    monkeypatch.setattr(
+        blogger_drafts.service,
+        "blog_record",
+        lambda _blog_id: {"id": blog_id, "language_code": "ko"},
+    )
+    monkeypatch.setattr(blogger_drafts, "_verified_target", lambda *_args: None)
+    monkeypatch.setattr(
+        blogger_drafts,
+        "_find_existing_test_draft",
+        lambda *_args: (1, "remote-post-9"),
+    )
+    monkeypatch.setattr(
+        blogger_drafts.oauth,
+        "access_token",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("no token or POST")),
+    )
+
+    with pytest.raises(blogger_drafts.GoogleFailure, match="matching_remote_test_draft_exists"):
+        blogger_drafts.confirm(preview_id, blogger_drafts.CONFIRMATION_PHRASE)
+
+    joined = " ".join(query for query, _ in executed)
+    assert "status='duplicate_blocked'" in joined
+    assert "blogger.draft.duplicate_blocked" in joined
+    assert "blogger.draft.requested" not in joined

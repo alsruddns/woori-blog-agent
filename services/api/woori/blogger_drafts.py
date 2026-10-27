@@ -204,12 +204,41 @@ def _record(
     )
 
 
+def _find_existing_test_draft(
+    blog: dict[str, Any], connection_id: UUID, expected_title: str
+) -> tuple[int, str | None]:
+    """Search draft pages before insert; fail closed on malformed or unbounded pagination."""
+    page_token = ""
+    seen: set[str] = set()
+    pages = 0
+    while True:
+        def load_page(reader: BloggerReader, token: str = page_token) -> dict[str, Any]:
+            return reader.posts(str(blog["blog_id"]), 50, token, status="draft")
+
+        page = service.read(blog, connection_id, load_page)
+        pages += 1
+        items = page.get("items", [])
+        if not isinstance(items, list):
+            raise GoogleFailure("duplicate_check_invalid_response")
+        for item in items:
+            if isinstance(item, dict) and item.get("title") == expected_title:
+                return pages, str(item.get("id") or "unknown")
+        next_token = page.get("nextPageToken")
+        if not next_token:
+            return pages, None
+        if not isinstance(next_token, str) or next_token in seen or pages >= 20:
+            raise GoogleFailure("duplicate_check_pagination_limit")
+        seen.add(next_token)
+        page_token = next_token
+
+
 def confirm(preview_id: UUID, confirmation: str) -> dict[str, Any]:
     """Make exactly one POST after explicit confirmation of the stored preview."""
     if confirmation != CONFIRMATION_PHRASE:
         raise GoogleFailure("explicit_private_draft_approval_required")
     _require_cost_approval()
     request_id = uuid4()
+    duplicate_found = False
     with connection() as conn:
         row = conn.execute(
             """SELECT idempotency_key,request_fingerprint,status,result
@@ -230,32 +259,90 @@ def confirm(preview_id: UUID, confirmation: str) -> dict[str, Any]:
         _verified_target(conn, blog, connection_id)
         if row["request_fingerprint"] != result["payload_sha256"]:
             raise GoogleFailure("draft_preview_fingerprint_mismatch")
-        # Mark uncertain before network I/O; a crash can never cause an automatic replay.
-        conn.execute(
-            "UPDATE blogger_write_operations SET status='uncertain' WHERE idempotency_key=%s",
-            (row["idempotency_key"],),
+        # A remote duplicate check precedes the one-shot write. An exact title match
+        # blocks the insert even if its body differs; this test title is unique and fixed.
+        pages_checked, duplicate_post_id = _find_existing_test_draft(
+            blog, connection_id, result["title"]
         )
-        conn.execute(
-            """INSERT INTO audit_events(event_type,blog_id,language_code,payload)
-            VALUES ('blogger.draft.requested',%s,%s,%s)""",
-            (
-                blog_id,
-                blog["language_code"],
-                Jsonb(
-                    {
-                        "request_id": str(request_id),
-                        "preview_id": str(preview_id),
-                        "connection_id": str(connection_id),
-                        "blog_id": result["blog_id"],
-                        "language_code": result["language_code"],
-                        "title": result["title"],
-                        "content": result["content"],
-                        "is_draft": True,
-                        "attempt": 1,
-                    }
+        if duplicate_post_id is not None:
+            duplicate_result = {
+                **result,
+                "final_status": "duplicate_blocked",
+                "duplicate_post_id": duplicate_post_id,
+                "duplicate_check_pages": pages_checked,
+                "external_call_made": False,
+            }
+            conn.execute(
+                "UPDATE blogger_write_operations SET status='duplicate_blocked',result=%s WHERE idempotency_key=%s",
+                (Jsonb(duplicate_result), row["idempotency_key"]),
+            )
+            conn.execute(
+                """INSERT INTO audit_events(event_type,blog_id,language_code,payload)
+                VALUES ('blogger.draft.duplicate_blocked',%s,%s,%s)""",
+                (
+                    blog_id,
+                    blog["language_code"],
+                    Jsonb(
+                        {
+                            "request_id": str(request_id),
+                            "preview_id": str(preview_id),
+                            "blog_id": result["blog_id"],
+                            "language_code": result["language_code"],
+                            "duplicate_post_id": duplicate_post_id,
+                            "draft_list_pages": pages_checked,
+                            "insert_sent": False,
+                        }
+                    ),
                 ),
-            ),
-        )
+            )
+            duplicate_found = True
+        else:
+            conn.execute(
+                """INSERT INTO audit_events(event_type,blog_id,language_code,payload)
+                VALUES ('blogger.draft.duplicate_check_completed',%s,%s,%s)""",
+                (
+                    blog_id,
+                    blog["language_code"],
+                    Jsonb(
+                        {
+                            "request_id": str(request_id),
+                            "preview_id": str(preview_id),
+                            "blog_id": result["blog_id"],
+                            "draft_list_pages": pages_checked,
+                            "matching_title_found": False,
+                            "insert_sent": False,
+                        }
+                    ),
+                ),
+            )
+            # Mark uncertain before network I/O; a crash can never cause an automatic replay.
+            conn.execute(
+                "UPDATE blogger_write_operations SET status='uncertain' WHERE idempotency_key=%s",
+                (row["idempotency_key"],),
+            )
+            conn.execute(
+                """INSERT INTO audit_events(event_type,blog_id,language_code,payload)
+                VALUES ('blogger.draft.requested',%s,%s,%s)""",
+                (
+                    blog_id,
+                    blog["language_code"],
+                    Jsonb(
+                        {
+                            "request_id": str(request_id),
+                            "preview_id": str(preview_id),
+                            "connection_id": str(connection_id),
+                            "blog_id": result["blog_id"],
+                            "language_code": result["language_code"],
+                            "title": result["title"],
+                            "content": result["content"],
+                            "is_draft": True,
+                            "attempt": 1,
+                        }
+                    ),
+                ),
+            )
+    if duplicate_found:
+        raise GoogleFailure("matching_remote_test_draft_exists")
     _record(blog, connection_id, request_id, "requested")
     failure_status: str
     http_status: int | None
