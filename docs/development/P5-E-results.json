@@ -1,0 +1,102 @@
+{
+  "phase": "5-E",
+  "work_id": "P5-E-001",
+  "recorded_at": "2026-10-27",
+  "timezone": "Asia/Seoul",
+  "baseline_commit": "6ddfb36a078f3f19babd31a1c50344092f39c1b3",
+  "branch": "develop",
+  "runtime": {
+    "dashboard": {"port": 3100, "pid": 37740, "stopped": false, "latest_develop": false, "reason": "unmanaged_original_session"},
+    "api": {"port": 8100, "pid": 32432, "stopped": false, "latest_develop": false, "reason": "unmanaged_original_session"},
+    "llama_cpp": {"port": 11435, "pid": 39500, "changed": false},
+    "isolated_latest_api": {"port": 18100, "database": "woori_blog_agent_test", "health": 200, "research_state": 200, "publications_state": 200, "stopped_gracefully": true},
+    "isolated_latest_dashboard": {"port": 13100, "research": 200, "same_origin_research_state": 200, "stopped_gracefully": true},
+    "browser_ui": "not_verified_browser_surface_unavailable",
+    "current_default_port_versions": {"dashboard_research": 200, "api_state": 200, "latest_editorial_version_field": false, "latest_publication_approval_field": false}
+  },
+  "operations_database": {
+    "database": "woori_blog_agent",
+    "schema_before": 32,
+    "schema_after": 32,
+    "content_versions_before": 360,
+    "content_versions_after": 360,
+    "audit_events_before": 1307,
+    "audit_events_after": 1307,
+    "publish_ready_true": 0,
+    "migration_033_applied": false,
+    "migration_reason": "Existing Dashboard/API could not be gracefully stopped from their unmanaged original sessions; controlled maintenance window not established"
+  },
+  "backup": {
+    "file": "backups/20261027T062250Z.dump",
+    "bytes": 421563,
+    "sha256": "C4D343010C89DAA3DB7B2F3B0C58B5889B89573D33FD07789ABC1E6CFB70BEC2",
+    "pg_restore_catalog_verified": true,
+    "this_archive_restore_rehearsal": false,
+    "separate_prior_restore_rehearsal": true
+  },
+  "test_database": {
+    "database": "woori_blog_agent_test",
+    "schema": 33,
+    "content_versions_after": 0,
+    "audit_events_after": 55,
+    "editorial_versions_after": 0,
+    "publication_approval_events_after": 0,
+    "publishing_jobs_after": 0,
+    "test_api_writes": "none"
+  },
+  "editor_and_approval": {
+    "fastapi_testclient_regression": "passed_in_full_suite",
+    "isolated_http_ui_shell_and_bff": "passed_read_only",
+    "browser_edit_save": "not_verified",
+    "production_record_edit": false,
+    "approval_ui_interaction": "not_verified_in_browser"
+  },
+  "blogger": {
+    "oauth_status": "connected",
+    "stored_scope": "https://www.googleapis.com/auth/blogger.readonly",
+    "write_scope_added": false,
+    "provider_cost_status": "provider_cost_unverified",
+    "api_requests_this_phase": 0,
+    "real_write_requests_this_phase": 0,
+    "fake_adapter": "MockTransport_only; tested draft create, publish, schedule, PATCH update, DELETE, idempotency and uncertain failure blocking",
+    "real_post_id_mapping_e2e": "not_verified"
+  },
+  "nested_agents_file": {
+    "path": "apps/dashboard/AGENTS.md",
+    "origin": "Next.js generate-agent-files.js managed block emitted/re-added by next dev",
+    "scope": "apps/dashboard subtree",
+    "policy_conflict": false,
+    "retained": true
+  },
+  "tests": {
+    "ruff": "passed",
+    "mypy": "passed_28_sources",
+    "pytest": "passed_176",
+    "python_wheel": "passed",
+    "dashboard_eslint": "passed",
+    "dashboard_typecheck": "passed",
+    "dashboard_production_build": "passed",
+    "secret_history_http_scan": "passed",
+    "git_diff_check": "passed"
+  },
+  "external_effects": {
+    "paid_calls": 0,
+    "ai_inference_calls": 0,
+    "blogger_get_requests": 0,
+    "blogger_write_requests": 0,
+    "operations_db_data_changes": 0,
+    "publish_ready_changes": 0
+  },
+  "git": {
+    "commit": "pending",
+    "push": "pending",
+    "main_modified": false,
+    "worktree": "pending"
+  },
+  "remaining": [
+    "Gracefully stop existing 3100 and 8100 services in their original terminals and restart latest develop.",
+    "Apply migration 033 to operations only in a verified maintenance window after recovery readiness confirmation.",
+    "Perform browser-driven editor/save/approval verification when a controllable browser surface is available.",
+    "Confirm the Google Cloud project's API quota and active billing-account status; keep Blogger API calls blocked until zero-cost evidence is explicit."
+  ]
+}

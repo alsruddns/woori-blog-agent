@@ -1,5 +1,13 @@
 # Changelog
 
+## Phase 5-E (latest runtime and Blogger readiness verification; 2026-10-27)
+- Confirmed the existing 3100/8100 services are still unmanaged checkout processes on older code. The lifecycle manager correctly has no ownership record; neither process was stopped or replaced. The project-local llama.cpp process was left untouched.
+- Created a fresh operations custom-format backup and verified its PostgreSQL archive catalog. Operations remained schema 32 with 360 content versions, 1,307 audit events, and zero `publish_ready` records. Migration 033 remains pending because the existing API/Dashboard sessions were not gracefully stopped and a controlled maintenance window was not established.
+- Ran the latest API and Dashboard on isolated loopback ports 18100/13100 against `woori_blog_agent_test` (schema 33). Health, research state, `/research`, the same-origin state proxy, and publication status returned expected responses; publication remained `fake_only` and real writes disabled. Test DB content, editorial, approval, and publication rows remained empty after the read-only integration session.
+- Verified the registered OAuth connection stores only `blogger.readonly`. Official Blogger docs describe write endpoints/scopes but provide no explicit per-call price/free allocation; Cloud billing linkage was not accessible. The provider stays `provider_cost_unverified` and blocked.
+- Reviewed `apps/dashboard/AGENTS.md`: its only content is the Next.js-managed guidance block, which Next.js re-adds during `next dev`; its Dashboard-only scope does not conflict with root policy, so it remains tracked.
+- Verification passed: 176 pytest tests, Ruff, mypy (28 files), Python wheel, Dashboard ESLint/typecheck/production build, secret/history/HTTP scan, and `git diff --check`. Browser-driven editing could not be verified because no browser surface was available. No Blogger request/write, paid call, AI inference, or publish-ready change occurred.
+
 ## Phase 5-D (isolated runtime and integration verification; 2026-10-27)
 - Provisioned the dedicated `woori_blog_agent_test` database and test-only app/owner roles. Pytest now requires ignored `.env.test`, verifies the test identity, and confirms the test app role cannot CONNECT to the operations database.
 - Applied migrations 001–033 to the test database. Verified editor revision creation, HTML sanitization, stale-version conflict, publication approval/revocation, and approval invalidation after a newer edit inside rollback-only integration transactions.
