@@ -1,0 +1,176 @@
+from __future__ import annotations
+
+from collections.abc import Iterator
+from contextlib import contextmanager
+from datetime import UTC, datetime
+from typing import Any, Self
+from uuid import uuid4
+
+import psycopg
+from fastapi.testclient import TestClient
+from woori import research_routes
+from woori.config import settings
+from woori.main import app
+
+
+class _Cursor:
+    def __init__(self, rows: list[dict[str, Any]]):
+        self.rows = rows
+
+    def fetchone(self) -> dict[str, Any] | None:
+        return self.rows[0] if self.rows else None
+
+    def fetchall(self) -> list[dict[str, Any]]:
+        return self.rows
+
+
+class _EvaluationConnection:
+    def __init__(self) -> None:
+        self.statements: list[str] = []
+        self.version_id = uuid4()
+        self.evaluation_id = uuid4()
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        return None
+
+    def execute(self, query: str, _params: Any = None) -> _Cursor:
+        self.statements.append(query)
+        if "current_database()" in query:
+            return _Cursor([{"db": "woori_blog_agent_eval", "role": "woori_eval_reader"}])
+        if "count(*)::int AS total" in query:
+            return _Cursor([{"total": 1}])
+        if "DISTINCT language_code" in query:
+            return _Cursor([{"language_code": "en"}])
+        if "DISTINCT category_slug" in query:
+            return _Cursor([{"category_slug": "finance"}])
+        if "SELECT * FROM (" in query:
+            return _Cursor([{
+                "evaluation_id": self.evaluation_id,
+                "content_version_id": self.version_id,
+                "language_code": "en",
+                "topic": "Federal Reserve test",
+                "topic_key": "test-topic",
+                "title": "Read model fixture",
+                "summary": "summary",
+                "model": "qwen-local",
+                "machine_passed": False,
+                "human_review_required": True,
+                "status": "quality_held",
+                "created_at": datetime.now(UTC),
+                "content_version": 1,
+                "category_slug": "finance",
+            }])
+        raise AssertionError(f"Unexpected evaluation query: {query}")
+
+
+class _OperationsConnection:
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        return None
+
+    def execute(self, query: str, _params: Any = None) -> _Cursor:
+        if "to_regclass('public.trend_observations')" in query:
+            return _Cursor([{"table_name": "trend_observations"}])
+        if "to_regclass('public.trend_research_packages')" in query:
+            return _Cursor([{"table_name": "trend_research_packages"}])
+        if "count(*)::int AS total" in query:
+            return _Cursor([{"total": 1}])
+        if "FROM trend_observations o" in query and "LIMIT %s OFFSET %s" in query:
+            return _Cursor([{
+                "id": uuid4(), "query": "real source observation", "geo": "KR",
+                "platform": "google_trends", "source_rank": None,
+                "source_volume_label": None, "source_language": None,
+                "source_url": "https://trends.google.com/trending/rss?geo=KR",
+                "collected_at": datetime.now(UTC), "source_updated_at": None,
+                "topic_id": None, "representative_query": None,
+                "grouping_status": None, "topic_score": None,
+                "topic_decision": None, "package_status": None,
+                "verified_fact_count": None, "independent_source_count": None,
+                "linked_manuscript_count": 0,
+            }])
+        return _Cursor([])
+
+
+def test_manuscript_list_is_paginated_and_excludes_body_and_json(
+    monkeypatch: Any,
+) -> None:
+    evaluation = _EvaluationConnection()
+    monkeypatch.setattr(psycopg, "connect", lambda *args, **kwargs: evaluation)
+
+    @contextmanager
+    def operations() -> Iterator[_OperationsConnection]:
+        yield _OperationsConnection()
+
+    monkeypatch.setattr(research_routes, "connection", operations)
+    headers = {"Authorization": f"Bearer {settings().admin_token}"}
+    with TestClient(app) as client:
+        response = client.get(
+            "/admin/research/manuscripts?page=1&page_size=10&language=en&category=finance",
+            headers=headers,
+        )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1 and payload["page_size"] == 10
+    assert payload["items"][0]["title"] == "Read model fixture"
+    assert payload["items"][0]["publish_ready"] is False
+    assert not {"body", "saved_body", "metrics", "checks"}.intersection(payload["items"][0])
+    assert any("LIMIT %s OFFSET %s" in query for query in evaluation.statements)
+    assert all("v.body" not in query for query in evaluation.statements)
+
+
+def test_trend_list_keeps_unavailable_source_rank_null(monkeypatch: Any) -> None:
+    @contextmanager
+    def operations() -> Iterator[_OperationsConnection]:
+        yield _OperationsConnection()
+
+    monkeypatch.setattr(research_routes, "connection", operations)
+    headers = {"Authorization": f"Bearer {settings().admin_token}"}
+    with TestClient(app) as client:
+        response = client.get("/admin/research/trend-observations?page=1&page_size=10&geo=KR", headers=headers)
+    assert response.status_code == 200
+    item = response.json()["items"][0]
+    assert item["source_rank"] is None
+    assert item["source_language"] is None
+    assert response.json()["total"] == 1
+
+
+def test_legacy_manuscript_detail_is_read_only_and_sanitized(monkeypatch: Any) -> None:
+    evaluation_id, content_version_id = uuid4(), uuid4()
+    monkeypatch.setattr(
+        research_routes,
+        "_read_manuscript_detail",
+        lambda *_: {
+            "id": evaluation_id,
+            "content_version_id": content_version_id,
+            "topic_key": "phase4l:legacy",
+            "human_review_required": True,
+            "publish_ready": False,
+            "saved_body": "<script>alert(1)</script><p>근거 기반 원고</p>",
+            "sources": [],
+            "facts": [],
+        },
+    )
+
+    @contextmanager
+    def operations() -> Iterator[_OperationsConnection]:
+        yield _OperationsConnection()
+
+    monkeypatch.setattr(research_routes, "connection", operations)
+    headers = {"Authorization": f"Bearer {settings().admin_token}"}
+    with TestClient(app) as client:
+        response = client.get(
+            f"/admin/research/manuscripts/{evaluation_id}/{content_version_id}",
+            headers=headers,
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["review_actions_allowed"] is False
+    assert payload["publish_ready"] is False
+    assert "<script" not in payload["safe_body_html"].lower()
+    assert "근거 기반 원고" in payload["safe_body_html"]

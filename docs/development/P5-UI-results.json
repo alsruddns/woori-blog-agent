@@ -1,0 +1,78 @@
+{
+  "phase": "P5-UI-001",
+  "date": "2026-10-28",
+  "branch": "develop",
+  "implementation": {
+    "paginated_manuscript_list": true,
+    "lazy_manuscript_detail": true,
+    "paginated_trend_observations": true,
+    "lazy_trend_detail": true,
+    "stored_model_comparisons_only": true,
+    "compatibility_research_redirect": true,
+    "diagnostics_json_folded": true,
+    "database_migration_added": false
+  },
+  "live_read_only_api": {
+    "manuscripts": {
+      "http_status": 200,
+      "total": 18,
+      "list_includes_body": false,
+      "first_detail_http_status": 200,
+      "first_detail_body_present": true,
+      "first_detail_review_actions_allowed": false,
+      "publish_ready": false
+    },
+    "trend_observations": {
+      "http_status": 200,
+      "total": 0,
+      "regions_with_rows": []
+    },
+    "model_comparisons": {
+      "http_status": 200,
+      "total": 36,
+      "stored_provider_family": "local Qwen3 variants",
+      "nvidia_build_records": 0
+    }
+  },
+  "operations_db_read_only_snapshot": {
+    "database": "woori_blog_agent",
+    "role": "woori_app",
+    "content_versions": 360,
+    "audit_events": 1421,
+    "publication_approval_events": 0,
+    "write_queries_executed": false
+  },
+  "validation": {
+    "ruff": "passed",
+    "mypy": "passed: 31 files",
+    "pytest": "passed: 219",
+    "wheel": "passed",
+    "wheel_sha256": "c3a804603234d2c15a5f4faca1be6bfaf0f8c728830de2705c039da3d1d98e7f",
+    "dashboard_eslint": "passed",
+    "dashboard_typecheck": "passed",
+    "next_production_build": "passed",
+    "git_diff_check": "passed",
+    "secret_scan": "partial; database/history phase completed without output, Dashboard GET probe could not connect because 127.0.0.1:3100 is stopped"
+  },
+  "browser_e2e": {
+    "status": "not_run",
+    "reason": "Project-local Playwright test package/browser setup is not installed; no new dependency or browser was installed."
+  },
+  "side_effects": {
+    "operational_db_migration": false,
+    "operational_content_write": false,
+    "blogger_api_request": false,
+    "paid_api_call": false,
+    "ai_inference": false,
+    "automatic_publishing_enabled": false
+  },
+  "unverified": [
+    "Browser visual review and editor save/review/approval interaction",
+    "Populated six-region trend observation browsing",
+    "NVIDIA Build model comparison"
+  ],
+  "git": {
+    "commit": null,
+    "push": null
+  }
+}

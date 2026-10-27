@@ -9,7 +9,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from croniter import croniter
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import Field, field_validator, model_validator
 
 from . import collection, pipeline, topics, trends
@@ -366,6 +366,383 @@ def collect(request: CollectionRequest) -> dict[str, Any]:
 @router.get("/trends")
 def trend_state() -> dict[str, Any]:
     return trends.state()
+
+
+@router.get("/manuscripts")
+def manuscript_list(
+    page: int = Query(default=1, ge=1, le=100000),
+    page_size: int = Query(default=25, ge=1, le=100),
+    q: str = Query(default="", max_length=200),
+    language: str = Query(default="", max_length=35),
+    category: str = Query(default="", max_length=40),
+    status: str = Query(default="", max_length=40),
+    sort: Literal["newest", "oldest"] = "newest",
+) -> dict[str, Any]:
+    """Return a bounded list projection; full bodies and quality JSON are detail-only."""
+    import psycopg
+    from psycopg.rows import dict_row
+
+    from .config import settings
+
+    url = settings().evaluation_database_url
+    if not url:
+        return {"items": [], "page": page, "page_size": page_size, "total": 0,
+            "languages": [], "categories": []}
+    clauses = ["content_version_id IS NOT NULL"]
+    params: list[Any] = []
+    if q.strip():
+        clauses.append("(strpos(lower(title),lower(%s))>0 OR strpos(lower(topic),lower(%s))>0)")
+        term = q.strip()
+        params.extend((term, term))
+    if language:
+        clauses.append("language_code=%s")
+        params.append(language)
+    if category:
+        clauses.append("category_slug=%s")
+        params.append(category)
+    if status == "quality_held":
+        clauses.append("NOT machine_passed")
+    elif status == "machine_checked":
+        clauses.append("machine_passed")
+    elif status == "failed":
+        clauses.append("status='failed'")
+    order = "created_at ASC" if sort == "oldest" else "created_at DESC"
+    where = " AND ".join(clauses)
+    try:
+        with psycopg.connect(url, connect_timeout=2, row_factory=dict_row) as conn:
+            identity = conn.execute("SELECT current_database() AS db,current_user AS role").fetchone()
+            if not identity or identity["db"] != "woori_blog_agent_eval" or identity["role"] != "woori_eval_reader":
+                raise HTTPException(503, "Evaluation database identity check failed")
+            base = """SELECT DISTINCT ON (q.content_version_id) q.id AS evaluation_id,
+                q.content_version_id,q.language_code,q.topic,q.topic_key,q.title,q.summary,
+                q.model,q.machine_passed,q.human_review_required,q.status,q.created_at,
+                v.version AS content_version,
+                CASE WHEN q.topic ILIKE 'Apple Inc. 10-Q%%' THEN 'stocks' ELSE 'finance' END AS category_slug
+                FROM article_quality_evaluations q JOIN content_versions v ON v.id=q.content_version_id
+                WHERE (q.topic ILIKE 'Federal Reserve%%' OR q.topic ILIKE 'Apple Inc. 10-Q%%')
+                ORDER BY q.content_version_id,q.created_at DESC,q.id DESC"""
+            total_row = conn.execute(
+                f"SELECT count(*)::int AS total FROM ({base}) latest WHERE {where}", params
+            ).fetchone()
+            total = int(total_row["total"]) if total_row else 0
+            items = conn.execute(
+                f"SELECT * FROM ({base}) latest WHERE {where} ORDER BY {order},evaluation_id LIMIT %s OFFSET %s",
+                [*params, page_size, (page - 1) * page_size],
+            ).fetchall()
+            languages = [row["language_code"] for row in conn.execute(
+                f"SELECT DISTINCT language_code FROM ({base}) latest WHERE {where} ORDER BY language_code", params
+            ).fetchall()]
+            categories = [row["category_slug"] for row in conn.execute(
+                f"SELECT DISTINCT category_slug FROM ({base}) latest WHERE {where} ORDER BY category_slug", params
+            ).fetchall()]
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Evaluation manuscript list is unavailable") from exc
+
+    # Review state is read from the operational DB without loading article bodies.
+    ids = [item["evaluation_id"] for item in items]
+    versions = [item["content_version_id"] for item in items]
+    review_map: dict[tuple[str, str], str] = {}
+    publication_map: dict[tuple[str, str], str] = {}
+    if ids:
+        with connection() as conn:
+            events = conn.execute(
+                """SELECT DISTINCT ON(evaluation_id,content_version_id) evaluation_id,content_version_id,event_type,created_at
+                FROM article_review_events WHERE evaluation_id=ANY(%s) AND content_version_id=ANY(%s)
+                ORDER BY evaluation_id,content_version_id,created_at DESC,id DESC""", (ids, versions)
+            ).fetchall()
+            reviews = conn.execute(
+                """SELECT DISTINCT ON(evaluation_id,content_version_id) evaluation_id,content_version_id,disposition,created_at
+                FROM article_human_reviews WHERE evaluation_id=ANY(%s) AND content_version_id=ANY(%s)
+                ORDER BY evaluation_id,content_version_id,created_at DESC,id DESC""", (ids, versions)
+            ).fetchall()
+            jobs = conn.execute(
+                """SELECT DISTINCT ON(j.content_version_id) j.content_version_id,j.publication_state,j.status,
+                    j.simulation_only,j.adapter_type
+                FROM publishing_jobs j WHERE j.content_version_id=ANY(%s)
+                ORDER BY j.content_version_id,j.updated_at DESC,j.id DESC""", (versions,)
+            ).fetchall()
+            published_rows = conn.execute(
+                "SELECT DISTINCT content_version_id FROM publishing_records WHERE content_version_id=ANY(%s)",
+                (versions,),
+            ).fetchall()
+        review_rows = {(str(row["evaluation_id"]), str(row["content_version_id"])): dict(row) for row in reviews}
+        event_rows = {(str(row["evaluation_id"]), str(row["content_version_id"])): dict(row) for row in events}
+        for item in items:
+            key = (str(item["evaluation_id"]), str(item["content_version_id"]))
+            review_map[key] = _editorial_status(event_rows.get(key), review_rows.get(key))
+        publication_map = {}
+        for row in jobs:
+            is_mock = bool(row.get("simulation_only")) or row.get("adapter_type") == "fake"
+            publication_map[("", str(row["content_version_id"]))] = (
+                "mock" if is_mock else str(row.get("publication_state") or row.get("status") or "")
+            )
+        for row in published_rows:
+            publication_map[("", str(row["content_version_id"]))] = "published"
+    output = []
+    for row in items:
+        item = dict(row)
+        key = (str(item["evaluation_id"]), str(item["content_version_id"]))
+        item["editorial_status"] = review_map.get(key, "unreviewed")
+        item["publication_status"] = publication_map.get(("", key[1]), "not_published")
+        item["publish_ready"] = False
+        output.append(item)
+    return {"items": output, "page": page, "page_size": page_size, "total": total,
+        "languages": languages, "categories": categories}
+
+
+@router.get("/manuscripts/{evaluation_id}/{content_version_id}")
+def manuscript_detail(evaluation_id: UUID, content_version_id: UUID) -> dict[str, Any]:
+    """Load a selected manuscript's full evidence and editorial history on demand."""
+    item = _read_manuscript_detail(evaluation_id, content_version_id)
+    with connection() as conn:
+        revisions = conn.execute(
+            """SELECT id,revision_number,title,body,html_body,seo_description,blogger_labels,
+                machine_passed,quality_status,body_sha256,created_at,reviewer_name,reason,
+                publication_mode,planned_publish_at,target_blog_id
+            FROM article_editorial_versions WHERE evaluation_id=%s AND base_content_version_id=%s
+            ORDER BY revision_number DESC,id DESC""", (evaluation_id, content_version_id)
+        ).fetchall()
+        reviews = conn.execute(
+            """SELECT id,editorial_version_id,reviewer_name,factual_accuracy,translation_naturalness,
+                reader_value,disposition,comments,requested_changes,created_at
+            FROM article_human_reviews WHERE evaluation_id=%s AND content_version_id=%s
+            ORDER BY created_at DESC,id DESC""", (evaluation_id, content_version_id)
+        ).fetchall()
+        review_events = conn.execute(
+            """SELECT id,reviewer_name,event_type,payload,created_at FROM article_review_events
+            WHERE evaluation_id=%s AND content_version_id=%s ORDER BY created_at DESC,id DESC""",
+            (evaluation_id, content_version_id),
+        ).fetchall()
+        approval_ready = conn.execute(
+            "SELECT to_regclass('public.publication_approval_events') AS table_name"
+        ).fetchone()
+        approvals = conn.execute(
+            """SELECT id,editorial_version_id,action,actor,reason,created_at FROM publication_approval_events
+            WHERE evaluation_id=%s AND content_version_id=%s ORDER BY created_at DESC,id DESC""",
+            (evaluation_id, content_version_id),
+        ).fetchall() if approval_ready and approval_ready.get("table_name") else []
+        jobs = conn.execute(
+            """SELECT j.id,j.blog_id,b.language_code,b.url,j.status,j.publication_state,j.scheduled_at,
+                j.updated_at,j.simulation_only,j.adapter_type FROM publishing_jobs j
+            JOIN blogger_blogs b ON b.id=j.blog_id WHERE j.content_version_id=%s ORDER BY j.updated_at DESC""",
+            (content_version_id,),
+        ).fetchall()
+        published = conn.execute(
+            """SELECT r.blog_id,r.remote_post_id,r.published_at,b.language_code,b.url
+            FROM publishing_records r JOIN blogger_blogs b ON b.id=r.blog_id
+            WHERE r.content_version_id=%s ORDER BY r.published_at DESC""", (content_version_id,)
+        ).fetchall()
+    item["editorial_versions"] = [dict(row) for row in revisions]
+    from .editorial_html import sanitize_editorial_html
+    for revision in item["editorial_versions"]:
+        raw_html = str(revision.get("html_body") or "")
+        if raw_html:
+            try:
+                revision["html_body"] = sanitize_editorial_html(raw_html)[0]
+            except ValueError:
+                revision["html_body"] = ""
+    item["review_history"] = [dict(row) for row in reviews]
+    item["review_events"] = [dict(row) for row in review_events]
+    item["publication_approval_events"] = [dict(row) for row in approvals]
+    item["publication_jobs"] = [dict(row) for row in jobs]
+    item["published_mappings"] = [dict(row) for row in published]
+    latest_event = item["review_events"][0] if item["review_events"] else None
+    latest_review = item["review_history"][0] if item["review_history"] else None
+    item["editorial_status"] = _editorial_status(latest_event, latest_review)
+    item["publish_ready"] = False
+    item["publication_approval_granted"] = False
+    item["review_actions_allowed"] = (
+        str(item.get("topic_key", "")).startswith("phase39t:")
+        and bool(item.get("human_review_required"))
+        and not bool(item.get("publish_ready"))
+    )
+    body = str(item.get("saved_body") or item.get("body") or "")
+    item["body_format"] = "html" if "<" in body and ">" in body else "markdown"
+    if item["body_format"] == "html":
+        try:
+            item["safe_body_html"] = sanitize_editorial_html(body)[0]
+        except ValueError:
+            item["safe_body_html"] = ""
+    return item
+
+
+def _read_manuscript_detail(evaluation_id: UUID, content_version_id: UUID) -> dict[str, Any]:
+    """Read immutable manuscript detail without expanding review or publishing eligibility."""
+    import psycopg
+    from psycopg.rows import dict_row
+
+    from .config import settings
+
+    url = settings().evaluation_database_url
+    if not url:
+        raise HTTPException(503, "Isolated evaluation review data is unavailable")
+    try:
+        with psycopg.connect(url, connect_timeout=2, row_factory=dict_row) as conn:
+            identity = conn.execute("SELECT current_database() AS database_name,current_user AS role_name").fetchone()
+            if not identity or identity["database_name"] != "woori_blog_agent_eval" or identity["role_name"] != "woori_eval_reader":
+                raise HTTPException(503, "Evaluation database identity check failed")
+            row = conn.execute(
+                """SELECT q.*,v.language,v.version AS content_version,v.title AS saved_title,
+                    v.body AS saved_body,
+                    CASE WHEN q.topic ILIKE 'Apple Inc. 10-Q%%' THEN 'stocks' ELSE 'finance' END AS category_slug
+                FROM article_quality_evaluations q JOIN content_versions v ON v.id=q.content_version_id
+                WHERE q.id=%s AND q.content_version_id=%s
+                  AND (q.topic ILIKE 'Federal Reserve%%' OR q.topic ILIKE 'Apple Inc. 10-Q%%')""",
+                (evaluation_id, content_version_id),
+            ).fetchone()
+            if not row:
+                raise HTTPException(404, "Manuscript not found")
+            item = dict(row)
+            item["sources"] = [dict(source) for source in conn.execute(
+                """SELECT id,source_name,url,published_at,collected_at,evidence,rights,
+                    access_policy,valid_until,revision,source_language
+                FROM research_sources WHERE id=ANY(%s) ORDER BY id""", (item["source_ids"],)
+            ).fetchall()]
+            item["facts"] = [dict(fact) for fact in conn.execute(
+                """SELECT id,fact_key,source_id,source_language,source_excerpt,entity_ids,
+                    numeric_values,date_values,citation_ids,verification_status
+                FROM evidence_facts WHERE id=ANY(%s) ORDER BY fact_key,id""", (item["fact_ids"],)
+            ).fetchall()]
+            return item
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Evaluation manuscript detail is unavailable") from exc
+
+
+@router.get("/trend-observations")
+def trend_observation_list(
+    page: int = Query(default=1, ge=1, le=100000),
+    page_size: int = Query(default=25, ge=1, le=100),
+    q: str = Query(default="", max_length=200),
+    geo: str = Query(default="", max_length=2),
+) -> dict[str, Any]:
+    """Paginated trend observations; source-provided ranks remain nullable."""
+    with connection() as conn:
+        configured = conn.execute("SELECT to_regclass('public.trend_observations') AS table_name").fetchone()
+        if not configured or not configured.get("table_name"):
+            return {"items": [], "page": page, "page_size": page_size, "total": 0, "configured": False}
+        topic_schema = conn.execute("SELECT to_regclass('public.trend_research_packages') AS table_name").fetchone()
+        if not topic_schema or not topic_schema.get("table_name"):
+            where_filters, params = [], []
+            if q.strip():
+                where_filters.append("o.query ILIKE %s")
+                params.append(f"%{q.strip()}%")
+            if geo:
+                where_filters.append("o.geo=%s")
+                params.append(geo.upper())
+            where = f"WHERE {' AND '.join(where_filters)}" if where_filters else ""
+            total_row = conn.execute(f"SELECT count(*)::int AS total FROM trend_observations o {where}", params).fetchone()
+            total = int(total_row["total"]) if total_row else 0
+            items = conn.execute(
+                f"""SELECT o.id,o.query,o.geo,o.platform,o.source_rank,o.source_volume_label,
+                    o.source_language,o.source_url,o.collected_at,o.source_updated_at
+                    FROM trend_observations o {where} ORDER BY o.collected_at DESC,o.id LIMIT %s OFFSET %s""",
+                [*params, page_size, (page - 1) * page_size],
+            ).fetchall()
+            return {"items": items, "page": page, "page_size": page_size, "total": total, "configured": True}
+        filters, params = [], []
+        if q.strip():
+            filters.append("o.query ILIKE %s")
+            params.append(f"%{q.strip()}%")
+        if geo:
+            filters.append("o.geo=%s")
+            params.append(geo.upper())
+        where = f"WHERE {' AND '.join(filters)}" if filters else ""
+        total_row = conn.execute(f"SELECT count(*)::int AS total FROM trend_observations o {where}", params).fetchone()
+        total = int(total_row["total"]) if total_row else 0
+        items = conn.execute(
+            f"""SELECT o.id,o.query,o.geo,o.platform,o.source_rank,o.source_volume_label,
+                o.source_language,o.source_url,o.collected_at,o.source_updated_at,
+                t.id AS topic_id,t.representative_query,t.grouping_status,
+                a.score AS topic_score,a.decision AS topic_decision,
+                p.status AS package_status,p.verified_fact_count,p.independent_source_count,
+                COALESCE((SELECT count(DISTINCT q.content_version_id)::int FROM article_quality_evaluations q
+                    WHERE q.fact_ids && p.fact_ids AND q.content_version_id IS NOT NULL),0) AS linked_manuscript_count
+            FROM trend_observations o
+            LEFT JOIN LATERAL (SELECT t.* FROM trend_topic_memberships m JOIN trend_topics t ON t.id=m.topic_id
+                WHERE m.observation_id=o.id ORDER BY m.created_at DESC LIMIT 1) t ON true
+            LEFT JOIN LATERAL (SELECT score,decision FROM trend_topic_assessments WHERE topic_id=t.id ORDER BY created_at DESC LIMIT 1) a ON true
+            LEFT JOIN LATERAL (SELECT status,verified_fact_count,independent_source_count,fact_ids FROM trend_research_packages WHERE topic_id=t.id ORDER BY package_version DESC LIMIT 1) p ON true
+            {where} ORDER BY o.collected_at DESC,o.id LIMIT %s OFFSET %s""",
+            [*params, page_size, (page - 1) * page_size],
+        ).fetchall()
+    return {"items": items, "page": page, "page_size": page_size, "total": total, "configured": True}
+
+
+@router.get("/trend-observations/{observation_id}")
+def trend_observation_detail(observation_id: UUID) -> dict[str, Any]:
+    with connection() as conn:
+        row = conn.execute("SELECT * FROM trend_observations WHERE id=%s", (observation_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "Trend observation not found")
+        topic_schema = conn.execute("SELECT to_regclass('public.trend_research_packages') AS table_name").fetchone()
+        if not topic_schema or not topic_schema.get("table_name"):
+            return {"observation": dict(row), "topic": None, "sources": [], "packages": [], "facts": [], "linked_manuscripts": []}
+        topic = conn.execute(
+            """SELECT t.*,a.score,a.decision,a.reasons,a.signals,d.decision AS editorial_decision,
+                d.reason AS editorial_reason
+            FROM trend_topic_memberships m JOIN trend_topics t ON t.id=m.topic_id
+            LEFT JOIN LATERAL (SELECT * FROM trend_topic_assessments WHERE topic_id=t.id ORDER BY created_at DESC LIMIT 1) a ON true
+            LEFT JOIN LATERAL (SELECT * FROM trend_topic_editorial_decisions WHERE topic_id=t.id ORDER BY created_at DESC LIMIT 1) d ON true
+            WHERE m.observation_id=%s ORDER BY m.created_at DESC LIMIT 1""", (observation_id,)
+        ).fetchone()
+        if not topic:
+            return {"observation": dict(row), "topic": None, "sources": [], "packages": [], "facts": []}
+        topic_id = topic["id"]
+        sources = conn.execute(
+            """SELECT ts.id,ts.link_reason,ts.created_at,s.id AS source_id,s.source_name,s.url,
+                s.published_at,s.collected_at,s.source_language,s.evidence,s.rights,s.access_policy,
+                (SELECT approved FROM source_reviews r WHERE r.source_id=s.id ORDER BY r.review_sequence DESC LIMIT 1) AS approved
+            FROM trend_topic_sources ts JOIN research_sources s ON s.id=ts.research_source_id
+            WHERE ts.topic_id=%s ORDER BY ts.created_at DESC""", (topic_id,)
+        ).fetchall()
+        packages = conn.execute(
+            "SELECT id,package_version,status,payload,fact_ids,source_ids,verified_fact_count,independent_source_count,created_at FROM trend_research_packages WHERE topic_id=%s ORDER BY package_version DESC", (topic_id,)
+        ).fetchall()
+        fact_ids = [fact_id for package in packages for fact_id in (package.get("fact_ids") or [])]
+        facts = conn.execute(
+            "SELECT id,fact_key,source_id,source_excerpt,numeric_values,date_values,verification_status FROM evidence_facts WHERE id=ANY(%s) ORDER BY id",
+            (fact_ids or [UUID(int=0)],),
+        ).fetchall()
+        linked_versions = conn.execute(
+            """SELECT DISTINCT ON (q.content_version_id) q.content_version_id,q.title,q.language_code,q.topic,q.created_at
+            FROM article_quality_evaluations q WHERE q.content_version_id IS NOT NULL AND q.fact_ids && %s
+            ORDER BY q.content_version_id,q.created_at DESC LIMIT 50""", (fact_ids or [UUID(int=0)],)
+        ).fetchall()
+    return {"observation": dict(row), "topic": dict(topic), "sources": sources, "packages": packages, "facts": facts, "linked_manuscripts": linked_versions}
+
+
+@router.get("/model-comparisons")
+def model_comparison_list(
+    page: int = Query(default=1, ge=1, le=10000),
+    page_size: int = Query(default=20, ge=1, le=100),
+) -> dict[str, Any]:
+    with connection() as conn:
+        total_row = conn.execute("SELECT count(*)::int AS total FROM research_experiment_evaluations").fetchone()
+        total = int(total_row["total"]) if total_row else 0
+        items = conn.execute(
+            """SELECT e.id,e.experiment_id,e.run_id,e.content_version_id,e.language,e.variant,
+                e.mechanical_gate_passed,e.human_review_required,e.created_at,g.provider,g.model,v.title
+            FROM research_experiment_evaluations e
+            LEFT JOIN generation_results g ON g.content_version_id=e.content_version_id
+            JOIN content_versions v ON v.id=e.content_version_id
+            ORDER BY e.created_at DESC,e.id DESC LIMIT %s OFFSET %s""",
+            (page_size, (page - 1) * page_size),
+        ).fetchall()
+    return {"items": items, "page": page, "page_size": page_size, "total": total}
+
+
+@router.get("/model-comparisons/{evaluation_id}")
+def model_comparison_detail(evaluation_id: UUID) -> dict[str, Any]:
+    with connection() as conn:
+        row = conn.execute(
+            """SELECT e.*,g.provider,g.model,v.title,v.body,v.language AS content_language
+            FROM research_experiment_evaluations e
+            LEFT JOIN generation_results g ON g.content_version_id=e.content_version_id
+            JOIN content_versions v ON v.id=e.content_version_id WHERE e.id=%s""", (evaluation_id,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, "Model comparison result not found")
+    return dict(row)
 
 
 @router.post("/trends/collect")
@@ -1120,6 +1497,7 @@ def _evaluation_article(evaluation_id: UUID, content_version_id: UUID) -> dict[s
                     v.body AS saved_body
                 FROM article_quality_evaluations q JOIN content_versions v
                     ON v.id=q.content_version_id
+                ,CASE WHEN q.topic ILIKE 'Apple Inc. 10-Q%%' THEN 'stocks' ELSE 'finance' END AS category_slug
                 WHERE q.id=%s AND q.content_version_id=%s
                   AND q.topic_key LIKE 'phase39t:%%'
                   AND (q.topic ILIKE 'Federal Reserve%%' OR q.topic ILIKE 'Apple Inc. 10-Q%%')""",

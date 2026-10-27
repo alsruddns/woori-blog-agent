@@ -1,5 +1,11 @@
 # Changelog
 
+## Dashboard content workspace redesign (2026-10-28)
+- Replaced the long research-first landing page with a Korean content operations dashboard and dedicated manuscript, source, model comparison, publishing, automation, and diagnostics navigation; `/research` remains a compatibility route to `/manuscripts`.
+- Added bounded, server-paginated manuscript and Google Trends observation read models. Manuscript lists omit article bodies and quality JSON; selecting a row fetches the full article, evidence, checks, and editorial history on demand. The existing review and approval endpoints remain the only write path and their eligibility checks are unchanged.
+- Added responsive data grids, keyboard-accessible details, mobile full-screen manuscript sheets, Korean KST date formatting, safe article previews, and folded diagnostics JSON. Model comparison only uses stored results and reports when a provider has no evaluation rows.
+- Live read-only checks found 18 manuscripts, 0 stored trend observations, and 36 model evaluation records; the available model records are local Qwen3 variants and no NVIDIA Build result is stored. No operational migration or write, Blogger request, paid call, or AI inference was performed. Browser E2E was not run because the project has no installed Playwright package; no dependency was added.
+
 ## Phase 5 trend discovery baseline (2026-10-27)
 - Added a fail-closed Google Trends Trending Now RSS collector for KR, US, JP, TW, HK and SG. Collection is manual/on-demand, one request per minute and at most 12 durable attempts per rolling hour; HTTP 429 and policy failures stop without retry or provider fallback.
 - Added append-only run, attempt, and observation records with response SHA-256, region, raw query, source-provided traffic label, start/update times when present, source URL, and permanent audit events. Source rank remains NULL because the RSS feed does not explicitly provide a rank field; no ranking is inferred from item order.
