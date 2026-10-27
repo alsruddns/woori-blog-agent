@@ -14,7 +14,7 @@
 - 수정 파일: `AGENTS.md`, `services/api/woori/google_oauth.py`, `services/api/woori/blogger_service.py`, `services/api/woori/blogger_routes.py`, `services/api/tests/test_google.py`, `apps/dashboard/app/api/blogger/[...path]/route.ts`, `apps/dashboard/app/blogger/manager.tsx`, `docs/architecture/blogger-integration.md`, `docs/development/P5-G-shared-oauth-001.md`, `CHANGELOG.md`.
 - 안전 상태: OAuth 토큰·Refresh Token 값은 API·로그·감사 기록에 내보내지 않음. 실제 Blogger POST/PATCH/PUT/DELETE 없음. `writes_enabled=false`, 자동 발행 비활성, `publish_ready=false` 유지. 실제 계정/블로그 접근 및 공통 연결 지정은 아직 검증/승인되지 않음.
 - 테스트 결과: 신규 회귀 테스트 4건 포함 Google OAuth 테스트 29건 통과. `scripts/verify.ps1` 통과: 전체 pytest 185건, Ruff, mypy 28개 소스, wheel, Dashboard ESLint, production build, TypeScript typecheck, `git diff --check`. 별도 `scripts/verify-secrets.py`도 통과하여 비밀정보 스캔 및 발행 차단 상태를 확인했다.
-- 커밋 해시: 기록 예정.
-- 원격 푸시: 기록 예정.
+- 구현 커밋 해시: `b1bc50c` (`Update : [Blogger] Simplify shared OAuth connection management`).
+- 원격 푸시: 구현 커밋 `b1bc50c`를 `origin/develop`에 푸시 완료. 개발 기록에 커밋/푸시 증거를 추가한 후속 문서 커밋도 동일 브랜치에 푸시한다.
 - 관련 문서: `docs/architecture/blogger-integration.md`, `docs/operations/zero-cost-policy.md`.
 - 남은 문제: 사용자가 기존 두 OAuth 연결 중 하나를 선택해야 한다. Blogger 비용의 0원 근거와 프로젝트 Billing 조건이 확인되어 게이트가 승인되기 전까지 Google API 접근 검증은 차단된다. 게이트 통과 뒤 UI에서 읽기 전용 검증을 실행하고, 결과를 확인한 후 별도의 공통 연결 지정 승인을 해야 한다. 계정 신원은 API가 검증하지 않는 한 미확인으로 유지한다.
