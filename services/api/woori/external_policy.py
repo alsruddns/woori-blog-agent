@@ -84,6 +84,17 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "commercial_use": "CC0 data; API policy/User-Agent and rate limits apply",
         "zero_cost_reviewed": True,
     },
+    "google_trends_rss": {
+        "hosts": {"trends.google.com"},
+        "methods": {"GET"},
+        "rpm": 1,
+        "rph": 12,
+        "operations": {"trend_collection"},
+        "paths": ("/trending/rss",),
+        "cost": "Google Trends public RSS export; no key, metered API, or billing account used; application hard caps apply",
+        "commercial_use": "Google Trends help documents RSS export; preserve trend attribution and Google terms; no search-volume ranks are inferred",
+        "zero_cost_reviewed": True,
+    },
     "artifact_setup": {
         "hosts": {
             "api.github.com",
@@ -382,6 +393,12 @@ def _authorize(provider: str, operation: str, request: httpx.Request) -> None:
         else:
             method_allowed = False
             operation_path_allowed = False
+    elif provider == "google_trends_rss":
+        method_allowed = request.method == "GET"
+        operation_path_allowed = bool(
+            parsed.path == "/trending/rss"
+            and list(request.url.params.multi_items()) in [[("geo", code)] for code in ("KR", "US", "JP", "TW", "HK", "SG")]
+        )
     if (
         parsed.scheme != "https"
         or parsed.host not in rule["hosts"]

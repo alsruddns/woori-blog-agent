@@ -1,5 +1,11 @@
 # Changelog
 
+## Phase 5 trend discovery baseline (2026-10-27)
+- Added a fail-closed Google Trends Trending Now RSS collector for KR, US, JP, TW, HK and SG. Collection is manual/on-demand, one request per minute and at most 12 durable attempts per rolling hour; HTTP 429 and policy failures stop without retry or provider fallback.
+- Added append-only run, attempt, and observation records with response SHA-256, region, raw query, source-provided traffic label, start/update times when present, source URL, and permanent audit events. Source rank remains NULL because the RSS feed does not explicitly provide a rank field; no ranking is inferred from item order.
+- Added `/admin/research/trends` inspection and `/admin/research/trends/collect` plus actual observation/run fields to `/research`. Schema migrations 035–036 are additive; the operations database was not migrated in this change.
+- No arbitrary HTML crawling, paid AI/data provider, auto-schedule, generated article, or new Blogger write was executed. Existing Qwen3 remains local-only; professional article generation stays gated on multiple reviewed, topic-relevant factual sources and the existing quality checks.
+
 ## Blogger-only cost attestation and private-draft test path (2026-10-27)
 - Replaced the static Blogger cost block with an append-only owner-attestation event lookup scoped only to Blogger; every other provider cost gate remains unchanged and global billing-credential/terms/quota checks still apply.
 - Added a fixed-payload, one-per-target, two-step live private-draft flow. A local preview binds the exact language, Blog ID, title, body, and `isDraft=true`; the final operator confirmation is required before the single POST. Network ambiguity blocks replay, and successful inserts are re-read by Post ID.

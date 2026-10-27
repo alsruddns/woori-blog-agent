@@ -32,6 +32,8 @@ MIGRATIONS = [ROOT / "scripts" / f"{i:03d}_{name}.sql" for i, name in [
     (31, "editorial_existing_post_link"), (32, "editorial_base_hash"),
     (33, "publication_approval"),
     (34, "oauth_write_scope"),
+    (35, "trend_observations"),
+    (36, "trend_call_quota"),
 ]]
 
 

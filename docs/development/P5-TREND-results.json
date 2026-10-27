@@ -1,0 +1,105 @@
+{
+  "work_id": "P5-TREND-001",
+  "date": "2026-10-27",
+  "branch": "develop",
+  "starting_commit": "28a20f6",
+  "status": "trend_source_implemented_and_live_read_verified; full_article_pipeline_not_completed",
+  "operations_database": {
+    "database": "woori_blog_agent",
+    "schema_version_before_after": 34,
+    "content_versions_before_after": 360,
+    "audit_events_before_after": 1421,
+    "blogger_write_records": 4,
+    "publish_ready_true": 0,
+    "migrations_035_036_applied": false
+  },
+  "evaluation_database": {
+    "database": "woori_blog_agent_test",
+    "schema_version": 36,
+    "test_role_operations_connect_denied": true,
+    "trend_attempts": 1,
+    "successful_runs": 1,
+    "observations": 10,
+    "trend_audit_events": 2
+  },
+  "trend_collection": {
+    "provider": "google_trends_rss",
+    "geo": "KR",
+    "actual_get_requests": 2,
+    "successful_persisted_runs": 1,
+    "first_response_persisted": false,
+    "first_persistence_failure": "audit_events.run_id references job_runs; fixed by keeping collection run ID in immutable event payload",
+    "successful_run_id": "8798ceef-1a17-4f4c-9b8a-c31847c6856b",
+    "successful_http_status": 200,
+    "successful_item_count": 10,
+    "rank_available": false,
+    "source_updated_at": null,
+    "related_terms_available": false,
+    "source_volume_label_is_raw_text": true,
+    "response_sha256": "de7b5b564d1d1854e0c2a2e5305e01248dbff195955966c623e1c1dfaceb9def",
+    "elapsed_ms_observed": 1473,
+    "saved_to": "woori_blog_agent_test"
+  },
+  "blogger_drafts_preexisting_reverified": [
+    {
+      "language": "en",
+      "blog_id": "5240203250707821039",
+      "post_id": "6200412717175382056",
+      "status": "succeeded"
+    },
+    {
+      "language": "ja",
+      "blog_id": "7562596540375659150",
+      "post_id": "3922184436060234592",
+      "status": "succeeded"
+    },
+    {
+      "language": "ko",
+      "blog_id": "3321654108096579717",
+      "post_id": "3147869148049076326",
+      "status": "succeeded"
+    },
+    {
+      "language": "zh-CN",
+      "blog_id": "1931836538202286191",
+      "post_id": "2489135230154436472",
+      "status": "succeeded"
+    }
+  ],
+  "article_pipeline": {
+    "new_ai_calls": 0,
+    "new_articles": 0,
+    "new_localizations": 0,
+    "new_blogger_drafts": 0,
+    "existing_quality_evaluations": 41,
+    "existing_status_counts": {
+      "quality_held": 27,
+      "failed": 13,
+      "machine_passed_review_required": 1
+    },
+    "publish_ready_true": 0
+  },
+  "safety": {
+    "paid_ai_calls": 0,
+    "paid_data_calls": 0,
+    "blogger_api_calls": 0,
+    "automatic_schedule_enabled": false,
+    "production_database_rows_changed_by_trend_collector": 0
+  },
+  "tests": {
+    "ruff": "passed",
+    "mypy": "passed; 30 source files",
+    "pytest": "passed; 211 tests in 17.64s on final tree",
+    "wheel": "passed; 115660 bytes; SHA256 828ecbc74de96c209e62e879192a1f7652d69222cae1134e7a1ef9c1f548213c",
+    "dashboard_eslint": "passed",
+    "dashboard_production_build": "passed",
+    "dashboard_typecheck": "passed",
+    "secret_scan": "passed",
+    "diff_check": "passed",
+    "verify_script_rerun": "passed on final tree",
+    "secret_scan_final": "passed"
+  },
+  "commit": null,
+  "push": null,
+  "main_changed": false
+}

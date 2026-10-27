@@ -24,6 +24,12 @@ Migrations 030–032 add append-only editor metadata, bind edits of an already p
 
 Windows 로컬 다국어 Blogger 운영 에이전트입니다. Phase 1 기반을 유지하며 Phase 2에서 읽기 전용 Google OAuth, Blogger 정보·ID·게시글 조회, 로컬 불변 콘텐츠 버전 관리와 API 감사 이력을 추가했습니다. 운영 Blogger 쓰기·자동 발행·유료 AI 호출은 계속 차단됩니다.
 
+## Phase 5 trend discovery status (2026-10-27)
+
+`/research` supports manual Google Trends Trending Now RSS collection for KR, US, JP, TW, HK and SG through the shared external-call policy. The live fetch is metadata-only, bounded, audited and stored as an immutable trend observation, separate from factual research sources. Google does not explicitly supply a rank in this RSS representation, so the application stores no rank; the source-provided traffic label is kept as text. Auto collection is off. Migration 035–036 must be applied through the reviewed database migration process before the operations database can persist these observations; it has only been verified in the isolated test database in this change.
+
+The collector does not automatically select a topic or treat trend data as article evidence. Article generation still requires multiple current, reviewed, topic-relevant factual sources and must pass the existing quality gate. Gemini and other remote AI providers remain disabled under the project zero-cost policy; local Qwen3 remains in use. No generated article was submitted to Blogger as part of this work.
+
 Dashboard: http://127.0.0.1:3100 · Blogger 관리: http://127.0.0.1:3100/blogger · API health: http://127.0.0.1:8100/health · PostgreSQL: 기존 localhost:5432. 다른 프로젝트의 3000/8000 포트는 사용하지 않습니다. 브라우저는 동일 출처 Next 프록시를 사용하며 API CORS는 열지 않습니다.
 
 ## Requirements and setup

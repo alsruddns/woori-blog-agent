@@ -17,7 +17,7 @@ with psycopg.connect(url) as conn:
     if not exists:
         conn.execute((root / "scripts/001_initial.sql").read_text(), prepare=False)
     current = conn.execute("SELECT max(version) FROM schema_migrations").fetchone()[0]
-    if current > 33:
+    if current > 36:
         raise SystemExit("Database schema is newer than this application")
     if current < 2:
         conn.execute(
@@ -170,6 +170,16 @@ with psycopg.connect(url) as conn:
     if current < 34:
         conn.execute(
             (root / "scripts/034_oauth_write_scope.sql").read_text(encoding="utf-8"),
+            prepare=False,
+        )
+    if current < 35:
+        conn.execute(
+            (root / "scripts/035_trend_observations.sql").read_text(encoding="utf-8"),
+            prepare=False,
+        )
+    if current < 36:
+        conn.execute(
+            (root / "scripts/036_trend_call_quota.sql").read_text(encoding="utf-8"),
             prepare=False,
         )
 print("Migration 034 verified")

@@ -1,0 +1,124 @@
+from contextlib import contextmanager
+from datetime import UTC, datetime
+from typing import Any
+from uuid import UUID
+
+import httpx
+import psycopg
+import pytest
+from test_pipeline import lab as shared_lab
+from woori import external_policy, trends
+from woori.trends import ALLOWED_GEOS, parse_feed
+
+lab = shared_lab
+
+
+def test_google_trends_feed_preserves_source_fields_without_inventing_rank() -> None:
+    raw = b"""<?xml version="1.0"?><rss xmlns:ht="https://trends.google.com/trending/rss"><channel>
+      <lastBuildDate>Tue, 27 Oct 2026 08:00:00 GMT</lastBuildDate>
+      <item><title>Sample query</title><pubDate>Tue, 27 Oct 2026 07:00:00 GMT</pubDate>
+      <ht:approx_traffic>5,000+</ht:approx_traffic><link>https://trends.google.com/trending?geo=KR</link></item>
+    </channel></rss>"""
+    result = parse_feed(raw, "KR", datetime(2026, 10, 27, 9, tzinfo=UTC))
+    assert len(result["items"]) == 1
+    row = result["items"][0]
+    assert row["query"] == "Sample query"
+    assert row["source_rank"] is None
+    assert row["source_volume_label"] == "5,000+"
+    assert row["related_terms"] == []
+    assert row["source_updated_at"] == datetime(2026, 10, 27, 8, tzinfo=UTC)
+
+
+@pytest.mark.parametrize("geo", ["CN", "KR/../US", "", "GB"])
+def test_google_trends_rejects_unconfigured_geographies(geo: str) -> None:
+    with pytest.raises(ValueError, match="trend_geo_not_allowlisted"):
+        parse_feed(b"<rss><channel/></rss>", geo)
+
+
+def test_google_trends_feed_rejects_entities_and_oversize() -> None:
+    with pytest.raises(ValueError, match="unsafe_or_too_large"):
+        parse_feed(b"<!DOCTYPE rss [<!ENTITY x 'bad'>]><rss/>", "US")
+    with pytest.raises(ValueError, match="unsafe_or_too_large"):
+        parse_feed(b" " * (1024 * 1024 + 1), "US")
+
+
+def test_trends_external_gate_allows_only_fixed_rss_geos_and_get(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(external_policy, "billing_credential_names", list)
+    monkeypatch.setattr(external_policy, "_audit", lambda *args, **kwargs: None)
+    for geo in ALLOWED_GEOS:
+        monkeypatch.setattr(external_policy, "_windows", {})
+        external_policy._authorize(
+            "google_trends_rss",
+            "trend_collection",
+            httpx.Request("GET", f"https://trends.google.com/trending/rss?geo={geo}"),
+        )
+    for request in (
+        httpx.Request("GET", "https://trends.google.com/trending/rss?geo=CN"),
+        httpx.Request("POST", "https://trends.google.com/trending/rss?geo=KR"),
+        httpx.Request("GET", "https://trends.google.com/trending/api?geo=KR"),
+    ):
+        monkeypatch.setattr(external_policy, "_windows", {})
+        with pytest.raises(external_policy.ExternalCallBlocked):
+            external_policy._authorize("google_trends_rss", "trend_collection", request)
+
+
+def test_trend_collection_persists_actual_pipeline_shape_in_isolated_db(
+    lab: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    conn, api, headers = lab
+    prior_attempts = conn.execute("SELECT count(*) AS n FROM trend_collection_attempts").fetchone()[
+        "n"
+    ]
+
+    @contextmanager
+    def shared_connection() -> Any:
+        with conn.transaction():
+            yield conn
+
+    raw = b"""<?xml version="1.0"?><rss xmlns:ht="https://trends.google.com/trending/rss"><channel>
+      <item><title>Fixture trend</title><ht:approx_traffic>1,000+</ht:approx_traffic></item>
+    </channel></rss>"""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url == "https://trends.google.com/trending/rss?geo=JP"
+        return httpx.Response(200, content=raw, headers={"Content-Type": "application/rss+xml"})
+
+    monkeypatch.setattr(trends, "connection", shared_connection)
+    monkeypatch.setattr(
+        trends,
+        "external_client",
+        lambda *args, **kwargs: httpx.Client(
+            transport=httpx.MockTransport(handler), timeout=kwargs.get("timeout", 15)
+        ),
+    )
+    response = api.post("/admin/research/trends/collect", headers=headers, json={"geo": "JP"})
+    assert response.status_code == 200
+    result = response.json()
+    assert result["status"] == "succeeded"
+    assert result["item_count"] == 1
+    assert result["rank_available"] is False
+    assert (
+        conn.execute("SELECT count(*) AS n FROM trend_collection_attempts").fetchone()["n"]
+        == prior_attempts + 1
+    )
+    row = conn.execute(
+        "SELECT geo,query,source_rank,source_volume_label FROM trend_observations WHERE run_id=%s",
+        (UUID(result["run_id"]),),
+    ).fetchone()
+    assert dict(row) == {
+        "geo": "JP",
+        "query": "Fixture trend",
+        "source_rank": None,
+        "source_volume_label": "1,000+",
+    }
+    event = conn.execute(
+        "SELECT payload FROM audit_events WHERE event_type='trend.collection.completed' ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    assert event["payload"]["collection_run_id"] == result["run_id"]
+    with pytest.raises(psycopg.errors.RaiseException, match="(?i)append-only"), conn.transaction():
+        conn.execute(
+            "UPDATE trend_observations SET query='changed' WHERE run_id=%s",
+            (UUID(result["run_id"]),),
+        )

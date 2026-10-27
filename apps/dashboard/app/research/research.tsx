@@ -8,6 +8,8 @@ export type State = {
   versions: Row[]; settings: Row[]; prompts: Row[]; controls: Row; schedules: Row[];
   attempts: Row[]; events: Row[]; dispatches: Row[]; collection_sources: Row[]; cost_policy?: Row;
   collection_jobs: Row[]; measurements: Row[]; stage_runs: Row[]; coverage: Row[]; experiments?: Row[];
+  trend_sources?: Row[]; trend_collection_runs?: Row[]; trend_observations?: Row[];
+  trend_collection_configured?: boolean;
   evidence_facts?: Row[]; localizations?: Row[]; glossary?: Row[]; glossary_revisions?: Row[];
   article_evaluations?: Row[]; worker?: Row | null; evaluation_worker?: Row | null; daily_workload?: Row[]; operations_summary?: Row;
   manuscript_publications?: Row[];
@@ -125,6 +127,16 @@ export default function Research({ initial }: { initial: State }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 20 }}>{measurements.map((m, index) => m && <article key={index}><h4>{str(m, "model")} · {str(m, "language_code")}</h4><pre style={{ whiteSpace: "pre-wrap" }}>{JSON.stringify({ status: m.status, error: m.error_category, checks: m.checks, metrics: m.metrics, generated_sample: m.sample }, null, 2)}</pre></article>)}</div>
     </section>
     <section><h2>자동 주제 수집·근거 자료 조사</h2>
+      <article aria-labelledby="trend-collection">
+        <h3 id="trend-collection">국가별 Google Trends RSS</h3>
+        <p>공식 도움말이 RSS 내보내기를 안내합니다. 이 피드는 검색어 목록이며, 제공자가 순위를 명시하지 않으므로 순위는 미수집으로 저장합니다. 검색량은 원천의 구간 표기만 보존합니다.</p>
+        <p>대상 지역: KR, US, JP, TW, HK, SG. 중국 본토는 Google Trends 제공 지역으로 간주하지 않습니다. 자동 스케줄은 비활성 상태이며 아래 실행은 선택한 지역 1회 수집입니다.</p>
+        {!data.trend_collection_configured && <p role="status">추세 저장 스키마가 아직 운영 DB에 적용되지 않아 수집은 비활성화되어 있습니다.</p>}
+        {data.trend_sources?.map(source => <p key={str(source, "endpoint")}>{str(source, "policy")} · 시간당 앱 제한 {str(source, "hourly_limit")}</p>)}
+        {(["KR", "US", "JP", "TW", "HK", "SG"] as const).map(geo => <button key={geo} disabled={busy || !data.trend_collection_configured} onClick={() => void act("trends/collect", { geo })}>{geo} 트렌드 1회 수집</button>)}
+        <h4>최근 수집 실행</h4><pre>{JSON.stringify(data.trend_collection_runs ?? [], null, 2)}</pre>
+        <h4>저장된 검색어 (최대 300건)</h4><pre>{JSON.stringify(data.trend_observations ?? [], null, 2)}</pre>
+      </article>
       <p>Fed·SEC 공식 자료와 Wikidata CC0 구조화 메타데이터만 허용합니다. Wikidata 후보는 공식 발표·시세·영업·효능 검증 자료가 아니며 승인 대기입니다. 검색량·경쟁도·CPC는 미수집입니다.</p>
       {data.collection_sources.map(s => <article key={str(s, "id")}><h3>{str(s, "name")}</h3><p>{str(s, "endpoint")}</p><p>{str(s, "rights")} · <a href={str(s, "terms_url")} target="_blank" rel="noreferrer">이용 조건</a></p>
         <p>마지막 시도 {str(s, "last_attempt_at")} · 마지막 성공 {str(s, "last_successful_at") || str(s, "last_collected_at")} · 오류 {str(s, "last_error") || "없음"} · 이용 정책 {JSON.stringify(s.source_policy ?? {})}</p>

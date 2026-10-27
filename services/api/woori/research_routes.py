@@ -11,7 +11,7 @@ from croniter import croniter
 from fastapi import APIRouter, HTTPException
 from pydantic import Field, field_validator, model_validator
 
-from . import collection, pipeline
+from . import collection, pipeline, trends
 from .ai import Draft, EngineFailure
 from .db import connection
 from .grounding import inspect
@@ -41,6 +41,10 @@ class Keyword(Input):
 
 class Selection(Input):
     status: Literal["selected", "excluded", "candidate"]
+
+
+class TrendCollectionRequest(Input):
+    geo: Literal["KR", "US", "JP", "TW", "HK", "SG"]
 
 
 class Source(Input):
@@ -287,6 +291,16 @@ def collect(request: CollectionRequest) -> dict[str, Any]:
     )
 
 
+@router.get("/trends")
+def trend_state() -> dict[str, Any]:
+    return trends.state()
+
+
+@router.post("/trends/collect")
+def collect_trends(request: TrendCollectionRequest) -> dict[str, Any]:
+    return trends.collect_geo(request.geo)
+
+
 @router.put("/collections/{source_id}")
 def collection_schedule(source_id: UUID, request: CollectionSchedule) -> dict[str, Any]:
     with connection() as conn:
@@ -365,6 +379,32 @@ def state() -> dict[str, Any]:
                 "article_evaluations": "SELECT e.*,v.group_id,v.version,v.title AS saved_title,v.body AS saved_body FROM article_quality_evaluations e LEFT JOIN content_versions v ON v.id=e.content_version_id ORDER BY e.created_at DESC LIMIT 32",
             }.items()
         }
+        result["trend_sources"] = [
+            {
+                "name": "Google Trends public RSS export",
+                "endpoint": "https://trends.google.com/trending/rss",
+                "terms_url": trends.GOOGLE_TRENDS_HELP,
+                "policy": "RSS export; bucketed source volume only; source_rank remains null unless explicitly supplied",
+                "hourly_limit": 12,
+                "automatic_schedule": False,
+            }
+        ]
+        trend_schema = conn.execute(
+            "SELECT to_regclass('public.trend_collection_runs') AS table_name"
+        ).fetchone()
+        result["trend_collection_configured"] = bool(
+            trend_schema is not None and trend_schema["table_name"]
+        )
+        if trend_schema is not None and trend_schema["table_name"]:
+            result["trend_collection_runs"] = conn.execute(
+                "SELECT * FROM trend_collection_runs ORDER BY started_at DESC LIMIT 100"
+            ).fetchall()
+            result["trend_observations"] = conn.execute(
+                "SELECT * FROM trend_observations ORDER BY collected_at DESC,id LIMIT 300"
+            ).fetchall()
+        else:
+            result["trend_collection_runs"] = []
+            result["trend_observations"] = []
         result["coverage"] = conn.execute(
             """SELECT c.slug AS category,l.code AS language_code,
             coalesce((SELECT count(DISTINCT s.id) FROM language_profiles p
