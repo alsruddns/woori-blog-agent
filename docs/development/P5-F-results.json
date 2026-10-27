@@ -1,0 +1,128 @@
+{
+  "work_id": "P5-F-001",
+  "captured_at_local": "2026-10-27",
+  "branch": "develop",
+  "baseline_commit": "4973a3df8c9a1da28b1e3d456d6716acdce0cb4b",
+  "git_main_changed": false,
+  "ports_before": {
+    "3100": "free",
+    "8100": "free",
+    "11435": "listening_project_llama_cpp_pid_39500_unchanged"
+  },
+  "legacy_processes": {
+    "pid_37740": "not_running",
+    "pid_32432": "not_running",
+    "descendants_or_relaunchers": "none_found"
+  },
+  "operations_database": {
+    "identity": "localhost:5432/woori_blog_agent as woori_owner",
+    "runtime_identity": "localhost:5432/woori_blog_agent as woori_app",
+    "schema_before": 32,
+    "schema_after": 33,
+    "migration_033_sha256": "8741f2731f31c2fe3a9439082a675f4e76d683bbfc69c81148c79f469215172c",
+    "migration_033_applied": true,
+    "content_versions_before": 360,
+    "content_versions_after": 360,
+    "audit_events_before": 1307,
+    "audit_events_after": 1309,
+    "new_audit_event_types": [
+      "operations.restore.completed",
+      "schema.publication_approval.migrated"
+    ],
+    "editorial_versions_after": 0,
+    "publication_approval_events_after": 0,
+    "publishing_records_after": 0,
+    "publish_ready_true_after": 0,
+    "runtime_approval_table_privileges": {
+      "select": true,
+      "insert": true,
+      "update": false,
+      "delete": false
+    }
+  },
+  "test_database": {
+    "identity": "127.0.0.1:5432/woori_blog_agent_test",
+    "app_role": "woori_test_app",
+    "owner_role": "woori_test_owner",
+    "schema": 33,
+    "app_connect_to_operations": false,
+    "owner_connect_to_operations": false,
+    "persistent_content_versions_after_tests": 0,
+    "persistent_audit_events_after_tests": 55,
+    "persistent_editorial_versions_after_tests": 0,
+    "persistent_approval_events_after_tests": 0
+  },
+  "backup_and_restore": {
+    "backup_file": "backups/20261027T065828Z.dump",
+    "backup_bytes": 421563,
+    "backup_sha256": "19A6D571C9AC351EA5FD784B03FE218ACCF5E578CAAF04F3A8800E544ACB7CC0",
+    "backup_catalog_validation": "passed",
+    "restore_rehearsal": "passed_into_new_owned_temporary_database",
+    "restore_database": "woori_blog_agent_restore_20261027_d7959ae0",
+    "restore_snapshot_checks": "schema_and_selected_table_counts_match; audit_update_blocked",
+    "restore_database_cleanup": "owned_temporary_database_removed",
+    "restore_archive": "backups/woori_blog_agent_restore_20261027_d7959ae0.dump",
+    "restore_archive_sha256": "BA0942E4DF7A2B026EC29D428D3B8994CEDFBF2B990E3490E6D654117369CFF0"
+  },
+  "services_after": {
+    "dashboard": {
+      "port": 3100,
+      "runner_pid": 20964,
+      "listener_pid": 7876,
+      "managed_and_project_owned": true,
+      "research_http": 200
+    },
+    "api": {
+      "port": 8100,
+      "runner_pid": 46484,
+      "listener_pid": 35156,
+      "managed_and_project_owned": true,
+      "health_http": 200
+    },
+    "bff_checks": {
+      "research_state": 200,
+      "blogger_status": 200,
+      "publication_status": 200,
+      "current_migration_fields_present": true
+    },
+    "restart_test": "not_performed_unnecessary"
+  },
+  "editorial_workflow": {
+    "full_suite_pytest_passed": 176,
+    "targeted_isolated_integration_tests_passed": 3,
+    "browser_surface_available": false,
+    "browser_editor_save_e2e": "not_verified",
+    "production_content_write_tests": 0
+  },
+  "safety": {
+    "blogger_oauth_scope": "https://www.googleapis.com/auth/blogger.readonly",
+    "connected_blog_count": 4,
+    "real_blogger_writes_this_phase": 0,
+    "paid_api_calls_this_phase": 0,
+    "ai_inference_calls_this_phase": 0,
+    "paid_ai_enabled": false,
+    "automatic_publishing_enabled": false,
+    "real_blogger_writes_enabled": false,
+    "publish_ready_true": 0,
+    "blogger_cost_gate": "provider_cost_unverified_and_external_read_not_called"
+  },
+  "verification": {
+    "ruff": "passed",
+    "mypy_sources": 28,
+    "mypy": "passed",
+    "pytest": "176 passed",
+    "python_wheel": "passed",
+    "dashboard_eslint": "passed",
+    "dashboard_typecheck": "passed",
+    "dashboard_production_build": "passed",
+    "secret_scan": "passed",
+    "git_diff_check_before_docs": "passed"
+  },
+  "remaining": [
+    "Browser-driven editor/save/version-compare/approval E2E not verified because no browser automation surface was exposed.",
+    "Google Cloud Billing account state was not accessible; Blogger cost status remains unverified and external Blogger requests remain blocked.",
+    "Off-device encrypted backup retention and key-recovery rehearsal remain operational follow-up items."
+  ],
+  "commit": null,
+  "origin_develop_push": null
+}

@@ -1,5 +1,13 @@
 # Changelog
 
+## Phase 5-F (operational transition and Migration 033; 2026-10-27)
+- Confirmed user-stopped Dashboard/FastAPI processes and their old process trees were gone; ports 3100/8100 were free. Kept the existing Qwen3 llama.cpp server on 11435 running and unchanged.
+- Revalidated operations/test DB identities and test-role CONNECT denial to operations. Created a fresh operations custom-format backup and completed a real restore rehearsal into an owned temporary database; archive and restored snapshot checks passed, audit mutation was blocked, and only the temporary restore DB was removed.
+- Applied official Migration 033 after the stopped-service maintenance check, backup/restore rehearsal, and test-schema validation. Operations moved 32→33; `content_versions` remained 360; the only new audit rows were the expected restore and schema-migration events; `publish_ready=true` remained 0.
+- Started the current develop API and Dashboard using `scripts/start.ps1`; manager and listener PIDs were verified. Health, `/research`, same-origin research state, Blogger status, and publication status returned the expected current schema and disabled-write fields.
+- Full verification passed (176 pytest, Ruff, mypy, wheel, Dashboard ESLint/typecheck/production build, and whitespace check); three focused isolated-database edit/approval tests also passed. Secret scan passed. Browser-based editor interaction was not available; operational content was not edited.
+- No Blogger request/write, paid API call, or AI inference was made. OAuth remains `blogger.readonly`; Blogger cost status remains unverified/blocked; live writes, automatic publishing, paid AI, and `publish_ready` remain disabled.
+
 ## Phase 5-E (latest runtime and Blogger readiness verification; 2026-10-27)
 - Confirmed the existing 3100/8100 services are still unmanaged checkout processes on older code. The lifecycle manager correctly has no ownership record; neither process was stopped or replaced. The project-local llama.cpp process was left untouched.
 - Created a fresh operations custom-format backup and verified its PostgreSQL archive catalog. Operations remained schema 32 with 360 content versions, 1,307 audit events, and zero `publish_ready` records. Migration 033 remains pending because the existing API/Dashboard sessions were not gracefully stopped and a controlled maintenance window was not established.
