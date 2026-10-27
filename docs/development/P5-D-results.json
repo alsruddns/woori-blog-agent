@@ -1,0 +1,81 @@
+{
+  "phase": "5-D",
+  "work_id": "P5-D-001",
+  "recorded_at": "2026-10-27",
+  "timezone": "Asia/Seoul",
+  "baseline_commit": "6c9682dbd0342cbe32085b7781098509f015a702",
+  "branch": "develop",
+  "test_database": {
+    "name": "woori_blog_agent_test",
+    "app_role": "woori_test_app",
+    "owner_role": "woori_test_owner",
+    "schema_version": 33,
+    "app_can_connect_to_operations": false,
+    "test_data_after_rollback": {
+      "publication_approval_events": 0,
+      "article_editorial_versions": 0
+    }
+  },
+  "migration_033": {
+    "sha256": "8741f2731f31c2fe3a9439082a675f4e76d683bbfc69c81148c79f469215172c",
+    "test_database_applied": true,
+    "operations_database_applied": false
+  },
+  "operations_database": {
+    "schema_version": 32,
+    "content_versions_before": 360,
+    "content_versions_after": 360,
+    "audit_events_before": 1306,
+    "audit_events_after": 1307,
+    "audit_event_delta_reason": "Expected append-only operations.restore.completed event from verified restore rehearsal",
+    "publish_ready_true_count": 0
+  },
+  "backup_restore": {
+    "backup_catalog_verified": true,
+    "isolated_restore_verified": true,
+    "restored_schema_version": 32,
+    "audit_immutability_verified": true,
+    "temporary_restore_database_removed_after_owner_check": true,
+    "backup_archives_retained": true
+  },
+  "runtime": {
+    "existing_dashboard": {"port": 3100, "pid": 37740, "stopped": false, "current_code": "stale"},
+    "existing_api": {"port": 8100, "pid": 32432, "stopped": false, "current_code": "stale"},
+    "manager_shutdown": "refused_safely_unmanaged_active_session",
+    "temporary_api": {"port": 18100, "health": 200, "research_state": 200, "database": "woori_blog_agent_test", "stopped_gracefully": true},
+    "temporary_dashboard": {"port": 13100, "research_page": 200, "same_origin_research_proxy": 200, "stopped_gracefully": true},
+    "browser_ui_interaction": "not_verified_browser_surface_unavailable"
+  },
+  "editor_integration": {
+    "database_backed_test": "passed",
+    "sanitized_html": true,
+    "immutable_versions_created_inside_rollback": 2,
+    "stale_editor_conflict": true,
+    "approval_and_revocation": true,
+    "new_edit_invalidates_prior_approval": true,
+    "publish_ready_enabled": false,
+    "live_blogger_write": false
+  },
+  "tests": {
+    "ruff": "passed",
+    "mypy": "passed_28_sources",
+    "pytest": "passed_176",
+    "wheel": "passed",
+    "dashboard_eslint": "passed",
+    "dashboard_production_build": "passed",
+    "dashboard_typecheck": "passed",
+    "secret_scan": "passed",
+    "git_diff_check": "passed"
+  },
+  "external_effects": {
+    "blogger_write_requests": 0,
+    "paid_api_calls": 0,
+    "ai_inference_calls": 0,
+    "operations_migration_033": "pending_graceful_server_shutdown"
+  },
+  "git": {
+    "commit": "pending",
+    "push": "pending",
+    "main_modified": false
+  }
+}

@@ -1,6 +1,6 @@
 # Local operations and recovery
 
-Run commands from repository root. API and Next.js bind only to loopback. Use separate terminals for API, dashboard and worker; Ctrl+C stops them. PostgreSQL is the existing Windows service. No other database or project account is altered.
+Run commands from repository root. API and Next.js bind only to loopback. Use separate terminals for API, dashboard and worker; Ctrl+C stops them. PostgreSQL is the existing Windows service. Project-only test objects are provisioned separately; no other project database or account is changed.
 
 ## Windows scheduling
 Phase 2 registered WooriBlogAgent-Worker and WooriBlogAgent-Backup through scripts/register-maintenance.ps1 under the current user with Interactive/Limited privileges and hidden windows. IgnoreNew prevents overlap. Failures restart after one minute, up to three times. Worker execution is unlimited; Backup is limited to one hour. Worker starts at logon; Backup runs at logon and daily 03:00. Unattended pre-logon/logged-out operation is not supported. Registration refuses to overwrite an existing task. The actual durable diagnostic job completed successfully and Backup LastTaskResult was 0.
@@ -8,7 +8,10 @@ Phase 2 registered WooriBlogAgent-Worker and WooriBlogAgent-Backup through scrip
 Worker reconnects every five seconds after DB/network errors without logging credentials. Unexpected programming errors exit for Task Scheduler restart. Lease recovery records safe error metadata; attempts >=3 terminate failed. The Worker still performs diagnostics only, never Google writes or AI calls. API and Dashboard remain manual start scripts on 8100/3100.
 
 ## Secret handling
-Keep .env, .env.bootstrap, .env.migration and apps/dashboard/.env.local outside Git. Restrict filesystem ACLs to the operating user/administrators; do not share the workspace with untrusted OS users. Runtime reads only .env; owner/admin env files are tool-specific. Archive the bootstrap secret securely outside the workspace once provisioning is verified. Rotate credentials after suspected disclosure. Never paste connection URLs into logs or screenshots.
+Keep .env, .env.bootstrap, .env.migration, .env.test and apps/dashboard/.env.local outside Git. Restrict filesystem ACLs to the operating user/administrators; do not share the workspace with untrusted OS users. Runtime reads only .env; owner/admin/test env files are tool-specific. Archive the bootstrap secret securely outside the workspace once provisioning is verified. Rotate credentials after suspected disclosure. Never paste connection URLs into logs or screenshots.
+
+## Isolated integration tests
+Before pytest, run `.venv/Scripts/python scripts/provision-test-database.py`. It creates only `woori_blog_agent_test`, `woori_test_app`, and `woori_test_owner`, writes credentials to ignored `.env.test`, applies the repository migrations through 033, and restricts CONNECT on that test database to the two test roles. It does not alter `woori_blog_agent`, `woori_blog_agent_eval`, or other databases. The test app login is explicitly denied CONNECT to the operations database. Pytest loads only `.env.test` for application/migration DB URLs and fails closed if either identity is wrong. Keep the isolated DB for test artifacts; do not reuse production credentials or run tests against `.env`.
 
 ## Backup and restore
 Run `.venv/Scripts/python scripts/backup.py`. It uses project owner credentials, PostgreSQL 16 pg_dump custom format and pg_restore --list validation. It never passes passwords on the command line. Backups contain content/audit data and must be encrypted and copied off-device with access controls. Archive catalog validation is not a restore rehearsal.
@@ -21,7 +24,7 @@ scripts/restore-rehearsal.py completed an actual restore into a fresh woori_blog
 Only main and develop. Develop receives reviewed/tested changes and pushes. Merge to main requires explicit user approval. No remote deletion required in this initial empty repository. main currently contains policy bootstrap only; GitHub has no configured protection rules.
 
 ## Multilingual operations
-Back up before running migrate.py; the current schema is version 32. Review migrations and use only .env.migration owner credentials. Runtime remains woori_app. Do not rerun bootstrap against an existing installation.
+Back up before running migrate.py; the operations database is at schema version 32 and Migration 033 remains pending there. Review migrations and use only .env.migration owner credentials. Runtime remains woori_app. Do not rerun bootstrap against an existing installation. The 033 approval migration has been verified on the isolated test database; apply it to operations only in a planned maintenance window after the running API has been gracefully stopped, with a verified backup/restore path.
 
 Use /config on port 3100. Deactivate languages/blogs to pause selection; existing content and historical publishing/audit rows remain. Country profile saves replace all policy text fields for that language/country. Blog URL/language and language code are immutable identities. Current registration accepts only HTTPS blogspot.com roots. Phase 2 /blogger resolves IDs through Google after consent and verified AUTHOR reads; never guess IDs or manually fill connection evidence.
 

@@ -145,6 +145,7 @@ OAuth 토큰·API Key·비밀번호를 코드에 저장하지 않는다. .env �
 - Tests that create content, jobs, revisions, or audit events must run in an explicitly disposable isolated database or inside a forced-rollback outer transaction. API and Worker connections used by the same test must share that isolation boundary.
 - Tests must verify that operational content and audit counts remain unchanged after teardown. Never rely on test names, random keys, or later cleanup to make writes to the operational `.env` database safe.
 - Do not delete leaked test rows from immutable operational tables. Diagnose and preserve them, then fix the test isolation before rerunning.
+- Pytest requires the ignored `.env.test` and the dedicated `woori_blog_agent_test` database with `woori_test_app` and `woori_test_owner`. The app account must have no effective CONNECT privilege to `woori_blog_agent`; missing or mismatched identity fails closed before a database-backed test runs. Provision only project-prefixed test objects; never change another database or account.
 
 ## Phase 5-C local runtime and publication approval
 - Manage only processes whose executable/command path and recorded checkout ownership match this repository. Check port owners and active connections before shutdown; request graceful exit and never force-kill a process or clear a live PID record. Unmanaged listeners require operator action in their original terminal.

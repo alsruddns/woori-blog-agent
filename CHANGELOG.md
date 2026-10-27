@@ -1,5 +1,13 @@
 # Changelog
 
+## Phase 5-D (isolated runtime and integration verification; 2026-10-27)
+- Provisioned the dedicated `woori_blog_agent_test` database and test-only app/owner roles. Pytest now requires ignored `.env.test`, verifies the test identity, and confirms the test app role cannot CONNECT to the operations database.
+- Applied migrations 001–033 to the test database. Verified editor revision creation, HTML sanitization, stale-version conflict, publication approval/revocation, and approval invalidation after a newer edit inside rollback-only integration transactions.
+- Created and catalog-verified an operations backup, then restored it into an owned temporary database and verified schema 32, data counts, and audit immutability. The rehearsal appended its expected audit event; no operational content or schema changed.
+- Started the latest API and Dashboard on temporary loopback ports against the test database. API health/state and Dashboard `/research` plus its same-origin research proxy returned 200. Browser-driven editing was not verified because a browser surface was unavailable.
+- Existing 3100/8100 listeners remained running: the safe manager has no ownership record and refused shutdown; the API had active client connections. The default listeners still return an older research-state shape. Operations Migration 033 remains pending until a graceful maintenance shutdown.
+- Full verification passed: 176 pytest tests, Ruff, mypy, wheel, Dashboard ESLint/typecheck/production build, secret scan, and whitespace checks. No Blogger writes, paid calls, AI inference, or `publish_ready` changes occurred.
+
 ## Phase 5-C (local server lifecycle and explicit publication approval; 2026-10-27)
 - Added PowerShell status/start/stop/restart management for project-owned Dashboard/API processes with PID reuse checks, executable and checkout validation, port ownership checks, active-client checks, graceful-only shutdown, and no forced termination. Added local llama.cpp status/start support and a verified Ctrl+Break shutdown attempt; unmanaged existing processes are deliberately not stopped.
 - Added test-time DB identity validation and forced rollback around application DB connections. The existing Phase 5-B 12 fixture versions remain immutable and are not in the evaluation-DB manuscript list; no content or audit rows were hidden, changed, or removed.

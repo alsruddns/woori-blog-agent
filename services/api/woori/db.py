@@ -26,11 +26,11 @@ def connection() -> Iterator[psycopg.Connection[dict[str, Any]]]:
                 loopback_server = False
             if (
                 not identity
-                or identity["database_name"] != "woori_blog_agent"
-                or identity["role_name"] != "woori_app"
+                or identity["database_name"] != "woori_blog_agent_test"
+                or identity["role_name"] != "woori_test_app"
                 or not loopback_server
             ):
-                raise RuntimeError("Database-backed tests require the verified local operations identity")
+                raise RuntimeError("Database-backed tests require the isolated local test database identity")
             # Every application/worker connection opened by pytest gets its own
             # forced rollback boundary. Integration tests that need shared
             # visibility still patch connection() to their outer rollback lab.

@@ -1,5 +1,6 @@
 """Compare real secret values in memory; never serialize credentials or provider errors."""
 
+import os
 import subprocess
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
@@ -18,7 +19,8 @@ if local_key.exists():
     secrets.append(local_key.read_text(encoding="utf-8").strip())
 for name in (
     ".env", ".env.bootstrap", ".env.migration", ".env.evaluation",
-    ".env.evaluation-migration", ".env.evaluation-readonly", "apps/dashboard/.env.local",
+    ".env.evaluation-migration", ".env.evaluation-readonly", ".env.test",
+    "apps/dashboard/.env.local",
 ):
     for key, value in dotenv_values(root / name).items():
         if not value:
@@ -87,15 +89,22 @@ for name in filter(None, names):
     assert not any(contains_secret(content.decode("utf-8"), value) for value in secrets), (
         "Secret found in staged content"
     )
+dashboard_base = os.environ.get("WOORI_VERIFY_DASHBOARD_BASE_URL", "http://127.0.0.1:3100")
+if dashboard_base not in {"http://127.0.0.1:3100"} and not (
+    os.environ.get("WOORI_TEST_MODE") == "1"
+    and dashboard_base == "http://127.0.0.1:13100"
+):
+    raise SystemExit("Dashboard verification target is not an approved loopback URL")
 with httpx.Client(timeout=15, trust_env=False) as client:
     outputs = []
     for path in ("/", "/research", "/blogger"):
-        response = client.get("http://127.0.0.1:3100" + path)
+        response = client.get(dashboard_base + path)
         assert response.status_code == 200
         outputs.append(response.text)
     for path in ("research/state", "blogger/status"):
         response = client.get(
-            "http://127.0.0.1:3100/api/" + path, headers={"Origin": "http://127.0.0.1:3100"}
+            dashboard_base + "/api/" + path,
+            headers={"Origin": dashboard_base},
         )
         assert response.status_code == 200
         outputs.append(response.text)

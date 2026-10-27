@@ -1,3 +1,4 @@
+import os
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -6,7 +7,6 @@ from typing import Any
 
 import psycopg
 import pytest
-from dotenv import dotenv_values
 from fastapi.testclient import TestClient
 from psycopg import sql
 from woori.config import settings
@@ -284,7 +284,7 @@ def test_configuration_lifecycle(sandbox: psycopg.Connection[dict[str, Any]]) ->
 
 def test_legacy_migration_preserves_content_and_audits() -> None:
     root = Path(__file__).resolve().parents[3]
-    url = dotenv_values(root / ".env.migration")["MIGRATION_DATABASE_URL"]
+    url = os.environ["MIGRATION_DATABASE_URL"]
     schema = "test_migration_" + uuid.uuid4().hex
     with psycopg.connect(url) as conn, conn.transaction(force_rollback=True):
         conn.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema)))
@@ -395,8 +395,7 @@ def test_legacy_migration_preserves_content_and_audits() -> None:
 
 
 def test_regional_versions_and_publishing_reference_retention() -> None:
-    root = Path(__file__).resolve().parents[3]
-    url = dotenv_values(root / ".env.migration")["MIGRATION_DATABASE_URL"]
+    url = os.environ["MIGRATION_DATABASE_URL"]
     # Owner used only to insert synthetic publishing history into a rolled-back test transaction.
     with psycopg.connect(url) as conn, conn.transaction(force_rollback=True):
         code = "pt-x-" + uuid.uuid4().hex[:8]
