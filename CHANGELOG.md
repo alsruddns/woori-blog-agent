@@ -1,5 +1,12 @@
 # Changelog
 
+## Phase 4-H (quota and runtime validation; 2026-10-27)
+- Traced both current-day English evaluation targets to separate bounded Fed experiments at 00:00 and 00:28 KST. Each made five Qwen3 4B calls and ended `quality_held`; two distinct target rows correctly consumed the two-slot quota. No SEC inference was started.
+- Added a quota regression test for KST midnight independence from PostgreSQL session timezone, failed-target counting, idempotent retry reuse, and hard-stop at the existing limit.
+- Validated the latest FastAPI state with an isolated in-process TestClient against the actual operations/evaluation databases. Current 3100/8100 processes predate the latest readiness fields; their runtime was left untouched. Dashboard data and stale runtime status are documented.
+- SEC and Fed continue sharing the existing per-language quota. Documented a bounded SEC-first reservation and stable evaluation idempotency design without increasing quota or changing runtime policy.
+- Blogger reads remain blocked by `provider_cost_unverified`; no Blogger request, paid call, automatic publication, or `publish_ready` change was made.
+
 ## Phase 4-G (SEC evaluation preflight; 2026-10-27)
 - Revalidated the rotated evaluation migration credential using the ignored configuration without printing secret values. The new credential connects only to the evaluation database; operational database CONNECT is denied. The former credential was not retained, so a direct old-password rejection attempt was not made.
 - Confirmed the Asia/Seoul quota window has not reset: SEC English is 2/2 and no successful English SEC source draft exists. Actual Qwen3 inference and all dependent locales were safely stopped before model startup; remaining Japanese and Chinese quota was not used.

@@ -1,0 +1,169 @@
+{
+  "phase": "4-H",
+  "record_id": "P4-H-001",
+  "captured_at": "2026-10-27T10:14:53+09:00",
+  "baseline_commit": "fb1b05e96bec7b5d0935f065a5d712a11fdbf417",
+  "quota": {
+    "timezone": "Asia/Seoul",
+    "window_date": "2026-10-27",
+    "resets_at": "2026-10-28T00:00:00+09:00",
+    "limit_per_language": 2,
+    "english_used": 2,
+    "english_targets": [
+      {
+        "run_id": "6810d716-66f8-497c-a9d2-01f4bb152510",
+        "created_at": "2026-10-27T00:00:48.169598+09:00",
+        "task_kind": "content",
+        "evaluation_only": true,
+        "source": "Federal Reserve",
+        "topic": "Board discount-rate meetings",
+        "job_status": "succeeded",
+        "content_status": "quality_held",
+        "worker_attempts": 1,
+        "model": "Qwen3-4B-Q4_K_M.gguf",
+        "model_calls": 5,
+        "elapsed_ms": 26376,
+        "model_time_ms": 24817,
+        "prompt_tokens": 861,
+        "completion_tokens": 206,
+        "max_rss_mib": 3380.21,
+        "mean_gpu_utilization_percent": 48.62,
+        "mean_system_cpu_peak_percent": 51.0,
+        "held_stages": [
+          "claim_verification",
+          "seo_quality"
+        ]
+      },
+      {
+        "run_id": "ea3d0ef8-6b0a-4668-8563-786d0c25959a",
+        "created_at": "2026-10-27T00:28:34.141241+09:00",
+        "task_kind": "content",
+        "evaluation_only": true,
+        "source": "Federal Reserve",
+        "topic": "Board discount-rate meetings",
+        "job_status": "succeeded",
+        "content_status": "quality_held",
+        "worker_attempts": 1,
+        "model": "Qwen3-4B-Q4_K_M.gguf",
+        "model_calls": 5,
+        "elapsed_ms": 25718,
+        "model_time_ms": 24370,
+        "prompt_tokens": 1041,
+        "completion_tokens": 198,
+        "max_rss_mib": 4880.57,
+        "mean_gpu_utilization_percent": 53.78,
+        "mean_system_cpu_peak_percent": 50.74,
+        "held_stages": []
+      }
+    ],
+    "distinct_run_ids": 2,
+    "distinct_idempotency_keys": 2,
+    "same_request_fingerprint": true,
+    "aggregation_error": false,
+    "retry_or_cancel_multiplier": false
+  },
+  "sec_evaluation": {
+    "english_quota_available": false,
+    "successful_english_source_draft": false,
+    "new_runs": 0,
+    "model_started": false,
+    "locales_attempted": []
+  },
+  "other_language_quota": {
+    "ko": {
+      "used": 2,
+      "limit": 2
+    },
+    "ja": {
+      "used": 1,
+      "limit": 2
+    },
+    "zh-CN": {
+      "used": 1,
+      "limit": 2
+    }
+  },
+  "priority_policy": {
+    "implemented": false,
+    "design": "one approved SEC English reservation within the existing two slots; stable plan idempotency; failed targets still count"
+  },
+  "dashboard_api": {
+    "live_dashboard_pid": 28888,
+    "live_api_pid": 25576,
+    "same_project_cwd": true,
+    "process_start_kst": "2026-10-26T13:52:00+09:00",
+    "live_dashboard_http_status": 200,
+    "live_state_has_evaluation_schema": false,
+    "live_research_page_has_fed_review_and_sec_quota_sections": false,
+    "latest_source_api_testclient_status": 200,
+    "latest_source_api_schema_verified": true,
+    "latest_source_screen_data": {
+      "fed_articles": 4,
+      "languages": [
+        "en",
+        "ja",
+        "ko",
+        "zh-CN"
+      ],
+      "title_present_each": true,
+      "body_present_each": true,
+      "facts_each": 5,
+      "sources_each": 1,
+      "human_reviews": 0,
+      "sec_english_source_draft": false,
+      "blogger_cost_status": "blocked_provider_cost_unverified",
+      "evaluation_worker_status": "stopped",
+      "evaluation_worker_fresh": false,
+      "publishing_enabled": false,
+      "publish_ready_forced_false": true
+    },
+    "existing_processes_restarted": false,
+    "isolated_process_start_allowed": false,
+    "isolated_ports_listening": []
+  },
+  "temporary_test_copy": {
+    "path": "%LOCALAPPDATA%/Temp/woori-blog-agent-p4h-9665d092a7964a44b06f77ee53e5c2f3",
+    "contains_copied_dashboard_env_file": true,
+    "secrets_printed": false,
+    "recursive_cleanup_allowed": false,
+    "requires_operator_cleanup": true
+  },
+  "safety": {
+    "blogger_cost_status": "provider_cost_unverified",
+    "blogger_requests_this_phase": 0,
+    "paid_api_calls": 0,
+    "publishing_records": 0,
+    "non_mock_jobs": 0,
+    "auto_publish_policies": 0,
+    "publish_ready_evaluations": 0,
+    "fed_review_records": 0,
+    "existing_history_changed_or_deleted": 0,
+    "migration_executed": false
+  },
+  "audit": {
+    "event_type": "operations.phase4h.quota_assessment_recorded",
+    "event_id": 84683,
+    "append_only": true,
+    "secret_values_included": false
+  },
+  "validation": {
+    "quota_regression_test": "passed (1 test)",
+    "verify_ps1": "passed",
+    "pytest": "153 passed",
+    "ruff": "passed",
+    "mypy": "passed (27 files)",
+    "wheel": "passed (isolated build)",
+    "dashboard_lint_typecheck_build": "passed (ESLint, TypeScript, production build)",
+    "secret_audit_check": "passed (scripts/verify-secrets.py)",
+    "database_audit": "append-only assessment event recorded; integration immutability checks included in suite",
+    "git_diff_check": "passed",
+    "latest_api_schema": "passed via in-process TestClient against current local databases",
+    "fresh_dashboard_process": "not_verified (automatic process-start policy rejection)"
+  },
+  "git": {
+    "branch": "develop",
+    "main_changed": false,
+    "commit": null,
+    "origin_develop_pushed": false
+  }
+}

@@ -170,6 +170,73 @@ def test_evaluation_can_generate_one_localized_profile_per_isolated_run(lab: Any
     assert [row["language_code"] for row in selected] == ["ko"]
 
 
+def test_evaluation_quota_uses_kst_window_and_counts_targets_not_retries(lab: Any) -> None:
+    keyword_id, _ = topic(lab)
+    conn, _api, _headers = lab
+    conn.execute(
+        "UPDATE generation_settings SET provider='local',engine='llamacpp',evaluation_daily_limit=2"
+    )
+    # A non-KST session timezone must not shift the durable daily quota window.
+    conn.execute("SET LOCAL TIME ZONE 'Pacific/Honolulu'")
+    profile = conn.execute(
+        "SELECT id FROM language_profiles WHERE language_code='en' AND target_country=''"
+    ).fetchone()
+    assert profile is not None
+    first_key = "quota-kst-previous-day-" + uuid.uuid4().hex
+    first = pipeline.enqueue(
+        uuid.UUID(keyword_id), first_key, profile_ids=[profile["id"]],
+        evaluation_only=True, evaluation_model="Qwen3-4B-Q4_K_M.gguf",
+    )
+    conn.execute(
+        """UPDATE generation_jobs SET created_at=(
+        date_trunc('day',now() AT TIME ZONE 'Asia/Seoul')-interval '1 second'
+        ) AT TIME ZONE 'Asia/Seoul' WHERE run_id=%s""",
+        (first["id"],),
+    )
+
+    second_key = "quota-kst-failed-target-" + uuid.uuid4().hex
+    second = pipeline.enqueue(
+        uuid.UUID(keyword_id), second_key, profile_ids=[profile["id"]],
+        evaluation_only=True, evaluation_model="Qwen3-4B-Q4_K_M.gguf",
+    )
+    conn.execute(
+        "UPDATE job_runs SET status='failed',error_type='synthetic_quota_fixture' WHERE id=%s",
+        (second["id"],),
+    )
+    retry = pipeline.enqueue(
+        uuid.UUID(keyword_id), second_key, profile_ids=[profile["id"]],
+        evaluation_only=True, evaluation_model="Qwen3-4B-Q4_K_M.gguf",
+    )
+    assert retry["id"] == second["id"]
+
+    third = pipeline.enqueue(
+        uuid.UUID(keyword_id), "quota-kst-third-" + uuid.uuid4().hex,
+        profile_ids=[profile["id"]], evaluation_only=True,
+        evaluation_model="Qwen3-4B-Q4_K_M.gguf",
+    )
+    with pytest.raises(EngineFailure, match="daily_evaluation_limit"):
+        pipeline.enqueue(
+            uuid.UUID(keyword_id), "quota-kst-fourth-" + uuid.uuid4().hex,
+            profile_ids=[profile["id"]], evaluation_only=True,
+            evaluation_model="Qwen3-4B-Q4_K_M.gguf",
+        )
+
+    fingerprints = [
+        conn.execute(
+            "SELECT request_fingerprint FROM generation_jobs WHERE run_id=%s", (run_id,)
+        ).fetchone()["request_fingerprint"]
+        for run_id in (first["id"], second["id"], third["id"])
+    ]
+    assert len(set(fingerprints)) == 1
+    assert conn.execute(
+        """SELECT count(*) AS n FROM generation_targets t
+        JOIN generation_jobs j ON j.run_id=t.run_id
+        WHERE t.profile_id=%s AND j.evaluation_only AND j.created_at >=
+        (date_trunc('day',now() AT TIME ZONE 'Asia/Seoul') AT TIME ZONE 'Asia/Seoul')""",
+        (profile["id"],),
+    ).fetchone()["n"] == 2
+
+
 def test_localized_evaluation_reuses_only_a_successful_isolated_source_draft() -> None:
     class FakeResult:
         def __init__(self, row: Any) -> None:
