@@ -126,3 +126,9 @@ OAuth 토큰·API Key·비밀번호를 코드에 저장하지 않는다. .env �
 - Apply the same global pause, resource, concurrency, CPU, RAM, disk, and bounded retry gates to every mode. Daily quotas reset at 00:00 Asia/Seoul, using an explicit timezone conversion independent of the PostgreSQL session timezone; evaluation quotas do not bypass operational or system-wide safety limits.
 - Evaluation generation and evaluation Workers fail closed unless an explicit isolation flag is enabled, the evaluation database is physically distinct from the configured operational database, and the evaluation queue is filtered from operational work. Separate quotas alone are not sufficient isolation.
 - Preserve heartbeat and audit state per Worker mode. Diagnostic testing must use an isolated schema/database and test-only queue, and must leave operational content and queues unchanged.
+
+
+## Phase 4-M immutable editorial review policy
+- Derive editorial review status only from explicit human review records and append-only review-start/revision events. Never fabricate a reviewer or mark an unreviewed article as passed. Editorial review is separate from Blogger publication approval.
+- Save every human edit as a new immutable editorial version linked to the original evaluation and content version. Re-run the existing language, evidence, number/date, proper-name, citation, quotation, and SEO gates before recording it; failed revisions remain `quality_held`. Preserve original content and evaluations.
+- Keep review events, revision metadata, quality results, body hashes, and audit records append-only. Keep `publish_ready=false`; no review action enables Blogger writes or automatic publishing.

@@ -6,12 +6,13 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
   const { path } = await context.params;
   const route = path.join("/");
   const allowed = request.method === "GET" ? ["state", "local-ai"].includes(route) : request.method === "POST"
-    ? /^(versions\/[a-f0-9-]+\/validate|collections|keywords|sources|jobs|prompts|schedules|sources\/[a-f0-9-]+\/reviews|jobs\/[a-f0-9-]+\/action|article-reviews)$/.test(route)
+    ? /^(versions\/[a-f0-9-]+\/validate|collections|keywords|sources|jobs|prompts|schedules|sources\/[a-f0-9-]+\/reviews|jobs\/[a-f0-9-]+\/action|article-reviews|article-review-events|article-revisions)$/.test(route)
     : request.method === "PUT" && /^(controls|collections\/[a-f0-9-]+|keywords\/[a-f0-9-]+|settings\/[a-f0-9-]+)$/.test(route);
   if (!allowed) return NextResponse.json({ error: "Unsupported operation" }, { status: 404 });
   try {
     const body = request.method === "GET" ? undefined : await request.text();
-    if (body && Buffer.byteLength(body) > 20000) return NextResponse.json({ error: "Request too large" }, { status: 413 });
+    const bodyLimit = route === "article-revisions" ? 60000 : 20000;
+    if (body && Buffer.byteLength(body) > bodyLimit) return NextResponse.json({ error: "Request too large" }, { status: 413 });
     const response = await fetch(`${API_BASE}/admin/research/${path.map(encodeURIComponent).join("/")}`, {
       method: request.method, headers: headers(), body, cache: "no-store", signal: AbortSignal.timeout(15000),
     });

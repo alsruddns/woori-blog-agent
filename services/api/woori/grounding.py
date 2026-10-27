@@ -156,6 +156,12 @@ _GENERIC_HEADLINE_NAMES = {
     "q filing",
 }
 
+_EVIDENCE_TERM_ALIASES = {
+    "united states dollar": re.compile(
+        r"\bUSD\b|\bU\.?S\.? dollars?\b|\bUnited States dollars?\b", re.IGNORECASE
+    ),
+}
+
 
 def proper_names(text: str) -> set[str]:
     """Conservative multi-token Latin names for exact-preservation checks."""
@@ -163,7 +169,7 @@ def proper_names(text: str) -> set[str]:
     # Latin proper name followed by a Korean particle was missed. Bound
     # against ASCII name characters while preserving exact name matching.
     pattern = (
-        r"(?<![A-Za-z0-9])[A-Z][A-Za-z0-9&'\-]*"
+        r"(?<![A-Za-z0-9-])[A-Z][A-Za-z0-9&'\-]*"
         r"(?:\s+[A-Z][A-Za-z0-9&'\-]*){1,3}(?![A-Za-z0-9])"
     )
     names: set[str] = set()
@@ -224,6 +230,11 @@ def extract_facts(sources: list[dict[str, Any]]) -> list[dict[str, str]]:
     return facts
 
 
+def _evidence_supported_term_alias(name: str, evidence: str) -> bool:
+    pattern = _EVIDENCE_TERM_ALIASES.get(name.casefold().rstrip("s"))
+    return bool(pattern and pattern.search(evidence))
+
+
 def inspect(
     draft: Draft, sources: list[dict[str, Any]], language: str, as_of: str
 ) -> dict[str, Any]:
@@ -243,6 +254,7 @@ def inspect(
         name
         for name in output_names - evidence_names
         if not any(re.sub(r"'s$", "", name) in evidence_name for evidence_name in evidence_names)
+        and not _evidence_supported_term_alias(name, evidence)
     )
     cited_ids = set(re.findall(r"\[source:([^\]]+)\]", draft.body))
     substantive_paragraphs = [

@@ -1,0 +1,1703 @@
+{
+  "phase": "4-M",
+  "kind": "deterministic_readonly_recheck",
+  "batch_id": "ed018e1e-a01c-4523-9134-b3b293af84ed",
+  "baseline_artifact": "P4-L-results-448d6fa9-c87d-4038-b97d-04727b612dbd.json",
+  "database": "woori_blog_agent_eval",
+  "database_role": "woori_eval_reader",
+  "recorded_at": "2026-10-27T04:19:27.012041+00:00",
+  "model_inference": false,
+  "database_writes": false,
+  "results": [
+    {
+      "evaluation_id": "3964f85e-a38b-4cb0-bdb5-74c41714207d",
+      "content_version_id": "f0d52644-7a9b-4d1c-b7c5-a01548e4ca84",
+      "content_version": 3,
+      "topic_key": "phase4l:ea3d0ef8-6b0a-4668-8563-786d0c25959a",
+      "topic": "Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026",
+      "language": "en",
+      "model": "Qwen3-4B-Q4_K_M.gguf",
+      "prompt_version": "p4l-deterministic-recheck-v2",
+      "title": "Verified source facts: Minutes of the Board's discount rate meetings",
+      "keywords": [
+        "Minutes of the Board's discount rate meetings"
+      ],
+      "stored_status": "machine_passed_review_required",
+      "stored_machine_passed": true,
+      "stored_failed_checks": [],
+      "rechecked_status": "machine_checked_review_required",
+      "rechecked_machine_passed": true,
+      "rechecked_failed_checks": [],
+      "checks_before": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "checks_after": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "metrics": {
+        "body_characters": 951,
+        "body_whitespace_words": 126,
+        "paragraph_count": 7,
+        "heading_count": 5,
+        "fact_count": 5,
+        "source_overlap_words_max": 17,
+        "stored_generation_metrics": {
+          "details": {
+            "fact_ids": [
+              "03cd3abc-ae35-49c8-b2eb-82b6872fa4c4",
+              "be9de8b6-7b07-4e95-a682-36e702afcd84",
+              "bd8bf8c0-bda7-4d13-b199-7e52d54251e8",
+              "5a9afa07-567c-483f-aece-b117a4c6cc15",
+              "85184003-7d9f-412a-9b38-cb60b33d02a5"
+            ],
+            "source_ids": [
+              "873093a8-085e-42b5-8bb2-657f62f8df94"
+            ],
+            "missing_proper_names": [],
+            "numeric_values_added": [],
+            "numeric_values_missing": [],
+            "proper_name_candidates": [
+              "Federal Open Market Committee",
+              "Federal Reserve Board"
+            ],
+            "source_overlap_words_max": 17,
+            "unsupported_proper_names": []
+          },
+          "ai_calls": 0,
+          "source_run_id": "ea3d0ef8-6b0a-4668-8563-786d0c25959a",
+          "evaluation_kind": "phase4l_deterministic_recheck",
+          "recheck_elapsed_ms": 90,
+          "model_inference_performed": false,
+          "source_content_version_id": "f0d52644-7a9b-4d1c-b7c5-a01548e4ca84"
+        }
+      },
+      "failure_evidence": {
+        "proper_name_candidates": [
+          "Federal Open Market Committee",
+          "Federal Reserve Board"
+        ],
+        "unsupported_proper_names": [],
+        "unexpected_numbers": [],
+        "numeric_values_missing": [],
+        "numeric_values_added": [],
+        "source_excerpt_previews": [
+          "Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026. The Federal Reserve Board on Tuesday released the minutes from its recent meetings to review and determine the discount rates provided to depository institutions through the discount window. Today's minutes cover the Board meetings that occurred on August 17, September 9, and September 16, 2026. The Board's process for setting the discount rate is distinct from the process the Federal Open Market Com"
+        ],
+        "paragraph_previews": [
+          "## Minutes of the Board's discount rate meetings",
+          "## 1\nMinutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026. [source:873093a8-085e-42b5-8bb2-657f62f8df94]",
+          "The Federal Reserve Board issued the meeting minutes on Tuesday to review and decide on the discount rates offered to depository institutions via the discount window. [source:873093a8-085e-42b5-8bb2-657f62f8df94]",
+          "## 2\nThe minutes from today cover the Board meetings that took place on August 17, September 9, and September 16, 2026. [source:873093a8-085e-42b5-8bb2-657f62f8df94]"
+        ],
+        "longest_shared_source_token_run": "minutes of the board's discount rate meetings on august 17 september 9 and september 16 2026"
+      },
+      "human_review_required": true,
+      "publish_ready": false
+    },
+    {
+      "evaluation_id": "734990da-6a26-4ce2-ab40-9a260e21a779",
+      "content_version_id": "57a0f484-48cc-40c5-92f5-b6365000b284",
+      "content_version": 1,
+      "topic_key": "phase4l:37e40f06-3653-46c1-a861-50d1d089b19d",
+      "topic": "Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026",
+      "language": "ko",
+      "model": "Qwen3-4B-Q4_K_M.gguf",
+      "prompt_version": "p4l-deterministic-recheck-v2",
+      "title": "공식 자료에서 확인한 사실: 보드의 이자율 회의 분회록",
+      "keywords": [
+        "보드의 이자율 회의 분회록"
+      ],
+      "stored_status": "machine_passed_review_required",
+      "stored_machine_passed": true,
+      "stored_failed_checks": [],
+      "rechecked_status": "machine_checked_review_required",
+      "rechecked_machine_passed": true,
+      "rechecked_failed_checks": [],
+      "checks_before": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "checks_after": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "metrics": {
+        "body_characters": 607,
+        "body_whitespace_words": 84,
+        "paragraph_count": 7,
+        "heading_count": 5,
+        "fact_count": 5,
+        "source_overlap_words_max": 4,
+        "stored_generation_metrics": {
+          "details": {
+            "fact_ids": [
+              "03cd3abc-ae35-49c8-b2eb-82b6872fa4c4",
+              "be9de8b6-7b07-4e95-a682-36e702afcd84",
+              "bd8bf8c0-bda7-4d13-b199-7e52d54251e8",
+              "5a9afa07-567c-483f-aece-b117a4c6cc15",
+              "85184003-7d9f-412a-9b38-cb60b33d02a5"
+            ],
+            "source_ids": [
+              "873093a8-085e-42b5-8bb2-657f62f8df94"
+            ],
+            "missing_proper_names": [],
+            "numeric_values_added": [],
+            "numeric_values_missing": [],
+            "proper_name_candidates": [
+              "Federal Open Market Committee",
+              "Federal Reserve Board"
+            ],
+            "source_overlap_words_max": 4,
+            "unsupported_proper_names": []
+          },
+          "ai_calls": 0,
+          "source_run_id": "37e40f06-3653-46c1-a861-50d1d089b19d",
+          "evaluation_kind": "phase4l_deterministic_recheck",
+          "recheck_elapsed_ms": 102,
+          "model_inference_performed": false,
+          "source_content_version_id": "57a0f484-48cc-40c5-92f5-b6365000b284"
+        }
+      },
+      "failure_evidence": {
+        "proper_name_candidates": [
+          "Federal Open Market Committee",
+          "Federal Reserve Board"
+        ],
+        "unsupported_proper_names": [],
+        "unexpected_numbers": [],
+        "numeric_values_missing": [],
+        "numeric_values_added": [],
+        "source_excerpt_previews": [
+          "Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026. The Federal Reserve Board on Tuesday released the minutes from its recent meetings to review and determine the discount rates provided to depository institutions through the discount window. Today's minutes cover the Board meetings that occurred on August 17, September 9, and September 16, 2026. The Board's process for setting the discount rate is distinct from the process the Federal Open Market Com"
+        ],
+        "paragraph_previews": [
+          "## 보드의 이자율 회의 분회록",
+          "## 1\n2026년 8월 17일, 9월 9일 및 9월 16일 보드의 이자율 회의록. [source:873093a8-085e-42b5-8bb2-657f62f8df94]",
+          "월요일에 Federal Reserve Board은 최근 회의의 분임을 발표하여 대출 창구를 통한 기관에 제공된 할인율을 검토하고 결정하기 위해 사용했습니다. [source:873093a8-085e-42b5-8bb2-657f62f8df94]",
+          "## 2\n오늘의 회의록은 2026년 8월 17일, 9월 9일 및 9월 16일에 개최된 이사회를 포함합니다. [source:873093a8-085e-42b5-8bb2-657f62f8df94]"
+        ],
+        "longest_shared_source_token_run": "federal open market committee"
+      },
+      "human_review_required": true,
+      "publish_ready": false
+    },
+    {
+      "evaluation_id": "d753a6d9-1057-4461-bc93-3a32007f2a75",
+      "content_version_id": "dedd68e3-1829-4d2c-8ec2-c783911b765f",
+      "content_version": 1,
+      "topic_key": "phase4l:a2434d90-4357-4870-88a9-fd480be090c7",
+      "topic": "Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026",
+      "language": "ja",
+      "model": "Qwen3-4B-Q4_K_M.gguf",
+      "prompt_version": "p4l-deterministic-recheck-v2",
+      "title": "公式資料で確認した事実：ボードのディスカウントレート会議の分類",
+      "keywords": [
+        "ボードのディスカウントレート会議の分類"
+      ],
+      "stored_status": "machine_passed_review_required",
+      "stored_machine_passed": true,
+      "stored_failed_checks": [],
+      "rechecked_status": "machine_checked_review_required",
+      "rechecked_machine_passed": true,
+      "rechecked_failed_checks": [],
+      "checks_before": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "checks_after": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "metrics": {
+        "body_characters": 627,
+        "body_whitespace_words": 30,
+        "paragraph_count": 7,
+        "heading_count": 5,
+        "fact_count": 5,
+        "source_overlap_words_max": 4,
+        "stored_generation_metrics": {
+          "details": {
+            "fact_ids": [
+              "03cd3abc-ae35-49c8-b2eb-82b6872fa4c4",
+              "be9de8b6-7b07-4e95-a682-36e702afcd84",
+              "bd8bf8c0-bda7-4d13-b199-7e52d54251e8",
+              "5a9afa07-567c-483f-aece-b117a4c6cc15",
+              "85184003-7d9f-412a-9b38-cb60b33d02a5"
+            ],
+            "source_ids": [
+              "873093a8-085e-42b5-8bb2-657f62f8df94"
+            ],
+            "missing_proper_names": [],
+            "numeric_values_added": [],
+            "numeric_values_missing": [],
+            "proper_name_candidates": [
+              "Federal Open Market Committee",
+              "Federal Reserve Board"
+            ],
+            "source_overlap_words_max": 4,
+            "unsupported_proper_names": []
+          },
+          "ai_calls": 0,
+          "source_run_id": "a2434d90-4357-4870-88a9-fd480be090c7",
+          "evaluation_kind": "phase4l_deterministic_recheck",
+          "recheck_elapsed_ms": 90,
+          "model_inference_performed": false,
+          "source_content_version_id": "dedd68e3-1829-4d2c-8ec2-c783911b765f"
+        }
+      },
+      "failure_evidence": {
+        "proper_name_candidates": [
+          "Federal Open Market Committee",
+          "Federal Reserve Board"
+        ],
+        "unsupported_proper_names": [],
+        "unexpected_numbers": [],
+        "numeric_values_missing": [],
+        "numeric_values_added": [],
+        "source_excerpt_previews": [
+          "Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026. The Federal Reserve Board on Tuesday released the minutes from its recent meetings to review and determine the discount rates provided to depository institutions through the discount window. Today's minutes cover the Board meetings that occurred on August 17, September 9, and September 16, 2026. The Board's process for setting the discount rate is distinct from the process the Federal Open Market Com"
+        ],
+        "paragraph_previews": [
+          "## ボードのディスカウントレート会議の分類",
+          "## 1\n2026年8月17日、9月9日および9月16日のボードのディスカウントレート会議の議事録。 [source:873093a8-085e-42b5-8bb2-657f62f8df94]",
+          "火曜日にFederal Reserve Boardは、最近の会議の分類をレビューし、ディスカウントウィンドウを通じて預金機関に提供される割引率を決定するために分類を公開しました。 [source:873093a8-085e-42b5-8bb2-657f62f8df94]",
+          "## 2\n今日の議事録は、2026年8月17日、9月9日および9月16日に開催された理事会の会議をカバーしています。 [source:873093a8-085e-42b5-8bb2-657f62f8df94]"
+        ],
+        "longest_shared_source_token_run": "federal open market committee"
+      },
+      "human_review_required": true,
+      "publish_ready": false
+    },
+    {
+      "evaluation_id": "d506f38a-63e4-4682-ade0-694f27a62326",
+      "content_version_id": "35615057-3e01-490f-8234-0e7d9684c65c",
+      "content_version": 1,
+      "topic_key": "phase4l:ee2a4dbe-2c29-4006-a981-b4b4efa693a6",
+      "topic": "Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026",
+      "language": "zh-CN",
+      "model": "Qwen3-4B-Q4_K_M.gguf",
+      "prompt_version": "p4l-deterministic-recheck-v2",
+      "title": "官方资料核实的要点：董事会贴现率会议纪要",
+      "keywords": [
+        "董事会贴现率会议纪要"
+      ],
+      "stored_status": "machine_passed_review_required",
+      "stored_machine_passed": true,
+      "stored_failed_checks": [],
+      "rechecked_status": "machine_checked_review_required",
+      "rechecked_machine_passed": true,
+      "rechecked_failed_checks": [],
+      "checks_before": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "checks_after": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "metrics": {
+        "body_characters": 519,
+        "body_whitespace_words": 30,
+        "paragraph_count": 7,
+        "heading_count": 5,
+        "fact_count": 5,
+        "source_overlap_words_max": 4,
+        "stored_generation_metrics": {
+          "details": {
+            "fact_ids": [
+              "03cd3abc-ae35-49c8-b2eb-82b6872fa4c4",
+              "be9de8b6-7b07-4e95-a682-36e702afcd84",
+              "bd8bf8c0-bda7-4d13-b199-7e52d54251e8",
+              "5a9afa07-567c-483f-aece-b117a4c6cc15",
+              "85184003-7d9f-412a-9b38-cb60b33d02a5"
+            ],
+            "source_ids": [
+              "873093a8-085e-42b5-8bb2-657f62f8df94"
+            ],
+            "missing_proper_names": [],
+            "numeric_values_added": [],
+            "numeric_values_missing": [],
+            "proper_name_candidates": [
+              "Federal Open Market Committee",
+              "Federal Reserve Board"
+            ],
+            "source_overlap_words_max": 4,
+            "unsupported_proper_names": []
+          },
+          "ai_calls": 0,
+          "source_run_id": "ee2a4dbe-2c29-4006-a981-b4b4efa693a6",
+          "evaluation_kind": "phase4l_deterministic_recheck",
+          "recheck_elapsed_ms": 100,
+          "model_inference_performed": false,
+          "source_content_version_id": "35615057-3e01-490f-8234-0e7d9684c65c"
+        }
+      },
+      "failure_evidence": {
+        "proper_name_candidates": [
+          "Federal Open Market Committee",
+          "Federal Reserve Board"
+        ],
+        "unsupported_proper_names": [],
+        "unexpected_numbers": [],
+        "numeric_values_missing": [],
+        "numeric_values_added": [],
+        "source_excerpt_previews": [
+          "Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026. The Federal Reserve Board on Tuesday released the minutes from its recent meetings to review and determine the discount rates provided to depository institutions through the discount window. Today's minutes cover the Board meetings that occurred on August 17, September 9, and September 16, 2026. The Board's process for setting the discount rate is distinct from the process the Federal Open Market Com"
+        ],
+        "paragraph_previews": [
+          "## 董事会贴现率会议纪要",
+          "## 1\n2026年8月17日、9月9日和9月16日董事会贴现率会议记录。 [source:873093a8-085e-42b5-8bb2-657f62f8df94]",
+          "周二，Federal Reserve Board发布了最近会议的纪要，以审查并确定通过贴现窗口向存款机构提供的贴现率。 [source:873093a8-085e-42b5-8bb2-657f62f8df94]",
+          "## 2\n今天的会议纪要涵盖了2026年8月17日、9月9日和9月16日的董事会会议。 [source:873093a8-085e-42b5-8bb2-657f62f8df94]"
+        ],
+        "longest_shared_source_token_run": "federal open market committee"
+      },
+      "human_review_required": true,
+      "publish_ready": false
+    },
+    {
+      "evaluation_id": "deeec6b6-7e4d-4410-8dd9-6f3b8bb524b2",
+      "content_version_id": "16ae97df-e9a5-4727-8c9e-4d2c896e76b2",
+      "content_version": 1,
+      "topic_key": "phase4l:40012cc2-4755-4b76-a8e2-ce2f08446c62",
+      "topic": "Apple Inc. 10-Q filed 2026-07-31",
+      "language": "en",
+      "model": "Qwen3-4B-Q4_K_M.gguf",
+      "prompt_version": "p4l-deterministic-recheck-v2",
+      "title": "Verified source facts: Apple Inc. 10-Q filed 2026-07-31",
+      "keywords": [
+        "Apple Inc. 10-Q filed 2026-07-31"
+      ],
+      "stored_status": "quality_held",
+      "stored_machine_passed": false,
+      "stored_failed_checks": [
+        "keywords_are_search_terms_not_internal_ids"
+      ],
+      "rechecked_status": "machine_checked_review_required",
+      "rechecked_machine_passed": true,
+      "rechecked_failed_checks": [],
+      "checks_before": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": false,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "checks_after": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "metrics": {
+        "body_characters": 504,
+        "body_whitespace_words": 56,
+        "paragraph_count": 6,
+        "heading_count": 5,
+        "fact_count": 4,
+        "source_overlap_words_max": 12,
+        "stored_generation_metrics": {
+          "details": {
+            "fact_ids": [
+              "726d7444-a2ff-45de-b821-c31c2d1c069f",
+              "97594ff5-5eca-4def-8ba8-4105d6b00e9e",
+              "72fb57bf-8bb3-4c52-bd70-75c2782bf0f3",
+              "e16aad33-6a8c-4b5d-8e4f-9be42e768a23"
+            ],
+            "source_ids": [
+              "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+            ],
+            "missing_proper_names": [],
+            "numeric_values_added": [],
+            "numeric_values_missing": [],
+            "proper_name_candidates": [
+              "Apple Inc",
+              "SEC Form"
+            ],
+            "source_overlap_words_max": 12,
+            "unsupported_proper_names": []
+          },
+          "ai_calls": 0,
+          "source_run_id": "40012cc2-4755-4b76-a8e2-ce2f08446c62",
+          "evaluation_kind": "phase4l_deterministic_recheck",
+          "recheck_elapsed_ms": 95,
+          "model_inference_performed": false,
+          "source_content_version_id": "16ae97df-e9a5-4727-8c9e-4d2c896e76b2"
+        }
+      },
+      "failure_evidence": {
+        "proper_name_candidates": [
+          "Apple Inc",
+          "SEC Form"
+        ],
+        "unsupported_proper_names": [],
+        "unexpected_numbers": [],
+        "numeric_values_missing": [],
+        "numeric_values_added": [],
+        "source_excerpt_previews": [
+          "Apple Inc. filed SEC Form 10-Q on 2026-07-31 for the period ended 2026-06-27. revenue: 109417000000 USD for period 2026-03-29 to 2026-06-27; net income: 29789000000 USD for period 2026-03-29 to 2026-06-27. SEC accession number 0000320193-26-000020."
+        ],
+        "paragraph_previews": [
+          "## Apple Inc. 10-Q filed 2026-07-31",
+          "## 1\nApple Inc [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]",
+          "## 2\nThe SEC Form 10-Q was filed on 2026-07-31 for the period ended 2026-06-27. [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]",
+          "## 3\nRevenue: 109417000000 USD for the period from 2026-03-29 to 2026-06-27; net income: 29789000000 USD for the same period. [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]"
+        ],
+        "longest_shared_source_token_run": "2026-03-29 to 2026-06-27 net income 29789000000 usd for"
+      },
+      "human_review_required": true,
+      "publish_ready": false
+    },
+    {
+      "evaluation_id": "0199b7d9-bd6b-41e3-be47-cd40f2c23f94",
+      "content_version_id": "305fba32-4f09-42c1-bb74-e5a824082424",
+      "content_version": 1,
+      "topic_key": "phase4l:80f5fe2a-368b-49e1-b424-3fdb23b4818b",
+      "topic": "Apple Inc. 10-Q filed 2026-07-31",
+      "language": "ja",
+      "model": "Qwen3-4B-Q4_K_M.gguf",
+      "prompt_version": "p4l-deterministic-recheck-v2",
+      "title": "公式資料で確認した事実：Apple Inc。2026-07-31提出の10-Q",
+      "keywords": [
+        "Apple Inc。2026-07-31提出の10-Q"
+      ],
+      "stored_status": "quality_held",
+      "stored_machine_passed": false,
+      "stored_failed_checks": [
+        "no_unsupported_proper_names"
+      ],
+      "rechecked_status": "machine_checked_review_required",
+      "rechecked_machine_passed": true,
+      "rechecked_failed_checks": [],
+      "checks_before": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": false,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "checks_after": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "metrics": {
+        "body_characters": 477,
+        "body_whitespace_words": 29,
+        "paragraph_count": 6,
+        "heading_count": 5,
+        "fact_count": 4,
+        "source_overlap_words_max": 3,
+        "stored_generation_metrics": {
+          "details": {
+            "fact_ids": [
+              "726d7444-a2ff-45de-b821-c31c2d1c069f",
+              "97594ff5-5eca-4def-8ba8-4105d6b00e9e",
+              "72fb57bf-8bb3-4c52-bd70-75c2782bf0f3",
+              "e16aad33-6a8c-4b5d-8e4f-9be42e768a23"
+            ],
+            "source_ids": [
+              "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+            ],
+            "missing_proper_names": [],
+            "numeric_values_added": [],
+            "numeric_values_missing": [],
+            "proper_name_candidates": [
+              "Apple Inc",
+              "SEC Form"
+            ],
+            "source_overlap_words_max": 3,
+            "unsupported_proper_names": [
+              "Q Apple Inc",
+              "United States Dollar"
+            ]
+          },
+          "ai_calls": 0,
+          "source_run_id": "80f5fe2a-368b-49e1-b424-3fdb23b4818b",
+          "evaluation_kind": "phase4l_deterministic_recheck",
+          "recheck_elapsed_ms": 166,
+          "model_inference_performed": false,
+          "source_content_version_id": "305fba32-4f09-42c1-bb74-e5a824082424"
+        }
+      },
+      "failure_evidence": {
+        "proper_name_candidates": [
+          "Apple Inc",
+          "SEC Form"
+        ],
+        "unsupported_proper_names": [],
+        "unexpected_numbers": [],
+        "numeric_values_missing": [],
+        "numeric_values_added": [],
+        "source_excerpt_previews": [
+          "Apple Inc. filed SEC Form 10-Q on 2026-07-31 for the period ended 2026-06-27. revenue: 109417000000 USD for period 2026-03-29 to 2026-06-27; net income: 29789000000 USD for period 2026-03-29 to 2026-06-27. SEC accession number 0000320193-26-000020."
+        ],
+        "paragraph_previews": [
+          "## Apple Inc。2026-07-31提出の10-Q",
+          "## 1\nApple Inc [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]",
+          "## 2\n2026年7月31日に、2026年6月27日までの期間においてSEC Formを提出しました。 [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]",
+          "## 3\n収入：2026年3月29日から2026年6月27日までの期間における109417000000 United States Dollar；純利益：2026年3月29日から2026年6月27日までの期間における29789000000 United States Dollar。 [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]"
+        ],
+        "longest_shared_source_token_run": "apple inc"
+      },
+      "human_review_required": true,
+      "publish_ready": false
+    },
+    {
+      "evaluation_id": "f69cab58-1287-4057-b4bb-dbae4412a957",
+      "content_version_id": "122859c3-d3ac-4d7f-97bf-15d84dfe7257",
+      "content_version": 1,
+      "topic_key": "phase4l:5f01182b-8803-4ddc-b82a-c002f1c848fc",
+      "topic": "Apple Inc. 10-Q filed 2026-07-31",
+      "language": "zh-CN",
+      "model": "Qwen3-4B-Q4_K_M.gguf",
+      "prompt_version": "p4l-deterministic-recheck-v2",
+      "title": "官方资料核实的要点：Apple Inc。2026-07-31 提交的 10-Q",
+      "keywords": [
+        "Apple Inc。2026-07-31 提交的 10-Q"
+      ],
+      "stored_status": "quality_held",
+      "stored_machine_passed": false,
+      "stored_failed_checks": [
+        "no_unsupported_proper_names",
+        "keywords_are_search_terms_not_internal_ids"
+      ],
+      "rechecked_status": "machine_checked_review_required",
+      "rechecked_machine_passed": true,
+      "rechecked_failed_checks": [],
+      "checks_before": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": false,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": false,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "checks_after": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "metrics": {
+        "body_characters": 421,
+        "body_whitespace_words": 24,
+        "paragraph_count": 6,
+        "heading_count": 5,
+        "fact_count": 4,
+        "source_overlap_words_max": 3,
+        "stored_generation_metrics": {
+          "details": {
+            "fact_ids": [
+              "726d7444-a2ff-45de-b821-c31c2d1c069f",
+              "97594ff5-5eca-4def-8ba8-4105d6b00e9e",
+              "72fb57bf-8bb3-4c52-bd70-75c2782bf0f3",
+              "e16aad33-6a8c-4b5d-8e4f-9be42e768a23"
+            ],
+            "source_ids": [
+              "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+            ],
+            "missing_proper_names": [],
+            "numeric_values_added": [],
+            "numeric_values_missing": [],
+            "proper_name_candidates": [
+              "Apple Inc",
+              "SEC Form"
+            ],
+            "source_overlap_words_max": 3,
+            "unsupported_proper_names": [
+              "Q Apple Inc"
+            ]
+          },
+          "ai_calls": 0,
+          "source_run_id": "5f01182b-8803-4ddc-b82a-c002f1c848fc",
+          "evaluation_kind": "phase4l_deterministic_recheck",
+          "recheck_elapsed_ms": 305,
+          "model_inference_performed": false,
+          "source_content_version_id": "122859c3-d3ac-4d7f-97bf-15d84dfe7257"
+        }
+      },
+      "failure_evidence": {
+        "proper_name_candidates": [
+          "Apple Inc",
+          "SEC Form"
+        ],
+        "unsupported_proper_names": [],
+        "unexpected_numbers": [],
+        "numeric_values_missing": [],
+        "numeric_values_added": [],
+        "source_excerpt_previews": [
+          "Apple Inc. filed SEC Form 10-Q on 2026-07-31 for the period ended 2026-06-27. revenue: 109417000000 USD for period 2026-03-29 to 2026-06-27; net income: 29789000000 USD for period 2026-03-29 to 2026-06-27. SEC accession number 0000320193-26-000020."
+        ],
+        "paragraph_previews": [
+          "## Apple Inc。2026-07-31 提交的 10-Q",
+          "## 1\nApple Inc [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]",
+          "## 2\n于2026年7月31日提交了截至2026年6月27日止期间的10-Q文件SEC Form [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]",
+          "## 3\n收入：109417000000美元，期间为2026年3月29日至2026年6月27日；净利润：29789000000美元，期间为2026年3月29日至2026年6月27日。 [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]"
+        ],
+        "longest_shared_source_token_run": "apple inc"
+      },
+      "human_review_required": true,
+      "publish_ready": false
+    },
+    {
+      "evaluation_id": "260e488a-0425-4c25-80f3-d1f7465d9d34",
+      "content_version_id": "35e30c7f-33ec-4ee5-8d45-660c8dc4a18f",
+      "content_version": 4,
+      "topic_key": "phase4l:9afab489-3628-463a-9c0d-f61ee426f176",
+      "topic": "Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026",
+      "language": "en",
+      "model": "Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+      "prompt_version": "p4l-deterministic-recheck-v2",
+      "title": "Verified source facts: Minutes of the Board's discount rate meetings",
+      "keywords": [
+        "Minutes of the Board's discount rate meetings"
+      ],
+      "stored_status": "quality_held",
+      "stored_machine_passed": false,
+      "stored_failed_checks": [
+        "no_mass_direct_quote"
+      ],
+      "rechecked_status": "quality_held",
+      "rechecked_machine_passed": false,
+      "rechecked_failed_checks": [
+        "no_mass_direct_quote"
+      ],
+      "checks_before": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": false
+      },
+      "checks_after": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": false
+      },
+      "metrics": {
+        "body_characters": 948,
+        "body_whitespace_words": 122,
+        "paragraph_count": 7,
+        "heading_count": 5,
+        "fact_count": 5,
+        "source_overlap_words_max": 28,
+        "stored_generation_metrics": {
+          "details": {
+            "fact_ids": [
+              "03cd3abc-ae35-49c8-b2eb-82b6872fa4c4",
+              "be9de8b6-7b07-4e95-a682-36e702afcd84",
+              "bd8bf8c0-bda7-4d13-b199-7e52d54251e8",
+              "5a9afa07-567c-483f-aece-b117a4c6cc15",
+              "85184003-7d9f-412a-9b38-cb60b33d02a5"
+            ],
+            "source_ids": [
+              "873093a8-085e-42b5-8bb2-657f62f8df94"
+            ],
+            "missing_proper_names": [],
+            "numeric_values_added": [],
+            "numeric_values_missing": [],
+            "proper_name_candidates": [
+              "Federal Open Market Committee",
+              "Federal Reserve Board"
+            ],
+            "source_overlap_words_max": 28,
+            "unsupported_proper_names": []
+          },
+          "ai_calls": 0,
+          "source_run_id": "9afab489-3628-463a-9c0d-f61ee426f176",
+          "evaluation_kind": "phase4l_deterministic_recheck",
+          "recheck_elapsed_ms": 107,
+          "model_inference_performed": false,
+          "source_content_version_id": "35e30c7f-33ec-4ee5-8d45-660c8dc4a18f"
+        }
+      },
+      "failure_evidence": {
+        "proper_name_candidates": [
+          "Federal Open Market Committee",
+          "Federal Reserve Board"
+        ],
+        "unsupported_proper_names": [],
+        "unexpected_numbers": [],
+        "numeric_values_missing": [],
+        "numeric_values_added": [],
+        "source_excerpt_previews": [
+          "Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026. The Federal Reserve Board on Tuesday released the minutes from its recent meetings to review and determine the discount rates provided to depository institutions through the discount window. Today's minutes cover the Board meetings that occurred on August 17, September 9, and September 16, 2026. The Board's process for setting the discount rate is distinct from the process the Federal Open Market Com"
+        ],
+        "paragraph_previews": [
+          "## Minutes of the Board's discount rate meetings",
+          "## 1\nMinutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026. [source:873093a8-085e-42b5-8bb2-657f62f8df94]",
+          "The Federal Reserve Board on Tuesday released the minutes from its recent meetings to review and determine the discount rates provided to depository institutions through the discount window. [source:873093a8-085e-42b5-8bb2-657f62f8df94]",
+          "## 2\nThe minutes from today cover the Board meetings held on August 17, September 9, and September 16, 2026. [source:873093a8-085e-42b5-8bb2-657f62f8df94]"
+        ],
+        "longest_shared_source_token_run": "the federal reserve board on tuesday released the minutes from its recent meetings to review and determine the discount rates provided to depository institutions through the discount window"
+      },
+      "human_review_required": true,
+      "publish_ready": false
+    },
+    {
+      "evaluation_id": "c394a7c6-3872-439a-a2f2-d9646dec90d2",
+      "content_version_id": "6844c74a-0888-4e50-82fc-5b343bcc0a64",
+      "content_version": 2,
+      "topic_key": "phase4l:c2edfa85-0b48-4302-a12d-97f040936f3a",
+      "topic": "Apple Inc. 10-Q filed 2026-07-31",
+      "language": "en",
+      "model": "Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+      "prompt_version": "p4l-deterministic-recheck-v2",
+      "title": "Verified source facts: Apple Inc. 10-Q filed 2026-07-31",
+      "keywords": [
+        "Apple Inc. 10-Q filed 2026-07-31"
+      ],
+      "stored_status": "quality_held",
+      "stored_machine_passed": false,
+      "stored_failed_checks": [
+        "keywords_are_search_terms_not_internal_ids"
+      ],
+      "rechecked_status": "machine_checked_review_required",
+      "rechecked_machine_passed": true,
+      "rechecked_failed_checks": [],
+      "checks_before": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": false,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "checks_after": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "metrics": {
+        "body_characters": 507,
+        "body_whitespace_words": 59,
+        "paragraph_count": 6,
+        "heading_count": 5,
+        "fact_count": 4,
+        "source_overlap_words_max": 16,
+        "stored_generation_metrics": {
+          "details": {
+            "fact_ids": [
+              "726d7444-a2ff-45de-b821-c31c2d1c069f",
+              "97594ff5-5eca-4def-8ba8-4105d6b00e9e",
+              "72fb57bf-8bb3-4c52-bd70-75c2782bf0f3",
+              "e16aad33-6a8c-4b5d-8e4f-9be42e768a23"
+            ],
+            "source_ids": [
+              "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+            ],
+            "missing_proper_names": [],
+            "numeric_values_added": [],
+            "numeric_values_missing": [],
+            "proper_name_candidates": [
+              "Apple Inc",
+              "SEC Form"
+            ],
+            "source_overlap_words_max": 16,
+            "unsupported_proper_names": []
+          },
+          "ai_calls": 0,
+          "source_run_id": "c2edfa85-0b48-4302-a12d-97f040936f3a",
+          "evaluation_kind": "phase4l_deterministic_recheck",
+          "recheck_elapsed_ms": 108,
+          "model_inference_performed": false,
+          "source_content_version_id": "6844c74a-0888-4e50-82fc-5b343bcc0a64"
+        }
+      },
+      "failure_evidence": {
+        "proper_name_candidates": [
+          "Apple Inc",
+          "SEC Form"
+        ],
+        "unsupported_proper_names": [],
+        "unexpected_numbers": [],
+        "numeric_values_missing": [],
+        "numeric_values_added": [],
+        "source_excerpt_previews": [
+          "Apple Inc. filed SEC Form 10-Q on 2026-07-31 for the period ended 2026-06-27. revenue: 109417000000 USD for period 2026-03-29 to 2026-06-27; net income: 29789000000 USD for period 2026-03-29 to 2026-06-27. SEC accession number 0000320193-26-000020."
+        ],
+        "paragraph_previews": [
+          "## Apple Inc. 10-Q filed 2026-07-31",
+          "## 1\nApple Inc [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]",
+          "## 2\nfiled SEC Form 10-Q on 2026-07-31 for the period ended 2026-06-27. [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]",
+          "## 3\nRevenue: 109417000000 USD from March 29, 2026, to June 27, 2026; net income: 29789000000 USD from March 29, 2026, to June 27, 2026. [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]"
+        ],
+        "longest_shared_source_token_run": "filed sec form 10-q on 2026-07-31 for the period ended 2026-06-27"
+      },
+      "human_review_required": true,
+      "publish_ready": false
+    },
+    {
+      "evaluation_id": "354daa8c-c147-4b1a-a568-82aa7b336ca1",
+      "content_version_id": "9073e983-1b78-4f1c-92fa-e64a53720ccd",
+      "content_version": 2,
+      "topic_key": "phase4l:820da8dc-f1f0-4316-ac46-ba5361e06b71",
+      "topic": "Apple Inc. 10-Q filed 2026-07-31",
+      "language": "ko",
+      "model": "Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+      "prompt_version": "p4l-deterministic-recheck-v2",
+      "title": "공식 자료에서 확인한 사실: Apple Inc. 2026-07-31에 제출된 10-Q",
+      "keywords": [
+        "Apple Inc. 2026-07-31에 제출된 10-Q"
+      ],
+      "stored_status": "quality_held",
+      "stored_machine_passed": false,
+      "stored_failed_checks": [
+        "no_unsupported_proper_names"
+      ],
+      "rechecked_status": "machine_checked_review_required",
+      "rechecked_machine_passed": true,
+      "rechecked_failed_checks": [],
+      "checks_before": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": false,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "checks_after": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "metrics": {
+        "body_characters": 451,
+        "body_whitespace_words": 46,
+        "paragraph_count": 6,
+        "heading_count": 5,
+        "fact_count": 4,
+        "source_overlap_words_max": 4,
+        "stored_generation_metrics": {
+          "details": {
+            "fact_ids": [
+              "726d7444-a2ff-45de-b821-c31c2d1c069f",
+              "97594ff5-5eca-4def-8ba8-4105d6b00e9e",
+              "72fb57bf-8bb3-4c52-bd70-75c2782bf0f3",
+              "e16aad33-6a8c-4b5d-8e4f-9be42e768a23"
+            ],
+            "source_ids": [
+              "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+            ],
+            "missing_proper_names": [],
+            "numeric_values_added": [],
+            "numeric_values_missing": [],
+            "proper_name_candidates": [
+              "Apple Inc",
+              "SEC Form"
+            ],
+            "source_overlap_words_max": 4,
+            "unsupported_proper_names": [
+              "Q Apple Inc"
+            ]
+          },
+          "ai_calls": 0,
+          "source_run_id": "820da8dc-f1f0-4316-ac46-ba5361e06b71",
+          "evaluation_kind": "phase4l_deterministic_recheck",
+          "recheck_elapsed_ms": 290,
+          "model_inference_performed": false,
+          "source_content_version_id": "9073e983-1b78-4f1c-92fa-e64a53720ccd"
+        }
+      },
+      "failure_evidence": {
+        "proper_name_candidates": [
+          "Apple Inc",
+          "SEC Form"
+        ],
+        "unsupported_proper_names": [],
+        "unexpected_numbers": [],
+        "numeric_values_missing": [],
+        "numeric_values_added": [],
+        "source_excerpt_previews": [
+          "Apple Inc. filed SEC Form 10-Q on 2026-07-31 for the period ended 2026-06-27. revenue: 109417000000 USD for period 2026-03-29 to 2026-06-27; net income: 29789000000 USD for period 2026-03-29 to 2026-06-27. SEC accession number 0000320193-26-000020."
+        ],
+        "paragraph_previews": [
+          "## Apple Inc. 2026-07-31에 제출된 10-Q",
+          "## 1\nApple Inc [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]",
+          "## 2\n2026-07-31에 종료일이 2026-06-27인 기간에 대해 SEC Form 10-Q를 제출했습니다. [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]",
+          "## 3\n수익: 109417000000 USD (2026-03-29 ~ 2026-06-27); 순이익: 29789000000 USD (2026-03-29 ~ 2026-06-27). [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]"
+        ],
+        "longest_shared_source_token_run": "sec form 10-q"
+      },
+      "human_review_required": true,
+      "publish_ready": false
+    },
+    {
+      "evaluation_id": "469b2bea-5051-43a3-b553-d3a97bf54b35",
+      "content_version_id": "7463b92b-4c07-46d2-afba-60bd5a6adb86",
+      "content_version": 2,
+      "topic_key": "phase4l:607276cc-39be-42b2-85e0-e9c18e890233",
+      "topic": "Apple Inc. 10-Q filed 2026-07-31",
+      "language": "ja",
+      "model": "Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+      "prompt_version": "p4l-deterministic-recheck-v2",
+      "title": "公式資料で確認した事実：Apple Inc. 2026-07-31 に提出された10-Q",
+      "keywords": [
+        "Apple Inc. 2026-07-31 に提出された10-Q"
+      ],
+      "stored_status": "quality_held",
+      "stored_machine_passed": false,
+      "stored_failed_checks": [
+        "no_unsupported_proper_names",
+        "keywords_are_search_terms_not_internal_ids"
+      ],
+      "rechecked_status": "machine_checked_review_required",
+      "rechecked_machine_passed": true,
+      "rechecked_failed_checks": [],
+      "checks_before": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": false,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": false,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "checks_after": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "metrics": {
+        "body_characters": 478,
+        "body_whitespace_words": 31,
+        "paragraph_count": 6,
+        "heading_count": 5,
+        "fact_count": 4,
+        "source_overlap_words_max": 3,
+        "stored_generation_metrics": {
+          "details": {
+            "fact_ids": [
+              "726d7444-a2ff-45de-b821-c31c2d1c069f",
+              "97594ff5-5eca-4def-8ba8-4105d6b00e9e",
+              "72fb57bf-8bb3-4c52-bd70-75c2782bf0f3",
+              "e16aad33-6a8c-4b5d-8e4f-9be42e768a23"
+            ],
+            "source_ids": [
+              "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+            ],
+            "missing_proper_names": [],
+            "numeric_values_added": [],
+            "numeric_values_missing": [],
+            "proper_name_candidates": [
+              "Apple Inc",
+              "SEC Form"
+            ],
+            "source_overlap_words_max": 3,
+            "unsupported_proper_names": [
+              "Q Apple Inc",
+              "United States Dollar"
+            ]
+          },
+          "ai_calls": 0,
+          "source_run_id": "607276cc-39be-42b2-85e0-e9c18e890233",
+          "evaluation_kind": "phase4l_deterministic_recheck",
+          "recheck_elapsed_ms": 159,
+          "model_inference_performed": false,
+          "source_content_version_id": "7463b92b-4c07-46d2-afba-60bd5a6adb86"
+        }
+      },
+      "failure_evidence": {
+        "proper_name_candidates": [
+          "Apple Inc",
+          "SEC Form"
+        ],
+        "unsupported_proper_names": [],
+        "unexpected_numbers": [],
+        "numeric_values_missing": [],
+        "numeric_values_added": [],
+        "source_excerpt_previews": [
+          "Apple Inc. filed SEC Form 10-Q on 2026-07-31 for the period ended 2026-06-27. revenue: 109417000000 USD for period 2026-03-29 to 2026-06-27; net income: 29789000000 USD for period 2026-03-29 to 2026-06-27. SEC accession number 0000320193-26-000020."
+        ],
+        "paragraph_previews": [
+          "## Apple Inc. 2026-07-31 に提出された10-Q",
+          "## 1\nApple Inc [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]",
+          "## 2\n2026-07-31に、2026-06-27日付までの期間についてSEC Formを提出しました。 [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]",
+          "## 3\n収益：2026年3月29日から2026年6月27日までの期間で109417000000 United States Dollar；純利益：2026年3月29日から2026年6月27日までの期間で29789000000 United States Dollar。 [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]"
+        ],
+        "longest_shared_source_token_run": "apple inc"
+      },
+      "human_review_required": true,
+      "publish_ready": false
+    },
+    {
+      "evaluation_id": "27300cf8-b3b2-48c7-8078-c6400e350b8d",
+      "content_version_id": "33c8e90a-c2ef-44e2-a5f0-20011c43009b",
+      "content_version": 3,
+      "topic_key": "phase4l:72152fce-1acf-454a-8a51-5d86ffab8930",
+      "topic": "Apple Inc. 10-Q filed 2026-07-31",
+      "language": "ko",
+      "model": "Qwen3-4B-Q4_K_M.gguf",
+      "prompt_version": "p4l-deterministic-recheck-v2",
+      "title": "공식 자료에서 확인한 사실: Apple Inc. 10-Q filed 2026-07-31",
+      "keywords": [
+        "Apple Inc. 10-Q filed 2026-07-31"
+      ],
+      "stored_status": "quality_held",
+      "stored_machine_passed": false,
+      "stored_failed_checks": [
+        "language_metadata_matches",
+        "keywords_are_search_terms_not_internal_ids"
+      ],
+      "rechecked_status": "quality_held",
+      "rechecked_machine_passed": false,
+      "rechecked_failed_checks": [
+        "language_metadata_matches"
+      ],
+      "checks_before": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": false,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": false,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "checks_after": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": false,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "metrics": {
+        "body_characters": 445,
+        "body_whitespace_words": 44,
+        "paragraph_count": 6,
+        "heading_count": 5,
+        "fact_count": 4,
+        "source_overlap_words_max": 4,
+        "stored_generation_metrics": {
+          "details": {
+            "fact_ids": [
+              "726d7444-a2ff-45de-b821-c31c2d1c069f",
+              "97594ff5-5eca-4def-8ba8-4105d6b00e9e",
+              "72fb57bf-8bb3-4c52-bd70-75c2782bf0f3",
+              "e16aad33-6a8c-4b5d-8e4f-9be42e768a23"
+            ],
+            "source_ids": [
+              "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+            ],
+            "missing_proper_names": [],
+            "numeric_values_added": [],
+            "numeric_values_missing": [],
+            "proper_name_candidates": [
+              "Apple Inc",
+              "SEC Form"
+            ],
+            "source_overlap_words_max": 4,
+            "unsupported_proper_names": []
+          },
+          "ai_calls": 0,
+          "source_run_id": "72152fce-1acf-454a-8a51-5d86ffab8930",
+          "evaluation_kind": "phase4l_deterministic_recheck",
+          "recheck_elapsed_ms": 190,
+          "model_inference_performed": false,
+          "source_content_version_id": "33c8e90a-c2ef-44e2-a5f0-20011c43009b"
+        }
+      },
+      "failure_evidence": {
+        "proper_name_candidates": [
+          "Apple Inc",
+          "SEC Form"
+        ],
+        "unsupported_proper_names": [],
+        "unexpected_numbers": [],
+        "numeric_values_missing": [],
+        "numeric_values_added": [],
+        "source_excerpt_previews": [
+          "Apple Inc. filed SEC Form 10-Q on 2026-07-31 for the period ended 2026-06-27. revenue: 109417000000 USD for period 2026-03-29 to 2026-06-27; net income: 29789000000 USD for period 2026-03-29 to 2026-06-27. SEC accession number 0000320193-26-000020."
+        ],
+        "paragraph_previews": [
+          "## Apple Inc. 10-Q filed 2026-07-31",
+          "## 1\nApple Inc [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]",
+          "## 2\nSEC Form 10-Q를 2026-07-31에 2026-06-27 기간 끝까지 제출했습니다. [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]",
+          "## 3\n수익: 109417000000 달러, 기간 2026-03-29에서 2026-06-27; 순이익: 29789000000 달러, 기간 2026-03-29에서 2026-06-27. [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]"
+        ],
+        "longest_shared_source_token_run": "sec form 10-q"
+      },
+      "human_review_required": true,
+      "publish_ready": false
+    }
+  ],
+  "summary": {
+    "sample_count": 12,
+    "stored_machine_passed": 4,
+    "rechecked_machine_passed": 10,
+    "quality_held": 2,
+    "model_inference_count": 0,
+    "quota_used": 0
+  },
+  "failure_classification": [
+    {
+      "check": "keywords_are_search_terms_not_internal_ids",
+      "stored_failures": 5,
+      "classification": "validator_false_positive",
+      "evidence": "All five rejected keyword examples were date-bearing SEC filing queries; the old rule treated ISO dates as internal identifiers.",
+      "change": "Reject UUID and explicit pipeline/source/fact IDs, while preserving legitimate dates.",
+      "reproduced_by_test": "test_article_gate_allows_date_search_terms_but_holds_internal_ids"
+    },
+    {
+      "check": "no_unsupported_proper_names",
+      "stored_failures": 4,
+      "classification": "validator_false_positive_in_all_four_samples",
+      "evidence": "The entity recognizer formed `Q Apple Inc` from the `10-Q` filing label; two Japanese outputs rendered source-backed USD as United States Dollar, which the proper-name-only rule miscategorized.",
+      "change": "Treat the post-hyphen Q as a form label and accept the United States Dollar alias only when the cited source explicitly contains USD/U.S. dollars.",
+      "reproduced_by_tests": [
+        "test_english_name_after_form_hyphen_is_not_a_spurious_name",
+        "test_supported_currency_code_does_not_trigger_unsupported_proper_name"
+      ]
+    },
+    {
+      "check": "no_mass_direct_quote",
+      "stored_failures": 1,
+      "classification": "actual_model_output_error; quality_hold_retained",
+      "evidence": "The Fed English output repeats a 28-word source run: `the Federal Reserve Board on Tuesday released the minutes from its recent meetings to review and determine the discount rates provided to depository institutions through the discount window`.",
+      "automatic_rewrite": false,
+      "human_review_required": true
+    },
+    {
+      "check": "language_metadata_matches",
+      "stored_failures": 1,
+      "classification": "actual_localization_output_error; quality_hold_retained",
+      "evidence": "The SEC Korean draft title/keyword remains `Apple Inc. 10-Q filed 2026-07-31`; its core phrase is English despite a Korean title prefix and Korean body.",
+      "automatic_rewrite": false,
+      "human_review_required": true
+    }
+  ],
+  "content_volume_assessment": {
+    "character_count_unit": "Unicode code points in saved body text",
+    "body_characters_min": 421,
+    "body_characters_max": 951,
+    "body_characters_mean": 577.9,
+    "paragraphs_min": 6,
+    "paragraphs_max": 7,
+    "interpretation": "These are short source-grounded briefs (one Fed source with five facts; one SEC filing with four facts), not evidence of full-length blog quality. Semantic accuracy, naturalness, rights, and reader value still need human review.",
+    "generation_token_measurement": "The one SEC-ko Phase 4-L inference artifact reports 256 completion tokens across five calls (outline plus four fact-localization calls); this is aggregate pipeline output, not a body-only token count."
+  },
+  "prompt_and_glossary_analysis": {
+    "evaluation_prompt_version_field": "p4l-deterministic-recheck-v2 identifies the evaluation rule set, not the original generation prompt.",
+    "generation_snapshot_source": "generation_results.prompt_snapshot was present for the quoted Fed article.",
+    "explicit_quote_guard_terms_in_snapshot": {
+      "verbatim": false,
+      "paraphrase": false,
+      "do_not_copy": false,
+      "do_not_quote": false,
+      "direct_quotation": false
+    },
+    "glossary_matches_for_usd_and_named_entities": 0,
+    "glossary_effect": "No approved glossary mapping explains the stored USD expansion. The checker was corrected to treat USD as evidence for its currency alias only when the source contains that code; editorial fluency remains a human check."
+  }
+}

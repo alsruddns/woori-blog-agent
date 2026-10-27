@@ -1,5 +1,11 @@
 # woori-blog-agent
 
+## Phase 4-M editorial review
+
+`/research` now displays the latest saved Fed/SEC evaluation drafts with their language, model, quality failures, source excerpts, linked facts, dates, numbers, keywords, and immutable review history. Reviewers can explicitly start a review, save an edited revision, and rerun the existing deterministic quality gate. Each revision is stored in the append-only operations DB table `article_editorial_versions`; the original evaluation DB version remains unchanged. Review pass is editorial only and never grants Blogger publication permission. No reviewer activity is synthesized automatically, all revisions keep `publish_ready=false`, and actual Blogger writes remain blocked.
+
+Migration 029 creates the append-only review progress and editorial revision records. Apply it with `scripts/migrate.py` before using the new review controls. The current 3100 Dashboard process may need a planned restart to serve the updated UI; this phase did not interrupt an existing session.
+
 Windows 로컬 다국어 Blogger 운영 에이전트입니다. Phase 1 기반을 유지하며 Phase 2에서 읽기 전용 Google OAuth, Blogger 정보·ID·게시글 조회, 로컬 불변 콘텐츠 버전 관리와 API 감사 이력을 추가했습니다. 운영 Blogger 쓰기·자동 발행·유료 AI 호출은 계속 차단됩니다.
 
 Dashboard: http://127.0.0.1:3100 · Blogger 관리: http://127.0.0.1:3100/blogger · API health: http://127.0.0.1:8100/health · PostgreSQL: 기존 localhost:5432. 다른 프로젝트의 3000/8000 포트는 사용하지 않습니다. 브라우저는 동일 출처 Next 프록시를 사용하며 API CORS는 열지 않습니다.

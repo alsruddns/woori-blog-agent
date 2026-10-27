@@ -142,4 +142,9 @@ with psycopg.connect(url) as conn:
             (root / "scripts/028_editorial_review_decision.sql").read_text(encoding="utf-8"),
             prepare=False,
         )
-print("Migration 028 verified")
+    if current < 29:
+        conn.execute(
+            (root / "scripts/029_editorial_versions_and_progress.sql").read_text(encoding="utf-8"),
+            prepare=False,
+        )
+print("Migration 029 verified")

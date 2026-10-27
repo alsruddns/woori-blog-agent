@@ -75,8 +75,15 @@ def evaluate(
         token for keyword in draft.keywords for token in _tokens(keyword) if len(token) >= 2
     }
     keyword_coverage = bool(keyword_tokens & (set(_tokens(draft.title)) | body_tokens))
+    # A filing date can be a legitimate part of a search query. Reject identifiers,
+    # not date-shaped factual qualifiers (which were previously misclassified).
     keyword_metadata_clean = len(draft.keywords) <= 6 and not any(
-        re.search(r"\b\d{4}-\d{2}-\d{2}\b|\b\d{10}-\d{2}-\d{6}\b", keyword)
+        re.search(
+            r"\b[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b"
+            r"|\b(?:phase\d+(?:\.\d+)?|source|fact|run|evaluation|version)[-_:/][a-z0-9-]{6,}\b",
+            keyword,
+            re.IGNORECASE,
+        )
         for keyword in draft.keywords
     )
     source_text = " ".join(str(source.get("evidence", "")) for source in sources).casefold()

@@ -1,5 +1,11 @@
 # Changelog
 
+## Phase 4-M (editorial review and verifier analysis; 2026-10-27)
+- Rechecked the immutable 12-draft Fed/SEC sample read-only: detector false positives were isolated and 10 now pass machine checks; two real output problems remain held. All 12 still need human review and remain non-publishable.
+- Fixed date-bearing query terms being mistaken for internal IDs, `Q Apple Inc` being extracted from `10-Q`, and source-supported `USD` wording being treated as an unsupported proper name. Added focused regression tests without relaxing unsupported-number, quote, or language gates.
+- Added append-only review-start events and immutable editorial revisions with full deterministic quality rechecks, review status aggregation, source/fact display, side-by-side versions, and editorial review separate from publication approval. Migration 029 adds the new tables and audit records; no stored article or previous evaluation was rewritten.
+- No model inference or quota use in this phase. Blogger writes, paid API calls, automatic publishing, and `publish_ready` activation remain disabled.
+
 ## Phase 4-L (multilingual fact preservation; 2026-10-27)
 - Protect verified numeric tokens and full date spans with typed placeholders during local translation; missing, duplicate, collision, and leaked markers fail closed. Exact values are restored before deterministic checks.
 - Correct ISO-date token boundaries when Korean/Japanese particles follow the date. Regression tests distinguish display/grouping normalization from changed numeric or date values without weakening the quality gate.

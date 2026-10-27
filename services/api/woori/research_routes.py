@@ -182,6 +182,7 @@ class CollectionSchedule(Input):
 class ArticleHumanReview(Input):
     evaluation_id: UUID
     content_version_id: UUID
+    editorial_version_id: UUID | None = None
     idempotency_key: str = Field(min_length=16, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
     reviewer_name: str = Field(min_length=2, max_length=80)
     factual_accuracy: Literal["verified", "issue_found", "uncertain", "not_assessed"]
@@ -203,6 +204,34 @@ class ArticleHumanReview(Input):
         ):
             raise ValueError("editorial_approval_requires_all_positive_review_checks")
         return value
+
+
+class ArticleReviewProgress(Input):
+    evaluation_id: UUID
+    content_version_id: UUID
+    idempotency_key: str = Field(min_length=16, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+    reviewer_name: str = Field(min_length=2, max_length=80)
+
+
+class ArticleEditorialRevision(Input):
+    evaluation_id: UUID
+    content_version_id: UUID
+    idempotency_key: str = Field(min_length=16, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+    reviewer_name: str = Field(min_length=2, max_length=80)
+    reason: str = Field(min_length=10, max_length=2000)
+    title: str = Field(min_length=1, max_length=500)
+    body: str = Field(min_length=1, max_length=50000)
+    summary: str = Field(min_length=1, max_length=3000)
+    keywords: list[str] = Field(min_length=1, max_length=6)
+
+    @field_validator("keywords")
+    @classmethod
+    def bounded_unique_keywords(cls, value: list[str]) -> list[str]:
+        if any(not item.strip() or len(item.strip()) > 80 for item in value):
+            raise ValueError("editorial_keywords_must_be_bounded")
+        if len({" ".join(item.casefold().split()) for item in value}) != len(value):
+            raise ValueError("editorial_keywords_must_be_unique")
+        return [item.strip() for item in value]
 
 
 @router.post("/collections", status_code=201)
@@ -351,10 +380,44 @@ def state() -> dict[str, Any]:
         )
         result["article_reviews"] = conn.execute(
             """SELECT id,evaluation_id,content_version_id,idempotency_key,reviewer_name,
-                factual_accuracy,translation_naturalness,reader_value,disposition,comments,
+                editorial_version_id,factual_accuracy,translation_naturalness,reader_value,disposition,comments,
                 requested_changes,created_at FROM article_human_reviews
                 ORDER BY created_at DESC,id DESC LIMIT 100"""
         ).fetchall()
+        result["article_review_events"] = conn.execute(
+            """SELECT id,evaluation_id,content_version_id,event_key,reviewer_name,event_type,
+                payload,created_at FROM article_review_events ORDER BY created_at DESC,id DESC LIMIT 200"""
+        ).fetchall()
+        result["article_editorial_versions"] = conn.execute(
+            """SELECT id,evaluation_id,base_content_version_id,revision_number,idempotency_key,
+                reviewer_name,reason,title,body,summary,keywords,machine_checks,machine_passed,
+                quality_status,body_sha256,created_at
+            FROM article_editorial_versions ORDER BY created_at DESC,id DESC LIMIT 100"""
+        ).fetchall()
+        evaluation_result = result.get("evaluation_results") or {}
+        editorial_articles = evaluation_result.get("editorial_articles") or []
+        for article in editorial_articles:
+            evaluation_id = str(article.get("evaluation_id"))
+            version_id = str(article.get("content_version_id"))
+            article["review_events"] = [
+                dict(event) for event in result["article_review_events"]
+                if str(event["evaluation_id"]) == evaluation_id
+                and str(event["content_version_id"]) == version_id
+            ]
+            article["review_history"] = [
+                dict(review) for review in result["article_reviews"]
+                if str(review["evaluation_id"]) == evaluation_id
+                and str(review["content_version_id"]) == version_id
+            ]
+            article["editorial_versions"] = [
+                dict(revision) for revision in result["article_editorial_versions"]
+                if str(revision["evaluation_id"]) == evaluation_id
+                and str(revision["base_content_version_id"]) == version_id
+            ]
+            newest_event = article["review_events"][0] if article["review_events"] else None
+            newest_review = article["review_history"][0] if article["review_history"] else None
+            article["editorial_status"] = _editorial_status(newest_event, newest_review)
+            article["publication_approval_granted"] = False
         result["operational_readiness"] = _operational_readiness_snapshot(conn, result)
         result["publishing_enabled"] = False
         result["paid_ai_enabled"] = False
@@ -374,8 +437,18 @@ def _evaluation_results_snapshot() -> dict[str, Any]:
     try:
         with psycopg.connect(url, connect_timeout=2, row_factory=dict_row) as conn:
             identity = conn.execute(
-                "SELECT current_database() AS database_name"
+                "SELECT current_database() AS database_name,current_user AS role_name"
             ).fetchone()
+            if (
+                not identity
+                or identity["database_name"] != "woori_blog_agent_eval"
+                or identity["role_name"] != "woori_eval_reader"
+            ):
+                return {
+                    "configured": True, "available": False,
+                    "error_category": "evaluation_readonly_identity_mismatch",
+                    "runs": [], "stages": [], "events": [], "quota": [],
+                }
             snapshot = conn.execute(
                 "SELECT min(created_at) AS snapshot_at FROM audit_events WHERE event_type='evaluation.environment.initialized'"
             ).fetchone()
@@ -420,6 +493,7 @@ def _evaluation_results_snapshot() -> dict[str, Any]:
                 (snapshot["snapshot_at"],),
             ).fetchall()
             fed_articles = _fed_article_reviews(conn)
+            editorial_articles = _editorial_article_reviews(conn)
             sec_history = conn.execute(
                 """SELECT language_code,status,count(*)::int AS count,
                     max(created_at) AS latest_at
@@ -517,6 +591,7 @@ def _evaluation_results_snapshot() -> dict[str, Any]:
                 )
             ],
             "fed_articles": fed_articles,
+            "editorial_articles": editorial_articles,
             "sec_historical_quality": sec_history,
             "sec_new_inference": sec_gate,
             "sec_locale_availability": sec_locale_availability,
@@ -653,6 +728,116 @@ def _fed_article_reviews(conn: Any) -> list[dict[str, Any]]:
         item["publish_ready"] = False
         articles.append(item)
     return articles
+
+
+def _editorial_article_reviews(conn: Any) -> list[dict[str, Any]]:
+    """Expose the latest stored Fed/SEC evaluation per topic and locale for review."""
+    rows = conn.execute(
+        """SELECT DISTINCT ON (q.topic_key,q.language_code) q.id AS evaluation_id,
+            q.content_version_id,q.language_code,q.topic,q.topic_key,q.title,q.summary,
+            q.keywords,q.source_ids,q.fact_ids,q.model,q.prompt_version,q.metrics,q.checks,
+            q.machine_passed,q.human_review_required,q.status,q.created_at,
+            v.body,v.version AS content_version
+        FROM article_quality_evaluations q
+        JOIN content_versions v ON v.id=q.content_version_id
+        WHERE q.topic_key LIKE 'phase39t:%%'
+          AND (q.topic ILIKE 'Federal Reserve%%' OR q.topic ILIKE 'Apple Inc. 10-Q%%')
+          AND q.content_version_id IS NOT NULL
+        ORDER BY q.topic_key,q.language_code,q.created_at DESC,q.id DESC"""
+    ).fetchall()
+    articles: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        sources = conn.execute(
+            """SELECT id,source_name,url,published_at,collected_at,evidence,rights,
+                access_policy,valid_until,revision,source_language
+            FROM research_sources WHERE id=ANY(%s) ORDER BY id""",
+            (item["source_ids"],),
+        ).fetchall()
+        facts = conn.execute(
+            """SELECT id,fact_key,source_id,source_language,source_excerpt,entity_ids,
+                numeric_values,date_values,citation_ids,verification_status
+            FROM evidence_facts WHERE id=ANY(%s) ORDER BY fact_key,id""",
+            (item["fact_ids"],),
+        ).fetchall()
+        item["sources"] = [dict(source) for source in sources]
+        item["facts"] = [dict(fact) for fact in facts]
+        payload = item.get("checks") or {}
+        payload = payload.get("checks", payload) if isinstance(payload, dict) else {}
+        details = payload.get("grounding_details", {}) if isinstance(payload, dict) else {}
+        item["proper_name_candidates"] = (
+            details.get("proper_name_candidates", []) if isinstance(details, dict) else []
+        )
+        item["publish_ready"] = False
+        articles.append(item)
+    return articles
+
+
+def _editorial_status(latest_event: dict[str, Any] | None,
+                      latest_review: dict[str, Any] | None) -> str:
+    if latest_event and (
+        not latest_review or latest_event["created_at"] > latest_review["created_at"]
+    ):
+        return "in_review"
+    if latest_review:
+        return {
+            "approved": "editorial_review_passed",
+            "revision_requested": "revision_needed",
+            "rejected": "revision_needed",
+            "reviewed": "reviewed_not_passed",
+        }.get(str(latest_review.get("disposition")), "reviewed_not_passed")
+    return "unreviewed"
+
+
+def _evaluation_article(evaluation_id: UUID, content_version_id: UUID) -> dict[str, Any]:
+    """Load an immutable evaluation draft and source evidence using the read-only role."""
+    from .config import settings
+
+    url = settings().evaluation_database_url
+    if not url:
+        raise HTTPException(503, "Isolated evaluation review data is unavailable")
+    import psycopg
+    from psycopg.rows import dict_row
+
+    try:
+        with psycopg.connect(url, connect_timeout=2, row_factory=dict_row) as conn:
+            identity = conn.execute(
+                "SELECT current_database() AS database_name,current_user AS role_name"
+            ).fetchone()
+            if (
+                not identity
+                or identity["database_name"] != "woori_blog_agent_eval"
+                or identity["role_name"] != "woori_eval_reader"
+            ):
+                raise HTTPException(503, "Evaluation database identity check failed")
+            row = conn.execute(
+                """SELECT q.*,v.language,v.version AS content_version,v.title AS saved_title,
+                    v.body AS saved_body
+                FROM article_quality_evaluations q JOIN content_versions v
+                    ON v.id=q.content_version_id
+                WHERE q.id=%s AND q.content_version_id=%s
+                  AND q.topic_key LIKE 'phase39t:%%'
+                  AND (q.topic ILIKE 'Federal Reserve%%' OR q.topic ILIKE 'Apple Inc. 10-Q%%')""",
+                (evaluation_id, content_version_id),
+            ).fetchone()
+            if not row:
+                raise HTTPException(404, "Evaluation draft not found")
+            item = dict(row)
+            item["sources"] = [dict(source) for source in conn.execute(
+                """SELECT id,source_name,url,published_at,collected_at,evidence,rights,
+                    access_policy,valid_until,revision,source_language
+                FROM research_sources WHERE id=ANY(%s) ORDER BY id""",
+                (item["source_ids"],),
+            ).fetchall()]
+            item["facts"] = [dict(fact) for fact in conn.execute(
+                """SELECT id,fact_key,source_id,source_language,source_excerpt,entity_ids,
+                    numeric_values,date_values,citation_ids,verification_status
+                FROM evidence_facts WHERE id=ANY(%s) ORDER BY fact_key,id""",
+                (item["fact_ids"],),
+            ).fetchall()]
+            return item
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Evaluation review data is unavailable") from exc
 
 
 def _prepublication_snapshot(conn: Any) -> dict[str, Any]:
@@ -833,6 +1018,102 @@ def _worker_recovery_evidence() -> dict[str, Any]:
     return {"passed": latest is not None, "artifact_count": len(valid), "latest_artifact": latest[1] if latest else None, "captured_at": latest[0] if latest else None, "scope": "historical isolated test; not a live worker health claim"}
 
 
+@router.post("/article-review-events", status_code=201)
+def start_article_review(request: ArticleReviewProgress) -> dict[str, Any]:
+    from psycopg.types.json import Jsonb
+
+    _evaluation_article(request.evaluation_id, request.content_version_id)
+    with connection() as conn:
+        existing = conn.execute(
+            "SELECT * FROM article_review_events WHERE event_key=%s",
+            (request.idempotency_key,),
+        ).fetchone()
+        if existing:
+            return {"event": dict(existing), "duplicate": True, "publish_ready": False}
+        row = conn.execute(
+            """INSERT INTO article_review_events(evaluation_id,content_version_id,event_key,
+                reviewer_name,event_type,payload)
+            VALUES (%s,%s,%s,%s,'review_started','{}'::jsonb) RETURNING *""",
+            (request.evaluation_id,request.content_version_id,request.idempotency_key,request.reviewer_name),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(409, "Review progress idempotency conflict")
+        conn.execute(
+            "INSERT INTO audit_events(event_type,payload) VALUES ('article.editorial_review.started',%s)",
+            (Jsonb({"review_event_id": str(row["id"]), "evaluation_id": str(request.evaluation_id),
+                "content_version_id": str(request.content_version_id), "publish_ready": False}),),
+        )
+        return {"event": dict(row), "duplicate": False, "publish_ready": False}
+
+
+@router.post("/article-revisions", status_code=201)
+def save_article_revision(request: ArticleEditorialRevision) -> dict[str, Any]:
+    import hashlib
+
+    from psycopg.types.json import Jsonb
+
+    from .article_quality import evaluate
+
+    source = _evaluation_article(request.evaluation_id, request.content_version_id)
+    draft = Draft(
+        title=request.title,
+        body=request.body,
+        summary=request.summary,
+        keywords=request.keywords,
+        source_ids=[str(source_id) for source_id in source["source_ids"]],
+    )
+    quality = evaluate(
+        draft,
+        source["sources"],
+        str(source["language_code"]),
+        datetime.now(UTC).date().isoformat(),
+        len(source["facts"]),
+    )
+    body_hash = hashlib.sha256(request.body.encode("utf-8")).hexdigest()
+    with connection() as conn:
+        existing = conn.execute(
+            "SELECT * FROM article_editorial_versions WHERE idempotency_key=%s",
+            (request.idempotency_key,),
+        ).fetchone()
+        if existing:
+            return {"revision": dict(existing), "duplicate": True, "publish_ready": False}
+        conn.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (str(request.evaluation_id),))
+        revision_number = required(conn.execute(
+            """SELECT COALESCE(max(revision_number),0)+1 AS next
+            FROM article_editorial_versions WHERE evaluation_id=%s AND base_content_version_id=%s""",
+            (request.evaluation_id,request.content_version_id),
+        ).fetchone())["next"]
+        row = conn.execute(
+            """INSERT INTO article_editorial_versions(evaluation_id,base_content_version_id,
+                revision_number,idempotency_key,reviewer_name,reason,title,body,summary,keywords,
+                machine_checks,machine_passed,quality_status,body_sha256)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
+            (request.evaluation_id,request.content_version_id,revision_number,request.idempotency_key,
+             request.reviewer_name,request.reason,request.title,request.body,request.summary,
+             request.keywords,Jsonb(quality["checks"]),quality["machine_passed"],
+             "machine_checked_review_required" if quality["machine_passed"] else "quality_held",body_hash),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(409, "Editorial revision conflict")
+        event = required(conn.execute(
+            """INSERT INTO article_review_events(evaluation_id,content_version_id,event_key,
+                reviewer_name,event_type,payload)
+            VALUES (%s,%s,%s,%s,'revision_saved',%s) RETURNING id""",
+            (request.evaluation_id,request.content_version_id,
+             "revision-event-" + hashlib.sha256(request.idempotency_key.encode()).hexdigest(),request.reviewer_name,
+             Jsonb({"editorial_version_id": str(row["id"]), "machine_passed": quality["machine_passed"]})),
+        ).fetchone())
+        conn.execute(
+            "INSERT INTO audit_events(event_type,payload) VALUES ('article.editorial_revision.saved',%s)",
+            (Jsonb({"revision_id": str(row["id"]), "review_event_id": str(event["id"]),
+                "evaluation_id": str(request.evaluation_id), "base_content_version_id": str(request.content_version_id),
+                "revision_number": revision_number, "body_sha256": body_hash,
+                "machine_passed": quality["machine_passed"], "publish_ready": False}),),
+        )
+        return {"revision": dict(row), "duplicate": False, "publish_ready": False,
+            "content_version_changed": False}
+
+
 @router.post("/article-reviews", status_code=201)
 def record_article_review(request: ArticleHumanReview) -> dict[str, Any]:
     """Append a human content review note; never approves Blogger publication."""
@@ -848,21 +1129,40 @@ def record_article_review(request: ArticleHumanReview) -> dict[str, Any]:
 
     try:
         with psycopg.connect(url, connect_timeout=2, row_factory=dict_row) as evaluation_conn:
-            db = evaluation_conn.execute("SELECT current_database() AS name").fetchone()
-            if not db or db["name"] != "woori_blog_agent_eval":
+            db = evaluation_conn.execute(
+                "SELECT current_database() AS name,current_user AS role_name"
+            ).fetchone()
+            if (
+                not db
+                or db["name"] != "woori_blog_agent_eval"
+                or db["role_name"] != "woori_eval_reader"
+            ):
                 raise HTTPException(503, "Evaluation database identity check failed")
             valid = evaluation_conn.execute(
                 """SELECT 1 FROM article_quality_evaluations q
                 JOIN content_versions v ON v.id=q.content_version_id
                 WHERE q.id=%s AND q.content_version_id=%s
-                  AND q.topic_key LIKE 'phase39t:%%' AND q.topic ILIKE 'Federal Reserve%%'
-                  AND q.machine_passed AND q.human_review_required AND NOT q.publish_ready""",
-                (request.evaluation_id, request.content_version_id),
+                  AND q.topic_key LIKE 'phase39t:%%'
+                  AND (q.topic ILIKE 'Federal Reserve%%' OR q.topic ILIKE 'Apple Inc. 10-Q%%')
+                  AND q.human_review_required AND NOT q.publish_ready
+                  AND (%s::uuid IS NULL AND %s <> 'approved' OR q.machine_passed)""",
+                (request.evaluation_id, request.content_version_id,
+                 request.editorial_version_id, request.disposition),
             ).fetchone()
     except psycopg.Error as exc:
         raise HTTPException(503, "Evaluation review data is unavailable") from exc
     if not valid:
-        raise HTTPException(404, "Review target is not an eligible Fed evaluation draft")
+        raise HTTPException(404, "Review target is not an eligible Fed/SEC evaluation draft")
+
+    if request.editorial_version_id:
+        with connection() as conn:
+            revision = conn.execute(
+                """SELECT 1 FROM article_editorial_versions WHERE id=%s AND evaluation_id=%s
+                    AND base_content_version_id=%s AND machine_passed""",
+                (request.editorial_version_id,request.evaluation_id,request.content_version_id),
+            ).fetchone()
+        if not revision:
+            raise HTTPException(409, "Editorial revision must pass machine checks before approval")
 
     with connection() as conn:
         existing = conn.execute(
@@ -872,11 +1172,11 @@ def record_article_review(request: ArticleHumanReview) -> dict[str, Any]:
         if existing:
             return {"review": dict(existing), "duplicate": True, "publication_approval_granted": False}
         row = conn.execute(
-            """INSERT INTO article_human_reviews(evaluation_id,content_version_id,idempotency_key,
+            """INSERT INTO article_human_reviews(evaluation_id,content_version_id,editorial_version_id,idempotency_key,
                 reviewer_name,factual_accuracy,translation_naturalness,reader_value,disposition,
                 comments,requested_changes)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
-            (request.evaluation_id,request.content_version_id,request.idempotency_key,
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
+            (request.evaluation_id,request.content_version_id,request.editorial_version_id,request.idempotency_key,
              request.reviewer_name,request.factual_accuracy,request.translation_naturalness,
              request.reader_value,request.disposition,request.comments,request.requested_changes),
         ).fetchone()
@@ -892,6 +1192,7 @@ def record_article_review(request: ArticleHumanReview) -> dict[str, Any]:
             "INSERT INTO audit_events(event_type,payload) VALUES ('article.human_review.recorded',%s)",
             (Jsonb({"review_id": str(row["id"]), "evaluation_id": str(request.evaluation_id),
                 "content_version_id": str(request.content_version_id),
+                "editorial_version_id": str(request.editorial_version_id) if request.editorial_version_id else None,
                 "disposition": request.disposition, "publication_approval_granted": False,
                 "publish_ready": False}),),
         )

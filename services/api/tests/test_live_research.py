@@ -1027,7 +1027,7 @@ def test_complete_article_structure_handles_cjk_scripts() -> None:
     assert result["human_review_required"] and not result["publish_ready"]
 
 
-def test_article_gate_holds_unsupported_access_claims_and_internal_seo_ids() -> None:
+def test_article_gate_allows_date_search_terms_but_holds_internal_ids() -> None:
     from woori.article_quality import evaluate
 
     source = {
@@ -1047,13 +1047,57 @@ def test_article_gate_holds_unsupported_access_claims_and_internal_seo_ids() -> 
         title="Federal Reserve Board notice explained",
         body=body,
         summary="A sourced guide to the Federal Reserve Board notice.",
-        keywords=["Federal Reserve Board notice", "2026-10-26"],
+        keywords=["Federal Reserve Board notice 2026-10-26"],
         source_ids=["source-1"],
     )
     result = evaluate(draft, [source], "en", "2026-10-26", 3)
     assert not result["checks"]["legal_access_claims_grounded_in_supplied_source"]
-    assert not result["checks"]["keywords_are_search_terms_not_internal_ids"]
+    assert result["checks"]["keywords_are_search_terms_not_internal_ids"]
     assert not result["machine_passed"]
+
+    internal = draft.model_copy(update={"keywords": ["source:873093a8-085e-42b5-8bb2-657f62f8df94"]})
+    internal_result = evaluate(internal, [source], "en", "2026-10-26", 3)
+    assert not internal_result["checks"]["keywords_are_search_terms_not_internal_ids"]
+
+
+def test_english_name_after_form_hyphen_is_not_a_spurious_name() -> None:
+    from woori.grounding import proper_names
+
+    assert proper_names("10-Q Apple Inc. filed 2026-07-31") == {"Apple Inc"}
+
+
+def test_supported_currency_code_does_not_trigger_unsupported_proper_name() -> None:
+    from woori.grounding import inspect
+
+    source = {"id":"source-1","url":"https://www.sec.gov/example",
+        "evidence":"Apple Inc. reported revenue of 109417000000 USD for the period.",
+        "rights":"Official SEC filing."}
+    draft = Draft(title="Apple Inc. revenue report",
+        body="## Report\n\nApple Inc. reported 109417000000 United States Dollar. [source:source-1]\n\n"
+             "## Scope\n\nThis summary covers the reported period only. [source:source-1]",
+        summary="Apple Inc. reported revenue in USD.", keywords=["Apple Inc. revenue"], source_ids=["source-1"])
+    checked = inspect(draft, [source], "en", datetime.now(UTC).date().isoformat())
+    assert "United States Dollar" not in checked["unsupported_proper_names"]
+
+    unsupported = dict(source, evidence="Apple Inc. reported revenue of 109417000000 for the period.")
+    held = inspect(draft, [unsupported], "en", datetime.now(UTC).date().isoformat())
+    assert "United States Dollar" in held["unsupported_proper_names"]
+
+
+def test_korean_language_fields_allow_official_english_name_with_korean_text() -> None:
+    from woori.grounding import inspect
+
+    draft = Draft(
+        title="Apple Inc. 공시 핵심 내용",
+        body="## 공시 요약\n\nApple Inc.가 공시한 핵심 내용을 공식 자료와 함께 설명합니다. [source:source-1]\n\n"
+             "## 기준일\n\n제출일과 보고 기간을 구분해 확인할 수 있습니다. [source:source-1]",
+        summary="Apple Inc. 공시의 핵심 사실을 한국어로 정리합니다.",
+        keywords=["Apple Inc. 공시 요약"],
+        source_ids=["source-1"],
+    )
+    source = {"id":"source-1","url":"https://www.sec.gov/example","evidence":"Apple Inc. filed a report for readers.","rights":"Official SEC filing."}
+    result = inspect(draft, [source], "ko", datetime.now(UTC).date().isoformat())
+    assert result["rule_checks"]["language_metadata_matches"]
 
 
 def test_complete_article_quality_blocks_internal_uuid_and_obvious_script_mixing() -> None:
