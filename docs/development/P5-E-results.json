@@ -88,10 +88,10 @@
     "publish_ready_changes": 0
   },
   "git": {
-    "commit": "pending",
-    "push": "pending",
+    "commit": "cfbad160e935f53322a41d4acf3d401a76712081",
+    "push": "origin/develop succeeded",
     "main_modified": false,
-    "worktree": "pending"
+    "worktree": "clean after final metadata commit"
   },
   "remaining": [
     "Gracefully stop existing 3100 and 8100 services in their original terminals and restart latest develop.",
