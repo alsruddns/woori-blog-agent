@@ -79,6 +79,16 @@ def start(binding: str, label: str, permission: str = "read") -> dict[str, str]:
         base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
     )
     with connection() as conn:
+        if permission == "write":
+            existing_writer = conn.execute(
+                """SELECT g.id FROM google_connections g LEFT JOIN google_oauth_states s
+                ON s.connection_id=g.id WHERE (g.status='connected' AND g.scopes=%s::text[])
+                OR (g.status='pending' AND s.requested_scopes=%s::text[]
+                    AND NOT s.consumed AND s.expires_at>now()) LIMIT 1""",
+                ([WRITE_SCOPE], [WRITE_SCOPE]),
+            ).fetchone()
+            if existing_writer is not None:
+                raise GoogleFailure("existing_write_connection_available")
         row = conn.execute(
             "INSERT INTO google_connections(label) VALUES (%s) RETURNING id", (label,)
         ).fetchone()

@@ -9,6 +9,13 @@ Google 웹 클라이언트, blogger.readonly, offline access, 동의 화면, PKC
 
 Next logging=false와 API 실행의 --no-access-log로 OAuth 코드가 query 로그에 남지 않도록 한다. 콜백은 비밀값 없는 결과 URL로 303 리디렉션하고 쿠키를 지우며 Referrer-Policy:no-referrer를 적용한다. 루프백 HTTP의 쿠키는 Secure=false, HttpOnly, SameSite=Lax, callback 경로 한정이다. 외부 서비스로 배포하려면 별도 인증·HTTPS·Secure 쿠키 설계가 필요하다.
 
+## 공통 읽기·쓰기 OAuth
+단독 운영자는 Blogger 전체 scope `https://www.googleapis.com/auth/blogger`를 가진 하나의 OAuth 연결로 읽기와 향후 쓰기 권한 범위를 함께 사용할 수 있다. 블로그별 기존 `oauth_connection_id` 하나를 재사용하며 읽기/쓰기용 DB 컬럼을 분리하지 않는다. 계정 이메일·신원은 저장하거나 추정하지 않는다. 연결 시작 API는 기존 연결된 쓰기 권한 또는 만료되지 않은 동일 scope 동의 흐름이 있을 때 중복 쓰기 OAuth 생성을 막는다.
+
+공통 매핑 변경은 별도의 두 단계다. 먼저 zero-cost gate가 허용될 때만 선택한 기존 토큰으로 `users/self/blogs`를 읽고 모든 활성 등록 블로그의 실제 Blog ID와 URL을 일치시켜 감사 이벤트에 보존한다. 이 단계에서는 현재 연결 매핑을 바꾸지 않는다. 5분 이내의 검증 결과와 명시적 운영자 승인으로 두 번째 단계가 수행될 때만 모든 현재 매핑이 한 DB 트랜잭션에서 교체되며 이전/새 연결 참조를 append-only 이벤트에 남긴다. 비용 차단·접근 불일치·검증 만료·매핑 변화가 있으면 실패하고 기존 연결을 유지한다. 이전 OAuth 연결은 삭제하지 않는다.
+
+공통 OAuth 매핑은 토큰 권한 범위와 연결 관계일 뿐, Blogger 실쓰기 허용이 아니다. Blogger API 비용 게이트, `publish_ready=false`, 운영 쓰기 어댑터 차단 및 자동 발행 비활성 상태는 계속 유지한다. 실제 게시에는 추후 별도 비용 검토와 콘텐츠별 승인 절차가 필요하다.
+
 ## Blogger 읽기
 blogger_service가 DB의 활성 언어·블로그·읽기 제한·OAuth 상태를 확인한다. Google getByUrl ID와 등록 host를 대조하고 AUTHOR view 게시글 조회를 성공시켜 연결을 검증한다. 기존 Blog ID와 다르면 덮어쓰지 않는다. 게시글 목록은 live/draft/scheduled, 페이지 토큰, 언어별 페이지 크기를 지원한다. 상세 본문은 UI에서 텍스트로만 표시하며 외부 HTML을 실행하지 않는다.
 

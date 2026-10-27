@@ -1,15 +1,17 @@
 """Database-selected Blogger reads with per-language quotas and durable request history."""
 
 from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
 from psycopg.types.json import Jsonb
 
+from . import external_policy
 from . import google_oauth as oauth
 from .db import connection
-from .google_http import BloggerReader, GoogleFailure, client, numeric_id
+from .google_http import WRITE_SCOPE, BloggerReader, GoogleFailure, client, numeric_id
 
 
 def blog_record(blog_id: UUID) -> dict[str, Any]:
@@ -205,6 +207,211 @@ def connect_blog(blog_id: UUID, connection_id: UUID) -> dict[str, Any]:
 def account_blogs(connection_id: UUID) -> dict[str, Any]:
     """Account-scoped read: no fabricated language or blog association in audit."""
     return read({"id": None, "language_code": None}, connection_id, lambda r: r.account_blogs())
+
+
+COMMON_CONNECTION_APPROVAL = "I_APPROVE_SHARED_BLOGGER_CONNECTION"
+COMMON_CONNECTION_VERIFICATION_TTL = timedelta(minutes=5)
+
+
+def _common_connection_gate() -> None:
+    provider = next(
+        item
+        for item in external_policy.status()["providers"]
+        if item["name"] == "google_blogger_read"
+    )
+    if not provider["calls_allowed"]:
+        raise GoogleFailure(str(provider["block_reason"] or "provider_cost_unverified"))
+
+
+def verify_common_connection(connection_id: UUID) -> dict[str, Any]:
+    """Read-only proof that one full-scope OAuth connection lists every active blog."""
+    _common_connection_gate()
+    with connection() as conn:
+        account = conn.execute(
+            """SELECT id,status,scopes,refresh_ciphertext FROM google_connections
+            WHERE id=%s""",
+            (connection_id,),
+        ).fetchone()
+        if (
+            account is None
+            or account["status"] != "connected"
+            or account["scopes"] != [WRITE_SCOPE]
+            or not account["refresh_ciphertext"]
+        ):
+            raise GoogleFailure("connected_write_oauth_required")
+        blogs = conn.execute(
+            """SELECT b.id,b.language_code,b.url,b.blog_id,b.oauth_connection_id
+            FROM blogger_blogs b JOIN languages l ON l.code=b.language_code
+            WHERE b.active AND l.active ORDER BY b.language_code,b.url"""
+        ).fetchall()
+    if not blogs:
+        raise GoogleFailure("active_blogs_not_configured")
+    result = account_blogs(connection_id)
+    items = result.get("items")
+    if not isinstance(items, list):
+        raise GoogleFailure("account_blog_list_invalid")
+    accessible: dict[str, dict[str, Any]] = {}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        try:
+            remote_id = numeric_id(str(item.get("id", "")))
+        except GoogleFailure:
+            continue
+        accessible[remote_id] = item
+
+    verified: list[dict[str, str | None]] = []
+    for blog in blogs:
+        item = accessible.get(str(blog["blog_id"])) if blog["blog_id"] else None
+        if item is None and not blog["blog_id"]:
+            host = (urlsplit(blog["url"]).hostname or "").casefold()
+            matches = [
+                entry
+                for entry in accessible.values()
+                if (urlsplit(str(entry.get("url", ""))).hostname or "").casefold() == host
+            ]
+            if len(matches) == 1:
+                item = matches[0]
+        if item is None:
+            raise GoogleFailure("oauth_connection_cannot_access_all_blogs")
+        remote_id = numeric_id(str(item.get("id", "")))
+        remote_host = urlsplit(str(item.get("url", ""))).hostname
+        registered_host = urlsplit(blog["url"]).hostname
+        if not remote_host or remote_host.casefold() != (registered_host or "").casefold():
+            raise GoogleFailure("blog_url_mismatch")
+        verified.append(
+            {
+                "blog_record_id": str(blog["id"]),
+                "language_code": blog["language_code"],
+                "url": blog["url"],
+                "blog_id": remote_id,
+                "registered_blog_id": str(blog["blog_id"]) if blog["blog_id"] else None,
+                "previous_connection_id": (
+                    str(blog["oauth_connection_id"]) if blog["oauth_connection_id"] else None
+                ),
+            }
+        )
+
+    verification_id = uuid4()
+    with connection() as conn:
+        conn.execute(
+            """INSERT INTO audit_events(event_type,payload) VALUES
+            ('blogger.common_connection.verified',%s)""",
+            (
+                Jsonb(
+                    {
+                        "verification_id": str(verification_id),
+                        "connection_id": str(connection_id),
+                        "verified_blog_count": len(verified),
+                        "blogs": verified,
+                        "identity_verified": False,
+                        "writes_enabled": False,
+                    }
+                ),
+            ),
+        )
+    return {
+        "verification_id": str(verification_id),
+        "connection_id": str(connection_id),
+        "verified_blog_count": len(verified),
+        "blogs": verified,
+        "identity_verified": False,
+        "writes_enabled": False,
+    }
+
+
+def assign_common_connection(
+    connection_id: UUID, verification_id: UUID, approval: str
+) -> dict[str, Any]:
+    """Atomically map all active blogs only after fresh read proof and explicit approval."""
+    if approval != COMMON_CONNECTION_APPROVAL:
+        raise GoogleFailure("explicit_common_connection_approval_required")
+    _common_connection_gate()
+    with connection() as conn:
+        account = conn.execute(
+            """SELECT id,status,scopes,refresh_ciphertext FROM google_connections
+            WHERE id=%s FOR UPDATE""",
+            (connection_id,),
+        ).fetchone()
+        if (
+            account is None
+            or account["status"] != "connected"
+            or account["scopes"] != [WRITE_SCOPE]
+            or not account["refresh_ciphertext"]
+        ):
+            raise GoogleFailure("connected_write_oauth_required")
+        event = conn.execute(
+            """SELECT payload,created_at FROM audit_events
+            WHERE event_type='blogger.common_connection.verified'
+            AND payload->>'verification_id'=%s
+            AND payload->>'connection_id'=%s
+            ORDER BY id DESC LIMIT 1""",
+            (str(verification_id), str(connection_id)),
+        ).fetchone()
+        if event is None or datetime.now(UTC) - event["created_at"] > COMMON_CONNECTION_VERIFICATION_TTL:
+            raise GoogleFailure("common_connection_verification_expired")
+        snapshot = event["payload"].get("blogs")
+        if not isinstance(snapshot, list) or not snapshot:
+            raise GoogleFailure("common_connection_verification_invalid")
+        current = conn.execute(
+            """SELECT b.id,b.language_code,b.url,b.blog_id,b.oauth_connection_id
+            FROM blogger_blogs b JOIN languages l ON l.code=b.language_code
+            WHERE b.active AND l.active ORDER BY b.language_code,b.url FOR UPDATE OF b"""
+        ).fetchall()
+        current_snapshot = [
+            {
+                "blog_record_id": str(blog["id"]),
+                "language_code": blog["language_code"],
+                "url": blog["url"],
+                "blog_id": str(blog["blog_id"]) if blog["blog_id"] else None,
+                "registered_blog_id": str(blog["blog_id"]) if blog["blog_id"] else None,
+                "previous_connection_id": (
+                    str(blog["oauth_connection_id"]) if blog["oauth_connection_id"] else None
+                ),
+            }
+            for blog in current
+        ]
+        expected_current_snapshot = [
+            {
+                **entry,
+                "blog_id": entry.get("registered_blog_id"),
+            }
+            for entry in snapshot
+        ]
+        if current_snapshot != expected_current_snapshot:
+            raise GoogleFailure("blog_mapping_changed_after_verification")
+        verified_ids = {
+            entry["blog_record_id"]: entry["blog_id"] for entry in snapshot
+        }
+        for blog in current:
+            conn.execute(
+                """UPDATE blogger_blogs SET blog_id=%s,oauth_connection_id=%s,
+                connection_verified_at=now(),last_checked_at=now(),connection_error=NULL,
+                test_publish_verified_at=NULL WHERE id=%s""",
+                (verified_ids[str(blog["id"])], connection_id, blog["id"]),
+            )
+        conn.execute(
+            """INSERT INTO audit_events(event_type,payload) VALUES
+            ('blogger.common_connection.assigned',%s)""",
+            (
+                Jsonb(
+                    {
+                        "connection_id": str(connection_id),
+                        "verification_id": str(verification_id),
+                        "blogs": snapshot,
+                        "approval": "explicit_admin_confirmation",
+                        "writes_enabled": False,
+                    }
+                ),
+            ),
+        )
+    return {
+        "assigned": True,
+        "connection_id": str(connection_id),
+        "blog_count": len(snapshot),
+        "writes_enabled": False,
+        "publish_ready": False,
+    }
 
 
 def disconnect_blog(blog_id: UUID) -> dict[str, bool]:

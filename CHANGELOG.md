@@ -1,5 +1,11 @@
 # Changelog
 
+## Phase 5-G (shared Blogger OAuth mapping; 2026-10-27)
+- Kept the existing single per-blog OAuth reference; a full-scope Blogger connection can serve both read and write permission ranges without new DB columns. Existing read and duplicate writer records remain preserved.
+- Added duplicate writer-consent prevention, read-only account blog-list verification for all active registered Blog IDs/URLs, a five-minute verification snapshot, and an explicit-approval atomic common-connection assignment with append-only audit events.
+- Exposed connection creation/expiry and encrypted refresh-token presence without token values, and displayed the Blogger cost gate. The current `provider_cost_unverified` gate blocks Google verification, so no live lookup or mapping change was made in this phase.
+- Live Blogger writes, automatic publication, and `publish_ready` remain disabled; zero-cost policy is unchanged.
+
 ## Blogger OAuth writer permission (2026-10-27)
 - Added a separate, user-consented Blogger `blogger` OAuth connection while retaining the existing read-only flow and existing blog-to-connection mappings.
 - OAuth state now binds the requested scope; callback validation requires the returned scope to match exactly. Tokens remain Fernet-encrypted, refresh-token rotation preserves the previous refresh token when Google omits a replacement, and failed/denied writer consent only marks the new connection failed.

@@ -20,7 +20,9 @@ type Connection = {
   label: string;
   status: string;
   scopes: string[];
+  created_at: string;
   expires_at: string | null;
+  has_refresh_token: boolean;
   error_category: string | null;
 };
 type Post = {
@@ -38,6 +40,14 @@ type Limit = {
 };
 type State = {
   configured: boolean;
+  writes_enabled: false;
+  common_connection: {
+    cost_calls_allowed: boolean;
+    cost_block_reason: string | null;
+    approval_required: boolean;
+    identity_verified: false;
+    write_oauth_start_blocked: boolean;
+  };
   connections: Connection[];
   blogs: Blog[];
   limits: Limit[];
@@ -50,13 +60,33 @@ type State = {
   }[];
   events: { id: number; event_type: string; created_at: string }[];
 };
+type CommonVerification = {
+  verification_id: string;
+  connection_id: string;
+  verified_blog_count: number;
+  blogs: {
+    blog_record_id: string;
+    language_code: string;
+    url: string;
+    blog_id: string;
+    previous_connection_id: string | null;
+  }[];
+  identity_verified: false;
+  writes_enabled: false;
+};
 export default function Manager({ initial }: { initial: State }) {
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-  const [account, setAccount] = useState(
-    initial.connections.find((c) => c.status === "connected")?.id ?? "",
+  const writeConnections = initial.connections.filter(
+    (c) =>
+      c.status === "connected" &&
+      c.scopes?.length === 1 &&
+      c.scopes.includes("https://www.googleapis.com/auth/blogger"),
   );
+  const [account, setAccount] = useState(writeConnections[0]?.id ?? "");
+  const [commonVerification, setCommonVerification] =
+    useState<CommonVerification | null>(null);
   const [selected, setSelected] = useState("");
   const [postStatus, setPostStatus] = useState("live");
   const [items, setItems] = useState<Post[]>([]);
@@ -121,6 +151,50 @@ export default function Manager({ initial }: { initial: State }) {
       window.location.assign(data.authorization_url);
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "OAuth 실패");
+      setBusy(false);
+    }
+  }
+  async function verifyCommonConnection() {
+    if (!account) return;
+    setBusy(true);
+    setMessage("");
+    setCommonVerification(null);
+    try {
+      const result = await call("common-connection/verify", "POST", {
+        connection_id: account,
+      });
+      setCommonVerification(result as CommonVerification);
+      setMessage(
+        `읽기 전용으로 ${result.verified_blog_count}개 블로그 접근을 확인했습니다. 아직 연결 매핑은 변경되지 않았습니다.`,
+      );
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "공통 연결 검증 실패");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function assignCommonConnection() {
+    if (!commonVerification || commonVerification.connection_id !== account) return;
+    const approved = window.confirm(
+      `선택한 OAuth 연결을 ${commonVerification.verified_blog_count}개 활성 블로그의 공통 읽기·쓰기 연결로 지정합니다. 기존 읽기 매핑은 대체됩니다. 실제 게시·수정·삭제와 자동 발행은 계속 차단됩니다. 진행할까요?`,
+    );
+    if (!approved) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      const result = await call("common-connection/assign", "POST", {
+        connection_id: account,
+        verification_id: commonVerification.verification_id,
+        approval: "I_APPROVE_SHARED_BLOGGER_CONNECTION",
+      });
+      setCommonVerification(null);
+      setMessage(
+        `${result.blog_count}개 블로그에 공통 OAuth 연결을 지정했습니다. 실제 게시 권한은 활성화되지 않았습니다.`,
+      );
+      router.refresh();
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "공통 연결 지정 실패");
+    } finally {
       setBusy(false);
     }
   }
@@ -217,12 +291,20 @@ export default function Manager({ initial }: { initial: State }) {
       <button disabled={busy || !initial.configured} onClick={() => start("read")}>
         Google 읽기 권한 연결
       </button>
-      <button disabled={busy || !initial.configured} onClick={() => start("write")}>
+      <button
+        disabled={
+          busy ||
+          !initial.configured ||
+          initial.common_connection.write_oauth_start_blocked
+        }
+        onClick={() => start("write")}
+      >
         Blogger 쓰기 권한 연결 (Google 동의 화면)
       </button>
       <p>
-        쓰기 권한 연결은 별도 OAuth 연결을 추가합니다. 연결된 Google 계정의 신원은 확인·추정하지 않습니다.
-        게시·수정·삭제와 자동 발행은 계속 차단되며, 쓰기 API 요청은 수행하지 않습니다.
+        Blogger 전체 권한 scope 하나로 API 읽기와 쓰기 권한 범위를 모두 지원합니다. 연결된 Google 계정의
+        신원은 확인·추정하지 않습니다. 게시·수정·삭제와 자동 발행은 계속 차단됩니다.
+        {initial.common_connection.write_oauth_start_blocked && " 사용 가능한 쓰기 연결 또는 진행 중인 동의가 있어 새 연결 생성은 비활성화했습니다."}
       </p>
       <ul>
         {initial.connections.map((c) => (
@@ -230,7 +312,9 @@ export default function Manager({ initial }: { initial: State }) {
             {c.label} · {c.status}
             {` · 읽기 ${c.scopes?.some((scope) => scope === "https://www.googleapis.com/auth/blogger.readonly" || scope === "https://www.googleapis.com/auth/blogger") ? "허용" : "없음"}`}
             {` · 쓰기 ${c.scopes?.includes("https://www.googleapis.com/auth/blogger") ? "OAuth 범위 있음" : "없음"}`}
+            {` · 연결 ${c.created_at}`}
             {` · 만료 ${c.expires_at ?? "미확인"}`}
+            {` · 갱신 토큰 ${c.has_refresh_token ? "암호화 저장됨" : "없음"}`}
             {c.error_category && ` · ${c.error_category}`}{" "}
             {c.status !== "disconnected" && (
               <button
@@ -244,18 +328,43 @@ export default function Manager({ initial }: { initial: State }) {
         ))}
       </ul>
       <label>
-        블로그에 사용할 승인된 연결
+        공통으로 지정할 기존 쓰기 OAuth 연결
         <select value={account} onChange={(e) => setAccount(e.target.value)}>
           <option value="">연결 선택</option>
-          {initial.connections
-            .filter((c) => c.status === "connected")
-            .map((c) => (
+          {writeConnections.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.label} · {c.id.slice(0, 8)}
               </option>
-            ))}
+          ))}
         </select>
       </label>
+      <p>
+        공통 연결 변경 전 블로그별 현재 매핑은 유지됩니다. Blogger API 비용 게이트: {initial.common_connection.cost_calls_allowed ? "허용" : `차단 (${initial.common_connection.cost_block_reason ?? "확인 필요"})`}.
+        비용 검증 및 각 블로그 접근 확인 전에는 검증 버튼을 사용할 수 없습니다.
+      </p>
+      <button
+        disabled={busy || !account || !initial.common_connection.cost_calls_allowed}
+        onClick={verifyCommonConnection}
+      >
+        읽기 전용으로 공통 연결 검증
+      </button>
+      {commonVerification && commonVerification.connection_id === account && (
+        <section aria-label="공통 OAuth 연결 검증 결과">
+          <p>
+            {commonVerification.verified_blog_count}개 블로그 접근 확인. 계정 신원 미확인 · 쓰기 API 호출 없음.
+          </p>
+          <ul>
+            {commonVerification.blogs.map((blog) => (
+              <li key={blog.blog_record_id}>
+                {blog.language_code} · {blog.url} · Blog ID {blog.blog_id}
+              </li>
+            ))}
+          </ul>
+          <button disabled={busy} onClick={assignCommonConnection}>
+            검증된 연결을 공통 연결로 지정 (명시적 승인)
+          </button>
+        </section>
+      )}
       <h2>등록 블로그</h2>
       <label>
         게시글 조회 상태

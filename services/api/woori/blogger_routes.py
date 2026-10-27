@@ -8,7 +8,8 @@ from pydantic import Field
 from . import blogger_service as blogger
 from . import google_oauth as oauth
 from .db import connection
-from .google_http import GoogleFailure
+from .external_policy import status as external_status
+from .google_http import WRITE_SCOPE, GoogleFailure
 from .multilingual import Input
 from .operations import health as operations_health
 
@@ -31,6 +32,15 @@ class Connect(Input):
     connection_id: UUID
 
 
+class CommonConnectionVerification(Input):
+    connection_id: UUID
+
+
+class CommonConnectionAssignment(CommonConnectionVerification):
+    verification_id: UUID
+    approval: Literal["I_APPROVE_SHARED_BLOGGER_CONNECTION"]
+
+
 class Limits(Input):
     read_enabled: bool
     requests_per_minute: int = Field(ge=1, le=60)
@@ -40,13 +50,37 @@ class Limits(Input):
 
 @router.get("/status")
 def status() -> dict[str, Any]:
+    cost_provider = next(
+        item
+        for item in external_status()["providers"]
+        if item["name"] == "google_blogger_read"
+    )
     with connection() as conn:
+        write_start = conn.execute(
+            """SELECT EXISTS (
+                SELECT 1 FROM google_connections WHERE status='connected' AND scopes=%s::text[]
+                UNION ALL
+                SELECT 1 FROM google_connections g JOIN google_oauth_states s ON s.connection_id=g.id
+                WHERE g.status='pending' AND s.requested_scopes=%s::text[]
+                    AND NOT s.consumed AND s.expires_at>now()
+            ) AS blocked""",
+            ([WRITE_SCOPE], [WRITE_SCOPE]),
+        ).fetchone()
         return {
             "configured": oauth.configured(),
             "operations": operations_health(),
             "writes_enabled": False,
+            "common_connection": {
+                "cost_calls_allowed": cost_provider["calls_allowed"],
+                "cost_block_reason": cost_provider["block_reason"],
+                "approval_required": True,
+                "identity_verified": False,
+                "write_oauth_start_blocked": bool(write_start and write_start["blocked"]),
+            },
             "connections": conn.execute(
-                "SELECT id,label,status,scopes,expires_at,error_category,updated_at FROM google_connections ORDER BY created_at DESC"
+                """SELECT id,label,status,scopes,created_at,expires_at,error_category,
+                updated_at,(refresh_ciphertext IS NOT NULL) AS has_refresh_token
+                FROM google_connections ORDER BY created_at DESC"""
             ).fetchall(),
             "blogs": conn.execute("""SELECT b.*,l.active AS language_active,g.status AS oauth_status,
                     g.scopes AS oauth_scopes,g.expires_at AS oauth_expires_at
@@ -87,6 +121,18 @@ def disconnect(connection_id: UUID) -> dict[str, bool]:
 @router.get("/oauth/{connection_id}/blogs")
 def account_blogs(connection_id: UUID) -> dict[str, Any]:
     return blogger.account_blogs(connection_id)
+
+
+@router.post("/common-connection/verify")
+def verify_common_connection(request: CommonConnectionVerification) -> dict[str, Any]:
+    return blogger.verify_common_connection(request.connection_id)
+
+
+@router.post("/common-connection/assign")
+def assign_common_connection(request: CommonConnectionAssignment) -> dict[str, Any]:
+    return blogger.assign_common_connection(
+        request.connection_id, request.verification_id, request.approval
+    )
 
 
 @router.post("/blogs/{blog_id}/connect")
