@@ -9,7 +9,8 @@ export type State = {
   collection_jobs: Row[]; measurements: Row[]; stage_runs: Row[]; coverage: Row[]; experiments?: Row[];
   evidence_facts?: Row[]; localizations?: Row[]; glossary?: Row[]; glossary_revisions?: Row[];
   article_evaluations?: Row[]; worker?: Row | null; evaluation_worker?: Row | null; daily_workload?: Row[]; operations_summary?: Row;
-  evaluation_results?: { configured?: boolean; available?: boolean; database?: string; baseline_snapshot_at?: string; error_category?: string; worker?: Row | null; quota?: Row[]; runs?: Row[]; stages?: Row[]; events?: Row[]; fed_articles?: Row[]; sec_historical_quality?: Row[]; sec_new_inference?: string; sec_locale_availability?: Row[]; sec_source_draft_available?: boolean };
+  evaluation_results?: { configured?: boolean; available?: boolean; database?: string; baseline_snapshot_at?: string; error_category?: string; worker?: Row | null; quota?: Row[]; runs?: Row[]; stages?: Row[]; events?: Row[]; fed_articles?: Row[]; sec_historical_quality?: Row[]; sec_new_inference?: string; sec_locale_availability?: Row[]; sec_source_draft_available?: boolean; sec_english_quota_reservation?: Row };
+  adsense_readiness?: { captured_at?: string; approval_prediction?: string; blogs?: Row[]; internal_recommendations?: Row; official_references?: string[] };
   prepublication?: { blogger_accounts_connected?: number; blogs?: Row[]; historical_read_verifications?: Row[]; safety?: Row; real_blogger_sync_verified?: boolean; real_writes_enabled?: boolean };
   article_reviews?: Row[];
   operational_readiness?: { captured_from?: string; items?: { key: string; status: string; evidence: unknown }[] };
@@ -210,6 +211,22 @@ export default function Research({ initial }: { initial: State }) {
       <pre>{JSON.stringify({ ...(data.prepublication?.safety ?? {}), real_writes_enabled: data.prepublication?.real_writes_enabled, publish_ready: false }, null, 2)}</pre>
       <p>미검증: SEC 신규 추론, 실제 Blogger 인증 계정·4개 블로그 조회·게시글 상세/페이지네이션. 운영 발행은 비활성화 상태입니다.</p>
     </section>
+    <section aria-labelledby="phase4i-adsense-readiness">
+      <h2 id="phase4i-adsense-readiness">AdSense preparation checks (diagnostic only)</h2>
+      <p>Captured {str((data.adsense_readiness ?? {}) as Row, "captured_at") || "not available"}. Approval prediction: not provided. Public Blogger checks stay unverified while the Blogger read-cost gate is closed. Drafts and internal publication records are not treated as public posts.</p>
+      <p>Internal planning heuristics only: {str(data.adsense_readiness?.internal_recommendations ?? {}, "suggested_published_post_count")}; {str(data.adsense_readiness?.internal_recommendations ?? {}, "suggested_article_length")}. These are not Google requirements and are not approval gates.</p>
+      {(data.adsense_readiness?.blogs ?? []).map(blog => <article key={str(blog, "blog_mapping_id")}>
+        <h3>{str(blog, "language_code")} · {str(blog, "display_name")} · {str(blog, "url")}</h3>
+        <p>Public posts: unverified · mapped Blogger ID: {str(blog, "blog_id") || "not registered"} · active: {String(blog.active ?? false)}</p>
+        <table><thead><tr><th>Check</th><th>Status</th><th>Observed evidence / next step</th></tr></thead><tbody>
+          {((blog.checks as Row[] | undefined) ?? []).map(item => <tr key={str(item, "key")}>
+            <th scope="row">{str(item, "label")}</th><td>{str(item, "status")}</td>
+            <td><pre>{JSON.stringify(item.evidence, null, 2)}</pre></td>
+          </tr>)}
+        </tbody></table>
+      </article>)}
+      <p>Official references: {(data.adsense_readiness?.official_references ?? []).map((url, index) => <span key={url}>{index ? " · " : ""}<a href={url} target="_blank" rel="noreferrer">Google reference {index + 1}</a></span>)}</p>
+    </section>
     <section aria-labelledby="phase4e-readiness">
       <h2 id="phase4e-readiness">Phase 4-E · 운영 준비 체크리스트</h2>
       <p>상태는 현재 operations DB, 격리 evaluation DB 스냅샷 및 명시된 과거 테스트 증거를 반영합니다. 사람 검토와 실제 발행 권한은 별도입니다.</p>
@@ -263,7 +280,8 @@ export default function Research({ initial }: { initial: State }) {
     <section><h2>Isolated evaluation results (read only)</h2>
       <p>Evaluation DB: {data.evaluation_results?.configured ? data.evaluation_results.available === false ? "unavailable" : str(data.evaluation_results as Row, "database") : "read-only connection not configured"}. Worker: {str(data.evaluation_results?.worker ?? {}, "status") || "not started"}; baseline snapshot {str(data.evaluation_results as Row, "baseline_snapshot_at")}. Human review remains pending; publish_ready is always false.</p>
       {data.evaluation_results?.error_category ? <p role="alert">{data.evaluation_results.error_category}</p> : null}
-      {(data.evaluation_results?.quota ?? []).map(q => <p key={str(q, "language_code")}>Evaluation quota {str(q, "language_code")}: {str(q, "quota_used")}/{str(q, "quota_limit")}; resets {str(q, "resets_at")}.</p>)}
+      {(data.evaluation_results?.quota ?? []).map(q => <p key={str(q, "language_code")}>Evaluation quota {str(q, "language_code")}: used {str(q, "quota_used")}/{str(q, "quota_limit")}; reserved {str(q, "reserved_slots")}; remaining after reservation {str(q, "remaining_after_reservation")}; resets {str(q, "resets_at")}.</p>)}
+      <p>SEC English slot reservation: {String(data.evaluation_results?.sec_english_quota_reservation?.active ?? false)}; it is reserved within the daily cap, not added to it.</p>
       {(data.evaluation_results?.runs ?? []).map((run, index) => <details key={`${str(run, "run_id")}-${index}`}>
         <summary>{str(run, "language_code")} | {str(run, "run_status")} | {str(run, "state")} | {str(run, "model")} | {str(run, "created_at")}</summary>
         <h3>{str(run, "title") || "No saved draft"}</h3>
@@ -288,7 +306,7 @@ export default function Research({ initial }: { initial: State }) {
     </section>
     <section><h2>언어별 모델·프롬프트 정책</h2><p>시험 생성은 품질 평가 완료를 선언하지 않습니다. 언어 지원 검증이 안 된 모델은 정상 자동 처리하지 않습니다. llama.cpp 모델·스레드 변경은 전용 엔진 재시작이 필요합니다.</p>
       {data.settings.map(s => <article key={str(s, "profile_id")}><h3>{profileLabel(data.profiles.find(p => p.id === s.profile_id) ?? {})}</h3>
-        <Editor disabled={busy} label="언어 실행 정책 저장" defaults={s} fields={[{ name: "provider", label: "Provider", options: [{ value: "mock", label: "Mock 합성 테스트" }, { value: "local", label: "실제 Local" }] }, { name: "engine", label: "로컬 엔진", options: [{ value: "ollama", label: "Ollama 11434" }, { value: "llamacpp", label: "프로젝트 llama.cpp 11435" }] }, { name: "model", label: "설치 모델 이름" }, { name: "prompt_id", label: "프롬프트 버전", options: promptOptions }, { name: "enabled", label: "처리 허용", type: "checkbox" }, { name: "language_verified", label: "언어별 품질 평가 완료 (검증 근거 필수)", type: "checkbox" }, { name: "verification_reason", label: "언어 평가 근거", optional: true }, { name: "daily_limit", label: "일일 작업 한도", type: "number" }, { name: "evaluation_daily_limit", label: "Evaluation daily quota", type: "number" }, { name: "threads", label: "CPU 스레드 1–4", type: "number" }, { name: "timeout_seconds", label: "타임아웃 5–180초", type: "number" }]} submit={body => act(`settings/${str(s, "profile_id")}`, body, "PUT")}/>
+        <Editor disabled={busy} label="언어 실행 정책 저장" defaults={s} fields={[{ name: "provider", label: "Provider", options: [{ value: "mock", label: "Mock 합성 테스트" }, { value: "local", label: "실제 Local" }] }, { name: "engine", label: "로컬 엔진", options: [{ value: "ollama", label: "Ollama 11434" }, { value: "llamacpp", label: "프로젝트 llama.cpp 11435" }] }, { name: "model", label: "설치 모델 이름" }, { name: "prompt_id", label: "프롬프트 버전", options: promptOptions }, { name: "enabled", label: "처리 허용", type: "checkbox" }, { name: "language_verified", label: "언어별 품질 평가 완료 (검증 근거 필수)", type: "checkbox" }, { name: "verification_reason", label: "언어 평가 근거", optional: true }, { name: "daily_limit", label: "일일 작업 한도", type: "number" }, { name: "evaluation_daily_limit", label: "Operations DB evaluation limit (isolated evaluation quota is displayed above)", type: "number" }, { name: "threads", label: "CPU 스레드 1–4", type: "number" }, { name: "timeout_seconds", label: "타임아웃 5–180초", type: "number" }]} submit={body => act(`settings/${str(s, "profile_id")}`, body, "PUT")}/>
       </article>)}
       <Editor disabled={busy} label="새 프롬프트 버전 추가" fields={[{ name: "name", label: "영문 이름" }, { name: "instructions", label: "새 지시문", type: "textarea" }]} submit={body => act("prompts", body)}/>
     </section>

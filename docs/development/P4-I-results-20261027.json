@@ -1,0 +1,140 @@
+{
+  "phase": "4-I",
+  "recorded_at": "2026-10-27",
+  "timezone": "Asia/Seoul",
+  "branch": "develop",
+  "database": {
+    "evaluation": "woori_blog_agent_eval",
+    "operations_unchanged": true,
+    "migration": "none",
+    "quota_reset": false,
+    "audit_event": {
+      "type": "evaluation.quota.policy.updated",
+      "id": 84688
+    },
+    "quota": {
+      "reset_at": "2026-10-28T00:00:00+09:00",
+      "languages": {
+        "en": {
+          "used": 2,
+          "limit": 10,
+          "reserved_for_sec_english": 1,
+          "remaining_for_other_en": 7
+        },
+        "ko": {
+          "used": 2,
+          "limit": 10,
+          "reserved": 0,
+          "remaining": 8
+        },
+        "ja": {
+          "used": 1,
+          "limit": 10,
+          "reserved": 0,
+          "remaining": 9
+        },
+        "zh-CN": {
+          "used": 1,
+          "limit": 10,
+          "reserved": 0,
+          "remaining": 9
+        }
+      },
+      "operations_daily_limit": 5,
+      "operations_evaluation_config_unchanged": true
+    },
+    "max_concurrency": 1
+  },
+  "resource_policy": {
+    "global_gates_unchanged": true,
+    "previous_runs": {
+      "count": 2,
+      "elapsed_ms": [
+        26376,
+        25718
+      ],
+      "model_ms": [
+        24817,
+        24370
+      ],
+      "model_calls": [
+        5,
+        5
+      ],
+      "max_rss_mib": [
+        3380.21,
+        4880.57
+      ]
+    },
+    "current_host_snapshot": {
+      "cpu_percent": 10.4,
+      "ram_percent": 53.5,
+      "available_ram_mib": 15200,
+      "project_disk_free_gib": 188.16
+    }
+  },
+  "sec_inference": {
+    "attempted": false,
+    "count": 0,
+    "reason": "local_engine_unavailable",
+    "locales_started": [],
+    "human_reviewed": false,
+    "publish_ready": false
+  },
+  "dashboard": {
+    "ports": {
+      "3100": {
+        "http_status": 200,
+        "process_id": 28888,
+        "started": "2026-10-26",
+        "version": "stale"
+      },
+      "8100": {
+        "health_status": 200,
+        "state_status": 200,
+        "process_id": 25576,
+        "started": "2026-10-26",
+        "version": "stale",
+        "has_adsense_readiness": false,
+        "has_sec_reservation": false
+      }
+    },
+    "latest_checkout_in_process_api_validation": true,
+    "browser_visual_verification": "not_available_browser_surface_unavailable",
+    "restart_performed": false
+  },
+  "adsense": {
+    "blog_mappings": 4,
+    "checks_per_blog": 14,
+    "public_post_counts": "unknown_null",
+    "public_fetch_performed": false,
+    "approval_prediction": "not_provided",
+    "posts_15_20_and_length_1000_1500": "internal_heuristics_not_google_requirements"
+  },
+  "safety": {
+    "blogger_reads": 0,
+    "blogger_writes": 0,
+    "paid_api_calls": 0,
+    "additional_cost": 0,
+    "publish_ready_changed": false,
+    "main_modified": false
+  },
+  "verification": {
+    "pytest": {
+      "passed": 155
+    },
+    "ruff": "passed",
+    "mypy": "passed_27_source_files",
+    "wheel": "passed",
+    "dashboard_eslint": "passed",
+    "dashboard_typecheck": "passed",
+    "dashboard_production_build": "passed",
+    "verify_secrets": "passed",
+    "git_diff_check": "passed",
+    "db_migration": "not_required"
+  },
+  "human_review": {
+    "completed": 0,
+    "pending": "all existing drafts requiring review"
+  }
+}

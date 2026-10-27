@@ -1,5 +1,12 @@
 # Changelog
 
+## Phase 4-I (evaluation policy and AdSense preparation; 2026-10-27)
+- Raised only the isolated evaluation database's active base-language quota from 2 to 10 per KST day after reviewing two measured Qwen3 4B runs and current machine headroom. Preserved existing usage and added one SEC English reservation inside the ten-slot limit; global concurrency remains one and shared CPU/RAM/disk gates remain active.
+- Enforced the SEC reservation in evaluation admission so Fed work cannot consume the reserved English target. Added read-only quota, reserved-volume, and remaining-capacity fields to the Dashboard API.
+- Added a per-Blogger AdSense preparation checklist with explicit not-verified/human-review states, public counts left unknown without a fresh allowed public read, and no approval prediction. Added official Google references and marked post-count/article-length heuristics as internal only.
+- Recorded the isolated quota change in append-only audit event `evaluation.quota.policy.updated`. Operational generation quotas, Blogger connection/cost gates, publication controls, and `publish_ready` were not changed.
+- SEC inference remained blocked because the project-local llama.cpp runtime was unavailable. Current 3100/8100 services were not restarted; safe refresh steps are documented.
+
 ## Phase 4-H (quota and runtime validation; 2026-10-27)
 - Traced both current-day English evaluation targets to separate bounded Fed experiments at 00:00 and 00:28 KST. Each made five Qwen3 4B calls and ended `quality_held`; two distinct target rows correctly consumed the two-slot quota. No SEC inference was started.
 - Added a quota regression test for KST midnight independence from PostgreSQL session timezone, failed-target counting, idempotent retry reuse, and hard-stop at the existing limit.

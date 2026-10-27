@@ -43,7 +43,9 @@ def lab(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Any, TestClient, dict
             yield conn, api, HiddenHeaders(Authorization="Bearer " + settings().admin_token)
 
 
-def topic(lab: Any, *, reviewed: bool = True) -> tuple[Any, list[Any]]:
+def topic(
+    lab: Any, *, reviewed: bool = True, source_name: str = "Synthetic fixture"
+) -> tuple[Any, list[Any]]:
     conn, api, h = lab
     profiles = conn.execute(
         "SELECT p.id FROM language_profiles p JOIN languages l ON l.code=p.language_code WHERE l.active ORDER BY p.language_code"
@@ -75,7 +77,7 @@ def topic(lab: Any, *, reviewed: bool = True) -> tuple[Any, list[Any]]:
         json={
             "keyword_id": keyword,
             "url": "https://example.com/" + uuid.uuid4().hex,
-            "source_name": "Synthetic fixture",
+            "source_name": source_name,
             "evidence": "Synthetic test evidence "
             + uuid.uuid4().hex
             + ". Not a statement of real world facts.",
@@ -170,9 +172,15 @@ def test_evaluation_can_generate_one_localized_profile_per_isolated_run(lab: Any
     assert [row["language_code"] for row in selected] == ["ko"]
 
 
-def test_evaluation_quota_uses_kst_window_and_counts_targets_not_retries(lab: Any) -> None:
+def test_evaluation_quota_uses_kst_window_and_counts_targets_not_retries(
+    lab: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
     keyword_id, _ = topic(lab)
     conn, _api, _headers = lab
+    monkeypatch.setattr(
+        pipeline, "evaluation_quota_priority",
+        lambda _conn, _keyword_id: {"pending": False, "request_is_sec": False},
+    )
     conn.execute(
         "UPDATE generation_settings SET provider='local',engine='llamacpp',evaluation_daily_limit=2"
     )
@@ -235,6 +243,67 @@ def test_evaluation_quota_uses_kst_window_and_counts_targets_not_retries(lab: An
         (date_trunc('day',now() AT TIME ZONE 'Asia/Seoul') AT TIME ZONE 'Asia/Seoul')""",
         (profile["id"],),
     ).fetchone()["n"] == 2
+
+
+def test_sec_english_reserves_one_slot_within_existing_evaluation_quota(lab: Any) -> None:
+    fed_keyword, _ = topic(lab)
+    conn, _api, _headers = lab
+    conn.execute(
+        "UPDATE generation_settings SET provider='local',engine='llamacpp',evaluation_daily_limit=10"
+    )
+    english = conn.execute(
+        "SELECT id FROM language_profiles WHERE language_code='en' AND target_country=''"
+    ).fetchone()
+    assert english is not None
+    # Consume nine real quota targets while no SEC source draft is pending.
+    for index in range(9):
+        pipeline.enqueue(
+            uuid.UUID(fed_keyword), f"quota-priority-fed-{index}-" + uuid.uuid4().hex,
+            profile_ids=[english["id"]], evaluation_only=True,
+            evaluation_model="Qwen3-4B-Q4_K_M.gguf",
+        )
+    sec_keyword, _ = topic(lab, source_name="SEC EDGAR synthetic reviewed source")
+    with pytest.raises(EngineFailure, match="sec_english_priority_quota_reserved"):
+        pipeline.enqueue(
+            uuid.UUID(fed_keyword), "quota-priority-fed-tenth-" + uuid.uuid4().hex,
+            profile_ids=[english["id"]], evaluation_only=True,
+            evaluation_model="Qwen3-4B-Q4_K_M.gguf",
+        )
+    sec_job = pipeline.enqueue(
+        uuid.UUID(sec_keyword), "quota-priority-sec-english-" + uuid.uuid4().hex,
+        profile_ids=[english["id"]], evaluation_only=True,
+        evaluation_model="Qwen3-4B-Q4_K_M.gguf",
+    )
+    assert sec_job["status"] == "queued"
+    used = conn.execute(
+        """SELECT count(*)::int n FROM generation_targets t JOIN generation_jobs j ON j.run_id=t.run_id
+        WHERE t.profile_id=%s AND j.evaluation_only AND j.created_at >=
+          (date_trunc('day',now() AT TIME ZONE 'Asia/Seoul') AT TIME ZONE 'Asia/Seoul')""",
+        (english["id"],),
+    ).fetchone()["n"]
+    assert used == 10
+
+
+def test_adsense_readiness_is_per_blog_and_never_claims_public_or_approval_status(lab: Any) -> None:
+    conn, api, headers = lab
+    before = conn.execute("SELECT count(*)::int AS n FROM blogger_api_calls").fetchone()["n"]
+    response = api.get("/admin/research/state", headers=headers)
+    assert response.status_code == 200
+    readiness = response.json()["adsense_readiness"]
+    assert readiness["approval_prediction"] == "not_provided"
+    assert len(readiness["blogs"]) == 4
+    assert "not a Google requirement" in readiness["internal_recommendations"]["suggested_published_post_count"]
+    for blog in readiness["blogs"]:
+        public_posts = next(
+            item for item in blog["checks"] if item["key"] == "public_published_posts"
+        )
+        assert public_posts["status"] == "not_verified"
+        assert public_posts["evidence"]["public_post_count"] is None
+        assert public_posts["evidence"]["public_fetch_performed"] is False
+        assert public_posts["evidence"]["blogger_read_cost_gate"] == "provider_cost_unverified"
+        assert all(item["status"] in {"not_verified", "human_review_required"} for item in blog["checks"])
+    after = conn.execute("SELECT count(*)::int AS n FROM blogger_api_calls").fetchone()["n"]
+    assert after == before
 
 
 def test_localized_evaluation_reuses_only_a_successful_isolated_source_draft() -> None:

@@ -24,6 +24,8 @@ from .grounding import inspect, numbers, proper_names
 from .localization import EXTRACTOR_VERSION, fact_ledger, localize_fact
 
 EVALUATION_MODEL_ALLOWLIST = {"Qwen3-4B-Q4_K_M.gguf"}
+EVALUATION_QUOTA_LIMIT = 10
+SEC_ENGLISH_PRIORITY_RESERVED_SLOTS = 1
 
 
 def required(row: dict[str, Any] | None) -> dict[str, Any]:
@@ -422,6 +424,10 @@ def enqueue(
             return old
         if conn.execute("SELECT 1 FROM job_runs WHERE idempotency_key=%s", (key,)).fetchone():
             raise EngineFailure("idempotency_conflict")
+        sec_priority = (
+            evaluation_quota_priority(conn, keyword_id)
+            if evaluation_only else {"pending": False, "request_is_sec": False}
+        )
         for t in targets:
             quota_column = "evaluation_daily_limit" if evaluation_only else "daily_limit"
             count = conn.execute(
@@ -430,6 +436,17 @@ def enqueue(
                 (t["profile_id"], evaluation_only),
             ).fetchone()
             assert count is not None
+            if (
+                evaluation_only
+                and t["language_code"] == "en"
+                and sec_priority["pending"]
+                and not sec_priority["request_is_sec"]
+            ):
+                reserved_limit = max(
+                    0, int(t[quota_column]) - SEC_ENGLISH_PRIORITY_RESERVED_SLOTS
+                )
+                if int(count["n"]) >= reserved_limit:
+                    raise EngineFailure("sec_english_priority_quota_reserved")
             if count["n"] >= t[quota_column]:
                 raise EngineFailure(
                     "daily_evaluation_limit" if evaluation_only else "daily_generation_limit"
@@ -461,6 +478,37 @@ def enqueue(
             )
         emit(conn, "queued", run["id"], keyword_id=str(keyword_id), targets=len(targets))
         return run
+
+
+def evaluation_quota_priority(conn: Any, keyword_id: UUID) -> dict[str, bool]:
+    """Reserve one existing English evaluation slot while a reviewed SEC source lacks a draft."""
+    request_is_sec = conn.execute(
+        """SELECT 1 FROM research_sources s
+        JOIN LATERAL (SELECT approved FROM source_reviews WHERE source_id=s.id
+          ORDER BY review_sequence DESC LIMIT 1) review ON review.approved
+        WHERE s.keyword_id=%s AND s.source_name LIKE 'SEC EDGAR%%' AND s.valid_until>now()
+          AND NOT EXISTS(SELECT 1 FROM research_sources newer
+            WHERE newer.keyword_id=s.keyword_id AND newer.url=s.url AND newer.revision>s.revision)
+        LIMIT 1""",
+        (keyword_id,),
+    ).fetchone() is not None
+    pending_sec = conn.execute(
+        """SELECT 1 FROM research_sources s
+        JOIN LATERAL (SELECT approved FROM source_reviews WHERE source_id=s.id
+          ORDER BY review_sequence DESC LIMIT 1) review ON review.approved
+        JOIN language_profiles p ON p.language_code='en' AND p.target_country=''
+        JOIN languages l ON l.code=p.language_code AND l.active
+        WHERE s.source_name LIKE 'SEC EDGAR%%' AND s.valid_until>now()
+          AND NOT EXISTS(SELECT 1 FROM research_sources newer
+            WHERE newer.keyword_id=s.keyword_id AND newer.url=s.url AND newer.revision>s.revision)
+          AND NOT EXISTS(SELECT 1 FROM generation_results g
+            JOIN generation_jobs j ON j.run_id=g.run_id
+            JOIN job_runs r ON r.id=g.run_id
+            WHERE j.keyword_id=s.keyword_id AND j.evaluation_only AND r.status='succeeded'
+              AND g.profile_id=p.id AND g.content_version_id IS NOT NULL)
+        LIMIT 1"""
+    ).fetchone() is not None
+    return {"pending": pending_sec, "request_is_sec": request_is_sec}
 
 
 def _sec_localization_prerequisite_missing(

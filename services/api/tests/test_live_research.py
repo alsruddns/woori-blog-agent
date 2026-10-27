@@ -1279,8 +1279,14 @@ def test_fact_first_model_override_is_evaluation_only_and_bounded(lab: Any) -> N
         )
 
 
-def test_evaluation_and_operations_have_separate_daily_quotas(lab: Any) -> None:
+def test_evaluation_and_operations_have_separate_daily_quotas(
+    lab: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
     conn, _api, _headers = lab
+    monkeypatch.setattr(
+        pipeline, "evaluation_quota_priority",
+        lambda _conn, _keyword_id: {"pending": False, "request_is_sec": False},
+    )
     first_keyword, profiles = make_topic(lab)
     second_keyword, _ = make_topic(lab)
     third_keyword, _ = make_topic(lab)

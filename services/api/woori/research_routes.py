@@ -346,6 +346,9 @@ def state() -> dict[str, Any]:
         ).fetchall()
         result["evaluation_results"] = _evaluation_results_snapshot()
         result["prepublication"] = _prepublication_snapshot(conn)
+        result["adsense_readiness"] = _adsense_readiness_snapshot(
+            conn, result["prepublication"]
+        )
         result["article_reviews"] = conn.execute(
             """SELECT id,evaluation_id,content_version_id,idempotency_key,reviewer_name,
                 factual_accuracy,translation_naturalness,reader_value,disposition,comments,
@@ -441,6 +444,16 @@ def _evaluation_results_snapshot() -> dict[str, Any]:
             sec_locale_availability = _sec_locale_availability(
                 quota, sec_source_draft_available
             )
+            sec_reservation_active = bool(sec_seed and not sec_source_draft_available)
+            for quota_row in quota:
+                reserved = (
+                    1 if quota_row["language_code"] == "en" and sec_reservation_active else 0
+                )
+                quota_row["reserved_slots"] = reserved
+                quota_row["reserved_for"] = "SEC English source evaluation" if reserved else None
+                quota_row["remaining_after_reservation"] = max(
+                    0, int(quota_row["quota_limit"]) - int(quota_row["quota_used"]) - reserved
+                )
             sec_gate = (
                 "available_for_some_locales"
                 if any(row["status"] == "available" for row in sec_locale_availability)
@@ -481,6 +494,11 @@ def _evaluation_results_snapshot() -> dict[str, Any]:
             "database": identity["database_name"] if identity else None,
             "baseline_snapshot_at": snapshot["snapshot_at"],
             "quota": quota,
+            "sec_english_quota_reservation": {
+                "active": sec_reservation_active,
+                "slots": 1 if sec_reservation_active else 0,
+                "reason": "reviewed SEC English source draft missing" if sec_reservation_active else "no pending SEC English source target",
+            },
             "worker": evaluation_worker,
             "runs": runs,
             "sec_c3_runs": [
@@ -503,6 +521,84 @@ def _evaluation_results_snapshot() -> dict[str, Any]:
     except psycopg.Error as exc:
         # Never return a connection string, credentials, or raw driver error.
         return {"configured": True, "available": False, "error_category": "evaluation_read_failed", "error_code": exc.sqlstate, "runs": [], "stages": []}
+
+
+def _adsense_readiness_snapshot(conn: Any, prepublication: dict[str, Any]) -> dict[str, Any]:
+    """Report evidence-backed preparation checks; never infer or promise AdSense approval."""
+    captured_at = conn.execute("SELECT now() AS captured_at").fetchone()["captured_at"]
+    publication_counts = conn.execute(
+        """SELECT blog_id,count(*)::int AS internal_published_records,
+            max(published_at) AS last_internal_publish_at
+        FROM publishing_records GROUP BY blog_id"""
+    ).fetchall()
+    counts = {str(row["blog_id"]): dict(row) for row in publication_counts}
+    blogs: list[dict[str, Any]] = []
+    checks = [
+        ("public_published_posts", "Publicly published posts and current public post count", "not_verified"),
+        ("originality_and_information_value", "Originality and information value", "human_review_required"),
+        ("facts_and_sources", "Fact accuracy and source support", "human_review_required"),
+        ("localization_quality", "Language-specific localization quality", "human_review_required"),
+        ("article_structure", "Titles, headings, and readable article structure", "human_review_required"),
+        ("copyright_and_quotes", "Copyright, reuse rights, and quotation review", "human_review_required"),
+        ("about_page", "About page", "not_verified"),
+        ("contact_page", "Contact page", "not_verified"),
+        ("privacy_policy", "Privacy policy", "not_verified"),
+        ("search_console", "Search Console property and ownership", "not_verified"),
+        ("sitemap", "Sitemap accessibility and Search Console status", "not_verified"),
+        ("mobile_readability", "Mobile readability", "not_verified"),
+        ("broken_links", "Broken links and navigation", "not_verified"),
+        ("policy_risk", "Potential AdSense policy issues", "human_review_required"),
+    ]
+    for blog in prepublication.get("blogs", []):
+        blog_id = str(blog["id"])
+        internal = counts.get(blog_id, {})
+        items: list[dict[str, Any]] = [
+            {
+                "key": key,
+                "label": label,
+                "status": status,
+                "evidence": {
+                    "public_fetch_performed": False,
+                    "blogger_read_cost_gate": "provider_cost_unverified",
+                    "reason": "No public Blogger/API inspection was performed; this field must not be inferred from internal drafts.",
+                },
+            }
+            for key, label, status in checks
+        ]
+        items[0]["evidence"]["public_post_count"] = None
+        items[0]["evidence"]["internal_publication_records"] = int(
+            internal.get("internal_published_records", 0)
+        )
+        items[0]["evidence"]["last_internal_publish_at"] = internal.get(
+            "last_internal_publish_at"
+        )
+        blogs.append({
+            "blog_id": blog.get("blog_id"),
+            "blog_mapping_id": blog_id,
+            "language_code": blog.get("language_code"),
+            "url": blog.get("url"),
+            "display_name": blog.get("display_name"),
+            "active": blog.get("active"),
+            "captured_at": captured_at,
+            "checks": items,
+            "approval_prediction": "not_provided",
+        })
+    return {
+        "captured_at": captured_at,
+        "approval_prediction": "not_provided",
+        "blogs": blogs,
+        "internal_recommendations": {
+            "suggested_published_post_count": "15-20 (internal planning heuristic only; not a Google requirement)",
+            "suggested_article_length": "1000-1500 characters (internal planning heuristic only; not a Google requirement)",
+            "used_as_approval_gate": False,
+        },
+        "official_references": [
+            "https://support.google.com/adsense/answer/7299563",
+            "https://support.google.com/adsense/answer/9724",
+            "https://support.google.com/adsense/answer/12176698",
+            "https://support.google.com/webmasters/answer/7451001",
+        ],
+    }
 
 
 def _fed_article_reviews(conn: Any) -> list[dict[str, Any]]:
