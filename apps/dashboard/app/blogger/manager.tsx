@@ -44,10 +44,14 @@ type State = {
   common_connection: {
     cost_calls_allowed: boolean;
     cost_block_reason: string | null;
+    cost_approval_at: string | null;
+    cost_approval_scope: string[];
     approval_required: boolean;
     identity_verified: false;
     write_oauth_start_blocked: boolean;
   };
+  draft_creation_allowed: boolean;
+  publishing_enabled: false;
   connections: Connection[];
   blogs: Blog[];
   limits: Limit[];
@@ -59,6 +63,25 @@ type State = {
     created_at: string;
   }[];
   events: { id: number; event_type: string; created_at: string }[];
+  draft_results: {
+    mode: string;
+    preview_id: string;
+    blog_record_id: string;
+    blog_id: string;
+    language_code: string;
+    title: string;
+    content: string;
+    is_draft: boolean;
+    final_status?: string;
+    external_post_id?: string | null;
+    http_status?: number | null;
+    verification?: {
+      checked: boolean;
+      is_draft: boolean | null;
+      title_matches: boolean | null;
+      content_matches: boolean | null;
+    };
+  }[];
 };
 type CommonVerification = {
   verification_id: string;
@@ -74,6 +97,38 @@ type CommonVerification = {
   identity_verified: false;
   writes_enabled: false;
 };
+type DraftPreview = {
+  preview_id: string;
+  blog_id: string;
+  language_code: string;
+  title: string;
+  content: string;
+  is_draft: true;
+  external_call_made: false;
+};
+
+const draftCopy: Record<string, { title: string; content: string }> = {
+  ko: {
+    title: "Woori Blog Agent 연결 확인 테스트 (비공개 초안)",
+    content:
+      "이 글은 Woori Blog Agent의 Blogger API 연결을 확인하기 위한 비공개 테스트 초안입니다.\n\n실제 정보 제공을 목적으로 하지 않으며, 사용자 승인 없이 공개 게시되지 않습니다.",
+  },
+  en: {
+    title: "Woori Blog Agent Connection Test (Private Draft)",
+    content:
+      "This is a private test draft used to verify the Woori Blog Agent Blogger API connection.\n\nIt is not intended to provide factual information and will not be published without separate user approval.",
+  },
+  "zh-CN": {
+    title: "Woori Blog Agent 连接测试（私人草稿）",
+    content:
+      "这是一篇用于验证 Woori Blog Agent Blogger API 连接的私人测试草稿。\n\n本文不用于提供事实信息，未经用户另行批准不会公开发布。",
+  },
+  ja: {
+    title: "Woori Blog Agent 接続テスト（非公開の下書き）",
+    content:
+      "これは Woori Blog Agent の Blogger API 接続を確認するための非公開テスト下書きです。\n\n情報提供を目的とするものではなく、ユーザーの別途承認なしに公開されません。",
+  },
+};
 export default function Manager({ initial }: { initial: State }) {
   const router = useRouter();
   const [message, setMessage] = useState("");
@@ -87,6 +142,7 @@ export default function Manager({ initial }: { initial: State }) {
   const [account, setAccount] = useState(writeConnections[0]?.id ?? "");
   const [commonVerification, setCommonVerification] =
     useState<CommonVerification | null>(null);
+  const [draftPreview, setDraftPreview] = useState<DraftPreview | null>(null);
   const [selected, setSelected] = useState("");
   const [postStatus, setPostStatus] = useState("live");
   const [items, setItems] = useState<Post[]>([]);
@@ -198,6 +254,57 @@ export default function Manager({ initial }: { initial: State }) {
       setBusy(false);
     }
   }
+  async function prepareDraft(blog: Blog) {
+    const copy = draftCopy[blog.language_code];
+    if (!copy || !account) return;
+    setBusy(true);
+    setMessage("");
+    setDraftPreview(null);
+    try {
+      const result = await call(`blogs/${blog.id}/drafts/preview`, "POST", {
+        connection_id: account,
+        title: copy.title,
+        content: copy.content,
+      });
+      setDraftPreview(result as DraftPreview);
+      setMessage("미리보기를 저장했습니다. 이 단계에서는 Blogger API를 호출하지 않았습니다.");
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "초안 미리보기 생성 실패");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function confirmDraft() {
+    if (!draftPreview) return;
+    const blog = initial.blogs.find((b) => b.blog_id === draftPreview.blog_id);
+    const details = [
+      `대상: ${blog?.url ?? draftPreview.blog_id}`,
+      `Blog ID: ${draftPreview.blog_id}`,
+      `언어: ${draftPreview.language_code}`,
+      `제목: ${draftPreview.title}`,
+      `본문:\n${draftPreview.content}`,
+      "요청: Blogger posts.insert, isDraft=true (비공개 초안)",
+      "공개 게시·수정·삭제는 수행하지 않습니다.",
+    ].join("\n\n");
+    if (!window.confirm(`${details}\n\n이 초안 1건 생성을 승인합니까?`)) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      const result = await call(`draft-previews/${draftPreview.preview_id}/confirm`, "POST", {
+        confirmation: "I_APPROVE_THIS_PRIVATE_DRAFT",
+      });
+      setMessage(
+        `실제 Blogger 초안 요청 결과: ${result.external_post_id ?? result.error_category ?? result.final_status}. 공개 게시하지 않았습니다.`,
+      );
+      setDraftPreview(null);
+      router.refresh();
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "초안 생성 실패");
+      router.refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
   async function list(blog: string, page = "") {
     setBusy(true);
     setMessage("");
@@ -303,7 +410,7 @@ export default function Manager({ initial }: { initial: State }) {
       </button>
       <p>
         Blogger 전체 권한 scope 하나로 API 읽기와 쓰기 권한 범위를 모두 지원합니다. 연결된 Google 계정의
-        신원은 확인·추정하지 않습니다. 게시·수정·삭제와 자동 발행은 계속 차단됩니다.
+        신원은 확인·추정하지 않습니다. 사용자가 매 요청을 확인한 비공개 초안 테스트 외의 게시·예약·수정·삭제와 자동 발행은 계속 차단됩니다.
         {initial.common_connection.write_oauth_start_blocked && " 사용 가능한 쓰기 연결 또는 진행 중인 동의가 있어 새 연결 생성은 비활성화했습니다."}
       </p>
       <ul>
@@ -339,8 +446,9 @@ export default function Manager({ initial }: { initial: State }) {
         </select>
       </label>
       <p>
-        공통 연결 변경 전 블로그별 현재 매핑은 유지됩니다. Blogger API 비용 게이트: {initial.common_connection.cost_calls_allowed ? "허용" : `차단 (${initial.common_connection.cost_block_reason ?? "확인 필요"})`}.
+        기존 블로그별 읽기 매핑은 유지됩니다. Blogger 전용 비용 정책: {initial.common_connection.cost_calls_allowed ? "소유자 승인 기록으로 허용" : `차단 (${initial.common_connection.cost_block_reason ?? "확인 필요"})`}.
         비용 검증 및 각 블로그 접근 확인 전에는 검증 버튼을 사용할 수 없습니다.
+        {initial.common_connection.cost_approval_at && ` Blogger 전용 승인 기록: ${initial.common_connection.cost_approval_at}.`}
       </p>
       <button
         disabled={busy || !account || !initial.common_connection.cost_calls_allowed}
@@ -365,6 +473,9 @@ export default function Manager({ initial }: { initial: State }) {
           </button>
         </section>
       )}
+      <p>
+        실제 비공개 초안 테스트는 공통 연결의 최근 전체 블로그 접근 검증 후에만 준비할 수 있습니다. 초안 미리보기 저장은 Blogger를 호출하지 않으며, 별도 확인 버튼을 눌러야 해당 블로그에 posts.insert(isDraft=true) 1회가 전송됩니다. 공개 게시와 자동 발행은 비활성입니다.
+      </p>
       <h2>등록 블로그</h2>
       <label>
         게시글 조회 상태
@@ -414,6 +525,12 @@ export default function Manager({ initial }: { initial: State }) {
                 연결·ID 검증
               </button>
               <button
+                disabled={busy || !account || !initial.draft_creation_allowed || !draftCopy[b.language_code]}
+                onClick={() => prepareDraft(b)}
+              >
+                테스트 초안 미리보기
+              </button>
+              <button
                 disabled={
                   busy ||
                   !b.connection_verified_at ||
@@ -444,6 +561,30 @@ export default function Manager({ initial }: { initial: State }) {
           </article>
         ))}
       </div>
+      {draftPreview && (
+        <section aria-label="실제 Blogger 비공개 초안 최종 확인">
+          <h2>실제 Blogger 비공개 초안 최종 확인</h2>
+          <p>대상 블로그: {initial.blogs.find((b) => b.blog_id === draftPreview.blog_id)?.url}</p>
+          <p>Blog ID: {draftPreview.blog_id} · 언어: {draftPreview.language_code}</p>
+          <p>제목: {draftPreview.title}</p>
+          <pre className="content-text">{draftPreview.content}</pre>
+          <p>실제 API 요청: POST posts.insert · isDraft=true. 공개 게시, 수정, 삭제, 자동 발행은 수행되지 않습니다.</p>
+          <button disabled={busy || draftPreview.external_call_made} onClick={confirmDraft}>
+            이 블로그의 비공개 초안 1건 생성 승인
+          </button>
+          <button disabled={busy} onClick={() => setDraftPreview(null)}>취소</button>
+        </section>
+      )}
+      <h2>실제 Blogger 초안 테스트 결과</h2>
+      {initial.draft_results.length ? (
+        <ul>
+          {initial.draft_results.map((draft) => (
+            <li key={draft.preview_id}>
+              {draft.mode === "live_test_draft" ? "실제 Blogger" : "모의"} · {draft.language_code} · Blog ID {draft.blog_id} · Post ID {draft.external_post_id ?? "미생성"} · {draft.final_status ?? "승인 대기"} · HTTP {draft.http_status ?? "미요청"} · 초안 검증 {draft.verification?.checked ? (draft.verification.is_draft ? "비공개 확인" : "상태 불일치") : "미확인"}
+            </li>
+          ))}
+        </ul>
+      ) : <p>실제 초안 생성 결과가 없습니다.</p>}
       {loaded && (
         <section>
           <h2>

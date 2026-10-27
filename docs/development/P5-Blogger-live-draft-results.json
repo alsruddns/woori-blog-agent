@@ -1,0 +1,117 @@
+{
+  "work_id": "P5-BLOGGER-DRAFT-001",
+  "date": "2026-10-27",
+  "timezone": "Asia/Seoul",
+  "branch": "develop",
+  "provider_cost_policy": {
+    "blogger_owner_attestation_recorded": true,
+    "approval_event_id": 174738,
+    "approval_id": "7fc907c7-a0b8-4032-84f2-a86c5c4f2d2b",
+    "approved_at": "2026-10-27T21:58:41.222893+09:00",
+    "scope": ["blogger_read", "private_draft_create", "user_approved_post_update"],
+    "independent_google_pricing_or_cloud_billing_verification": false,
+    "other_provider_gates_changed": false
+  },
+  "oauth_and_access": {
+    "existing_writer_grant_reused": true,
+    "exact_scope_verified": "https://www.googleapis.com/auth/blogger",
+    "refresh_token_present_encrypted": true,
+    "token_refreshed": true,
+    "account_identity_verified": false,
+    "new_oauth_grant_created": false,
+    "blog_mapping_changed": false,
+    "readonly_account_list_get": {
+      "http_status": 200,
+      "verification_event_id": 174746,
+      "accessible_blog_count": 4
+    }
+  },
+  "blogs": [
+    {
+      "language": "ko",
+      "blog_id": "3321654108096579717",
+      "preview_id": "cfb86b6c-17d0-4f79-9f18-4e675c12181f",
+      "title": "Woori Blog Agent 연결 확인 테스트 (비공개 초안)",
+      "preview_status": "pending",
+      "is_draft": true,
+      "external_call_made": false,
+      "post_id": null,
+      "live_insert_status": "awaiting_final_user_approval"
+    },
+    {
+      "language": "en",
+      "blog_id": "5240203250707821039",
+      "preview_id": "58dc89dd-97be-4fa3-a540-2f5784f9a569",
+      "title": "Woori Blog Agent Connection Test (Private Draft)",
+      "preview_status": "pending",
+      "is_draft": true,
+      "external_call_made": false,
+      "post_id": null,
+      "live_insert_status": "awaiting_final_user_approval"
+    },
+    {
+      "language": "zh-CN",
+      "blog_id": "1931836538202286191",
+      "preview_id": "4c2767a1-1063-4c7b-aae9-b8ad1f4e9179",
+      "title": "Woori Blog Agent 连接测试（私人草稿）",
+      "preview_status": "pending",
+      "is_draft": true,
+      "external_call_made": false,
+      "post_id": null,
+      "live_insert_status": "awaiting_final_user_approval"
+    },
+    {
+      "language": "ja",
+      "blog_id": "7562596540375659150",
+      "preview_id": "4fddf8fb-a08e-4c25-8826-6c01aba01935",
+      "title": "Woori Blog Agent 接続テスト（非公開の下書き）",
+      "preview_status": "pending",
+      "is_draft": true,
+      "external_call_made": false,
+      "post_id": null,
+      "live_insert_status": "awaiting_final_user_approval"
+    }
+  ],
+  "request_counts": {
+    "blogger_account_list_get_success": 1,
+    "oauth_refresh_exchange": 1,
+    "posts_insert": 0,
+    "posts_update": 0,
+    "posts_delete": 0,
+    "publish_or_schedule": 0,
+    "automatic_publish": 0
+  },
+  "database_snapshot": {
+    "database": "woori_blog_agent",
+    "role": "woori_app",
+    "content_versions": 360,
+    "audit_events": 1332,
+    "publication_records": 0,
+    "live_test_draft_ledger_rows": 4
+  },
+  "safety": {
+    "automatic_publishing_enabled": false,
+    "publish_ready_true_count": 0,
+    "existing_content_versions_changed": false,
+    "existing_blogger_posts_changed": false,
+    "paid_ai_or_other_paid_provider_calls": 0,
+    "delete_default_blocked": true,
+    "ambiguous_write_auto_retry": false
+  },
+  "verification": {
+    "ruff": "passed",
+    "mypy": "passed (29 source files)",
+    "pytest": "passed (200 tests)",
+    "wheel": "passed",
+    "dashboard_eslint": "passed",
+    "dashboard_typecheck": "passed",
+    "next_production_build": "passed",
+    "secret_history_staged_and_http_scan": "passed",
+    "git_diff_check": "passed"
+  },
+  "git": {
+    "commit": null,
+    "push": "pending",
+    "main_changed": false
+  }
+}

@@ -37,10 +37,14 @@ def classify(response: httpx.Response) -> str:
             reasons = [e.get("reason") for e in response.json().get("error", {}).get("errors", [])]
         except (ValueError, AttributeError, TypeError):
             reasons = []
-        return "free_quota_exceeded" if any(
-            r in ("rateLimitExceeded", "userRateLimitExceeded", "quotaExceeded")
-            for r in reasons
-        ) else "permission_denied"
+        return (
+            "free_quota_exceeded"
+            if any(
+                r in ("rateLimitExceeded", "userRateLimitExceeded", "quotaExceeded")
+                for r in reasons
+            )
+            else "permission_denied"
+        )
     return "invalid_request"
 
 
@@ -137,7 +141,11 @@ class BloggerReader:
         )
 
     def post(self, blog_id: str, post_id: str) -> dict[str, Any]:
-        return self.get("get_post", f"/blogs/{numeric_id(blog_id)}/posts/{numeric_id(post_id)}")
+        return self.get(
+            "get_post",
+            f"/blogs/{numeric_id(blog_id)}/posts/{numeric_id(post_id)}",
+            {"view": "AUTHOR"},
+        )
 
 
 def numeric_id(value: str) -> str:

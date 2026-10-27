@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import time
 from collections import deque
@@ -28,12 +29,12 @@ class FreeQuotaExceeded(httpx.TransportError):
 PROVIDERS: dict[str, dict[str, Any]] = {
     "google_blogger_read": {
         "hosts": {"www.googleapis.com"},
-        "methods": {"GET"},
+        "methods": {"GET", "POST", "PATCH", "PUT"},
         "rpm": 30,
         "rph": 120,
-        "operations": {"blogger_read"},
+        "operations": {"blogger_read", "blogger_draft_create", "blogger_post_update"},
         "paths": ("/blogger/v3/blogs", "/blogger/v3/users/self/blogs"),
-        "cost": "Blogger API per-call pricing/free allocation not explicitly established; account billing state unavailable; blocked until reviewed",
+        "cost": "Blogger-specific project-owner attestation required; current policy approval is read from append-only audit history",
         "commercial_use": "terms apply; review before monetized operation",
         "zero_cost_reviewed": False,
     },
@@ -213,19 +214,72 @@ def billing_credential_names() -> list[str]:
     )
 
 
+BLOGGER_APPROVAL_EVENT = "external.blogger.cost_policy.approved"
+BLOGGER_REVOCATION_EVENT = "external.blogger.cost_policy.revoked"
+BLOGGER_APPROVAL_SCOPE = {
+    "blogger_read",
+    "private_draft_create",
+    "user_approved_post_update",
+}
+
+
+def _blogger_policy_approval() -> dict[str, Any] | None:
+    """Return the latest explicit Blogger-only owner attestation, fail-closed."""
+    try:
+        from .db import connection
+
+        with connection() as conn:
+            row = conn.execute(
+                """SELECT event_type,payload,created_at FROM audit_events
+                WHERE event_type IN (%s,%s) AND payload->>'provider'='google_blogger_read'
+                ORDER BY id DESC LIMIT 1""",
+                (BLOGGER_APPROVAL_EVENT, BLOGGER_REVOCATION_EVENT),
+            ).fetchone()
+    except (psycopg.Error, OSError):
+        return None
+    if (
+        row is None
+        or row["event_type"] != BLOGGER_APPROVAL_EVENT
+        or row["payload"].get("policy_version") != 1
+        or row["payload"].get("actor") != "project_owner_attestation_from_user_instruction"
+        or row["payload"].get("evidence") != "PROJECT_OWNER_CONFIRMS_BLOGGER_API_ZERO_COST"
+    ):
+        return None
+    approved_scope = row["payload"].get("approved_scope")
+    if not isinstance(approved_scope, list) or set(approved_scope) != BLOGGER_APPROVAL_SCOPE:
+        return None
+    return {"created_at": row["created_at"], "scope": sorted(BLOGGER_APPROVAL_SCOPE)}
+
+
+def _blogger_operation_is_approved(operation: str) -> bool:
+    approval = _blogger_policy_approval()
+    if approval is None:
+        return False
+    permitted = {
+        "blogger_read": "blogger_read",
+        "blogger_draft_create": "private_draft_create",
+        "blogger_post_update": "user_approved_post_update",
+    }
+    return permitted.get(operation) in approval["scope"]
+
+
 def status() -> dict[str, Any]:
     blocked = billing_credential_names()
     review_due = datetime.now(UTC).date() > TERMS_REVIEW_DUE
     providers: list[dict[str, Any]] = []
+    blogger_approval = _blogger_policy_approval()
     blocked_providers: list[dict[str, str]] = []
     for name, rule in sorted(PROVIDERS.items()):
+        blogger_reviewed = name == "google_blogger_read" and blogger_approval is not None
+        approval_scope = blogger_approval["scope"] if blogger_approval else []
+        approval_at = blogger_approval["created_at"].isoformat() if blogger_approval else None
         reason = (
             "potentially_billable_credentials_detected"
             if blocked
             else "external_terms_review_expired"
             if review_due
             else None
-            if rule["zero_cost_reviewed"]
+            if rule["zero_cost_reviewed"] or blogger_reviewed
             else "manual_zero_cost_review_required"
         )
         allowed = reason is None
@@ -240,6 +294,9 @@ def status() -> dict[str, Any]:
                 "commercial_use": rule["commercial_use"],
                 "calls_allowed": allowed,
                 "block_reason": reason,
+                "zero_cost_reviewed": bool(rule["zero_cost_reviewed"] or blogger_reviewed),
+                "approval_scope": approval_scope if blogger_reviewed else [],
+                "approval_at": approval_at if blogger_reviewed else None,
             }
         )
         if not allowed:
@@ -296,17 +353,46 @@ def _authorize(provider: str, operation: str, request: httpx.Request) -> None:
         _deny(provider, operation, request, "external_terms_review_expired")
     parsed = request.url
     path_prefixes = rule.get("paths_by_host", {}).get(parsed.host, rule.get("paths", ()))
+    method_allowed = request.method in rule["methods"]
+    operation_path_allowed = any(parsed.path.startswith(prefix) for prefix in path_prefixes)
+    if provider == "google_blogger_read":
+        blog_id = r"[0-9]{1,40}"
+        post_id = r"[0-9]{1,40}"
+        path = parsed.path
+        if operation == "blogger_read":
+            method_allowed = request.method == "GET"
+            operation_path_allowed = bool(
+                path == "/blogger/v3/users/self/blogs"
+                or re.fullmatch(rf"/blogger/v3/blogs/{blog_id}(?:/posts(?:/{post_id})?)?", path)
+                or path == "/blogger/v3/blogs/byurl"
+            )
+        elif operation == "blogger_draft_create":
+            params = list(request.url.params.multi_items())
+            method_allowed = request.method == "POST"
+            operation_path_allowed = bool(
+                re.fullmatch(rf"/blogger/v3/blogs/{blog_id}/posts", path)
+                and params == [("isDraft", "true")]
+            )
+        elif operation == "blogger_post_update":
+            method_allowed = request.method in {"PATCH", "PUT"}
+            operation_path_allowed = bool(
+                re.fullmatch(rf"/blogger/v3/blogs/{blog_id}/posts/{post_id}", path)
+                and not request.url.query
+            )
+        else:
+            method_allowed = False
+            operation_path_allowed = False
     if (
         parsed.scheme != "https"
         or parsed.host not in rule["hosts"]
         or parsed.port not in (None, 443)
-        or request.method not in rule["methods"]
-        or not any(parsed.path.startswith(prefix) for prefix in path_prefixes)
+        or not method_allowed
+        or not operation_path_allowed
         or parsed.username
         or parsed.password
     ):
         _deny(provider, operation, request, "destination_or_method_not_allowlisted")
-    if not rule["zero_cost_reviewed"]:
+    if not rule["zero_cost_reviewed"] and not _blogger_operation_is_approved(operation):
         _deny(provider, operation, request, "provider_cost_unverified")
     # Per-process safety caps supplement durable application quotas. Provider 429
     # and quota errors remain hard stops; this limiter never sleeps or retries.

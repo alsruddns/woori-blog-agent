@@ -16,7 +16,7 @@ async function proxy(
       : request.method === "PUT"
         ? /^limits\/[a-zA-Z0-9-]+$/.test(route)
         : request.method === "POST" &&
-          /^(content|common-connection\/(verify|assign)|blogs\/[a-f0-9-]+\/(connect|disconnect|test)|oauth\/[a-f0-9-]+\/disconnect)$/.test(
+          /^(content|common-connection\/(verify|assign)|blogs\/[a-f0-9-]+\/(connect|disconnect|test)|oauth\/[a-f0-9-]+\/disconnect|blogs\/[a-f0-9-]+\/drafts\/preview|draft-previews\/[a-f0-9-]+\/confirm)$/.test(
             route,
           );
   if (!allowed)

@@ -25,7 +25,7 @@ export default async function Blogger({
       </header>
       <h1>Blogger 연결 관리</h1>
       <aside>
-        읽기 전용 운영 · 실제 생성·수정·삭제·발행과 유료 AI 호출은 차단됩니다.
+        Blogger 전용 프로젝트 소유자 비용 승인이 기록된 경우에만 블로그 조회와 사용자가 확인한 비공개 테스트 초안 1건 생성을 허용합니다. 공개 게시·예약 게시·수정·삭제·자동 발행 및 다른 유료 API는 계속 차단됩니다.
       </aside>
       {query.oauth && (
         <p role="status">

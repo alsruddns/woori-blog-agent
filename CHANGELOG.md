@@ -1,5 +1,11 @@
 # Changelog
 
+## Blogger-only cost attestation and private-draft test path (2026-10-27)
+- Replaced the static Blogger cost block with an append-only owner-attestation event lookup scoped only to Blogger; every other provider cost gate remains unchanged and global billing-credential/terms/quota checks still apply.
+- Added a fixed-payload, one-per-target, two-step live private-draft flow. A local preview binds the exact language, Blog ID, title, body, and `isDraft=true`; the final operator confirmation is required before the single POST. Network ambiguity blocks replay, and successful inserts are re-read by Post ID.
+- Extended `/blogger` to show Blogger-only approval state, a live draft preview/confirmation, and actual-vs-Mock draft results. Public publish/schedule, automatic publishing, deletion, and `publish_ready` remain disabled.
+- No production Blogger write is made until the user separately approves the exact four displayed requests. Google account identity and billing-console state are not inferred.
+
 ## Phase 5-G (shared Blogger OAuth mapping; 2026-10-27)
 - Kept the existing single per-blog OAuth reference; a full-scope Blogger connection can serve both read and write permission ranges without new DB columns. Existing read and duplicate writer records remain preserved.
 - Added duplicate writer-consent prevention, read-only account blog-list verification for all active registered Blog IDs/URLs, a five-minute verification snapshot, and an explicit-approval atomic common-connection assignment with append-only audit events.

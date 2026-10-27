@@ -5,6 +5,7 @@ from fastapi import APIRouter, Query
 from psycopg.types.json import Jsonb
 from pydantic import Field
 
+from . import blogger_drafts as drafts
 from . import blogger_service as blogger
 from . import google_oauth as oauth
 from .db import connection
@@ -41,6 +42,16 @@ class CommonConnectionAssignment(CommonConnectionVerification):
     approval: Literal["I_APPROVE_SHARED_BLOGGER_CONNECTION"]
 
 
+class DraftPreview(Input):
+    connection_id: UUID
+    title: str = Field(min_length=1, max_length=300)
+    content: str = Field(min_length=1, max_length=50000)
+
+
+class DraftConfirmation(Input):
+    confirmation: str = Field(min_length=1, max_length=80)
+
+
 class Limits(Input):
     read_enabled: bool
     requests_per_minute: int = Field(ge=1, le=60)
@@ -51,9 +62,7 @@ class Limits(Input):
 @router.get("/status")
 def status() -> dict[str, Any]:
     cost_provider = next(
-        item
-        for item in external_status()["providers"]
-        if item["name"] == "google_blogger_read"
+        item for item in external_status()["providers"] if item["name"] == "google_blogger_read"
     )
     with connection() as conn:
         write_start = conn.execute(
@@ -66,6 +75,11 @@ def status() -> dict[str, Any]:
             ) AS blocked""",
             ([WRITE_SCOPE], [WRITE_SCOPE]),
         ).fetchone()
+        connected_writer = conn.execute(
+            """SELECT EXISTS (SELECT 1 FROM google_connections
+            WHERE status='connected' AND scopes=%s::text[] AND refresh_ciphertext IS NOT NULL) AS available""",
+            ([WRITE_SCOPE],),
+        ).fetchone()
         return {
             "configured": oauth.configured(),
             "operations": operations_health(),
@@ -73,10 +87,15 @@ def status() -> dict[str, Any]:
             "common_connection": {
                 "cost_calls_allowed": cost_provider["calls_allowed"],
                 "cost_block_reason": cost_provider["block_reason"],
+                "cost_approval_at": cost_provider.get("approval_at"),
+                "cost_approval_scope": cost_provider.get("approval_scope", []),
                 "approval_required": True,
                 "identity_verified": False,
                 "write_oauth_start_blocked": bool(write_start and write_start["blocked"]),
             },
+            "draft_creation_allowed": cost_provider["calls_allowed"]
+            and bool(connected_writer and connected_writer["available"]),
+            "publishing_enabled": False,
             "connections": conn.execute(
                 """SELECT id,label,status,scopes,created_at,expires_at,error_category,
                 updated_at,(refresh_ciphertext IS NOT NULL) AS has_refresh_token
@@ -92,6 +111,7 @@ def status() -> dict[str, Any]:
             "calls": conn.execute(
                 "SELECT * FROM blogger_api_calls ORDER BY id DESC LIMIT 50"
             ).fetchall(),
+            "draft_results": drafts.recent_results(),
             "events": conn.execute(
                 "SELECT id,event_type,blog_id,payload,created_at FROM audit_events WHERE event_type LIKE 'oauth.%' OR event_type LIKE 'blogger.%' ORDER BY id DESC LIMIT 50"
             ).fetchall(),
@@ -100,7 +120,11 @@ def status() -> dict[str, Any]:
 
 @router.post("/oauth/start")
 def start(request: Start) -> dict[str, str]:
-    label = "Google Blogger 쓰기 권한 연결" if request.permission == "write" else "Google Blogger 읽기 연결"
+    label = (
+        "Google Blogger 쓰기 권한 연결"
+        if request.permission == "write"
+        else "Google Blogger 읽기 연결"
+    )
     return oauth.start(request.binding, label, request.permission)
 
 
@@ -121,6 +145,16 @@ def disconnect(connection_id: UUID) -> dict[str, bool]:
 @router.get("/oauth/{connection_id}/blogs")
 def account_blogs(connection_id: UUID) -> dict[str, Any]:
     return blogger.account_blogs(connection_id)
+
+
+@router.post("/blogs/{blog_id}/drafts/preview")
+def draft_preview(blog_id: UUID, request: DraftPreview) -> dict[str, Any]:
+    return drafts.preview(blog_id, request.connection_id, request.title, request.content)
+
+
+@router.post("/draft-previews/{preview_id}/confirm")
+def draft_confirm(preview_id: UUID, request: DraftConfirmation) -> dict[str, Any]:
+    return drafts.confirm(preview_id, request.confirmation)
 
 
 @router.post("/common-connection/verify")

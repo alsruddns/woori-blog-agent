@@ -11,6 +11,8 @@ import psycopg
 import pytest
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
+from psycopg.types.json import Jsonb
+from woori import blogger_drafts as drafts
 from woori import blogger_service as service
 from woori import google_oauth as oauth
 from woori.blogger_writes import BloggerWriter
@@ -37,6 +39,7 @@ def sandbox(monkeypatch: pytest.MonkeyPatch) -> Iterator[psycopg.Connection[dict
             for name in [
                 "google_oauth",
                 "blogger_service",
+                "blogger_drafts",
                 "blogger_writes",
                 "blogger_routes",
                 "multilingual",
@@ -200,9 +203,12 @@ def test_write_oauth_is_separate_scope_and_keeps_existing_read_connection(
     assert "writer-secret-access" not in writer["access_ciphertext"]
     assert "writer-secret-refresh" not in writer["refresh_ciphertext"]
     assert old["status"] == "connected" and old["scopes"] == [READ_SCOPE]
-    assert sandbox.execute(
-        "SELECT oauth_connection_id FROM blogger_blogs WHERE id=%s", (blog_id,)
-    ).fetchone()["oauth_connection_id"] == old_id
+    assert (
+        sandbox.execute(
+            "SELECT oauth_connection_id FROM blogger_blogs WHERE id=%s", (blog_id,)
+        ).fetchone()["oauth_connection_id"]
+        == old_id
+    )
     assert oauth.access_token(writer_id, force=True) == "writer-secret-access"
     refresh = [request for request in calls if request.url.path == "/token"][-1]
     assert b"grant_type=refresh_token" in refresh.content
@@ -232,6 +238,60 @@ def allow_blogger_cost_review(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+def test_live_draft_preview_is_exact_single_use_and_never_calls_google(
+    sandbox: psycopg.Connection[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    writer_id = connected_write_oauth(monkeypatch)
+    calls = google_mock(monkeypatch, token_scope=WRITE_SCOPE)
+    allow_blogger_cost_review(monkeypatch)
+    blogs = sandbox.execute(
+        "SELECT id,language_code,url FROM blogger_blogs WHERE active ORDER BY language_code"
+    ).fetchall()
+    snapshots = []
+    for blog in blogs:
+        blog_id = drafts.TEST_BLOG_IDS[blog["language_code"]]
+        sandbox.execute("UPDATE blogger_blogs SET blog_id=%s WHERE id=%s", (blog_id, blog["id"]))
+        snapshots.append(
+            {
+                "blog_record_id": str(blog["id"]),
+                "language_code": blog["language_code"],
+                "url": blog["url"],
+                "blog_id": blog_id,
+                "registered_blog_id": blog_id,
+                "previous_connection_id": None,
+            }
+        )
+    sandbox.execute(
+        """INSERT INTO audit_events(event_type,payload) VALUES
+        ('blogger.common_connection.verified',%s)""",
+        (
+            Jsonb(
+                {
+                    "connection_id": str(writer_id),
+                    "verified_blog_count": len(blogs),
+                    "blogs": snapshots,
+                }
+            ),
+        ),
+    )
+    ko = next(blog for blog in blogs if blog["language_code"] == "ko")
+    title, content = drafts.TEST_COPY["ko"]
+    first = drafts.preview(ko["id"], writer_id, title, content)
+    second = drafts.preview(ko["id"], writer_id, title, content)
+    assert first["preview_id"] == second["preview_id"]
+    assert first["blog_id"] == drafts.TEST_BLOG_IDS["ko"]
+    assert first["is_draft"] is True and first["external_call_made"] is False
+    assert not [request for request in calls if request.url.host == "www.googleapis.com"]
+    assert (
+        sandbox.execute(
+            "SELECT count(*) AS n FROM blogger_write_operations WHERE idempotency_key LIKE 'live-draft:%'"
+        ).fetchone()["n"]
+        == 1
+    )
+    with pytest.raises(GoogleFailure, match="draft_target_or_test_copy_not_allowlisted"):
+        drafts.preview(ko["id"], writer_id, "changed", "not allowlisted")
+
+
 def test_common_connection_cost_gate_keeps_all_existing_mappings(
     sandbox: psycopg.Connection[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -257,9 +317,12 @@ def test_common_connection_cost_gate_keeps_all_existing_mappings(
     ).fetchall()
     assert after == before
     assert calls == []
-    assert sandbox.execute(
-        "SELECT count(*) AS n FROM audit_events WHERE event_type='blogger.common_connection.verified'"
-    ).fetchone()["n"] == 0
+    assert (
+        sandbox.execute(
+            "SELECT count(*) AS n FROM audit_events WHERE event_type='blogger.common_connection.verified'"
+        ).fetchone()["n"]
+        == 0
+    )
 
 
 def test_common_connection_requires_fresh_read_proof_and_explicit_approval(
@@ -270,9 +333,7 @@ def test_common_connection_requires_fresh_read_proof_and_explicit_approval(
     blogs = sandbox.execute(
         "SELECT id,language_code,url,blog_id FROM blogger_blogs WHERE active ORDER BY language_code,url"
     ).fetchall()
-    sandbox.execute(
-        "UPDATE blogger_blogs SET oauth_connection_id=%s WHERE active", (read_id,)
-    )
+    sandbox.execute("UPDATE blogger_blogs SET oauth_connection_id=%s WHERE active", (read_id,))
     writer_id = connected_write_oauth(monkeypatch)
     allow_blogger_cost_review(monkeypatch)
     calls: list[httpx.Request] = []
@@ -303,9 +364,7 @@ def test_common_connection_requires_fresh_read_proof_and_explicit_approval(
     ).fetchone()["n"] == len(blogs)
 
     with pytest.raises(GoogleFailure, match="explicit_common_connection_approval_required"):
-        service.assign_common_connection(
-            writer_id, uuid.UUID(verified["verification_id"]), "yes"
-        )
+        service.assign_common_connection(writer_id, uuid.UUID(verified["verification_id"]), "yes")
     assigned = service.assign_common_connection(
         writer_id,
         uuid.UUID(verified["verification_id"]),
@@ -317,12 +376,18 @@ def test_common_connection_requires_fresh_read_proof_and_explicit_approval(
     assert sandbox.execute(
         "SELECT count(*) AS n FROM blogger_blogs WHERE oauth_connection_id=%s", (writer_id,)
     ).fetchone()["n"] == len(blogs)
-    assert sandbox.execute(
-        "SELECT status FROM google_connections WHERE id=%s", (read_id,)
-    ).fetchone()["status"] == "connected"
-    assert sandbox.execute(
-        "SELECT count(*) AS n FROM audit_events WHERE event_type='blogger.common_connection.assigned'"
-    ).fetchone()["n"] == 1
+    assert (
+        sandbox.execute("SELECT status FROM google_connections WHERE id=%s", (read_id,)).fetchone()[
+            "status"
+        ]
+        == "connected"
+    )
+    assert (
+        sandbox.execute(
+            "SELECT count(*) AS n FROM audit_events WHERE event_type='blogger.common_connection.assigned'"
+        ).fetchone()["n"]
+        == 1
+    )
     audit_payloads = str(
         sandbox.execute(
             "SELECT payload FROM audit_events WHERE event_type LIKE 'blogger.common_connection.%'"
@@ -340,18 +405,19 @@ def test_existing_connected_write_oauth_prevents_duplicate_oauth_creation(
     with pytest.raises(GoogleFailure, match="existing_write_connection_available"):
         oauth.start("another-writer-" + uuid.uuid4().hex, "duplicate", permission="write")
     assert sandbox.execute("SELECT count(*) AS n FROM google_connections").fetchone()["n"] == before
-    assert sandbox.execute(
-        "SELECT status FROM google_connections WHERE id=%s", (writer_id,)
-    ).fetchone()["status"] == "connected"
+    assert (
+        sandbox.execute(
+            "SELECT status FROM google_connections WHERE id=%s", (writer_id,)
+        ).fetchone()["status"]
+        == "connected"
+    )
 
 
 def test_pending_write_consent_prevents_parallel_oauth_connection_creation(
     sandbox: psycopg.Connection[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     google_mock(monkeypatch)
-    flow = oauth.start(
-        "pending-writer-" + uuid.uuid4().hex, "pending writer", permission="write"
-    )
+    flow = oauth.start("pending-writer-" + uuid.uuid4().hex, "pending writer", permission="write")
     before = sandbox.execute("SELECT count(*) AS n FROM google_connections").fetchone()["n"]
     with pytest.raises(GoogleFailure, match="existing_write_connection_available"):
         oauth.start("parallel-writer-" + uuid.uuid4().hex, "parallel", permission="write")
