@@ -47,6 +47,33 @@ def test_editorial_approval_requires_positive_human_assessments() -> None:
     assert approved.disposition == "approved"
 
 
+def test_publication_approval_requires_explicit_version_and_revocation_reference() -> None:
+    from pydantic import ValidationError
+    from woori.research_routes import PublicationApproval
+
+    values = {
+        "evaluation_id": uuid4(), "content_version_id": uuid4(),
+        "event_key": "publication-approval-key-01", "actor": "Site editor",
+        "action": "approved", "reason": "Reviewed the latest machine-checked version.",
+    }
+    approval = PublicationApproval(**values)
+    assert approval.editorial_version_id is None
+    assert approval.action == "approved"
+    with pytest.raises(ValidationError, match="revocation_must_reference_approval_event"):
+        PublicationApproval(**{**values, "event_key": "publication-revoke-key-01", "action": "revoked"})
+
+
+def test_publication_approval_is_bound_to_current_body_hash_and_revocation() -> None:
+    from woori.research_routes import _publication_approval_status
+
+    approved = [{"action": "approved", "body_sha256": "a" * 64}]
+    assert _publication_approval_status(approved, "a" * 64) == "approved_for_exact_version"
+    assert _publication_approval_status(approved, "b" * 64) == "approval_required"
+    assert _publication_approval_status(
+        [{"action": "revoked", "body_sha256": "a" * 64}], "a" * 64,
+    ) == "revoked"
+
+
 def test_human_review_appends_note_without_approving_publication(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

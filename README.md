@@ -1,5 +1,13 @@
 # woori-blog-agent
 
+## Phase 5-C: local runtime and publication approval
+
+Use `scripts/status.ps1` to inspect loopback listeners, PID, executable, start time, and verified checkout ownership without printing environment secrets. `scripts/start.ps1 -Service api|dashboard` launches a tracked project process and checks the read-only health route. `scripts/stop.ps1` requests graceful window shutdown only for a process launched and recorded by this manager, after port ownership and active TCP clients are checked. Unmanaged existing listeners are left alone; stop them with Ctrl+C in their verified original terminal. `scripts/restart.ps1` stops only when graceful exit is confirmed. AI can be started only by explicitly naming an already-installed model (`-Service ai -AiModel ...`); no download command is provided. The AI stop helper signals only a verified process group and does not force-terminate.
+
+Tests using the application DB connection verify the local operations DB/user identity and wrap the connection in a forced rollback under pytest. Direct migration checks retain their disposable-schema outer rollback. The 12 historical Phase 5-B fixture versions remain immutable; `/research` manuscript rows come from the separate evaluation DB and do not include those operational test fixtures, so no broad title-based hiding rule was added.
+
+Publication approval is an append-only user decision for the latest exact editorial version and body hash. It requires a passing machine check and positive editorial review for that same version. A later edit means a new approval is required; revocation is another event. Approval creates no publication job, leaves `publish_ready=false`, and does not unlock Blogger writes.
+
 ## Phase 4-M editorial review
 
 `/research` now displays the latest saved Fed/SEC evaluation drafts with their language, model, quality failures, source excerpts, linked facts, dates, numbers, keywords, and immutable review history. Reviewers can explicitly start a review, save an edited revision, and rerun the existing deterministic quality gate. Each revision is stored in the append-only operations DB table `article_editorial_versions`; the original evaluation DB version remains unchanged. Review pass is editorial only and never grants Blogger publication permission. No reviewer activity is synthesized automatically, all revisions keep `publish_ready=false`, and actual Blogger writes remain blocked.
@@ -52,14 +60,14 @@ npm run lint
 npm run build
 npm run typecheck
 ```
-Integration tests require the dedicated migrated PostgreSQL database and append identifiable diagnostic events permanently. No test deletes audit history.
+Database-backed pytest application calls use the local `woori_blog_agent`/`woori_app` identity and forced rollback; migration tests use a disposable schema under an outer rollback. The suite verifies that application test writes do not persist. It never deletes audit history.
 
 See [architecture](docs/architecture/overview.md), [operations](docs/operations/runbook.md), [audit](docs/audit/events.md), [decisions](docs/decisions/0001-foundation.md), [development record](docs/development/P1-001.md) and [AGENTS.md](AGENTS.md).
 
 ## Multilingual configuration
 Open http://127.0.0.1:3100/config to manage languages, multiple blogs per language, country profiles, policy schedules, categories and glossaries. The initial four user-provided Blogspot addresses are registered. Google Blog IDs stay NULL until user-consented API verification succeeds in /blogger. Registering a URL alone makes no external request. API/worker startup never loads administrator or migration-owner credentials.
 
-Apply updates using `.venv/Scripts/python scripts/migrate.py` (latest version: 32). Migrations 001–004 are unchanged. Existing version IDs/content and audit records are preserved. Back up the dedicated database first. Configuration tests roll back synthetic records; diagnostic worker tests still append identifiable run history.
+Apply updates using `.venv/Scripts/python scripts/migrate.py` (latest version: 33). Migrations 001–004 are unchanged. Existing version IDs/content and audit records are preserved. Back up the dedicated database first. Configuration, application, and migration tests roll back synthetic records.
 
 BCP 47 tags are normalized (e.g. pt-br -> pt-BR); language identity cannot be renamed in place. Deactivate an old identity and register a replacement to preserve references. New languages receive a default country profile with every capability unverified. Neither registration nor policy activation enables automatic publishing. Country-specific settings are saved as complete profiles, so review all fields before updating an existing language/country pair.
 

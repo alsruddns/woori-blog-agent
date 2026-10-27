@@ -18,6 +18,7 @@ export type State = {
   article_reviews?: Row[];
   article_review_events?: Row[];
   article_editorial_versions?: Row[];
+  publication_approval_events?: Row[];
   operational_readiness?: { captured_from?: string; items?: { key: string; status: string; evidence: unknown }[] };
 };
 type Field = { name: string; label: string; type?: string; optional?: boolean; options?: { value: string; label: string }[] };
@@ -61,7 +62,9 @@ export default function Research({ initial }: { initial: State }) {
       const response = await fetch(`/api/research/${path}`, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const value = await response.json() as Row;
       if (!response.ok) throw new Error(String(value.error ?? JSON.stringify(value.detail ?? "요청 실패")));
-      setMessage("저장했습니다. 대기 작업은 Worker가 처리합니다."); await refresh();
+      setMessage(path === "publication-approvals"
+        ? "발행 의사 기록을 저장했습니다. 실제 게시·예약 실행은 계속 차단되어 있습니다."
+        : "저장했습니다. 대기 작업은 Worker가 처리합니다."); await refresh();
     } catch (error) { setMessage(error instanceof Error ? error.message : "요청 실패"); } finally { setBusy(false); }
   }
   const profiles = data.profiles.filter(p => p.active).map(p => ({ value: str(p, "id"), label: profileLabel(p) }));

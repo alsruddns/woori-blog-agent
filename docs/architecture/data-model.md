@@ -49,6 +49,10 @@ erDiagram
 | search_performance | 블로그·현지화·검색 국가·기간·클릭·노출. 언어 일치 검증. 수집기는 아직 없음 |
 | audit_events | 기존 실행 UUID 및 append-only 이벤트 보존. 추가 language_code/blog_id FK는 nullable이라 기존 이벤트 호환 |
 
+### Phase 5-C publication approval
+
+`publication_approval_events` stores user approval and revocation as append-only events keyed to `evaluation_id`, `content_version_id`, the exact latest `editorial_version_id` (nullable only for the unchanged source version), and the approved body SHA-256. An approval requires an existing positive editorial review for that exact version and a passing machine gate. A new revision changes the target version/hash and therefore requires a new decision. Revocation references the active approval event. This record expresses user intent only: it creates no publishing job, does not update `publish_ready`, and grants no Blogger API permission. Migration 033 adds the table and runtime INSERT/SELECT grants.
+
 `blogger_blogs.blog_id`만 Google의 원격 Blog ID이고, 다른 테이블의 `blog_id` FK는 내부 UUID인 `blogger_blogs.id`를 참조한다. 내부 UUID 생성은 원격 Google ID 확인과 무관하다.
 
 BCP 47은 API의 langcodes/등록 데이터 기반으로 검증·정규화한다. 예: zh-tw → zh-TW, pt-br → pt-BR. 별칭은 표준 태그로 정규화되어 기존 코드와 충돌할 수 있다. 밑줄 입력은 거절한다. DB에는 기본 태그 형태와 대소문자 중복 제약을 추가했다. langcodes는 언어·문자·지역·variant를 검증하지만 모든 확장 서브태그의 의미까지 검증하지 않는다. 확장 태그의 엄격한 의미 검증이 필요한 어댑터는 별도 검증해야 한다. 국가 값은 대문자 2자리/숫자 3자리 형태이며 실제 시장 지원 여부는 어댑터 검증 대상이다.

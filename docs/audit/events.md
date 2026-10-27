@@ -4,6 +4,8 @@ Audit events include bigint event ID, optional run UUID, event_type, object payl
 
 Current emitted events: run.queued, run.started, run.completed, run.failed and run.queued on lease recovery with a reason payload. API creation and audit insertion share a transaction. Duplicate idempotency keys return the existing run without another queued event. Worker lease claim/start and completion/final status each share a transaction.
 
+Migration 033 adds append-only `publication_approval_events`. The authenticated research API emits `article.publication_approval.recorded` with approval event, content/evaluation/editorial version IDs, actor, exact body hash, action, and explicit `live_blogger_write=false` / `publish_ready=false`. A revocation is a new event referencing the approval it cancels. The actor label is supplied by the local administrator; the database records user intent, not an independently verified identity.
+
 Reserved future event families: keyword, research, content, localization, seo, approval, schedule, publish, settings, performance. Implement their producers before claiming these operations are audited. Corrections append a new event referencing the corrected event ID; never mutate the original. Payloads must use allowlisted fields and never include raw prompts, OAuth tokens, passwords or HTTP authorization headers. Current producers write no user payload.
 
 Permanent retention; no automatic purge. Backups and size monitoring are required. Hash chains/external integrity checkpoints remain future work.

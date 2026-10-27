@@ -1,5 +1,6 @@
 """Authenticated research management. Every control is backed by durable state."""
 
+import hashlib
 from datetime import UTC, datetime
 from typing import Any, Literal, Self
 from urllib.parse import urlsplit
@@ -213,6 +214,25 @@ class ArticleReviewProgress(Input):
     reviewer_name: str = Field(min_length=2, max_length=80)
 
 
+class PublicationApproval(Input):
+    evaluation_id: UUID
+    content_version_id: UUID
+    editorial_version_id: UUID | None = None
+    event_key: str = Field(min_length=16, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+    actor: str = Field(min_length=2, max_length=80)
+    action: Literal["approved", "revoked"]
+    reason: str = Field(min_length=10, max_length=2000)
+    supersedes_event_id: UUID | None = None
+
+    @model_validator(mode="after")
+    def valid_revoke(self) -> Self:
+        if self.action == "revoked" and self.supersedes_event_id is None:
+            raise ValueError("revocation_must_reference_approval_event")
+        if self.action == "approved" and self.supersedes_event_id is not None:
+            raise ValueError("approval_cannot_supersede_event")
+        return self
+
+
 class ArticleEditorialRevision(Input):
     evaluation_id: UUID
     content_version_id: UUID
@@ -422,6 +442,15 @@ def state() -> dict[str, Any]:
                 base_body_sha256,existing_remote_post_id,created_at
             FROM article_editorial_versions ORDER BY created_at DESC,id DESC LIMIT 100"""
         ).fetchall()
+        approval_schema = conn.execute(
+            "SELECT to_regclass('public.publication_approval_events') IS NOT NULL AS ready"
+        ).fetchone()
+        approval_table_ready = bool(approval_schema and approval_schema["ready"])
+        result["publication_approval_events"] = conn.execute(
+            """SELECT id,evaluation_id,content_version_id,editorial_version_id,action,
+                event_key,actor,body_sha256,reason,supersedes_event_id,created_at
+                FROM publication_approval_events ORDER BY created_at DESC,id DESC LIMIT 500"""
+        ).fetchall() if approval_table_ready else []
         result["manuscript_publications"] = conn.execute(
             """SELECT j.id,j.content_version_id,j.blog_id,b.language_code,b.url,j.status,
                 j.publication_state,j.scheduled_at,j.updated_at,j.simulation_only,j.adapter_type
@@ -466,6 +495,24 @@ def state() -> dict[str, Any]:
             newest_review = article["review_history"][0] if article["review_history"] else None
             article["editorial_status"] = _editorial_status(newest_event, newest_review)
             article["publication_approval_granted"] = False
+            revision = article["editorial_versions"][0] if article["editorial_versions"] else None
+            current_hash = (
+                str(revision["body_sha256"]).strip()
+                if revision else hashlib.sha256(str(article.get("body", "")).encode("utf-8")).hexdigest()
+            )
+            approval_events = [
+                dict(event) for event in result["publication_approval_events"]
+                if str(event["evaluation_id"]) == evaluation_id
+                and str(event["content_version_id"]) == version_id
+                and (str(event["editorial_version_id"]) if event["editorial_version_id"] else None)
+                    == (str(revision["id"]) if revision else None)
+            ]
+            article["publication_approval_events"] = approval_events
+            article["publication_approval_status"] = _publication_approval_status(
+                approval_events, current_hash,
+            )
+            article["publication_approval_granted"] = article["publication_approval_status"] == "approved_for_exact_version"
+            article["publish_ready"] = False
         result["operational_readiness"] = _operational_readiness_snapshot(conn, result)
         result["publishing_enabled"] = False
         result["paid_ai_enabled"] = False
@@ -835,6 +882,19 @@ def _editorial_status(latest_event: dict[str, Any] | None,
             "reviewed": "reviewed_not_passed",
         }.get(str(latest_review.get("disposition")), "reviewed_not_passed")
     return "unreviewed"
+
+
+def _publication_approval_status(
+    events: list[dict[str, Any]], current_body_sha256: str,
+) -> str:
+    if not events:
+        return "approval_required"
+    latest = events[0]
+    if latest.get("action") == "revoked":
+        return "revoked"
+    if latest.get("action") == "approved" and str(latest.get("body_sha256", "")).strip() == current_body_sha256:
+        return "approved_for_exact_version"
+    return "approval_required"
 
 
 def _evaluation_article(evaluation_id: UUID, content_version_id: UUID) -> dict[str, Any]:
@@ -1317,6 +1377,102 @@ def record_article_review(request: ArticleHumanReview) -> dict[str, Any]:
         )
         return {"review": dict(row), "duplicate": False, "publication_approval_granted": False,
             "publish_ready": False, "content_version_changed": False}
+
+
+@router.post("/publication-approvals", status_code=201)
+def record_publication_approval(request: PublicationApproval) -> dict[str, Any]:
+    """Record a user's intent for one exact checked version; this never publishes."""
+    from psycopg.types.json import Jsonb
+
+    source = _evaluation_article(request.evaluation_id, request.content_version_id)
+    with connection() as conn:
+        approval_schema = conn.execute(
+            "SELECT to_regclass('public.publication_approval_events') IS NOT NULL AS ready"
+        ).fetchone()
+        if not approval_schema or not approval_schema["ready"]:
+            raise HTTPException(503, "Publication approval schema migration 033 is required")
+        existing = conn.execute(
+            "SELECT * FROM publication_approval_events WHERE event_key=%s",
+            (request.event_key,),
+        ).fetchone()
+        if existing:
+            return {"event": dict(existing), "duplicate": True, "publish_ready": False,
+                "live_blogger_write": False}
+        conn.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (str(request.evaluation_id),))
+        latest = conn.execute(
+            """SELECT id,body_sha256,machine_passed FROM article_editorial_versions
+            WHERE evaluation_id=%s AND base_content_version_id=%s
+            ORDER BY revision_number DESC LIMIT 1""",
+            (request.evaluation_id, request.content_version_id),
+        ).fetchone()
+        latest_id = str(latest["id"]) if latest else None
+        requested_id = str(request.editorial_version_id) if request.editorial_version_id else None
+        if latest_id != requested_id:
+            raise HTTPException(409, "Approval must target the latest immutable editorial version")
+        body_hash = (
+            str(latest["body_sha256"]).strip()
+            if latest else hashlib.sha256(str(source.get("saved_body", "")).encode("utf-8")).hexdigest()
+        )
+        machine_passed = bool(latest["machine_passed"]) if latest else bool(source.get("machine_passed"))
+        if request.action == "approved":
+            if not machine_passed:
+                raise HTTPException(409, "Quality checks must pass before publication approval")
+            review = conn.execute(
+                """SELECT disposition FROM article_human_reviews WHERE evaluation_id=%s
+                AND content_version_id=%s AND editorial_version_id IS NOT DISTINCT FROM %s
+                ORDER BY created_at DESC,id DESC LIMIT 1""",
+                (request.evaluation_id, request.content_version_id, request.editorial_version_id),
+            ).fetchone()
+            if not review or review["disposition"] != "approved":
+                raise HTTPException(409, "Explicit editorial review approval is required first")
+            previous = conn.execute(
+                """SELECT id,action FROM publication_approval_events
+                WHERE evaluation_id=%s AND content_version_id=%s
+                  AND editorial_version_id IS NOT DISTINCT FROM %s
+                ORDER BY created_at DESC,id DESC LIMIT 1""",
+                (request.evaluation_id, request.content_version_id, request.editorial_version_id),
+            ).fetchone()
+            if previous and previous["action"] == "approved":
+                raise HTTPException(409, "This exact manuscript version already has an active approval")
+            supersedes = None
+        else:
+            prior = conn.execute(
+                """SELECT id,evaluation_id,content_version_id,editorial_version_id,action
+                FROM publication_approval_events WHERE id=%s""",
+                (request.supersedes_event_id,),
+            ).fetchone()
+            current = conn.execute(
+                """SELECT id,action FROM publication_approval_events
+                WHERE evaluation_id=%s AND content_version_id=%s
+                ORDER BY created_at DESC,id DESC LIMIT 1""",
+                (request.evaluation_id, request.content_version_id),
+            ).fetchone()
+            if (not prior or prior["action"] != "approved" or not current
+                or str(current["id"]) != str(request.supersedes_event_id)
+                or str(prior["evaluation_id"]) != str(request.evaluation_id)
+                or str(prior["content_version_id"]) != str(request.content_version_id)
+                or (str(prior["editorial_version_id"]) if prior["editorial_version_id"] else None) != requested_id):
+                raise HTTPException(409, "Only the current approval for this exact version may be revoked")
+            supersedes = request.supersedes_event_id
+        row = conn.execute(
+            """INSERT INTO publication_approval_events(evaluation_id,content_version_id,
+                editorial_version_id,action,event_key,actor,body_sha256,reason,supersedes_event_id)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
+            (request.evaluation_id, request.content_version_id, request.editorial_version_id,
+             request.action, request.event_key, request.actor, body_hash, request.reason, supersedes),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(409, "Publication approval event could not be recorded")
+        conn.execute(
+            "INSERT INTO audit_events(event_type,payload) VALUES ('article.publication_approval.recorded',%s)",
+            (Jsonb({"approval_event_id": str(row["id"]), "evaluation_id": str(request.evaluation_id),
+                "content_version_id": str(request.content_version_id),
+                "editorial_version_id": requested_id, "action": request.action,
+                "actor": request.actor, "body_sha256": body_hash,
+                "live_blogger_write": False, "publish_ready": False}),),
+        )
+        return {"event": dict(row), "duplicate": False, "publish_ready": False,
+            "live_blogger_write": False, "automatic_publication": False}
 
 
 @router.post("/versions/{version_id}/validate")

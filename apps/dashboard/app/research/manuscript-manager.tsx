@@ -26,6 +26,8 @@ function ArticleEditor({ article, blogs, busy, submit }: {
   const reviews = (article.review_history as Row[] | undefined) ?? [];
   const publicationJobs = (article.publication_jobs as Row[] | undefined) ?? [];
   const publishedMappings = (article.published_mappings as Row[] | undefined) ?? [];
+  const approvalEvents = (article.publication_approval_events as Row[] | undefined) ?? [];
+  const latestApproval = approvalEvents[0];
   const sourceBody = text(article, "body");
   const sourceRows = (article.sources as Row[] | undefined) ?? [];
   const paragraphs = sourceBody.split(/\n\s*\n/).filter(Boolean);
@@ -35,6 +37,11 @@ function ArticleEditor({ article, blogs, busy, submit }: {
   const editor = useRef<HTMLTextAreaElement>(null);
   const matchingBlogs = blogs.filter(blog => text(blog, "language_code") === text(article, "language_code"));
   const baseBody = text(latest ?? {}, "body") || sourceBody;
+  const machinePassed = latest ? Boolean(latest.machine_passed) : Boolean(article.machine_passed);
+  const approvedReviewVersionId = text(latest ?? {}, "id");
+  const latestVersionHasPositiveEditorialReview = reviews.some(review =>
+    text(review, "disposition") === "approved"
+    && (text(review, "editorial_version_id") || "") === approvedReviewVersionId);
 
   function insert(before: string, after = "", sample = "선택한 문장") {
     const element = editor.current;
@@ -101,7 +108,7 @@ function ArticleEditor({ article, blogs, busy, submit }: {
 
   return <article style={{ border: "1px solid #bbb", padding: 16, marginBlock: 16 }}>
     <h3>{text(article, "topic")} · {text(article, "language_code")} · 원고 v{text(article, "content_version")}</h3>
-    <p>편집 검토: {status} · 기계 검사: {article.machine_passed ? "통과" : "보류"} · 발행 승인: 별도 필요 · 실제 발행 차단 · publish_ready=false</p>
+    <p>편집 검토: {status} · 기계 검사: {machinePassed ? "통과" : "보류"} · 발행 승인: {text(article, "publication_approval_status") || "확인 필요"} · 실제 발행 차단 · publish_ready=false</p>
     {publicationJobs.length > 0 ? <p>발행 작업 기록: {publicationJobs.map(job => `${text(job, "language_code")} ${text(job, "url")} ${text(job, "publication_state")} ${text(job, "simulation_only") === "true" ? "Mock" : "운영 상태 확인 필요"}`).join(" · ")}</p> : <p>발행 작업: 기록 없음</p>}
     {publishedMappings.length > 0 ? <p>기존 Blogger 게시 매핑: {publishedMappings.map(record => `${text(record, "language_code")} ${text(record, "url")} · 기존 게시글 ID ${text(record, "remote_post_id")} · 게시 ${text(record, "published_at")}`).join(" / ")} — 향후 수정은 해당 ID의 기존 글 갱신 대상입니다. 현재 실제 쓰기는 차단되어 있습니다.</p> : <p>이 원고 버전에 연결된 실제 Blogger 게시글 ID 없음</p>}
     <details><summary>출처·사실 원장·실패 이유</summary>
@@ -182,6 +189,43 @@ function ArticleEditor({ article, blogs, busy, submit }: {
       <p>편집 검토 통과는 발행 승인과 분리됩니다. 실제 Blogger 게시 및 예약 실행은 이 화면에서 활성화되지 않습니다.</p>
       <button disabled={busy}>사람 검토 결과 추가</button>
     </form>
+    <section aria-label="정확한 원고 버전에 대한 발행 의사 승인" style={{ borderTop: "1px solid #bbb", marginTop: 20, paddingTop: 12 }}>
+      <h4>사용자 발행 승인 기록</h4>
+      <p>승인은 선택한 불변 원고 버전과 본문 해시에만 연결됩니다. 새 편집본을 저장하면 이전 승인은 적용되지 않습니다. 이 기록은 게시 작업을 만들지 않으며 Blogger 쓰기와 자동 발행은 차단 상태입니다.</p>
+      {approvalEvents.map(event => <p key={text(event, "id")}>{text(event, "action")} · {text(event, "actor")} · {text(event, "created_at")} · 버전 해시 {text(event, "body_sha256")}</p>)}
+      <form onSubmit={event => {
+        event.preventDefault();
+        const form = new FormData(event.currentTarget);
+        void submit("publication-approvals", {
+          evaluation_id: text(article, "evaluation_id"), content_version_id: text(article, "content_version_id"),
+          editorial_version_id: text(latest ?? {}, "id") || null, event_key: crypto.randomUUID(),
+          actor: String(form.get("actor") ?? ""), reason: String(form.get("reason") ?? ""),
+          action: "approved", supersedes_event_id: null,
+        });
+      }}>
+        <label>승인자 <input name="actor" required minLength={2} maxLength={80}/></label>
+        <label>승인 근거 <input name="reason" required minLength={10} maxLength={2000}/></label>
+        <button disabled={busy || !machinePassed || !latestVersionHasPositiveEditorialReview
+          || text(article, "publication_approval_status") === "approved_for_exact_version"}>
+          정확한 원고 버전 승인 기록
+        </button>
+      </form>
+      {latestApproval && text(article, "publication_approval_status") === "approved_for_exact_version" && <form onSubmit={event => {
+        event.preventDefault();
+        const form = new FormData(event.currentTarget);
+        void submit("publication-approvals", {
+          evaluation_id: text(article, "evaluation_id"), content_version_id: text(article, "content_version_id"),
+          editorial_version_id: text(latest ?? {}, "id") || null, event_key: crypto.randomUUID(),
+          actor: String(form.get("actor") ?? ""), reason: String(form.get("reason") ?? ""),
+          action: "revoked", supersedes_event_id: text(latestApproval, "id"),
+        });
+      }}>
+        <label>승인 취소자 <input name="actor" required minLength={2} maxLength={80}/></label>
+        <label>취소 사유 <input name="reason" required minLength={10} maxLength={2000}/></label>
+        <button disabled={busy}>발행 승인 취소 기록</button>
+      </form>}
+      <p>현재 모의 발행 준비 단계입니다. 이 화면에서는 실제 게시 요청이 전송되지 않습니다.</p>
+    </section>
   </article>;
 }
 

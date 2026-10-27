@@ -50,6 +50,18 @@ def rollback_lab(
         )
 
 
+def test_pytest_application_connections_force_rollback() -> None:
+    # Tests that accidentally use the normal application connection cannot
+    # persist their synthetic writes to the operations database.
+    with connection() as conn:
+        before = conn.execute("SELECT count(*) AS n FROM content_groups").fetchone()["n"]
+    with connection() as conn:
+        conn.execute("INSERT INTO content_groups DEFAULT VALUES")
+    with connection() as conn:
+        after = conn.execute("SELECT count(*) AS n FROM content_groups").fetchone()["n"]
+    assert before == after
+
+
 def test_database_audit_and_worker(
     rollback_lab: psycopg.Connection[dict[str, object]],
 ) -> None:

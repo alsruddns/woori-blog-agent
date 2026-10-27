@@ -327,6 +327,15 @@ def test_legacy_migration_preserves_content_and_audits() -> None:
             "022_fact_registry_stage.sql",
             "023_worker_heartbeats.sql",
             "024_evaluation_isolation_quotas.sql",
+            "025_publication_safety.sql",
+            "026_publication_scheduling.sql",
+            "027_article_human_reviews.sql",
+            "028_editorial_review_decision.sql",
+            "029_editorial_versions_and_progress.sql",
+            "030_manuscript_editing_metadata.sql",
+            "031_editorial_existing_post_link.sql",
+            "032_editorial_base_hash.sql",
+            "033_publication_approval.sql",
         ]:
             content = (
                 (root / "scripts" / migration)
@@ -350,6 +359,14 @@ def test_legacy_migration_preserves_content_and_audits() -> None:
             conn.execute("SELECT count(*) FROM blogger_blogs WHERE blog_id IS NULL").fetchone()[0]
             == 4
         )
+        assert conn.execute(
+            "SELECT count(*) FROM publication_approval_events"
+        ).fetchone()[0] == 0
+        assert conn.execute(
+            "SELECT has_table_privilege(current_user,'publication_approval_events','INSERT')"
+        ).fetchone()[0]
+        with pytest.raises(psycopg.Error), conn.transaction():
+            conn.execute("DELETE FROM publication_approval_events")
         for statement in [
             "UPDATE audit_events SET event_type=event_type",
             "UPDATE content_versions SET title=title",

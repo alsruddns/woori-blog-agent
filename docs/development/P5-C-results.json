@@ -1,0 +1,88 @@
+{
+  "phase": "5-C",
+  "work_id": "P5-C-001",
+  "recorded_at": "2026-10-27",
+  "timezone": "Asia/Seoul",
+  "branch": "develop",
+  "baseline": "cac5d5796d0356840dd2fbcb575dc68eb5abd092",
+  "server_management": {
+    "scripts": [
+      "scripts/status.ps1",
+      "scripts/start.ps1",
+      "scripts/stop.ps1",
+      "scripts/restart.ps1",
+      "scripts/server-common.ps1"
+    ],
+    "powershell_parse": "passed",
+    "api_port": {"port": 8100, "pid": 32432, "state": "listening", "manager_owned": false},
+    "dashboard_port": {"port": 3100, "pid": 37740, "state": "listening", "manager_owned": false},
+    "local_ai": {"port": 11435, "pid": 39500, "state": "listening", "manager_owned": false, "model_restart_attempted": false},
+    "established_http_clients_observed": 0,
+    "safe_stop_refusal_verified": true,
+    "occupied_port_start_refusal_verified": true,
+    "start_stop_cycle": "not_run_on_existing_unmanaged_processes",
+    "latest_dashboard_api_applied": false,
+    "live_health_gets": {"api_health": 200, "research_state": 200, "dashboard_research": 200},
+    "stale_build_indicators": {"approval_fields_present": false, "latest_editor_marker_present": false},
+    "browser_editor_save_flow": "not_verified"
+  },
+  "database_isolation": {
+    "test_connection_guard": "local operations DB, woori_app, loopback identity required under pytest",
+    "test_application_transactions": "forced rollback",
+    "direct_migration_tests": "disposable schema under outer rollback",
+    "dedicated_test_login_provisioned": false,
+    "operations_schema_before_after": 32,
+    "content_versions_before_after": 360,
+    "audit_events_before_after": 1306,
+    "editorial_versions": 0,
+    "publish_ready_true": 0,
+    "operations_migration_033_applied": false,
+    "phase5b_test_fixture_rows": 12,
+    "fixture_rows_modified_or_deleted": 0,
+    "fixture_rows_in_manuscript_query": false,
+    "no_operations_db_change_during_phase": true
+  },
+  "publication_approval": {
+    "migration": 33,
+    "schema_test": "passed in disposable schema within forced rollback",
+    "api_and_ui_implemented": true,
+    "approval_bound_to_exact_editorial_version_and_body_hash": true,
+    "requires_latest_positive_editorial_review": true,
+    "revision_requires_new_approval": true,
+    "revocation_append_only": true,
+    "creates_publication_job": false,
+    "publish_ready_enabled": false,
+    "live_blogger_write_enabled": false,
+    "active_on_current_live_server": false,
+    "human_review_or_approval_performed": false
+  },
+  "safety": {
+    "blogger_write_requests": 0,
+    "paid_api_calls": 0,
+    "local_ai_inference": 0,
+    "automatic_publication_enabled": false,
+    "publish_ready_true": 0
+  },
+  "verification": {
+    "pytest": "174 passed",
+    "ruff": "passed",
+    "mypy": "passed (28 source files)",
+    "wheel": "passed (isolated build)",
+    "dashboard_eslint": "passed",
+    "dashboard_typecheck": "passed",
+    "dashboard_production_build": "passed",
+    "secrets_scan": "passed",
+    "compileall": "passed",
+    "powershell_parser": "passed",
+    "migration_033": "passed in rollback-only disposable-schema test",
+    "git_diff_check": "passed"
+  },
+  "limitations": [
+    "A separate test database login is not provisioned; pytest application connections are bound to forced rollback and checked against the local woori_app identity.",
+    "Existing Dashboard/API processes are unmanaged by the new lifecycle scripts and were not stopped; latest live UI integration remains unverified.",
+    "Migration 033 was not applied to the operations database, so user approval controls require a planned schema migration before live use.",
+    "Blogger cost remains provider_cost_unverified and all real writes remain locked."
+  ],
+  "commit": "see phase commit in Git history",
+  "push": "pending"
+}

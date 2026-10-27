@@ -82,7 +82,7 @@ process = subprocess.Popen(
     cwd=root,
     stdout=subprocess.DEVNULL,
     stderr=subprocess.DEVNULL,
-    creationflags=subprocess.CREATE_NO_WINDOW,
+    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0,
 )
 time.sleep(1.5)
 if process.poll() is not None:
@@ -97,6 +97,9 @@ if process.poll() is not None:
             "backend": backend,
             "engine_directory": engine_directory,
             "gpu_layers": 0 if backend == "cpu" else 20,
+            "project_root": str(root.resolve()),
+            "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "process_group_managed": sys.platform == "win32",
         }
     ),
     encoding="utf-8",

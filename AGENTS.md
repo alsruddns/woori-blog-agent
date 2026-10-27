@@ -145,3 +145,8 @@ OAuth 토큰·API Key·비밀번호를 코드에 저장하지 않는다. .env �
 - Tests that create content, jobs, revisions, or audit events must run in an explicitly disposable isolated database or inside a forced-rollback outer transaction. API and Worker connections used by the same test must share that isolation boundary.
 - Tests must verify that operational content and audit counts remain unchanged after teardown. Never rely on test names, random keys, or later cleanup to make writes to the operational `.env` database safe.
 - Do not delete leaked test rows from immutable operational tables. Diagnose and preserve them, then fix the test isolation before rerunning.
+
+## Phase 5-C local runtime and publication approval
+- Manage only processes whose executable/command path and recorded checkout ownership match this repository. Check port owners and active connections before shutdown; request graceful exit and never force-kill a process or clear a live PID record. Unmanaged listeners require operator action in their original terminal.
+- During pytest, application database connections must verify the expected local operations database identity and use an outer forced-rollback transaction. Direct migration tests must target a disposable schema under their own outer rollback. Do not rely on teardown deletes or fixture naming to protect operations data.
+- Record publication approval as an append-only human event bound to the exact latest immutable editorial version and body hash. Approval requires a passing machine gate and an explicit positive editorial review for that version; edits invalidate applicability, revocation appends an event, and approval never changes `publish_ready` or enables live Blogger writes.

@@ -1,5 +1,11 @@
 # Changelog
 
+## Phase 5-C (local server lifecycle and explicit publication approval; 2026-10-27)
+- Added PowerShell status/start/stop/restart management for project-owned Dashboard/API processes with PID reuse checks, executable and checkout validation, port ownership checks, active-client checks, graceful-only shutdown, and no forced termination. Added local llama.cpp status/start support and a verified Ctrl+Break shutdown attempt; unmanaged existing processes are deliberately not stopped.
+- Added test-time DB identity validation and forced rollback around application DB connections. The existing Phase 5-B 12 fixture versions remain immutable and are not in the evaluation-DB manuscript list; no content or audit rows were hidden, changed, or removed.
+- Added migration 033 and an append-only publication approval/revocation event bound to the exact latest editorial version and body hash. Approval requires both machine quality pass and a positive human editorial review, and never creates a job or changes `publish_ready`.
+- Latest live Dashboard/API restart remains unverified because current listeners were started outside the new manager and have no verified graceful control record. No process was stopped; browser editor save flow remains unverified. Blogger writes and paid calls remain blocked.
+
 ## Phase 5-B (operations DB integrity and editor integration; 2026-10-27)
 - Traced the 12 operational content versions after the 348-row checkpoint to four unisolated runs of the direct-SQL lease recovery integration test; preserved the immutable fixture rows and associated diagnostic audit history.
 - Changed the integration-test API/Worker connections to share a forced-rollback transaction and added persisted content/audit count assertions; added a permanent AGENTS.md rule against committed test fixtures in the operational database.
