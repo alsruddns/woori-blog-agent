@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any, Literal, cast
 from urllib.parse import urlsplit
 from uuid import UUID
@@ -175,6 +175,76 @@ class ImportSubmission(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     submitted_by: str = Field(min_length=2, max_length=100)
     item: ContentImport
+
+
+class ScheduledImportOrigin(BaseModel):
+    """Untrusted provenance asserted by a locally produced scheduled export."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    task_type: Literal[
+        "market_close_kr", "market_close_jp", "market_close_cn", "market_close_us",
+        "weekly_finance",
+    ]
+    task_id: str = Field(min_length=3, max_length=128, pattern=r"^[A-Za-z0-9_.:-]+$")
+    occurrence_id: str = Field(min_length=8, max_length=160, pattern=r"^[A-Za-z0-9_.:-]+$")
+    executed_at: datetime
+    market_date: date | None = None
+    target_language_code: str = Field(min_length=2, max_length=35)
+    target_blog_id: str = Field(min_length=5, max_length=32, pattern=r"^[0-9]+$")
+    target_blog_url: HttpUrl
+    source_as_of: datetime
+
+    @field_validator("executed_at", "source_as_of")
+    @classmethod
+    def scheduled_timestamp_has_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("scheduled_timestamp_requires_timezone")
+        return value
+
+    @field_validator("target_blog_url")
+    @classmethod
+    def blogger_url_is_canonical_https(cls, value: HttpUrl) -> HttpUrl:
+        parts = urlsplit(str(value))
+        if (
+            parts.scheme != "https" or not parts.hostname or parts.username or parts.password
+            or parts.path not in ("", "/") or parts.query or parts.fragment or parts.port
+        ):
+            raise ValueError("scheduled_target_must_be_canonical_blogspot_url")
+        if not parts.hostname.endswith(".blogspot.com"):
+            raise ValueError("scheduled_target_must_be_registered_blogspot_url")
+        return value
+
+    @model_validator(mode="after")
+    def market_occurrence_has_session_date(self) -> ScheduledImportOrigin:
+        if self.task_type.startswith("market_close_") and self.market_date is None:
+            raise ValueError("market_close_requires_market_date")
+        if self.source_as_of > self.executed_at:
+            raise ValueError("source_as_of_cannot_follow_scheduled_execution")
+        return self
+
+
+class ScheduledImportEnvelope(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    schema_version: Literal["woori-scheduled-content-import/1.0"]
+    submitted_by: str = Field(min_length=2, max_length=100)
+    item: ContentImport
+    scheduled_origin: ScheduledImportOrigin
+
+    @model_validator(mode="after")
+    def schedule_and_manuscript_agree(self) -> ScheduledImportEnvelope:
+        if self.item.generation_method != "chatgpt_scheduled_export":
+            raise ValueError("scheduled_envelope_requires_scheduled_export_method")
+        if self.item.language_code != self.scheduled_origin.target_language_code:
+            raise ValueError("scheduled_target_language_mismatch")
+        required_language = {
+            "market_close_kr": "ko",
+            "market_close_jp": "ja",
+            "market_close_cn": "zh-CN",
+            "market_close_us": "en",
+        }.get(self.scheduled_origin.task_type)
+        if required_language and self.item.language_code != required_language:
+            raise ValueError("market_task_language_mismatch")
+        return self
 
 
 class ImportVersionRequest(BaseModel):
@@ -511,6 +581,80 @@ def submit_content_import(request: ImportSubmission) -> dict[str, Any]:
             "blogger_write_performed": False, "source_fetch_performed": False,
             "human_review_required": True,
             "content_version_id": str(content_version_id) if content_version_id else None}
+
+
+@router.post("/{import_id}/scheduled-origin", status_code=201)
+def record_scheduled_import_origin(
+    import_id: UUID, request: ScheduledImportOrigin
+) -> dict[str, Any]:
+    """Append an idempotent audit event for an untrusted scheduled-task claim."""
+    canonical = request.model_dump_json(exclude_none=False)
+    origin_sha256 = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    event_key = hashlib.sha256(
+        f"scheduled-origin:{request.task_id}:{request.occurrence_id}".encode()
+    ).hexdigest()
+    target_url = f"https://{urlsplit(str(request.target_blog_url)).hostname}".lower()
+    with connection() as conn:
+        imported = conn.execute(
+            "SELECT generation_method,language_code FROM external_content_imports WHERE id=%s FOR SHARE",
+            (import_id,),
+        ).fetchone()
+        if not imported:
+            raise HTTPException(404, "Scheduled import was not found")
+        if imported["generation_method"] != "chatgpt_scheduled_export":
+            raise HTTPException(409, "Import was not received as a scheduled export")
+        if imported["language_code"] != request.target_language_code:
+            raise HTTPException(409, "Scheduled target language does not match the imported manuscript")
+        blog = conn.execute(
+            """SELECT id,url,language_code FROM blogger_blogs
+            WHERE blog_id=%s AND language_code=%s AND active FOR SHARE""",
+            (request.target_blog_id, request.target_language_code),
+        ).fetchone()
+        if not blog or str(blog["url"]).rstrip("/").lower() != target_url:
+            raise HTTPException(409, "Scheduled target does not match an active registered Blogger blog")
+        conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (event_key,))
+        existing = conn.execute(
+            """SELECT id,payload FROM audit_events
+            WHERE event_type='content.import.scheduled_origin_recorded'
+              AND payload->>'event_key'=%s FOR UPDATE""",
+            (event_key,),
+        ).fetchone()
+        if existing:
+            if (
+                existing["payload"].get("origin_sha256") != origin_sha256
+                or existing["payload"].get("import_id") != str(import_id)
+            ):
+                raise HTTPException(409, "Scheduled occurrence was already recorded with different metadata")
+            return {"audit_event_id": existing["id"], "duplicate": True,
+                    "provenance_verified": False, "auto_publication_enabled": False}
+        payload = {
+            "event_key": event_key,
+            "import_id": str(import_id),
+            "task_type": request.task_type,
+            "task_id": request.task_id,
+            "occurrence_id": request.occurrence_id,
+            "executed_at": request.executed_at.isoformat(),
+            "market_date": request.market_date.isoformat() if request.market_date else None,
+            "target_language_code": request.target_language_code,
+            "target_blog_id": request.target_blog_id,
+            "target_blog_url": target_url,
+            "source_as_of": request.source_as_of.isoformat(),
+            "origin_sha256": origin_sha256,
+            "provenance_self_reported": True,
+            "external_task_identity_verified": False,
+            "generation_ready": False,
+            "publish_ready": False,
+            "blogger_write_performed": False,
+        }
+        row = conn.execute(
+            """INSERT INTO audit_events(event_type,blog_id,language_code,payload)
+            VALUES ('content.import.scheduled_origin_recorded',%s,%s,%s) RETURNING id""",
+            (blog["id"], request.target_language_code, Jsonb(payload)),
+        ).fetchone()
+        if not row:
+            raise HTTPException(503, "Scheduled import audit event could not be stored")
+        return {"audit_event_id": row["id"], "duplicate": False,
+                "provenance_verified": False, "auto_publication_enabled": False}
 
 
 @router.post("/{import_id}/assessment", status_code=201)

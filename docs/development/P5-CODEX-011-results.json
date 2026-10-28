@@ -1,0 +1,108 @@
+{
+  "task_id": "P5-CODEX-011",
+  "recorded_at": "2026-10-29T01:12:00+09:00",
+  "branch": "develop",
+  "base_commit": "c52f0c5",
+  "status": "partial_safe_handoff_implemented",
+  "official_product_review": {
+    "sources": [
+      "https://help.openai.com/en/articles/10291617-scheduled-tasks-in-chatgpt",
+      "https://help.openai.com/en/articles/20001275-chatgpt-work-and-codex",
+      "https://developers.openai.com/training/walkthroughs/scheduled-tasks"
+    ],
+    "findings": {
+      "chatgpt_project_scheduled_task_can_read_project_files": false,
+      "desktop_work_can_use_user_permitted_local_files": true,
+      "local_file_work_requires_pc_and_app_running": true,
+      "generic_webhook_or_local_api_delivery_documented": false,
+      "scheduled_file_creation_verified_for_this_account": false,
+      "scheduled_task_created": false
+    }
+  },
+  "implemented": {
+    "scheduled_import_contract": "woori-scheduled-content-import/1.0",
+    "existing_article_contract_preserved": "woori-content-import/1.0",
+    "loopback_inbox_cli": true,
+    "atomic_ready_file_convention": true,
+    "states": ["ready", "processing", "processed", "failed", "quarantine"],
+    "max_files_per_invocation": 4,
+    "restart_recovery": true,
+    "scheduled_origin_append_only_audit": true,
+    "registered_blog_identity_check": true,
+    "duplicate_occurrence_block": true,
+    "machine_quality_seo_html_assessment": true,
+    "human_review_required": true,
+    "generation_ready": false,
+    "publish_ready": false,
+    "real_blogger_writes_enabled": false,
+    "dashboard_changed": false,
+    "task_templates_written": [
+      "market-close-kr",
+      "market-close-jp",
+      "market-close-cn",
+      "market-close-us",
+      "weekly-finance"
+    ]
+  },
+  "actual_execution": {
+    "google_trends_requests": 0,
+    "gpt_scheduled_runs": 0,
+    "scheduled_import_real_files": 0,
+    "scheduled_import_mock_http_runs": 1,
+    "import_testclient_database_writes": "forced rollback in woori_blog_agent_test",
+    "operations_database_connected": false,
+    "operations_database_mutations": 0,
+    "migrations_applied": 0,
+    "blogger_api_requests": 0,
+    "blogger_posts_created_or_modified": 0,
+    "paid_ai_api_calls": 0,
+    "additional_credits_used": 0,
+    "browser_e2e": "not run; no Dashboard UI change"
+  },
+  "capability_status": {
+    "trends_collection": "implemented manual endpoint; hourly schedule not implemented or run",
+    "gpt_scheduled_authoring": "templates only; task creation and account execution unverified",
+    "local_scheduled_import": "implemented and mock-tested; no real file processed",
+    "independent_language_generation": "no production provider attached",
+    "quality_seo_html": "existing deterministic import assessment invoked by inbox; factual and rights review remains human",
+    "blogger_auto_publishing": "fake-only; disabled and blocked",
+    "public_post_urls": []
+  },
+  "verification": {
+    "scripts_verify_ps1": "passed",
+    "pytest": {"passed": 274, "failed": 0},
+    "ruff": "passed",
+    "mypy": "passed; 39 source files",
+    "python_wheel": "passed",
+    "dashboard_eslint": "passed",
+    "dashboard_production_build": "passed",
+    "dashboard_typescript": "passed",
+    "git_diff_check": "passed",
+    "new_scheduled_import_and_import_tests": {"passed": 17, "failed": 0}
+  },
+  "changed_files": [
+    "services/api/woori/content_imports.py",
+    "services/api/woori/scheduled_import_inbox.py",
+    "services/api/tests/test_content_imports.py",
+    "services/api/tests/test_scheduled_import_inbox.py",
+    "scripts/import-scheduled-content.py",
+    "docs/schemas/woori-scheduled-content-import-1.0.schema.json",
+    "docs/operations/P5-CODEX-011-scheduled-task-templates.md",
+    "docs/development/P5-CODEX-011.md",
+    "docs/development/P5-CODEX-011-results.json"
+  ],
+  "required_external_or_manual_steps": [
+    "User grants ChatGPT desktop Work access to the local inbox and performs a one-time file-write test.",
+    "User reviews and creates the five recurring tasks in ChatGPT Work; task creation and live status were not performed here.",
+    "Implement and validate the hourly 6-region Trends schedule and the per-hour topic selection cap.",
+    "Connect a production article-generation provider or establish a verified scheduled Work file handoff.",
+    "Obtain separate approval, backup/restore evidence, migrations, OAuth/write verification, and operational readiness before any Blogger Auto or public write activation."
+  ],
+  "git": {
+    "implementation_commit": "pending",
+    "result_record_commit": "pending",
+    "origin_develop_push": "pending",
+    "main_changed": false,
+    "untracked_playwright_directory_preserved": true
+  }
+}

@@ -164,6 +164,68 @@ def test_import_endpoint_is_admin_only_idempotent_and_always_review_held(
             assert any(item["id"] == result["import_id"] for item in listed.json()["items"])
 
 
+def test_scheduled_origin_audit_requires_registered_blog_and_is_idempotent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with connection() as conn, conn.transaction(force_rollback=True):
+        @contextmanager
+        def shared() -> Iterator[Any]:
+            with conn.transaction():
+                yield conn
+
+        monkeypatch.setattr(content_imports, "connection", shared)
+        blog = conn.execute(
+            "SELECT id,url,language_code FROM blogger_blogs WHERE language_code='ko' ORDER BY url LIMIT 1"
+        ).fetchone()
+        assert blog
+        blog_id = "9876543210123456789"
+        conn.execute("UPDATE blogger_blogs SET blog_id=%s,active=true WHERE id=%s", (blog_id, blog["id"]))
+        headers = {"Authorization": "Bearer " + settings().admin_token}
+        item = valid_item(
+            content_id="scheduled-audit-test-001", generation_method="chatgpt_scheduled_export",
+            language_code="ko", target_audiences=[{"language_code": "ko", "target_region": "KR",
+                "reader_relevance_reason": "The scheduled market review is written for Korean readers."}],
+        )
+        with TestClient(app) as client:
+            submitted = client.post("/admin/research/content-imports", headers=headers,
+                                   json={"submitted_by": "Scheduled test", "item": item})
+            assert submitted.status_code == 201, submitted.text
+            import_id = submitted.json()["import_id"]
+            origin = {
+                "task_type": "market_close_kr", "task_id": "woori-market-close-kr",
+                "occurrence_id": "woori-market-close-kr-20261028-01",
+                "executed_at": "2026-10-28T08:06:00Z", "market_date": "2026-10-28",
+                "target_language_code": "ko", "target_blog_id": blog_id,
+                "target_blog_url": blog["url"], "source_as_of": "2026-10-28T08:00:00Z",
+            }
+            path = f"/admin/research/content-imports/{import_id}/scheduled-origin"
+            assert client.post(path, json=origin).status_code == 401
+            first = client.post(path, headers=headers, json=origin)
+            assert first.status_code == 201, first.text
+            assert first.json()["provenance_verified"] is False
+            assert first.json()["auto_publication_enabled"] is False
+            second = client.post(path, headers=headers, json=origin)
+            assert second.status_code == 201 and second.json()["duplicate"] is True
+            changed = dict(origin, source_as_of="2026-10-28T08:01:00Z")
+            conflict = client.post(path, headers=headers, json=changed)
+            assert conflict.status_code == 409
+            second_item = dict(item, content_id="scheduled-audit-test-002")
+            second_import = client.post("/admin/research/content-imports", headers=headers,
+                                        json={"submitted_by": "Scheduled test", "item": second_item})
+            assert second_import.status_code == 201, second_import.text
+            reused_occurrence = client.post(
+                f"/admin/research/content-imports/{second_import.json()['import_id']}/scheduled-origin",
+                headers=headers, json=origin,
+            )
+            assert reused_occurrence.status_code == 409
+            audit = conn.execute(
+                "SELECT payload FROM audit_events WHERE event_type='content.import.scheduled_origin_recorded'"
+            ).fetchall()
+            assert len(audit) == 1
+            assert audit[0]["payload"]["provenance_self_reported"] is True
+            assert audit[0]["payload"]["publish_ready"] is False
+
+
 def test_import_assessment_versions_review_localization_and_mock_are_fail_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

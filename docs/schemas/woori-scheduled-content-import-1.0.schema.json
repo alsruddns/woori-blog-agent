@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://woori.local/schemas/scheduled-content-import/1.0",
+  "title": "Woori scheduled content import envelope",
+  "description": "Local file handoff metadata plus the unchanged woori-content-import/1.0 item. Provenance is self-reported and never grants approval or publication rights.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "submitted_by", "item", "scheduled_origin"],
+  "properties": {
+    "schema_version": {"const": "woori-scheduled-content-import/1.0"},
+    "submitted_by": {"type": "string", "minLength": 2, "maxLength": 100},
+    "item": {
+      "$ref": "./woori-content-import-1.0.schema.json#/properties/item",
+      "allOf": [{"properties": {"generation_method": {"const": "chatgpt_scheduled_export"}}}]
+    },
+    "scheduled_origin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["task_type", "task_id", "occurrence_id", "executed_at", "market_date", "target_language_code", "target_blog_id", "target_blog_url", "source_as_of"],
+      "properties": {
+        "task_type": {"enum": ["market_close_kr", "market_close_jp", "market_close_cn", "market_close_us", "weekly_finance"]},
+        "task_id": {"type": "string", "minLength": 3, "maxLength": 128, "pattern": "^[A-Za-z0-9_.:-]+$"},
+        "occurrence_id": {"type": "string", "minLength": 8, "maxLength": 160, "pattern": "^[A-Za-z0-9_.:-]+$"},
+        "executed_at": {"type": "string", "format": "date-time"},
+        "market_date": {"type": ["string", "null"], "format": "date"},
+        "target_language_code": {"type": "string", "minLength": 2, "maxLength": 35},
+        "target_blog_id": {"type": "string", "minLength": 5, "maxLength": 32, "pattern": "^[0-9]+$"},
+        "target_blog_url": {"type": "string", "format": "uri", "pattern": "^https://[a-z0-9][a-z0-9-]*\\.blogspot\\.com/?$"},
+        "source_as_of": {"type": "string", "format": "date-time"}
+      }
+    }
+  }
+}
