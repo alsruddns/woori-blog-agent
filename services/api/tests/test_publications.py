@@ -5,8 +5,11 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 import pytest
+from pydantic import ValidationError
+from woori.publication_modes import ModeSettingsInput
 from woori.publications import (
     DisabledRealBloggerPublisher,
+    EmergencyStopInput,
     FakeBloggerPublisher,
     PublicationError,
     ScheduleInput,
@@ -39,6 +42,25 @@ def test_publication_eligibility_fails_closed_even_for_machine_pass() -> None:
     assert "human_review_pending" in result["reasons"]
     assert "publish_ready_disabled" in result["reasons"]
     assert "production_writes_disabled" in result["reasons"]
+
+
+def test_manual_publication_requires_editorial_and_exact_version_approval() -> None:
+    row = {
+        "language_active": True, "blog_active": True, "version_language": "en",
+        "blog_language": "en", "blog_id_value": "123456789",
+        "connection_verified_at": datetime.now(UTC), "test_publish_verified_at": datetime.now(UTC),
+        "oauth_status": "connected", "policy_id": "policy", "policy_active": True,
+        "auto_publish_allowed": False, "machine_passed": True,
+        "human_review_required": False, "human_review_approved": True,
+        "publication_approval_approved": False, "publish_ready": False,
+    }
+    result = _assess(row)
+    assert "publication_approval_missing_or_stale" in result["reasons"]
+    assert result["state"] == "publication_blocked"
+    row["publication_approval_approved"] = True
+    approved = _assess(row)
+    assert "publication_approval_missing_or_stale" not in approved["reasons"]
+    assert "production_writes_disabled" in approved["reasons"]
 
 
 def test_quality_failure_remains_held_and_not_eligible() -> None:
@@ -121,6 +143,59 @@ def test_retry_policy_is_bounded_and_stops_for_auth_or_uncertain_outcomes() -> N
     assert not retryable("failed", "timeout", 2, 2)
     assert not retryable("failed", "auth_failure", 0, 2)
     assert not retryable("uncertain", "uncertain", 0, 2)
+
+
+def test_publication_mode_defaults_manual_and_auto_requires_allowlist() -> None:
+    assert ModeSettingsInput().configured_mode == "manual"
+    with pytest.raises(ValidationError, match="category_allowlist"):
+        ModeSettingsInput(configured_mode="auto")
+    auto = ModeSettingsInput(configured_mode="auto", allowed_categories=["policy"])
+    assert auto.daily_auto_limit == 1
+    assert auto.minimum_interval_minutes == 1440
+    assert auto.retry_limit == 0
+
+
+def test_mode_scope_precedence_is_blog_then_language_then_global() -> None:
+    from woori.publication_modes import resolve_mode
+
+    settings = [
+        {"scope_type": "global", "scope_key": "", "configured_mode": "manual"},
+        {"scope_type": "language", "scope_key": "ja", "configured_mode": "auto"},
+        {"scope_type": "blog", "scope_key": "blog-1", "configured_mode": "manual"},
+    ]
+    assert resolve_mode(settings, "ja", "blog-1")["configured_mode"] == "manual"
+    assert resolve_mode(settings, "ja", "blog-2")["configured_mode"] == "auto"
+    assert resolve_mode(settings, "en", "blog-2")["configured_mode"] == "manual"
+
+
+def test_auto_eligibility_never_enables_live_publication() -> None:
+    from woori.publication_modes import AUTO_REQUIRED_FLAGS, assess_auto_candidate
+
+    evidence = {key: True for key in AUTO_REQUIRED_FLAGS}
+    result = assess_auto_candidate(evidence, requested_mode="auto", emergency_stopped=False)
+    assert result["eligible"] is False
+    assert "operations_auto_approval_required" in result["reasons"]
+    assert "live_blogger_writes_disabled" in result["reasons"]
+    stopped = assess_auto_candidate(evidence, requested_mode="auto", emergency_stopped=True)
+    assert "emergency_stop_enabled" in stopped["reasons"]
+
+
+def test_auto_candidate_fails_closed_for_missing_verification_and_publish_ready() -> None:
+    from woori.publication_modes import assess_auto_candidate
+
+    result = assess_auto_candidate(
+        {"machine_passed": True}, requested_mode="auto", emergency_stopped=False
+    )
+    assert "seo_passed_not_verified" in result["reasons"]
+    assert "source_rights_approved_not_verified" in result["reasons"]
+    assert "publish_ready_not_verified" in result["reasons"]
+    assert result["simulation_only"] is True
+
+
+def test_emergency_stop_input_cannot_be_cleared_through_api_model() -> None:
+    assert EmergencyStopInput(enabled=True).enabled is True
+    with pytest.raises(ValidationError):
+        EmergencyStopInput.model_validate({"enabled": False})
 
 
 def test_readonly_sync_returns_metadata_without_mutating_internal_state(

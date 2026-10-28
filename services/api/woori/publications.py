@@ -13,6 +13,12 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from . import blogger_service
 from .db import connection
+from .publication_modes import (
+    ModeSettingsInput,
+    assess_auto_candidate,
+    effective_mode,
+    resolve_mode,
+)
 
 router = APIRouter(prefix="/admin/publications")
 
@@ -72,6 +78,154 @@ class ScheduleInput(BaseModel):
 class CancelInput(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     idempotency_key: str = Field(min_length=16, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+
+
+class EmergencyStopInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: Literal[True]
+
+
+def _mode_settings(conn: Any) -> dict[str, Any]:
+    relation = conn.execute(
+        "SELECT to_regclass('public.publication_mode_settings') AS table_name"
+    ).fetchone()
+    if not relation or not relation["table_name"]:
+        return {
+            "migration_required": True,
+            "default_mode": "manual",
+            "settings": [],
+            "languages": [],
+            "blogs": [],
+            "emergency_stopped": False,
+            "operations_auto_approved": False,
+            "live_auto_enabled": False,
+            "real_writes_enabled": False,
+        }
+    rows = conn.execute(
+        """SELECT scope_type,scope_key,configured_mode,daily_auto_limit,
+            minimum_interval_minutes,allowed_start_hour,allowed_end_hour,timezone,
+            allowed_categories,excluded_topics,max_source_age_hours,retry_limit,
+            emergency_stopped,operations_auto_approved,updated_at
+        FROM publication_mode_settings ORDER BY CASE scope_type WHEN 'global' THEN 0
+            WHEN 'language' THEN 1 ELSE 2 END,scope_key"""
+    ).fetchall()
+    items = [dict(row) for row in rows]
+    languages = [dict(row) for row in conn.execute(
+        "SELECT code,display_name,active FROM languages ORDER BY code"
+    ).fetchall()]
+    blogs = [dict(row) for row in conn.execute(
+        "SELECT id,language_code,url,display_name,active FROM blogger_blogs ORDER BY language_code,url"
+    ).fetchall()]
+    global_setting = next((row for row in items if row["scope_type"] == "global"), None)
+    return {
+        "migration_required": False,
+        "default_mode": "manual",
+        "settings": items,
+        "languages": languages,
+        "blogs": blogs,
+        "emergency_stopped": bool(global_setting and global_setting["emergency_stopped"]),
+        "operations_auto_approved": False,
+        "live_auto_enabled": False,
+        "real_writes_enabled": False,
+    }
+
+
+def _blog_settings(conn: Any, blog_id: str) -> tuple[dict[str, Any] | None, str | None]:
+    blog = conn.execute(
+        "SELECT id,language_code FROM blogger_blogs WHERE id=%s AND active", (blog_id,)
+    ).fetchone()
+    if not blog:
+        return None, "blog_not_found_or_inactive"
+    return dict(blog), None
+
+
+@router.get("/mode-settings")
+def get_mode_settings() -> dict[str, Any]:
+    with connection() as conn:
+        return _mode_settings(conn)
+
+
+@router.put("/mode-settings")
+def save_mode_settings(request: ModeSettingsInput) -> dict[str, Any]:
+    with connection() as conn:
+        current = _mode_settings(conn)
+        if current["migration_required"]:
+            raise HTTPException(409, "Publication settings migration 042 is required")
+        if request.scope_type == "language":
+            found = conn.execute(
+                "SELECT 1 FROM languages WHERE code=%s AND active", (request.scope_key,)
+            ).fetchone()
+            if not found:
+                raise HTTPException(404, "Registered language not found")
+        if request.scope_type == "blog":
+            blog, error = _blog_settings(conn, request.scope_key)
+            if error or not blog:
+                raise HTTPException(404, "Registered active blog not found")
+        if request.configured_mode == "auto":
+            active_categories = conn.execute(
+                "SELECT slug FROM categories WHERE slug=ANY(%s)",
+                (request.allowed_categories,),
+            ).fetchall()
+            if {row["slug"] for row in active_categories} != set(request.allowed_categories):
+                raise HTTPException(422, "Auto categories must match registered category slugs")
+        saved = conn.execute(
+            """INSERT INTO publication_mode_settings(scope_type,scope_key,configured_mode,
+                daily_auto_limit,minimum_interval_minutes,allowed_start_hour,allowed_end_hour,
+                timezone,allowed_categories,excluded_topics,max_source_age_hours,retry_limit)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT(scope_type,scope_key) DO UPDATE SET
+                configured_mode=EXCLUDED.configured_mode,daily_auto_limit=EXCLUDED.daily_auto_limit,
+                minimum_interval_minutes=EXCLUDED.minimum_interval_minutes,
+                allowed_start_hour=EXCLUDED.allowed_start_hour,allowed_end_hour=EXCLUDED.allowed_end_hour,
+                timezone=EXCLUDED.timezone,allowed_categories=EXCLUDED.allowed_categories,
+                excluded_topics=EXCLUDED.excluded_topics,max_source_age_hours=EXCLUDED.max_source_age_hours,
+                retry_limit=EXCLUDED.retry_limit,updated_at=now()
+            RETURNING scope_type,scope_key,configured_mode,daily_auto_limit,minimum_interval_minutes,
+                allowed_start_hour,allowed_end_hour,timezone,allowed_categories,excluded_topics,
+                max_source_age_hours,retry_limit,emergency_stopped,operations_auto_approved,updated_at""",
+            (
+                request.scope_type, request.scope_key, request.configured_mode,
+                request.daily_auto_limit, request.minimum_interval_minutes,
+                request.allowed_start_hour, request.allowed_end_hour, request.timezone,
+                request.allowed_categories, request.excluded_topics,
+                request.max_source_age_hours, request.retry_limit,
+            ),
+        ).fetchone()
+        assert saved is not None
+        conn.execute(
+            "INSERT INTO audit_events(event_type,payload) VALUES ('publication.mode.changed',%s)",
+            (Jsonb({"scope_type": request.scope_type, "scope_key": request.scope_key,
+                "configured_mode": request.configured_mode, "effective_mode": effective_mode(
+                    request.configured_mode,
+                    emergency_stopped=bool(current["emergency_stopped"]),
+                ), "live_auto_enabled": False, "real_writes_enabled": False,
+                "daily_auto_limit": request.daily_auto_limit,
+                "minimum_interval_minutes": request.minimum_interval_minutes,
+                "retry_limit": request.retry_limit}),),
+        )
+        return {**dict(saved), "live_auto_enabled": False, "real_writes_enabled": False,
+                "operations_auto_approved": False}
+
+
+@router.post("/emergency-stop")
+def engage_emergency_stop(request: EmergencyStopInput) -> dict[str, Any]:
+    with connection() as conn:
+        settings = _mode_settings(conn)
+        if settings["migration_required"]:
+            raise HTTPException(409, "Publication settings migration 042 is required")
+        updated = conn.execute(
+            """UPDATE publication_mode_settings SET emergency_stopped=true,updated_at=now()
+            WHERE scope_type='global' AND scope_key='' RETURNING emergency_stopped"""
+        ).fetchone()
+        if not updated:
+            raise HTTPException(503, "Global publication settings are unavailable")
+        conn.execute(
+            "INSERT INTO audit_events(event_type,payload) VALUES ('publication.emergency_stop.engaged',%s)",
+            (Jsonb({"emergency_stopped": True, "live_auto_enabled": False,
+                    "real_writes_enabled": False}),),
+        )
+        return {"emergency_stopped": True, "live_auto_enabled": False,
+                "real_writes_enabled": False}
 
 
 class PublicationError(Exception):
@@ -158,6 +312,8 @@ def _assess(row: dict[str, Any] | None) -> dict[str, Any]:
         reasons.append("machine_quality_not_passed")
     if row["human_review_required"] or not row["human_review_approved"]:
         reasons.append("human_review_pending")
+    if not row.get("publication_approval_approved", False):
+        reasons.append("publication_approval_missing_or_stale")
     if row["publish_ready"]:
         # Phase policy and schema deliberately prohibit this state today.
         reasons.append("unexpected_publish_ready_state")
@@ -185,8 +341,13 @@ def _candidate(conn: Any, version_id: UUID, blog_id: UUID) -> dict[str, Any] | N
             p.id AS policy_id,p.active AS policy_active,p.auto_publish_allowed,
             COALESCE(q.machine_passed,false) AS machine_passed,
             COALESCE(q.human_review_required,true) AS human_review_required,
-            false AS human_review_approved,COALESCE(q.publish_ready,false) AS publish_ready,
-            q.id AS quality_evaluation_id,q.status AS quality_status
+            COALESCE(review.disposition='approved',false) AS human_review_approved,
+            COALESCE(approval.action='approved' AND
+              (editorial.id IS NULL OR approval.body_sha256=editorial.body_sha256),false)
+              AS publication_approval_approved,
+            COALESCE(q.publish_ready,false) AS publish_ready,
+            q.id AS quality_evaluation_id,q.id AS evaluation_id,q.status AS quality_status,
+            editorial.id AS editorial_version_id
         FROM content_versions v
         JOIN content_localizations l ON l.id=v.localization_id
         JOIN blogger_blogs b ON b.id=%s
@@ -196,10 +357,27 @@ def _candidate(conn: Any, version_id: UUID, blog_id: UUID) -> dict[str, Any] | N
           AND lp.target_country=l.target_country
         LEFT JOIN publishing_policies p ON p.blog_id=b.id AND p.profile_id=lp.id
         LEFT JOIN LATERAL (
-          SELECT id,machine_passed,human_review_required,publish_ready,status
+          SELECT id,id AS evaluation_id,machine_passed,human_review_required,publish_ready,status
           FROM article_quality_evaluations WHERE content_version_id=v.id
           ORDER BY created_at DESC,id DESC LIMIT 1
         ) q ON true
+        LEFT JOIN LATERAL (
+          SELECT id,body_sha256 FROM article_editorial_versions
+          WHERE evaluation_id=q.evaluation_id AND base_content_version_id=v.id
+          ORDER BY revision_number DESC,created_at DESC,id DESC LIMIT 1
+        ) editorial ON true
+        LEFT JOIN LATERAL (
+          SELECT disposition FROM article_human_reviews
+          WHERE evaluation_id=q.evaluation_id AND content_version_id=v.id
+            AND editorial_version_id IS NOT DISTINCT FROM editorial.id
+          ORDER BY created_at DESC,id DESC LIMIT 1
+        ) review ON true
+        LEFT JOIN LATERAL (
+          SELECT action,body_sha256 FROM publication_approval_events
+          WHERE evaluation_id=q.evaluation_id AND content_version_id=v.id
+            AND editorial_version_id IS NOT DISTINCT FROM editorial.id
+          ORDER BY created_at DESC,id DESC LIMIT 1
+        ) approval ON true
         WHERE v.id=%s""",
             (blog_id, version_id),
         ).fetchone(),
@@ -209,6 +387,7 @@ def _candidate(conn: Any, version_id: UUID, blog_id: UUID) -> dict[str, Any] | N
 @router.get("")
 def list_publications() -> dict[str, Any]:
     with connection() as conn:
+        mode_data = _mode_settings(conn)
         candidates = conn.execute(
             """SELECT v.id AS content_version_id,v.title,l.language_code,
                 l.target_country,b.id AS blog_id,b.url,b.blog_id AS blogger_blog_id,
@@ -216,12 +395,34 @@ def list_publications() -> dict[str, Any]:
                 COALESCE(q.machine_passed,false) AS machine_passed,
                 COALESCE(q.human_review_required,true) AS human_review_required,
                 COALESCE(q.publish_ready,false) AS publish_ready,q.status AS quality_status,
-                q.created_at AS evaluated_at
+                q.evaluation_id,
+                q.created_at AS evaluated_at,
+                COALESCE(review.disposition='approved',false) AS editorial_review_approved,
+                COALESCE(approval.action='approved' AND
+                    (editorial.id IS NULL OR approval.body_sha256=editorial.body_sha256),false)
+                    AS publication_approval_approved
             FROM content_versions v JOIN content_localizations l ON l.id=v.localization_id
             JOIN blogger_blogs b ON b.language_code=l.language_code AND b.active
-            LEFT JOIN LATERAL (SELECT machine_passed,human_review_required,publish_ready,status,created_at
+            LEFT JOIN LATERAL (SELECT id AS evaluation_id,machine_passed,human_review_required,publish_ready,status,created_at
                 FROM article_quality_evaluations WHERE content_version_id=v.id
                 ORDER BY created_at DESC,id DESC LIMIT 1) q ON true
+            LEFT JOIN LATERAL (
+                SELECT id,body_sha256 FROM article_editorial_versions
+                WHERE evaluation_id=q.evaluation_id AND base_content_version_id=v.id
+                ORDER BY revision_number DESC,created_at DESC,id DESC LIMIT 1
+            ) editorial ON true
+            LEFT JOIN LATERAL (
+                SELECT disposition FROM article_human_reviews
+                WHERE evaluation_id=q.evaluation_id AND content_version_id=v.id
+                  AND editorial_version_id IS NOT DISTINCT FROM editorial.id
+                ORDER BY created_at DESC,id DESC LIMIT 1
+            ) review ON true
+            LEFT JOIN LATERAL (
+                SELECT action,body_sha256 FROM publication_approval_events
+                WHERE evaluation_id=q.evaluation_id AND content_version_id=v.id
+                  AND editorial_version_id IS NOT DISTINCT FROM editorial.id
+                ORDER BY created_at DESC,id DESC LIMIT 1
+            ) approval ON true
             ORDER BY v.created_at DESC LIMIT 100"""
         ).fetchall()
         jobs = conn.execute(
@@ -244,6 +445,23 @@ def list_publications() -> dict[str, Any]:
             WHERE status='queued' AND simulation_only AND adapter_type='fake'"""
         ).fetchone()
         assert queued is not None
+        for candidate in candidates:
+            candidate["mode_policy"] = resolve_mode(
+                mode_data["settings"], str(candidate["language_code"]), str(candidate["blog_id"])
+            )
+            candidate["effective_mode"] = effective_mode(
+                candidate["mode_policy"]["configured_mode"],
+                emergency_stopped=bool(mode_data["emergency_stopped"]),
+            )
+            candidate["auto_eligibility"] = assess_auto_candidate(
+                {
+                    "machine_passed": candidate["machine_passed"],
+                    "publish_ready": candidate["publish_ready"],
+                    "editorial_review_passed": candidate["editorial_review_approved"],
+                },
+                requested_mode=candidate["mode_policy"]["configured_mode"],
+                emergency_stopped=bool(mode_data["emergency_stopped"]),
+            )
         return {
             "candidates": [dict(row) for row in candidates],
             "jobs": [dict(row) for row in jobs],
@@ -253,6 +471,11 @@ def list_publications() -> dict[str, Any]:
             "real_writes_enabled": False,
             "publish_ready_enabled": False,
             "adapter_available": "fake_only",
+            "mode_policy": mode_data,
+            "auto_candidate_count": sum(
+                1 for candidate in candidates if candidate["auto_eligibility"]["eligible"]
+            ),
+            "auto_runtime_status": "disabled_pending_separate_operations_approval",
         }
 
 
@@ -262,7 +485,17 @@ def create_request(request: RequestInput) -> dict[str, Any]:
         row = _candidate(conn, request.content_version_id, request.blog_id)
         if row is None:
             raise HTTPException(404, "Content version or registered blog not found")
-        assessed = _assess(dict(row))
+        row = dict(row)
+        modes = _mode_settings(conn)
+        if modes["migration_required"]:
+            raise HTTPException(409, "Publication settings migration 042 is required")
+        blog, error = _blog_settings(conn, str(request.blog_id))
+        if error or not blog:
+            raise HTTPException(404, "Registered active blog not found")
+        selected_mode = resolve_mode(modes["settings"], str(blog["language_code"]), str(request.blog_id))
+        if selected_mode["configured_mode"] != "manual":
+            raise HTTPException(409, "Manual request endpoint is unavailable for Auto-configured targets")
+        assessed = _assess(row)
         if row["policy_id"] is None:
             conn.execute(
                 "INSERT INTO audit_events(event_type,blog_id,payload) VALUES ('publication.request.blocked',%s,%s)",

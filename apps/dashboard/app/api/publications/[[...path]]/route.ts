@@ -10,7 +10,9 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path?: s
     ? true
     : request.method === "POST" && (route === "requests" || /^jobs\/[a-f0-9-]+\/simulate$/.test(route) || /^blogs\/[a-f0-9-]+\/sync-readonly$/.test(route))
       ? true
-      : request.method === "PUT" && /^jobs\/[a-f0-9-]+\/schedule$/.test(route)
+        : request.method === "POST" && route === "emergency-stop"
+          ? true
+          : request.method === "PUT" && (route === "mode-settings" || /^jobs\/[a-f0-9-]+\/schedule$/.test(route))
         ? true
         : request.method === "DELETE" && /^jobs\/[a-f0-9-]+\/schedule$/.test(route);
   if (!allowed) return NextResponse.json({ error: "Unsupported operation" }, { status: 404 });
@@ -30,3 +32,5 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path?: s
 
 export const GET = proxy;
 export const POST = proxy;
+export const PUT = proxy;
+export const DELETE = proxy;
