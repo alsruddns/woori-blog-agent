@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from .ai import EngineFailure
 from .blogger_routes import router as blogger_router
 from .config import settings
+from .content_imports import router as content_imports_router
 from .db import connection
 from .google_http import GoogleFailure
 from .localized_publications import router as localized_publications_router
@@ -31,6 +32,7 @@ def authorize(credentials: Annotated[HTTPAuthorizationCredentials | None, Depend
 
 app.include_router(research_router, dependencies=[Depends(authorize)])
 app.include_router(localized_publications_router, dependencies=[Depends(authorize)])
+app.include_router(content_imports_router, dependencies=[Depends(authorize)])
 app.include_router(router, dependencies=[Depends(authorize)])
 app.include_router(blogger_router, dependencies=[Depends(authorize)])
 app.include_router(publications_router, dependencies=[Depends(authorize)])

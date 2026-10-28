@@ -39,14 +39,82 @@
   },
   "final_verification": {
     "scripts_verify_ps1": "passed",
-    "python_tests": "257 passed",
+    "python_tests": "263 passed",
     "ruff": "passed",
-    "mypy": "passed for 36 API source files",
+    "mypy": "passed for 38 API source files",
     "wheel": "built and verified",
     "dashboard_eslint": "passed",
     "dashboard_typecheck": "passed",
     "dashboard_production_build": "passed",
-    "git_diff_check": "passed"
+    "git_diff_check": "passed",
+    "test_fixture_adjustment": "updated existing trend detail mock to answer optional category registry existence query; final full suite passed"
+  },
+  "integration_extension_2026_10_28": {
+    "implemented": {
+      "manual_import_schema": "woori-content-import/1.0; strict typed validation",
+      "import_queue": "append_only; idempotent; awaiting_human_review; generation_ready=false; publish_ready=false",
+      "dashboard": "/imports JSON intake and review-only details",
+      "trend_topic_categories": [
+        "economy",
+        "finance",
+        "stocks",
+        "crypto",
+        "technology",
+        "semiconductors",
+        "artificial-intelligence",
+        "policy"
+      ],
+      "category_reviews": "append_only human decisions; overlap groups are duplicate-review hints only",
+      "topic_audience": "source region, target locale, reader relevance recorded separately"
+    },
+    "official_scheduled_tasks_review": {
+      "automatic_local_file_or_api_delivery": "not documented as a generic supported path; not implemented",
+      "documented_event_apps": [
+        "Gmail",
+        "Slack",
+        "GitHub"
+      ],
+      "project_file_access": "tasks created in a ChatGPT Project cannot access files uploaded to or stored in that project",
+      "usage_cost_certainty": "per-task/account/workspace limits vary; not guaranteed zero-cost by this application",
+      "manual_import_fallback": "implemented"
+    },
+    "safety": {
+      "operations_migrations_applied": false,
+      "test_db_schema": 46,
+      "test_app_operations_connect_denied": true,
+      "ai_provider_calls": 0,
+      "blogger_writes": 0,
+      "automatic_publishing_enabled": false,
+      "external_tasks_or_apps_created": 0
+    },
+    "remaining": [
+      "No production AI generation/localization provider is attached.",
+      "Import intake is not promoted into the existing quality-evaluation/content-version pipeline; imported material remains review-only.",
+      "The full collect-to-publish multilingual pipeline is therefore partial, not end-to-end complete.",
+      "Production application requires separately approved migrations 045 and 046 before using import and topic-category endpoints."
+    ],
+    "validation": {
+      "test_database_provisioning": "passed; schema 46; isolated test app role denied operations database CONNECT",
+      "targeted_pytest": "21 passed",
+      "full_scripts_verify_ps1": "passed",
+      "python_tests": "263 passed",
+      "ruff": "passed",
+      "mypy": "passed for 38 API source files",
+      "python_wheel": "built and verified",
+      "dashboard_eslint": "passed",
+      "dashboard_typecheck": "passed",
+      "dashboard_production_build": "passed",
+      "git_diff_check": "passed",
+      "browser_e2e": "not run"
+    },
+    "git": {
+      "branch": "develop",
+      "baseline_commit": "155a202",
+      "main_changed": false,
+      "playwright_mcp_preserved": true,
+      "implementation_commit": "pending",
+      "origin_develop_push": "pending"
+    }
   },
   "git": {
     "commit": "9b2053d",

@@ -65,6 +65,25 @@ def test_build_candidates_keeps_cross_geo_event_identity_unconfirmed(
         WHERE m.observation_id=%s""",
         (rows[0][1],),
     ).fetchone()
+    category_url = f"/admin/research/topics/{topic_row['id']}/categories"
+    category_review = {
+        "category_slug": "finance", "decision": "selected", "reviewer": "test editor",
+        "rationale": "This issue has direct financial implications for the selected readers.",
+        "idempotency_key": "topic-category-finance-" + uuid4().hex,
+    }
+    category_result = api.post(category_url, headers=headers, json=category_review)
+    assert category_result.status_code == 201, category_result.text
+    assert category_result.json()["publish_ready"] is False
+    assert [item["category_slug"] for item in category_result.json()["categories"]] == ["finance"]
+    replay = api.post(category_url, headers=headers, json=category_review)
+    assert replay.status_code == 201 and replay.json()["duplicate"] is True
+    category_review.update({
+        "category_slug": "stocks", "rationale": "This event also changes a specific publicly traded company.",
+        "idempotency_key": "topic-category-stocks-" + uuid4().hex,
+    })
+    stock_result = api.post(category_url, headers=headers, json=category_review)
+    assert stock_result.status_code == 201, stock_result.text
+    assert {item["category_slug"] for item in stock_result.json()["categories"]} == {"finance", "stocks"}
     package = api.post(
         f"/admin/research/topics/{topic_row['id']}/package", headers=headers
     )
@@ -77,6 +96,7 @@ def test_build_candidates_keeps_cross_geo_event_identity_unconfirmed(
     assert state.status_code == 200
     assert len(state.json()["topics"]) >= 2
     assert state.json()["grouping_proposals"]
+    assert {item["slug"] for item in state.json()["categories"]} >= {"economy", "finance", "stocks", "crypto", "technology", "semiconductors", "artificial-intelligence", "policy"}
     proposal_id = str(proposal["id"])
     review_url = f"/admin/research/grouping-proposals/{proposal_id}/reviews"
     assert api.post(

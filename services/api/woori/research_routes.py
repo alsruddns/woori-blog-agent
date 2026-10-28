@@ -17,6 +17,7 @@ from .ai import PRODUCTION_GENERATOR_CONFIGURED, Draft, EngineFailure
 from .blogger_publication_package import build_publication_package
 from .db import connection
 from .editorial_seo import EditorialSeoMetadata, SearchConsoleSnapshot, evaluate_seo_readiness
+from .editorial_taxonomy import category_registry
 from .grounding import inspect
 from .multilingual import Input
 from .pipeline import required
@@ -54,6 +55,14 @@ class TrendTopicDecision(Input):
     decision: Literal["selected", "excluded", "hold"]
     reviewer: str = Field(min_length=2, max_length=120)
     reason: str = Field(min_length=5, max_length=2000)
+    idempotency_key: str = Field(min_length=12, max_length=160)
+
+
+class TrendTopicCategoryReview(Input):
+    category_slug: str = Field(min_length=1, max_length=100, pattern=r"^[a-z0-9]+(-[a-z0-9]+)*$")
+    decision: Literal["selected", "excluded"]
+    reviewer: str = Field(min_length=2, max_length=120)
+    rationale: str = Field(min_length=10, max_length=1000)
     idempotency_key: str = Field(min_length=12, max_length=160)
 
 
@@ -756,7 +765,8 @@ def trend_observation_list(
                     FROM trend_observations o {where} ORDER BY o.collected_at DESC,o.id LIMIT %s OFFSET %s""",
                 [*params, page_size, (page - 1) * page_size],
             ).fetchall()
-            return {"items": items, "page": page, "page_size": page_size, "total": total, "configured": True}
+            return {"items": items, "page": page, "page_size": page_size, "total": total,
+                "configured": True, "categories": []}
         filters, params = [], []
         if q.strip():
             filters.append("o.query ILIKE %s")
@@ -783,7 +793,24 @@ def trend_observation_list(
             {where} ORDER BY o.collected_at DESC,o.id LIMIT %s OFFSET %s""",
             [*params, page_size, (page - 1) * page_size],
         ).fetchall()
-    return {"items": items, "page": page, "page_size": page_size, "total": total, "configured": True}
+        category_table = conn.execute("SELECT to_regclass('public.trend_topic_category_reviews') AS relation").fetchone()
+        category_reviews: list[dict[str, Any]] = []
+        if category_table and category_table.get("relation"):
+            topic_ids = [item["topic_id"] for item in items if item.get("topic_id")]
+            if topic_ids:
+                category_reviews = [dict(category) for category in conn.execute(
+                    """SELECT DISTINCT ON (topic_id,category_slug) topic_id,category_slug,decision
+                    FROM trend_topic_category_reviews WHERE topic_id=ANY(%s)
+                    ORDER BY topic_id,category_slug,created_at DESC,id DESC""", (topic_ids,),
+                ).fetchall()]
+        by_topic: dict[str, list[str]] = {}
+        for review in category_reviews:
+            if review["decision"] == "selected":
+                by_topic.setdefault(str(review["topic_id"]), []).append(str(review["category_slug"]))
+        for item in items:
+            item["category_slugs"] = by_topic.get(str(item.get("topic_id")), [])
+    return {"items": items, "page": page, "page_size": page_size, "total": total,
+        "configured": True, "categories": category_registry()}
 
 
 @router.get("/trend-observations/{observation_id}")
@@ -805,6 +832,18 @@ def trend_observation_detail(observation_id: UUID) -> dict[str, Any]:
         ).fetchone()
         if not topic:
             return {"observation": dict(row), "topic": None, "sources": [], "packages": [], "facts": []}
+        category_table = conn.execute("SELECT to_regclass('public.trend_topic_category_reviews') AS relation").fetchone()
+        if category_table and category_table.get("relation"):
+            category_reviews = conn.execute(
+                """SELECT DISTINCT ON (category_slug) category_slug,decision,reviewer,rationale,created_at
+                FROM trend_topic_category_reviews WHERE topic_id=%s ORDER BY category_slug,created_at DESC,id DESC""",
+                (topic["id"],),
+            ).fetchall()
+            topic["category_reviews"] = [dict(item) for item in category_reviews]
+            topic["categories"] = [dict(item) for item in category_reviews if item["decision"] == "selected"]
+        else:
+            topic["category_reviews"] = []
+            topic["categories"] = []
         topic_id = topic["id"]
         sources = conn.execute(
             """SELECT ts.id,ts.link_reason,ts.created_at,s.id AS source_id,s.source_name,s.url,
@@ -939,6 +978,14 @@ def assess_trend_topic(topic_id: UUID) -> dict[str, Any]:
 def decide_trend_topic(topic_id: UUID, request: TrendTopicDecision) -> dict[str, Any]:
     return topics.record_editorial_decision(
         topic_id, request.decision, request.reviewer, request.reason, request.idempotency_key
+    )
+
+
+@router.post("/topics/{topic_id}/categories", status_code=201)
+def review_trend_topic_category(topic_id: UUID, request: TrendTopicCategoryReview) -> dict[str, Any]:
+    return topics.record_topic_category_review(
+        topic_id, request.category_slug, request.decision, request.reviewer,
+        request.rationale, request.idempotency_key,
     )
 
 

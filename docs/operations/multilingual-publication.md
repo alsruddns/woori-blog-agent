@@ -1,5 +1,7 @@
 # 국가별 원고 대상 및 추가 언어 요청
 
+> P5-CODEX-007 integration addendum: use `/imports` for externally authored material when no approved generation provider is available. Imports enter an immutable human-review-only queue; they are not silently promoted to manuscripts or publication jobs. See [Manual external manuscript import](content-import.md) and the [versioned import contract](../schemas/woori-content-import-1.0.schema.json).
+
 ## 범위
 
 원고 상세 화면과 발행 후보 목록은 `/manuscripts`의 동일 원고 상세로 연결됩니다. 운영자는 대상 언어와 해당 언어에 연결된 활성 Blogger 블로그를 확인한 뒤 추가 현지화 요청을 남길 수 있습니다. 요청은 원본 평가 ID·원고 버전·본문 해시·대상 언어·블로그 ID에 묶이며 append-only 감사 이벤트에 기록됩니다.

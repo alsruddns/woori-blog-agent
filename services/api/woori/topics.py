@@ -15,6 +15,7 @@ from psycopg.types.json import Jsonb
 
 from .ai import EngineFailure
 from .db import connection
+from .editorial_taxonomy import EDITORIAL_CATEGORIES, category_registry
 
 LOOKBACK_HOURS = 168
 BROAD_QUERIES = {
@@ -314,6 +315,21 @@ def state() -> dict[str, Any]:
               WHERE m.topic_id=t.id) AS grouping_proposal_count
             FROM trend_topics t ORDER BY t.created_at DESC LIMIT 200"""
         ).fetchall()
+        category_table = conn.execute("SELECT to_regclass('public.trend_topic_category_reviews') AS relation").fetchone()
+        category_reviews: list[dict[str, Any]] = []
+        if category_table and category_table.get("relation") and topics:
+            category_reviews = [dict(row) for row in conn.execute(
+                """SELECT DISTINCT ON (topic_id,category_slug) topic_id,category_slug,decision,reviewer,rationale,created_at
+                FROM trend_topic_category_reviews WHERE topic_id=ANY(%s)
+                ORDER BY topic_id,category_slug,created_at DESC,id DESC""",
+                ([topic["id"] for topic in topics],),
+            ).fetchall()]
+        reviews_by_topic: dict[str, list[dict[str, Any]]] = {}
+        for review in category_reviews:
+            if review["decision"] == "selected":
+                reviews_by_topic.setdefault(str(review["topic_id"]), []).append(review)
+        for topic in topics:
+            topic["categories"] = reviews_by_topic.get(str(topic["id"]), [])
         proposals = conn.execute(
             """SELECT p.*,
             (SELECT row_to_json(r) FROM trend_grouping_reviews r WHERE r.proposal_id=p.id
@@ -336,7 +352,55 @@ def state() -> dict[str, Any]:
             ORDER BY ts.created_at DESC LIMIT 500"""
         ).fetchall()
         scoring_config = _current_scoring_config(conn)
-    return {"topics": topics, "grouping_proposals": proposals, "research_packages": packages, "topic_sources": topic_sources, "scoring_config": scoring_config, "human_review_required": True}
+    return {"topics": topics, "grouping_proposals": proposals, "research_packages": packages,
+        "topic_sources": topic_sources, "scoring_config": scoring_config,
+        "categories": category_registry(), "human_review_required": True}
+
+
+def record_topic_category_review(
+    topic_id: UUID, category_slug: str, decision: str, reviewer: str, rationale: str,
+    idempotency_key: str,
+) -> dict[str, Any]:
+    if category_slug not in {item["slug"] for item in EDITORIAL_CATEGORIES}:
+        raise ValueError("unknown_editorial_category")
+    if decision not in {"selected", "excluded"}:
+        raise ValueError("topic_category_decision_invalid")
+    if len(reviewer.strip()) < 2 or len(rationale.strip()) < 10 or not re.fullmatch(r"[A-Za-z0-9_-]{12,160}", idempotency_key):
+        raise ValueError("topic_category_review_fields_invalid")
+    with connection() as conn:
+        table = conn.execute("SELECT to_regclass('public.trend_topic_category_reviews') AS relation").fetchone()
+        if not table or not table.get("relation"):
+            raise EngineFailure("trend_topic_category_schema_not_applied")
+        if not conn.execute("SELECT 1 FROM trend_topics WHERE id=%s", (topic_id,)).fetchone():
+            raise EngineFailure("trend_topic_not_found")
+        row = conn.execute(
+            """INSERT INTO trend_topic_category_reviews(topic_id,category_slug,decision,reviewer,rationale,idempotency_key)
+            VALUES (%s,%s,%s,%s,%s,%s) ON CONFLICT(idempotency_key) DO NOTHING RETURNING *""",
+            (topic_id, category_slug, decision, reviewer.strip(), rationale.strip(), idempotency_key),
+        ).fetchone()
+        duplicate = row is None
+        if duplicate:
+            row = conn.execute(
+                "SELECT * FROM trend_topic_category_reviews WHERE idempotency_key=%s", (idempotency_key,),
+            ).fetchone()
+            if not row or any(row[key] != value for key, value in {
+                "topic_id": topic_id, "category_slug": category_slug, "decision": decision,
+                "reviewer": reviewer.strip(), "rationale": rationale.strip(),
+            }.items()):
+                raise EngineFailure("topic_category_idempotency_conflict")
+        assert row is not None
+        if not duplicate:
+            _audit(conn, "trend.topic_category.reviewed", topic_id=str(topic_id),
+                category_slug=category_slug, decision=decision, reviewer=reviewer.strip(),
+                rationale=rationale.strip(), idempotency_key=idempotency_key)
+        latest = conn.execute(
+            """SELECT DISTINCT ON (category_slug) category_slug,decision,reviewer,rationale,created_at
+            FROM trend_topic_category_reviews WHERE topic_id=%s ORDER BY category_slug,created_at DESC,id DESC""",
+            (topic_id,),
+        ).fetchall()
+        selected = [dict(item) for item in latest if item["decision"] == "selected"]
+        return {"review": dict(row), "duplicate": duplicate, "categories": selected,
+            "human_review_required": True, "publish_ready": False}
 
 
 def record_scoring_config(weights: dict[str, float], thresholds: dict[str, int | float], rationale: str) -> dict[str, Any]:

@@ -1,0 +1,7 @@
+# Editorial category and audience registry
+
+`services/api/woori/editorial_taxonomy.py` is the versioned category registry consumed by import validation, topic labels, and audience recommendation. Initial canonical categories are economy, finance, stocks, crypto, technology, semiconductors, artificial intelligence, and policy. Related coverage is grouped for duplicate review: economy/finance/stocks share the macro-markets group; technology/semiconductors/AI share technology; policy and crypto remain separate. Group membership is a review signal, never an automatic merge.
+
+The existing database `categories` table remains the category storage registry. Migration 045 adds any missing canonical slugs without deleting or rewriting prior categories. Migration 046 adds append-only, reviewer-attributed topic-category decisions. The topic UI displays only the latest selected decisions; exclusion is recorded as a new review event and never erases the prior decision. To extend the taxonomy, add a canonical slug and localized display names/deduplication group in the registry and an additive migration to seed that slug; do not silently merge existing manuscripts.
+
+Source country/region, source language, target locale, reader rationale, and Blogger destination are distinct fields. Region matches can only suggest a locale; they do not determine audience value or publishing permission. Chinese-language audience selection for Taiwan, Hong Kong, or Singapore requires explicit editorial reasoning.

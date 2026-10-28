@@ -171,6 +171,8 @@ def test_trend_detail_distinguishes_automated_source_screen_from_human_review(
             statements.append(query)
             if "to_regclass('public.trend_research_packages')" in query:
                 return _Cursor([{"table_name": "trend_research_packages"}])
+            if "to_regclass('public.trend_topic_category_reviews')" in query:
+                return _Cursor([{"relation": None}])
             if "SELECT * FROM trend_observations" in query:
                 return _Cursor([{"id": observation_id, "query": "TW source signal"}])
             if "FROM trend_topic_memberships m JOIN trend_topics t" in query:

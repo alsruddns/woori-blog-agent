@@ -76,6 +76,21 @@ li {
   padding: 8px;
 }
 
+.import-workspace { display: grid; gap: 18px; }
+.import-panel h2, .import-workspace .workspace-panel h2 { margin-top: 0; }
+.import-form { display: grid; grid-template-columns: minmax(200px, 1fr); gap: 14px; margin-top: 16px; }
+.import-form label { display: grid; gap: 6px; font-weight: 600; }
+.import-form input, .import-form textarea { width: 100%; min-width: 0; border: 1px solid #cbd8d4; border-radius: 8px; padding: 11px; background: #fff; }
+.import-form textarea { min-height: 340px; resize: vertical; font: 12px/1.55 ui-monospace, Consolas, monospace; overflow-wrap: anywhere; }
+.import-form button, .secondary-button { min-height: 40px; padding: 8px 13px; border: 1px solid #167057; border-radius: 8px; color: #fff; background: #167057; cursor: pointer; }
+.secondary-button { color: #245648; background: #fff; }
+.import-form button:disabled { opacity: .55; cursor: not-allowed; }
+.import-title { border: 0; padding: 0; color: #176b55; background: transparent; text-align: left; cursor: pointer; font: inherit; font-weight: 700; }
+.import-workspace td small { display: block; overflow-wrap: anywhere; margin-top: 4px; }
+.import-notice { padding: 12px; border-radius: 8px; background: #edf7f0; }
+.import-detail pre { max-height: 420px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 14px; border-radius: 8px; background: #f5f7f6; }
+.import-workspace code { overflow-wrap: anywhere; }
+
 a {
   color: #167057;
 }
