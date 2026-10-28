@@ -1,34 +1,36 @@
-> Private evaluation draft — do not publish. Based on three official documents and eight fact records in the Research Package. The available evidence does not confirm implementation or payment.
+---
+evaluation_only: true
+language: en
+labels:
+  - Issues
+search_keywords:
+  - Taiwan public-sector pay proposal
+  - Taiwan allowance increases
+  - Taiwan supplementary budget
+blogger_submission: false
+---
 
-# Taiwan’s Public-Sector Pay Plan Hinges on Budget Process, Not One Headline Rate
+# Taiwan’s pay proposal involves two different raises—and a budget decision
 
-Taiwan’s proposed compensation changes for military personnel, civil servants and educators are easy to compress into a single percentage. The underlying plan is more specific: it pairs fixed increases to two allowances with a separate 4% general pay adjustment planned for fiscal 2027. A proposed July 1, 2026, start date applies to the allowance changes and depends on supplementary-budget procedures; it is not, by itself, proof that employees were paid.[1]
+A single percentage does not explain Taiwan’s proposed pay changes for military personnel, civil servants and educators. The Executive Yuan’s plan pairs a NT$2,000 increase to each of two allowances with a separate 4% adjustment to general pay for fiscal 2027. Those figures concern different parts of compensation and follow different budget tracks. For employees, the practical question is not simply “How much?” but which change applies to their role—and whether the proposal completes the required process.[1]
 
-## Two measures, on different tracks
+## The allowance proposal is separate from the 4% plan
 
-In a July 2026 announcement, the Executive Yuan set out two parts of its compensation plan. It proposed adding NT$2,000 to each of the professional allowance—including teachers’ academic-research allowance—and the supervisory-duty allowance. Separately, it proposed a 4% general pay adjustment for fiscal 2027. The administration said it would seek an earlier July 1, 2026, effective date for the allowance increases through a supplementary budget, while the general adjustment would go through the fiscal 2027 budget process.[1]
+In July 2026, the Executive Yuan proposed raising the professional allowance—including teachers’ academic-research allowance—and the supervisory-duty allowance by NT$2,000 each. It separately set out a 4% general-pay adjustment for fiscal 2027. The measures should not be read as a promise that every employee will receive a 4% raise or qualify for both allowances. Individual effects depend on the applicable pay and allowance rules.[1]
 
-Those measures should not be collapsed into a promise that every employee will receive a 4% raise, or automatically assume that every employee receives both allowance increases. The allowance changes and the general adjustment follow different budget tracks, and the package does not provide a person-by-person payment table. An employee’s effect would depend on the applicable pay and allowance rules. The Executive Yuan’s examples for general civil-service pay scales do not establish the increase for military personnel and should not be presented as military pay figures.[1]
+The administration also proposed moving the allowance changes’ effective date to July 1, 2026, through the supplementary-budget process. That is a proposed date, not evidence that payments began then. Examples in the announcement for general civil-service pay scales do not establish a corresponding percentage increase for military personnel; the pay-scale illustration and allowance proposal describe different calculations and eligible categories.[1]
 
-The Executive Yuan cited economic growth, inflation, private-sector wages and the government’s fiscal position as background for its decision.[1] Those are the administration’s stated considerations. The package does not include a separate data series that independently tests that rationale, so it should not be treated as an outside economic assessment.
+## NT$607.6 billion is the whole proposal; NT$10.7 billion is one item
 
-## NT$607.6 billion is the whole budget proposal
+In September, the Executive Yuan said it would send a supplementary expenditure proposal totaling NT$607.6 billion to the Legislative Yuan for consideration. The proposal spans six areas, including household support, social welfare, compensation, disaster recovery, defense and child-related assistance. The full amount is not a military, civil-service and education pay budget.[2]
 
-In September, the Executive Yuan approved a supplementary expenditure proposal totaling NT$607.6 billion and said it would send the measure to the Legislative Yuan for consideration. The proposal covered multiple areas, including household support, social welfare, compensation, disaster recovery, defense and child-related assistance.[2]
+Within the compensation-improvement item, the administration identified NT$10.7 billion for the allowance plan. Keeping the two amounts distinct matters: NT$607.6 billion describes proposed spending across the broader package, while NT$10.7 billion is the amount assigned to one compensation-related item. Neither figure alone establishes final appropriation or money reaching employees.[2]
 
-That total is not the military, civil-service and education pay package. Within the “compensation improvement” area, the Executive Yuan identified NT$10.7 billion for the allowance changes. The two figures describe different scopes: NT$607.6 billion is the proposed additional spending across the wider package; NT$10.7 billion is the amount assigned to the compensation-improvement item in the administration’s proposal.[2] Neither figure, on the evidence reviewed here, proves final appropriation or payment.
+## The legislative review points to the steps between plan and pay
 
-## Legislative review raises questions, not a final verdict
+A September assessment by the Legislative Yuan Budget Center examined the timing and legal basis of the supplementary-budget process. It also raised questions about whether some programs could be carried out within the available period and called attention to the need for objective standards in compensation adjustments. These are issues for budget scrutiny, not a court ruling or a finding that the pay plan is invalid.[3]
 
-A September assessment by the Legislative Yuan’s Budget Center discussed the timing and legal basis of the supplementary-budget process. It also urged scrutiny of whether some programs could be carried out within a limited period and noted the need for clearer, more objective standards for adjusting public-sector compensation.[3]
-
-That is a budget-review report, not a court ruling and not a finding that the pay plan is invalid. It does, however, identify questions that sit between an announced policy and a completed payment: the legal and budgetary steps, the capacity to execute funded measures, and the standards used to adjust compensation. The two Executive Yuan documents come from the same institution, so they are not independent corroboration of one another. The Budget Center report adds a separate institutional review of the budget process, but it does not independently confirm that the allowance increases took effect or reached employees.[1][3]
-
-## What the available record cannot establish
-
-The package documents the administration’s proposal, the scale and scope of its supplementary-budget submission, and issues raised in legislative budget review. It does not contain later enactment or promulgation records, implementation rules, or payroll evidence. It therefore cannot establish that the proposed July 1 date became an operative payment date, that both measures took effect, or what any individual received.[1][2][3]
-
-To determine the outcome, reporting would need to trace the subsequent budget action and implementing documents, then check the rules for eligible groups and evidence of payment. Until those records are available, the proposed schedule and actual compensation should be reported separately.[1][2][3]
+The announcements describe what the administration proposed and what it placed in the supplementary-budget request. They do not establish that the allowance changes took effect or appeared in payroll. To determine that outcome, the next evidence would be the subsequent budget action, implementing documents and applicable eligibility rules, followed by records showing whether payments were made. Until then, the July 1 date remains a proposed effective date, not a confirmed payday.[1][2][3]
 
 ### Sources
 

@@ -3,6 +3,7 @@
 import hashlib
 import re
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from typing import Any
 from urllib.parse import urlparse
 
@@ -102,6 +103,65 @@ def numbers(text: str) -> set[str]:
         text,
     )
 
+    # Normalize Taiwan fiscal years and currency magnitudes before comparing a
+    # source excerpt with localized prose. One 億 is NT$100 million; therefore
+    # 6,076億元 and NT$607.6 billion are the same amount. Currency identity is
+    # reviewed separately, and aliases remain unit-bound to preserve other numbers.
+    # They remain unit-bound so unrelated factual numbers stay exact.
+    normalized_values: set[str] = set(dates)
+
+    def scaled_amount(match: re.Match[str], multiplier: Decimal) -> str:
+        amount = Decimal(match.group(1).replace(",", "")) * multiplier
+        normalized_values.add(f"MAGNITUDE:{amount.normalize():f}")
+        return " "
+
+    amount_patterns = (
+        (r"(?i)(?:NT\$|TWD\s*)\s*([\d,]+(?:\.\d+)?)\s*(billion|bn)\b", Decimal(1000000000)),
+        (r"(?i)(?:NT\$|TWD\s*)\s*([\d,]+(?:\.\d+)?)\s*(million|mn)\b", Decimal(1000000)),
+        (r"(?i)(?:NT\$|TWD\s*)\s*([\d,]+(?:\.\d+)?)\s*(thousand|k)\b", Decimal(1000)),
+    )
+    for pattern, multiplier in amount_patterns:
+        def replace_scaled_amount(
+            match: re.Match[str], scale: Decimal = multiplier
+        ) -> str:
+            return scaled_amount(match, scale)
+
+        text = re.sub(pattern, replace_scaled_amount, text)
+
+    def hundred_million_amount(match: re.Match[str]) -> str:
+        return scaled_amount(match, Decimal(100000000))
+
+    text = re.sub(
+        r"(?<!\d)([\d,]+(?:\.\d+)?)\s*(?:\u5104|\uc5b5)\s*(?:\u5143)?(?:\s*\ub300\ub9cc\ub2ec\ub7ec)?",
+        hundred_million_amount,
+        text,
+    )
+
+    def base_twd_amount(match: re.Match[str]) -> str:
+        return scaled_amount(match, Decimal(1))
+
+    text = re.sub(
+        r"(?i)(?:NT\$|TWD\s*)\s*([\d,]+)(?![\d,.])",
+        base_twd_amount,
+        text,
+    )
+
+    text = re.sub(
+        r"(?<!\d)([\d,]+)\s*(?:\u65b0\u53f0\u5e63|\u53f0\u5e63|\u5143|\ub300\ub9cc\ub2ec\ub7ec)",
+        base_twd_amount,
+        text,
+    )
+
+    def fiscal_year(match: re.Match[str]) -> str:
+        year = int(match.group(1))
+        gregorian = year + 1911 if year <= 1911 else year
+        normalized_values.add(f"YEAR:{gregorian}")
+        return " "
+
+    text = re.sub(r"(?<!\d)(1\d{2,3})\s*\u5e74\u5ea6", fiscal_year, text)
+    text = re.sub(r"(?i)\b(?:fiscal(?:\s+year)?|FY)\s*(20\d{2})\b", fiscal_year, text)
+    text = re.sub(r"(?<!\d)(20\d{2})\s*\ub144\ub3c4", fiscal_year, text)
+
     text = re.sub(
         r"https?://\S+|\[source:[^\]]+\]|\b[0-9a-f]{8}-[0-9a-f-]{27,}\b",
         "",
@@ -112,7 +172,7 @@ def numbers(text: str) -> set[str]:
     text = re.sub(r"(?m)^\s*#{1,6}\s+\d+\s*$", "", text)
     text = re.sub(r"(?m)^\s*(?:#{1,6}\s*)?\d+[.)]\s", "", text)
     numeric_tokens = re.findall(r"\d+(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?", text)
-    return dates | {
+    return normalized_values | {
         str(float(n.replace(",", ""))) for n in numeric_tokens if len(n) < 20
     }
 

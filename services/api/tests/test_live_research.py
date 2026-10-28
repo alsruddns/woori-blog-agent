@@ -162,6 +162,8 @@ def test_worker_single_shot_mode_requires_evaluation_isolation(
 def test_localized_translation_records_measured_usage_and_resource_samples(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    captured_request: dict[str, Any] = {}
+
     class FakeProcess:
         pid = 123
 
@@ -196,7 +198,8 @@ def test_localized_translation_records_measured_usage_and_resource_samples(
         def close(self) -> None:
             return None
 
-        def post(self, *_args: Any, **_kwargs: Any) -> FakeResponse:
+        def post(self, *_args: Any, **kwargs: Any) -> FakeResponse:
+            captured_request.update(kwargs.get("json", {}))
             return FakeResponse()
 
     monkeypatch.setattr(local_inference, "runtime", lambda: {"pid": 123, "model": "local", "backend": "cpu", "gpu_layers": 0})
@@ -204,8 +207,13 @@ def test_localized_translation_records_measured_usage_and_resource_samples(
     monkeypatch.setattr(local_inference.psutil, "Process", lambda _pid: FakeProcess())
     monkeypatch.setattr(local_inference.httpx, "Client", FakeClient)
     metrics: list[dict[str, Any]] = []
-    result = local_inference.localized_translation("Hello", "en", [], [], "local", 5, metrics_sink=metrics)
+    result = local_inference.localized_translation(
+        "Hello", "en", [], [], "local", 5, mode="faithful_paraphrase", metrics_sink=metrics
+    )
     assert result == "Hello"
+    system_prompt = captured_request["messages"][0]["content"]
+    assert "natural target-language editorial prose" in system_prompt
+    assert "Do not copy a complete source sentence" in system_prompt
     assert metrics[0]["prompt_tokens"] == 12
     assert metrics[0]["completion_tokens"] == 3
     assert metrics[0]["succeeded"] is True
@@ -407,6 +415,19 @@ def test_grouped_financial_amounts_normalize_to_the_same_numeric_fact() -> None:
     assert numbers("Revenue was 109417000000 USD") == numbers(
         "Revenue was 109,417,000,000 USD"
     )
+
+
+def test_taiwan_budget_currency_scales_normalize_without_hiding_amount_changes() -> None:
+    assert numbers("6,076億元") == numbers("NT$607.6 billion")
+    assert numbers("107億元") == numbers("NT$10.7 billion")
+    assert numbers("2,000元") == numbers("NT$2,000")
+    assert numbers("107億元") != numbers("NT$10.8 billion")
+
+
+def test_taiwan_fiscal_years_match_gregorian_years_without_weakening_other_numbers() -> None:
+    assert numbers("116年度") == numbers("fiscal 2027") == numbers("2027년도")
+    assert numbers("115年度") == numbers("fiscal 2026")
+    assert numbers("fiscal 2027") != numbers("fiscal 2028")
 
 
 def test_inherited_year_date_lists_match_localized_dates() -> None:
@@ -1253,10 +1274,12 @@ def test_stream_cancellation_and_model_identity(monkeypatch: pytest.MonkeyPatch)
         },
     )
     base = httpx.Client
+    system_prompts: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.method == "GET":
             return httpx.Response(200, json={})
+        system_prompts.append(json.loads(request.content)["messages"][0]["content"])
         return httpx.Response(
             200,
             text="data: " + json.dumps({"choices": [{"delta": {"content": "{"}}]}) + "\n\n",
@@ -1273,6 +1296,9 @@ def test_stream_cancellation_and_model_identity(monkeypatch: pytest.MonkeyPatch)
         LlamaCppProvider().generate(
             context, {"model": "test.gguf", "language_verified": True, "timeout_seconds": 5}
         )
+    assert "reader-centered reported explainer or expert column" in system_prompts[0]
+    assert "Avoid repeated caveats and internal workflow language" in system_prompts[0]
+    assert "Never invent expert opinion, interviews, statistics" in system_prompts[0]
     with pytest.raises(EngineFailure, match="local_model_mismatch"):
         LlamaCppProvider().generate(context, {"model": "other.gguf", "language_verified": True})
 
