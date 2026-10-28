@@ -95,6 +95,35 @@ def test_database_audit_and_worker(
     ).fetchone()["?column?"]
 
 
+def test_operations_dashboard_is_read_only_and_reports_unverified_automation(
+    rollback_lab: psycopg.Connection[dict[str, object]],
+) -> None:
+    versions_before = rollback_lab.execute("SELECT count(*) AS n FROM content_versions").fetchone()["n"]
+    audits_before = rollback_lab.execute("SELECT count(*) AS n FROM audit_events").fetchone()["n"]
+    with TestClient(app) as client:
+        assert client.get("/admin/operations/dashboard").status_code == 401
+        response = client.get(
+            "/admin/operations/dashboard",
+            headers={"Authorization": "Bearer " + settings().admin_token},
+        )
+    assert response.status_code == 200
+    state = response.json()
+    assert state["generation"]["provider_connected"] is False
+    assert state["publishing"]["live_writes_enabled"] is False
+    assert state["publishing"]["auto_enabled"] is False
+    assert state["publication_policy"]["hourly_limit_status"] == "not_configured"
+    schedule_status = {row["key"]: row["status"] for row in state["schedules"]}
+    assert schedule_status["google_trends"] == "inactive"
+    assert schedule_status["gpt_scheduled_import"] == "external_status_unknown"
+    assert schedule_status["market_close"] == "not_configured"
+    assert state["search_console_connected"] is False
+    assert state["recent_public_url"] is None
+    assert all("last_error" not in row for row in state["collection_sources"])
+    assert all("connection_error" not in row for row in state["blogs"])
+    assert rollback_lab.execute("SELECT count(*) AS n FROM content_versions").fetchone()["n"] == versions_before
+    assert rollback_lab.execute("SELECT count(*) AS n FROM audit_events").fetchone()["n"] == audits_before
+
+
 def test_content_versions_and_lease_recovery(
     rollback_lab: psycopg.Connection[dict[str, object]],
 ) -> None:

@@ -11,7 +11,7 @@ if (
 export function localRequest(request: NextRequest, allowGet = false) {
   const host = request.headers.get("host");
   const allowedHosts = isolatedTestMode
-    ? ["127.0.0.1:3100", "localhost:3100", "127.0.0.1:13100"]
+    ? ["127.0.0.1:3100", "localhost:3100", "127.0.0.1:13100", "127.0.0.1:13101"]
     : ["127.0.0.1:3100", "localhost:3100"];
   if (!allowedHosts.includes(host ?? "")) return false;
   return (

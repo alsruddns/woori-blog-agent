@@ -16,6 +16,7 @@ from .google_http import GoogleFailure
 from .localized_publications import router as localized_publications_router
 from .multilingual import router
 from .operations import health as operations_health
+from .operations_dashboard import dashboard_snapshot
 from .publications import router as publications_router
 from .research_routes import router as research_router
 
@@ -90,6 +91,16 @@ def summary() -> dict[str, Any]:
             }
     except psycopg.Error:
         raise HTTPException(503, "Database unavailable") from None
+
+
+@app.get("/admin/operations/dashboard", dependencies=[Depends(authorize)])
+def operations_dashboard() -> dict[str, Any]:
+    """Compact read-only status for the operator home screen."""
+    try:
+        with connection() as conn:
+            return dashboard_snapshot(conn)
+    except psycopg.Error:
+        raise HTTPException(503, "운영 현황을 조회할 수 없습니다.") from None
 
 
 @app.post("/admin/runs", dependencies=[Depends(authorize)], status_code=201)
