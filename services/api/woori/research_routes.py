@@ -716,32 +716,60 @@ def model_comparison_list(
     page: int = Query(default=1, ge=1, le=10000),
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> dict[str, Any]:
-    with connection() as conn:
-        total_row = conn.execute("SELECT count(*)::int AS total FROM research_experiment_evaluations").fetchone()
-        total = int(total_row["total"]) if total_row else 0
-        items = conn.execute(
-            """SELECT e.id,e.experiment_id,e.run_id,e.content_version_id,e.language,e.variant,
-                e.mechanical_gate_passed,e.human_review_required,e.created_at,g.provider,g.model,v.title
-            FROM research_experiment_evaluations e
-            LEFT JOIN generation_results g ON g.content_version_id=e.content_version_id
-            JOIN content_versions v ON v.id=e.content_version_id
-            ORDER BY e.created_at DESC,e.id DESC LIMIT %s OFFSET %s""",
-            (page_size, (page - 1) * page_size),
-        ).fetchall()
+    import psycopg
+    from psycopg.rows import dict_row
+
+    from .config import settings
+
+    url = settings().evaluation_database_url
+    if not url:
+        raise HTTPException(503, "Isolated model evaluation data is unavailable")
+    try:
+        with psycopg.connect(url, connect_timeout=2, row_factory=dict_row) as conn:
+            identity = conn.execute("SELECT current_database() AS db,current_user AS role").fetchone()
+            if not identity or identity["db"] != "woori_blog_agent_eval" or identity["role"] != "woori_eval_reader":
+                raise HTTPException(503, "Evaluation database identity check failed")
+            total_row = conn.execute("SELECT count(*)::int AS total FROM research_experiment_evaluations").fetchone()
+            total = int(total_row["total"]) if total_row else 0
+            items = conn.execute(
+                """SELECT e.id,e.experiment_id,e.run_id,e.content_version_id,e.language,e.variant,
+                    e.mechanical_gate_passed,e.human_review_required,e.created_at,g.provider,g.model,v.title
+                FROM research_experiment_evaluations e
+                LEFT JOIN generation_results g ON g.content_version_id=e.content_version_id
+                JOIN content_versions v ON v.id=e.content_version_id
+                ORDER BY e.created_at DESC,e.id DESC LIMIT %s OFFSET %s""",
+                (page_size, (page - 1) * page_size),
+            ).fetchall()
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Model comparison data is unavailable") from exc
     return {"items": items, "page": page, "page_size": page_size, "total": total}
 
 
 @router.get("/model-comparisons/{evaluation_id}")
 def model_comparison_detail(evaluation_id: UUID) -> dict[str, Any]:
-    with connection() as conn:
-        row = conn.execute(
-            """SELECT e.*,g.provider,g.model,v.title,v.body,v.language AS content_language
-            FROM research_experiment_evaluations e
-            LEFT JOIN generation_results g ON g.content_version_id=e.content_version_id
-            JOIN content_versions v ON v.id=e.content_version_id WHERE e.id=%s""", (evaluation_id,)
-        ).fetchone()
-        if not row:
-            raise HTTPException(404, "Model comparison result not found")
+    import psycopg
+    from psycopg.rows import dict_row
+
+    from .config import settings
+
+    url = settings().evaluation_database_url
+    if not url:
+        raise HTTPException(503, "Isolated model evaluation data is unavailable")
+    try:
+        with psycopg.connect(url, connect_timeout=2, row_factory=dict_row) as conn:
+            identity = conn.execute("SELECT current_database() AS db,current_user AS role").fetchone()
+            if not identity or identity["db"] != "woori_blog_agent_eval" or identity["role"] != "woori_eval_reader":
+                raise HTTPException(503, "Evaluation database identity check failed")
+            row = conn.execute(
+                """SELECT e.*,g.provider,g.model,v.title,v.body,v.language AS content_language
+                FROM research_experiment_evaluations e
+                LEFT JOIN generation_results g ON g.content_version_id=e.content_version_id
+                JOIN content_versions v ON v.id=e.content_version_id WHERE e.id=%s""", (evaluation_id,)
+            ).fetchone()
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Model comparison detail is unavailable") from exc
+    if not row:
+        raise HTTPException(404, "Model comparison result not found")
     return dict(row)
 
 

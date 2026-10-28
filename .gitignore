@@ -12,5 +12,7 @@ backups/
 .mypy_cache/
 build/
 dist/
+apps/dashboard/test-results/
+apps/dashboard/playwright-report/
 .local/
 .runtime/

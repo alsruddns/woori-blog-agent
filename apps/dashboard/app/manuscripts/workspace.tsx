@@ -35,6 +35,7 @@ function HtmlPreview({ html, lang }: { html: string; lang: string }) {
 
 export default function ManuscriptWorkspace() {
   const [filters, setFilters] = useState({ q: "", language: "", category: "", status: "", sort: "newest", page: 1 });
+  const [pageSize, setPageSize] = useState(25);
   const [searchText, setSearchText] = useState("");
   const [data, setData] = useState<ListResult | null>(null);
   const [loading, setLoading] = useState(true);
@@ -54,7 +55,7 @@ export default function ManuscriptWorkspace() {
   useEffect(() => {
     const controller = new AbortController();
     const id = ++requestSequence.current;
-    const params = new URLSearchParams({ page: String(filters.page), page_size: "25", sort: filters.sort });
+    const params = new URLSearchParams({ page: String(filters.page), page_size: String(pageSize), sort: filters.sort });
     if (filters.q.trim()) params.set("q", filters.q.trim());
     if (filters.language) params.set("language", filters.language);
     if (filters.category) params.set("category", filters.category);
@@ -62,10 +63,10 @@ export default function ManuscriptWorkspace() {
     fetch(`/api/research/manuscripts?${params}`, { cache: "no-store", signal: controller.signal })
       .then(async response => { if (!response.ok) throw new Error("원고 목록을 불러오지 못했습니다."); return await response.json() as ListResult; })
       .then(result => { if (requestSequence.current === id) setData(result); })
-      .catch(reason => { if (!controller.signal.aborted && requestSequence.current === id) setError(reason instanceof Error ? reason.message : "조회 오류가 발생했습니다."); })
+      .catch(() => { if (!controller.signal.aborted && requestSequence.current === id) setError("원고 목록을 불러오지 못했습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요."); })
       .finally(() => { if (requestSequence.current === id) setLoading(false); });
     return () => controller.abort();
-  }, [filters]);
+  }, [filters, pageSize]);
 
   const openDetail = useCallback(async (row: Row, trigger: HTMLElement) => {
     const requestId = ++detailSequence.current;
@@ -78,7 +79,7 @@ export default function ManuscriptWorkspace() {
       const result = await response.json() as Row;
       if (detailSequence.current === requestId) setDetail(result);
       requestAnimationFrame(() => { if (detailSequence.current === requestId) dialog.current?.focus(); });
-    } catch (reason) { setMessage(reason instanceof Error ? reason.message : "상세 조회 오류"); }
+    } catch { setMessage("선택한 원고 상세 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요."); }
     finally { setDetailLoading(false); }
   }, []);
   const closeDetail = useCallback(() => {
@@ -142,7 +143,7 @@ export default function ManuscriptWorkspace() {
   const latestApproval = approvals[0];
   const publicationApproved = value(latestApproval ?? {}, "action") === "approved";
 
-  const pageCount = Math.max(1, Math.ceil((data?.total ?? 0) / 25));
+  const pageCount = Math.max(1, Math.ceil((data?.total ?? 0) / pageSize));
   const empty = !loading && !error && (data?.items.length ?? 0) === 0;
   const categories = data?.categories ?? [];
   const languages = data?.languages ?? [];
@@ -156,6 +157,7 @@ export default function ManuscriptWorkspace() {
         <label>언어<select value={filters.language} onChange={event => { setLoading(true); setError(""); setFilters(current => ({ ...current, language: event.target.value, page: 1 })); }}><option value="">전체</option>{languages.map(item => <option key={item} value={item}>{koreanLanguage(item)}</option>)}</select></label>
         <label>품질 상태<select value={filters.status} onChange={event => { setLoading(true); setError(""); setFilters(current => ({ ...current, status: event.target.value, page: 1 })); }}><option value="">전체</option><option value="quality_held">품질 검토 필요</option><option value="machine_checked">기계 검사 통과</option><option value="failed">처리 실패</option></select></label>
         <label>작성일<select value={filters.sort} onChange={event => { setLoading(true); setError(""); setFilters(current => ({ ...current, sort: event.target.value, page: 1 })); }}><option value="newest">최신순</option><option value="oldest">오래된 순</option></select></label>
+        <label>페이지당 표시<select value={pageSize} onChange={event => { setLoading(true); setError(""); setPageSize(Number(event.target.value)); setFilters(current => ({ ...current, page: 1 })); }}><option value={10}>10개</option><option value={25}>25개</option><option value={50}>50개</option></select></label>
       </div>
       <div className="grid-meta"><span>{data ? `${data.total.toLocaleString("ko-KR")}개 원고` : "원고 불러오는 중"}</span>{loading && <span aria-live="polite">목록 갱신 중…</span>}</div>
       {error && <p className="error-state" role="alert">{error}</p>}

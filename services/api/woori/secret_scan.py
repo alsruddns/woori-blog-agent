@@ -28,6 +28,28 @@ def contains_secret(text: str, secret: str) -> bool:
     )
 
 
+def contains_secret_in_http_response(text: str, secret: str) -> bool:
+    """Avoid treating ordinary prose as a leak when a weak secret is very short.
+
+    Long credentials are checked as exact substrings. Short credentials are only
+    considered exposed when they appear in a credential assignment or database
+    connection URL, where the surrounding syntax identifies their meaning.
+    """
+    if not secret:
+        return False
+    if len(secret) >= 8:
+        return secret in text
+    if secret in text and UUID.fullmatch(secret):
+        return True
+    for match in SECRET_ASSIGNMENT.finditer(text):
+        if match.group(2) == secret:
+            return True
+    short_database_password = re.compile(
+        r"(?i)\bpostgres(?:ql)?://[^\s:/@]+:([^\s/@]+)@"
+    )
+    return any(match.group(1) == secret for match in short_database_password.finditer(text))
+
+
 def redact_sensitive_text(text: str) -> str:
     """Redact common credential forms before a diagnostic can be displayed or persisted."""
     redacted = DATABASE_PASSWORD.sub(r"\1[REDACTED]\2", text)

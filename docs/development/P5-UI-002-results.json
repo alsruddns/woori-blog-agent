@@ -1,0 +1,113 @@
+{
+  "phase": "P5-UI-002",
+  "recorded_at": "2026-10-28",
+  "branch": "develop",
+  "baseline_commit": "b59726e72b77ea2789d2d030a61db352eb031831",
+  "runtime": {
+    "api": { "host": "127.0.0.1", "port": 18100, "database": "woori_blog_agent_test", "mode": "read_only", "stopped": true },
+    "dashboard": { "host": "127.0.0.1", "port": 13100, "stopped": true },
+    "production_ports_touched": false,
+    "llama_cpp_11435_touched": false
+  },
+  "database_observations": {
+    "operations": {
+      "database": "woori_blog_agent",
+      "role": "woori_app",
+      "schema_version": 34,
+      "content_versions": 360,
+      "audit_events": 1422,
+      "publication_approval_events": 0,
+      "trend_observations_table_exists": false,
+      "latest_audit_event": "operations.backup.warning",
+      "latest_audit_at_kst": "2026-10-28T03:00:04.093103+09:00",
+      "writes_or_migrations_by_this_work": 0
+    },
+    "test": {
+      "database": "woori_blog_agent_test",
+      "role": "woori_test_app",
+      "schema_version": 39,
+      "trend_observations": 60,
+      "trend_by_geo": { "HK": 10, "JP": 10, "KR": 10, "SG": 10, "TW": 10, "US": 10 }
+    },
+    "evaluation": {
+      "database": "woori_blog_agent_eval",
+      "role": "woori_eval_reader",
+      "content_versions": 260,
+      "article_quality_evaluations": 71,
+      "research_experiment_evaluations": 36,
+      "model_experiment_distribution": { "local / Qwen3-4B-Q4_K_M.gguf": 36 },
+      "nvidia_build_results": 0,
+      "generation_results": 29,
+      "reader_grant": {
+        "table": "research_experiment_evaluations",
+        "privilege": "SELECT",
+        "audit_event": "evaluation.reader_access.granted",
+        "audit_event_id": 85084
+      }
+    }
+  },
+  "browser": {
+    "engine": "installed Chromium",
+    "playwright": "1.64.1",
+    "projects": { "desktop": "1440x1000", "mobile": "390x844" },
+    "tests_passed": 10,
+    "desktop_passed": 5,
+    "mobile_passed": 5,
+    "routes": ["/manuscripts", "/sources", "/model-comparison", "/operations", "/research"],
+    "manuscripts": 18,
+    "trend_observations": 60,
+    "model_comparisons": 36,
+    "detail_sheet_keyboard_close_and_focus_return": true,
+    "mobile_horizontal_overflow": false,
+    "review_permission_respected": true,
+    "publish_ready": false,
+    "screenshots": [
+      "assets/P5-UI-002-manuscripts-desktop.png",
+      "assets/P5-UI-002-manuscript-detail-desktop.png",
+      "assets/P5-UI-002-manuscripts-mobile.png",
+      "assets/P5-UI-002-sources-desktop.png",
+      "assets/P5-UI-002-source-detail-desktop.png",
+      "assets/P5-UI-002-source-detail-mobile.png",
+      "assets/P5-UI-002-model-comparison-desktop.png",
+      "assets/P5-UI-002-model-comparison-mobile.png",
+      "assets/P5-UI-002-operations-desktop.png",
+      "assets/P5-UI-002-operations-mobile.png"
+    ]
+  },
+  "http_payload_measurements": [
+    { "request": "manuscripts-list-18", "status": 200, "response_bytes": 13463, "elapsed_ms": 191.0, "list_body_and_checks_excluded": true },
+    { "request": "manuscript-detail", "status": 200, "response_bytes": 6234, "elapsed_ms": 259.2 },
+    { "request": "trend-list-page-25-of-60", "status": 200, "response_bytes": 15571, "elapsed_ms": 96.0 },
+    { "request": "trend-detail", "status": 200, "response_bytes": 3760, "elapsed_ms": 97.6 },
+    { "request": "model-comparison-list-page-20-of-36", "status": 200, "response_bytes": 10314, "elapsed_ms": 83.5 },
+    { "request": "model-comparison-detail", "status": 200, "response_bytes": 7891, "elapsed_ms": 101.5 }
+  ],
+  "validation": {
+    "verify_ps1": "passed",
+    "ruff": "passed",
+    "mypy": "passed (31 source files)",
+    "pytest": "220 passed",
+    "wheel": "passed",
+    "eslint": "passed",
+    "next_build": "passed",
+    "typescript": "passed",
+    "playwright": "10 passed",
+    "verify_secrets_http": "passed",
+    "git_diff_check": "passed"
+  },
+  "safety": {
+    "blogger_api_calls": 0,
+    "paid_api_calls": 0,
+    "ai_inference_calls": 0,
+    "operational_db_writes": 0,
+    "operational_migrations": 0,
+    "automatic_publishing_enabled": false,
+    "secret_values_logged": false
+  },
+  "limitations": [
+    "Operational database has no trend_observations table; trend data is available only in the isolated test database and was not copied.",
+    "Review and publication write actions were not exercised in the browser; the selected legacy manuscript returned review_actions_allowed=false and publish_ready=false.",
+    "Repeated detail-open memory growth was not measured."
+  ],
+  "git": { "branch": "develop", "main_changed": false }
+}

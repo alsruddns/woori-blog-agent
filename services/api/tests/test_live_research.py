@@ -1344,13 +1344,18 @@ def test_phase3_legacy_idempotency_key_preserved(lab: Any) -> None:
 
 
 def test_short_secret_uuid_collision_does_not_hide_plaintext() -> None:
-    from woori.secret_scan import contains_secret
+    from woori.secret_scan import contains_secret, contains_secret_in_http_response
 
     public_id = "00000000-0000-4000-8000-0000abcd0000"
     assert not contains_secret(public_id, "abcd")
     assert contains_secret(public_id + " password=abcd", "abcd")
     assert contains_secret(public_id, public_id)
     assert contains_secret("password=abcd", "abcd")
+    assert not contains_secret_in_http_response("The test article was saved.", "test")
+    assert contains_secret_in_http_response('{"refresh_token":"abcd"}', "abcd")
+    assert contains_secret_in_http_response(
+        "postgresql://woori:abcd@127.0.0.1:5432/app", "abcd"
+    )
 
 
 def test_fact_first_localization_renders_citations_from_source_registry(

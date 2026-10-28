@@ -10,7 +10,7 @@ import psycopg
 from dotenv import dotenv_values
 from woori.db import connection
 from woori.google_oauth import decrypt
-from woori.secret_scan import contains_secret
+from woori.secret_scan import contains_secret, contains_secret_in_http_response
 
 root = Path(__file__).resolve().parents[1]
 secrets = []
@@ -82,11 +82,36 @@ names = (
     .decode()
     .split("\0")
 )
+
+
+def staged_content_has_secret(name: str, content: bytes) -> bool:
+    try:
+        decoded = content.decode("utf-8")
+    except UnicodeDecodeError:
+        if Path(name).suffix.lower() != ".png" or not content.startswith(b"\x89PNG\r\n\x1a\n"):
+            raise SystemExit("Unsupported binary staged artifact in secret scan")
+        # Playwright screenshots must not contain ancillary text metadata.
+        offset = 8
+        while offset + 12 <= len(content):
+            length = int.from_bytes(content[offset : offset + 4], "big")
+            chunk_type = content[offset + 4 : offset + 8]
+            end = offset + 12 + length
+            if end > len(content):
+                raise SystemExit("Invalid PNG structure in staged screenshot")
+            if chunk_type in {b"tEXt", b"zTXt", b"iTXt"}:
+                raise SystemExit("PNG text metadata requires manual secret review")
+            offset = end
+            if chunk_type == b"IEND":
+                break
+        return any(len(value) >= 16 and value.encode("utf-8") in content for value in secrets)
+    return any(contains_secret(decoded, value) for value in secrets)
+
+
 for name in filter(None, names):
     basename = Path(name).name
     assert not (basename.startswith(".env") and basename != ".env.example"), "Unexpected staged dotenv"
     content = subprocess.check_output(["git", "show", ":" + name], cwd=root)
-    assert not any(contains_secret(content.decode("utf-8"), value) for value in secrets), (
+    assert not staged_content_has_secret(name, content), (
         "Secret found in staged content"
     )
 dashboard_base = os.environ.get("WOORI_VERIFY_DASHBOARD_BASE_URL", "http://127.0.0.1:3100")
@@ -95,11 +120,13 @@ if dashboard_base not in {"http://127.0.0.1:3100"} and not (
     and dashboard_base == "http://127.0.0.1:13100"
 ):
     raise SystemExit("Dashboard verification target is not an approved loopback URL")
-with httpx.Client(timeout=15, trust_env=False) as client:
+with httpx.Client(timeout=15, trust_env=False, follow_redirects=True) as client:
     outputs = []
     for path in ("/", "/research", "/blogger"):
         response = client.get(dashboard_base + path)
         assert response.status_code == 200
+        if path == "/research":
+            assert response.url.path == "/manuscripts", "Research compatibility route did not reach manuscripts"
         outputs.append(response.text)
     for path in ("research/state", "blogger/status"):
         response = client.get(
@@ -108,7 +135,7 @@ with httpx.Client(timeout=15, trust_env=False) as client:
         )
         assert response.status_code == 200
         outputs.append(response.text)
-    assert not any(contains_secret("\n".join(outputs), value) for value in secrets), (
+    assert not any(contains_secret_in_http_response("\n".join(outputs), value) for value in secrets), (
         "Plaintext secret in HTTP response"
     )
 print(

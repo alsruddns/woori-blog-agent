@@ -42,6 +42,21 @@ class _EvaluationConnection:
             return _Cursor([{"db": "woori_blog_agent_eval", "role": "woori_eval_reader"}])
         if "count(*)::int AS total" in query:
             return _Cursor([{"total": 1}])
+        if "FROM research_experiment_evaluations e" in query:
+            return _Cursor([{
+                "id": self.evaluation_id,
+                "experiment_id": uuid4(),
+                "run_id": uuid4(),
+                "content_version_id": self.version_id,
+                "language": "en",
+                "variant": "baseline",
+                "mechanical_gate_passed": False,
+                "human_review_required": True,
+                "created_at": datetime.now(UTC),
+                "provider": "local",
+                "model": "qwen3",
+                "title": "Stored comparison fixture",
+            }])
         if "DISTINCT language_code" in query:
             return _Cursor([{"language_code": "en"}])
         if "DISTINCT category_slug" in query:
@@ -137,6 +152,20 @@ def test_trend_list_keeps_unavailable_source_rank_null(monkeypatch: Any) -> None
     assert item["source_rank"] is None
     assert item["source_language"] is None
     assert response.json()["total"] == 1
+
+
+def test_model_comparison_read_model_uses_isolated_evaluation_reader(monkeypatch: Any) -> None:
+    evaluation = _EvaluationConnection()
+    monkeypatch.setattr(psycopg, "connect", lambda *args, **kwargs: evaluation)
+    headers = {"Authorization": f"Bearer {settings().admin_token}"}
+    with TestClient(app) as client:
+        response = client.get("/admin/research/model-comparisons?page=1&page_size=10", headers=headers)
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert payload["items"][0]["title"] == "Stored comparison fixture"
+    assert not {"body", "metrics", "checks"}.intersection(payload["items"][0])
+    assert any("current_database()" in query for query in evaluation.statements)
 
 
 def test_legacy_manuscript_detail_is_read_only_and_sanitized(monkeypatch: Any) -> None:

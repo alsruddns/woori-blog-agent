@@ -1,4 +1,4 @@
-"""Grant the isolated review reader SELECT on quality evaluation records only."""
+"""Grant the isolated reader only the evaluation tables needed by review UIs."""
 
 from __future__ import annotations
 
@@ -26,21 +26,29 @@ with psycopg.connect(url, row_factory=psycopg.rows.dict_row) as conn:
         or identity["address"].split("/")[0] not in {"127.0.0.1", "::1"}
     ):
         raise SystemExit("Refusing review-reader privilege change outside the local evaluation database")
-    if not conn.execute("SELECT to_regclass('public.article_quality_evaluations') AS table_name").fetchone()["table_name"]:
-        raise SystemExit("Evaluation quality table is missing")
-    was_granted = conn.execute(
-        "SELECT has_table_privilege('woori_eval_reader','article_quality_evaluations','SELECT') AS allowed"
-    ).fetchone()["allowed"]
-    if not was_granted:
-        conn.execute("GRANT SELECT ON article_quality_evaluations TO woori_eval_reader")
-        conn.execute(
-            "INSERT INTO audit_events(event_type,payload) VALUES ('evaluation.reader_access.granted',%s)",
-            (Jsonb({"role": "woori_eval_reader", "table": "article_quality_evaluations", "privilege": "SELECT"}),),
-        )
+    tables = ("article_quality_evaluations", "research_experiment_evaluations")
+    changed: list[str] = []
+    for table in tables:
+        if not conn.execute(
+            "SELECT to_regclass(%s) AS table_name", (f"public.{table}",)
+        ).fetchone()["table_name"]:
+            raise SystemExit(f"Evaluation read table is missing: {table}")
+        allowed = conn.execute(
+            "SELECT has_table_privilege('woori_eval_reader',%s,'SELECT') AS allowed", (table,)
+        ).fetchone()["allowed"]
+        if not allowed:
+            # Table names come only from the fixed allowlist above.
+            conn.execute(f"GRANT SELECT ON {table} TO woori_eval_reader")
+            changed.append(table)
+            conn.execute(
+                "INSERT INTO audit_events(event_type,payload) VALUES ('evaluation.reader_access.granted',%s)",
+                (Jsonb({"role": "woori_eval_reader", "table": table, "privilege": "SELECT"}),),
+            )
     conn.commit()
-    allowed = conn.execute(
-        "SELECT has_table_privilege('woori_eval_reader','article_quality_evaluations','SELECT') AS allowed"
-    ).fetchone()["allowed"]
-    if not allowed:
-        raise SystemExit("Read-only evaluation access grant verification failed")
-    print({"database": identity["name"], "table": "article_quality_evaluations", "privilege": "SELECT", "already_granted": was_granted})
+    for table in tables:
+        allowed = conn.execute(
+            "SELECT has_table_privilege('woori_eval_reader',%s,'SELECT') AS allowed", (table,)
+        ).fetchone()["allowed"]
+        if not allowed:
+            raise SystemExit(f"Read-only evaluation access grant verification failed: {table}")
+    print({"database": identity["name"], "privileges": {table: "SELECT" for table in tables}, "changed_tables": changed})

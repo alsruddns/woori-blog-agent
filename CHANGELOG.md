@@ -1,5 +1,12 @@
 # Changelog
 
+## P5-UI-002 browser validation and isolated data wiring (2026-10-28)
+- Diagnosed the empty trend view: the operational database has no trend table, while the isolated test database retains 60 Google Trends observations across KR, US, JP, TW, HK and SG. Kept those datasets separate and verified the development Dashboard against the test database.
+- Routed model comparison reads through the least-privilege evaluation reader, which now has SELECT only on the two evaluation result tables required by the screen. The privilege change is recorded in the evaluation audit log; no operational migration or data copy was performed.
+- Added 10 desktop/mobile Playwright E2E cases covering 18 manuscript rows, search filters and pagination, lazy article detail, source details, 36 stored model evaluations, compatibility routing, responsive sheets, keyboard close/focus restoration, and accessible network errors. Added a 10/25/50 page-size control and user-facing connection error messages.
+- Updated the live HTTP secret verifier to follow the `/research` compatibility redirect and avoid false positives from short database passwords appearing coincidentally in prose, while still flagging short credentials in credential fields or PostgreSQL URLs. The verifier checks operational/evaluation history and disabled publishing flags.
+- Browser and API checks used only isolated read-only test/evaluation connections on temporary loopback ports. No Blogger calls, paid API calls, AI inference, operational DB writes, or operational migrations were performed.
+
 ## Dashboard content workspace redesign (2026-10-28)
 - Replaced the long research-first landing page with a Korean content operations dashboard and dedicated manuscript, source, model comparison, publishing, automation, and diagnostics navigation; `/research` remains a compatibility route to `/manuscripts`.
 - Added bounded, server-paginated manuscript and Google Trends observation read models. Manuscript lists omit article bodies and quality JSON; selecting a row fetches the full article, evidence, checks, and editorial history on demand. The existing review and approval endpoints remain the only write path and their eligibility checks are unchanged.
