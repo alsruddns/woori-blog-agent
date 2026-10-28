@@ -331,6 +331,22 @@ def test_codex_evaluation_articles_render_with_sources_and_without_duplicate_h1(
     assert "FACT-F" not in html
     assert "blogger_submission" not in html and "evaluation_only" not in html
 
+    from woori.editorial_seo import EditorialSeoMetadata
+    from woori.research_routes import EditorialPreviewRequest, editorial_preview
+
+    preview = editorial_preview(EditorialPreviewRequest(
+        title=title,
+        body=article,
+        summary="",
+        language_code=locale,
+        seo_metadata=EditorialSeoMetadata(language_code=locale, seo_title=title),
+    ))
+    assert preview["language_code"] == locale
+    assert preview["publication_performed"] is False
+    assert "seo_checks" in preview and preview["rendered_sha256"]
+    assert "FACT-F" not in preview["post_html"]
+    assert title not in preview["post_html"]
+
 
 def test_blogger_html_sanitizer_allows_only_safe_table_image_and_design_hooks() -> None:
     from woori.editorial_html import sanitize_editorial_html
@@ -388,6 +404,91 @@ def test_editorial_preview_is_sanitized_non_persistent_and_never_duplicates_post
     ))
     assert "<h1" not in html_result["post_html"] and "Same title" not in html_result["post_html"]
     assert "Body remains visible." in html_result["post_html"]
+
+
+def test_editorial_preview_returns_deterministic_seo_checks_without_predictive_score() -> None:
+    from pathlib import Path
+
+    from woori.editorial_seo import EditorialSeoMetadata, SearchConsoleSnapshot, SeoSource
+    from woori.research_routes import EditorialPreviewRequest, editorial_preview
+
+    request = EditorialPreviewRequest(
+        title="Policy change: what readers should know",
+        body="# Policy change: what readers should know\n\n## What changed\n\n"
+        "The official proposal describes a scheduled adjustment. Read the [source](https://example.gov/policy).",
+        summary="A concise explanation of the policy proposal and its verified status.",
+        language_code="en",
+        seo_metadata=EditorialSeoMetadata(
+            language_code="en", search_intent="informational", primary_keyword="policy proposal",
+            seo_title="Policy change: what readers should know",
+            search_description="A concise explanation of the policy proposal and its verified status.",
+            official_sources=[SeoSource(title="Official notice", url="https://example.gov/policy", official_status="unverified")],
+        ),
+    )
+    first = editorial_preview(request)
+    second = editorial_preview(request)
+    assert first["post_html"] == second["post_html"]
+    assert first["rendered_sha256"] == second["rendered_sha256"]
+    assert first["renderer_version"] and first["design_system_version"]
+    assert first["seo_metadata"]["target_region"] is None
+    assert first["publication_performed"] is False
+    check_map = {check["key"]: check for check in first["seo_checks"]}
+    assert check_map["title_matches_article"]["status"] == "ready"
+    assert check_map["search_intent"]["status"] == "ready"
+    assert check_map["official_source_status"]["status"] == "review"
+    assert check_map["duplicate_content"]["status"] == "not_measured"
+    assert check_map["search_performance"]["status"] == "not_measured"
+    assert "score" not in first
+
+    snapshot = SearchConsoleSnapshot()
+    assert snapshot.impressions is None and snapshot.clicks is None and snapshot.queries == []
+
+    root = Path(__file__).resolve().parents[3]
+    preview_css = (root / "apps/dashboard/public/blogger-editorial.css").read_text(encoding="utf-8")
+    theme_css = (root / "docs/operations/blogger-editorial-theme.css").read_text(encoding="utf-8")
+    assert preview_css == theme_css
+    assert "--woori-article-body-size: 17px" in preview_css
+    assert "--woori-article-body-leading: 1.8" in preview_css
+    assert "--woori-article-width: 750px" in preview_css
+    assert ".wb-article h2" in preview_css and ".wb-article h3" in preview_css
+
+
+def test_seo_source_urls_are_https_only() -> None:
+    from pydantic import ValidationError
+    from woori.editorial_seo import SeoSource
+
+    with pytest.raises(ValidationError, match="seo_source_url_must_be_https"):
+        SeoSource(title="Unsafe", url="javascript:alert(1)")
+
+
+def test_seo_readiness_flags_dropped_images_without_alt_text() -> None:
+    from woori.editorial_seo import EditorialSeoMetadata
+    from woori.research_routes import EditorialPreviewRequest, editorial_preview
+
+    result = editorial_preview(EditorialPreviewRequest(
+        title="Accessible report", body='<h2>Summary</h2><p>Verified data.</p><img src="https://example.gov/chart.png">',
+        body_format="html", language_code="en",
+        seo_metadata=EditorialSeoMetadata(language_code="en", seo_title="Accessible report"),
+    ))
+    image_check = next(item for item in result["seo_checks"] if item["key"] == "image_alt")
+    assert image_check["status"] == "review"
+    assert "대체 텍스트" in image_check["message"]
+    assert "<img" not in result["post_html"]
+
+
+def test_editorial_seo_migration_is_additive_and_keeps_append_only_revisions() -> None:
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[3]
+    migration = (root / "scripts/041_editorial_seo_metadata.sql").read_text(encoding="utf-8").casefold()
+    runner = (root / "scripts/migrate.py").read_text(encoding="utf-8")
+    assert "add column seo_metadata jsonb not null default '{}'::jsonb" in migration
+    assert "check (jsonb_typeof(seo_metadata) = 'object')" in migration
+    assert "insert into schema_migrations(version) values(41)" in migration
+    assert "040_research_package_review_state.sql" in runner
+    assert "041_editorial_seo_metadata.sql" in runner
+    assert "drop table" not in migration and "delete from" not in migration
+    assert "update article_editorial_versions" not in migration
 
 
 def test_editorial_revision_rejects_stale_base_without_inserting_a_version(

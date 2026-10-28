@@ -29,15 +29,15 @@ function markdownHtml(source: string) {
   }).join("");
 }
 
-type RenderedPreview = { title: string; language_code: string; post_html: string; labels: string[]; title_in_body: boolean; publication_performed: boolean };
+type SeoCheck = { key: string; status: "ready" | "review" | "not_measured"; message: string };
+type RenderedPreview = { title: string; language_code: string; post_html: string; labels: string[]; title_in_body: boolean; publication_performed: boolean; renderer_version: string; design_system_version: string; seo_metadata: Row; seo_checks: SeoCheck[] };
 
 function HtmlPreview({ html, title, lang }: { html: string; title: string; lang: string }) {
-  const previewCss = `:root{color-scheme:light dark}*{box-sizing:border-box}body{margin:0;background:#fff;color:#26342e;font:400 17px/1.82 system-ui,-apple-system,"Segoe UI",sans-serif;overflow-wrap:anywhere;word-break:normal}.wb-preview-shell{max-width:780px;margin:0 auto;padding:28px clamp(16px,4vw,36px) 44px}.wb-post-title{margin:0 0 26px;font-size:clamp(25px,4vw,34px);line-height:1.32;letter-spacing:-.025em}.wb-article p{margin:0 0 1.18em}.wb-article .wb-lead{font-size:1.06em;line-height:1.86}.wb-article h2{margin:2.1em 0 .72em;font-size:1.48em;line-height:1.42;letter-spacing:-.02em}.wb-article h3{margin:1.7em 0 .62em;font-size:1.2em;line-height:1.45}.wb-article a{color:#176b56;text-decoration-thickness:1px;text-underline-offset:3px;overflow-wrap:anywhere}.wb-article blockquote{margin:1.5em 0;padding:.25em 0 .25em 1em;border-left:3px solid #9ab7a8;color:#52645b}.wb-article .wb-summary{margin:0 0 1.7em;padding:16px 18px;border:1px solid #dce9e1;border-left:4px solid #48836a;border-radius:8px;background:#f5f9f6;font-weight:600}.wb-article .wb-table-wrap{max-width:100%;margin:1.4em 0;overflow-x:auto;overscroll-behavior-inline:contain}.wb-article table{width:100%;border-collapse:collapse;font-size:.94em}.wb-article th,.wb-article td{min-width:88px;padding:10px 12px;border:1px solid #dbe3de;text-align:left;vertical-align:top}.wb-article th{background:#f2f6f3;font-weight:700}.wb-article .wb-stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));gap:12px;margin:1.3em 0}.wb-article .wb-stat-card{padding:16px;border:1px solid #dce6df;border-radius:10px;background:#f8faf8}.wb-article figure{max-width:100%;margin:1.4em auto;text-align:center}.wb-article img{display:block;width:auto;height:auto;max-width:100%;margin:auto}.wb-article figcaption{margin-top:.5em;color:#68766e;font-size:.88em}.wb-article ul,.wb-article ol{margin:.6em 0 1.2em;padding-left:1.5em}.wb-article li{margin:.35em 0}.wb-article code{max-width:100%;overflow-wrap:anywhere}.wb-article hr{margin:2em 0;border:0;border-top:1px solid #dbe3de}@media(max-width:480px){body{font-size:16px}.wb-preview-shell{padding:20px 16px 32px}.wb-post-title{margin-bottom:20px}.wb-article h2{margin-top:1.8em;font-size:1.36em}.wb-article th,.wb-article td{padding:8px;font-size:.9em}}@media(prefers-color-scheme:dark){body{background:#111a16;color:#e3ebe6}.wb-article .wb-summary,.wb-article th,.wb-article .wb-stat-card{background:#1b2922;border-color:#35473d}.wb-article th,.wb-article td{border-color:#394b41}.wb-article blockquote{color:#b9c9bf}.wb-article figcaption{color:#b1beb6}}`;
   const previewHtml = html.replace(/<img\b([^>]*)>/gi, (_tag, attributes: string) => {
     const alt = attributes.match(/\balt="([^"]*)"/i)?.[1] ?? "이미지";
     return `<div class="wb-image-placeholder" role="img" aria-label="${alt}">${alt}<small>이미지 미리보기에서는 외부 요청을 보내지 않습니다.</small></div>`;
   });
-  const source = `<!doctype html><html lang="${escapeHtml(lang)}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline';"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${previewCss}.wb-image-placeholder{display:grid;gap:4px;place-items:center;max-width:100%;min-height:110px;padding:16px;border:1px dashed #9cad9f;border-radius:8px;color:#52645b;overflow-wrap:anywhere;text-align:center}.wb-image-placeholder small{font-size:11px}</style></head><body><main class="wb-preview-shell"><h1 class="wb-post-title">${escapeHtml(title)}</h1>${previewHtml}</main></body></html>`;
+  const source = `<!doctype html><html lang="${escapeHtml(lang)}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'self';"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/blogger-editorial.css"></head><body><main class="wb-preview-shell"><h1 class="wb-post-title">${escapeHtml(title)}</h1>${previewHtml}</main></body></html>`;
   return <iframe className={styles.iframe} title="게시 화면 미리보기. 제목은 Blogger 게시글 제목 영역을 나타냅니다." sandbox="" srcDoc={source} />;
 }
 
@@ -55,7 +55,7 @@ export default function ManuscriptWorkspace() {
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [googleTrendsBased, setGoogleTrendsBased] = useState(false);
-  const [previewMode, setPreviewMode] = useState<"rendered" | "source">("rendered");
+  const [previewMode, setPreviewMode] = useState<"rendered" | "source" | "seo">("rendered");
   const [renderedPreviewState, setRenderedPreviewState] = useState<{ key: string; result: RenderedPreview } | null>(null);
   const [previewErrorState, setPreviewErrorState] = useState<{ key: string; message: string } | null>(null);
   const dialog = useRef<HTMLElement>(null);
@@ -150,6 +150,18 @@ export default function ManuscriptWorkspace() {
       summary: String(form.get("summary") ?? ""), seo_description: String(form.get("summary") ?? ""),
       keywords: String(form.get("keywords") ?? "").split("|").map(item => item.trim()).filter(Boolean),
       blogger_labels: bloggerLabels,
+      seo_metadata: {
+        language_code: value(detail, "language_code"), target_region: String(form.get("target_region") ?? "").trim() || null,
+        search_intent: String(form.get("search_intent") ?? "") || null,
+        primary_keyword: String(form.get("primary_keyword") ?? "").trim() || null,
+        related_terms: String(form.get("keywords") ?? "").split("|").map(item => item.trim()).filter(Boolean).slice(1),
+        seo_title_candidates: String(form.get("seo_title_candidates") ?? "").split("|").map(item => item.trim()).filter(Boolean),
+        seo_title: String(form.get("title") ?? "").trim(), search_description: String(form.get("summary") ?? "").trim(),
+        core_question: String(form.get("core_question") ?? "").trim() || null,
+        core_answer: String(form.get("core_answer") ?? "").trim() || null,
+        category: value(detail, "category_slug") || null, blogger_labels: bloggerLabels,
+        official_sources: [], author: null, fact_verified_at: null, editorial_status: "unknown",
+      },
       target_blog_id: null, publication_mode: "manual", planned_publish_at: null,
     });
   };
@@ -158,6 +170,7 @@ export default function ManuscriptWorkspace() {
   const revisions = (detail?.editorial_versions as Row[] | undefined) ?? [];
   const approvals = (detail?.publication_approval_events as Row[] | undefined) ?? [];
   const latestRevision = revisions[0];
+  const latestSeo = (latestRevision?.seo_metadata as Row | undefined) ?? {};
   const machinePassed = Boolean(latestRevision ? latestRevision.machine_passed : detail?.machine_passed);
   const latestReview = reviews[0];
   const body = value(detail, "saved_body") || value(detail, "body");
@@ -175,6 +188,7 @@ export default function ManuscriptWorkspace() {
     if (!detail || tab !== "body") return;
     const controller = new AbortController();
     const revision = ((detail.editorial_versions as Row[] | undefined) ?? [])[0];
+    const revisionSeo = (revision?.seo_metadata as Row | undefined) ?? {};
     const revisionHtml = value(revision ?? {}, "html_body");
     const bodyValue = revisionHtml || value(detail, "saved_body") || value(detail, "body");
     const bodyFormat = revisionHtml || value(detail, "body_format") === "html" ? "html" : "markdown";
@@ -186,6 +200,24 @@ export default function ManuscriptWorkspace() {
         body: bodyValue, body_format: bodyFormat,
         summary: value(revision ?? {}, "seo_description") || value(detail, "summary"),
         language_code: value(detail, "language_code"), google_trends_based: googleTrendsBased, labels,
+        seo_metadata: {
+          language_code: value(detail, "language_code"),
+          target_region: value(revisionSeo, "target_region") || null,
+          search_intent: value(revisionSeo, "search_intent") || null,
+          primary_keyword: value(revisionSeo, "primary_keyword") || ((detail.keywords as string[] | undefined) ?? [])[0] || null,
+          related_terms: (revisionSeo.related_terms as string[] | undefined) ?? ((detail.keywords as string[] | undefined) ?? []).slice(1),
+          seo_title_candidates: (revisionSeo.seo_title_candidates as string[] | undefined) ?? [],
+          seo_title: value(revision ?? {}, "title") || value(detail, "saved_title") || value(detail, "title"),
+          search_description: value(revision ?? {}, "seo_description") || value(detail, "summary"),
+          core_question: value(revisionSeo, "core_question") || null,
+          core_answer: value(revisionSeo, "core_answer") || null,
+          category: value(revisionSeo, "category") || value(detail, "category_slug") || null,
+          blogger_labels: labels,
+          author: revisionSeo.author ?? null,
+          official_sources: (revisionSeo.official_sources as Row[] | undefined) ?? ((detail.sources as Row[] | undefined) ?? []).map(source => ({ title: value(source, "source_name"), url: value(source, "url"), official_status: "unverified" })),
+          fact_verified_at: revisionSeo.fact_verified_at ?? null,
+          editorial_status: value(detail, "editorial_status") || "unknown",
+        },
       }),
     }).then(async response => {
       if (!response.ok) throw new Error("게시용 HTML 미리보기를 만들지 못했습니다.");
@@ -236,15 +268,15 @@ export default function ManuscriptWorkspace() {
           <div className="sheet-content" id="manuscript-panel" role="tabpanel" aria-labelledby={`manuscript-tab-${tab}`} tabIndex={0}>
             {tab === "body" && <div className="body-tab"><p className="article-summary"><strong>검색 설명 (게시 본문 HTML에는 포함되지 않음)</strong><br />{value(latestRevision ?? {}, "seo_description") || value(detail, "summary")}</p>
               <section className={styles.publicationPreview} aria-label="게시용 미리보기"><div className={styles.toolbar}><div><h3>게시용 미리보기</h3><p>제목은 Blogger 제목 영역에 표시되며 게시 본문 HTML에는 중복하지 않습니다.</p></div><label className={styles.trendLabelToggle}><input type="checkbox" checked={googleTrendsBased} onChange={event => setGoogleTrendsBased(event.target.checked)} /> Google Trends 기반 원고</label></div>
-                <div className={styles.controls} role="group" aria-label="미리보기 보기 선택"><button type="button" aria-pressed={previewMode === "rendered"} onClick={() => setPreviewMode("rendered")}>화면 미리보기</button><button type="button" aria-pressed={previewMode === "source"} onClick={() => setPreviewMode("source")}>게시용 HTML</button></div>
+                <div className={styles.controls} role="group" aria-label="미리보기 보기 선택"><button type="button" aria-pressed={previewMode === "rendered"} onClick={() => setPreviewMode("rendered")}>화면 미리보기</button><button type="button" aria-pressed={previewMode === "source"} onClick={() => setPreviewMode("source")}>게시용 HTML</button><button type="button" aria-pressed={previewMode === "seo"} onClick={() => setPreviewMode("seo")}>SEO 점검</button></div>
                 {previewLoading && <p role="status">게시용 HTML을 준비하고 있습니다…</p>}{previewError && <p className="quality-held" role="alert">{previewError}</p>}
                 {renderedPreview && <><div className={styles.labels}><strong>게시 라벨</strong>{renderedPreview.labels.length ? renderedPreview.labels.map(label => <span key={label}>{label}</span>) : <small>지정된 라벨 없음</small>}</div>
-                  {previewMode === "rendered" ? <HtmlPreview html={renderedPreview.post_html} lang={renderedPreview.language_code} title={renderedPreview.title} /> : <pre className={styles.htmlSource}>{renderedPreview.post_html}</pre>}
+                  {previewMode === "rendered" ? <HtmlPreview html={renderedPreview.post_html} lang={renderedPreview.language_code} title={renderedPreview.title} /> : previewMode === "source" ? <pre className={styles.htmlSource}>{renderedPreview.post_html}</pre> : <SeoReadiness result={renderedPreview} />}
                   <p className={styles.limitation}>미리보기는 저장소의 공통 칼럼 CSS를 적용한 근사 화면입니다. Blogger 테마의 전역 CSS, 위젯, 글꼴과 폭은 실제 게시 화면과 다를 수 있습니다.</p></>}
                 <details className={styles.metadata}><summary>원고와 출처 보기</summary><h4>원고 원문</h4><pre>{body}</pre><h4>연결된 출처</h4>{((detail.sources as Row[] | undefined) ?? []).length ? <ul>{(detail.sources as Row[]).map(source => <li key={value(source, "id")}><a href={value(source, "url")} target="_blank" rel="noreferrer">{value(source, "source_name") || value(source, "url")}</a></li>)}</ul> : <p>연결된 출처가 없습니다.</p>}</details>
               </section>
               {detail.review_actions_allowed ? <details className="edit-article"><summary>새 원고 버전 편집</summary><form onSubmit={event => void submitRevision(event)}>
-                <label>작성자<input name="reviewer" required minLength={2} maxLength={80} /></label><label>변경 사유<input name="reason" required minLength={10} maxLength={2000} /></label><label>제목<input name="title" required maxLength={500} defaultValue={value(latestRevision ?? {}, "title") || value(detail, "title")} /></label><label>요약 및 SEO 설명<textarea name="summary" required minLength={1} maxLength={500} defaultValue={value(latestRevision ?? {}, "seo_description") || value(detail, "summary")} /></label><label>검색 키워드 (| 구분)<input name="keywords" required defaultValue={((detail.keywords as string[] | undefined) ?? []).join(" | ")} /></label><label>Blogger 라벨 (, 구분)<input name="labels" defaultValue={((latestRevision?.blogger_labels as string[] | undefined) ?? []).join(", ")} /></label><label>원고 HTML<textarea name="html_body" rows={14} required maxLength={100000} defaultValue={value(latestRevision ?? {}, "html_body") || htmlBody} /></label><p>저장 시 서버 허용 목록으로 HTML을 정화하고 새 버전에서 품질 검사를 다시 실행합니다.</p><button disabled={saving}>새 버전 저장</button></form></details> : <p className="notice">이 원고는 읽기 전용입니다. 현재 편집·검토 권한 정책에서 이 원고의 버전은 승인 대상에 포함되지 않습니다.</p>}
+                <label>작성자<input name="reviewer" required minLength={2} maxLength={80} /></label><label>변경 사유<input name="reason" required minLength={10} maxLength={2000} /></label><label>제목<input name="title" required maxLength={500} defaultValue={value(latestRevision ?? {}, "title") || value(detail, "title")} /></label><label>요약 및 SEO 설명<textarea name="summary" required minLength={1} maxLength={500} defaultValue={value(latestRevision ?? {}, "seo_description") || value(detail, "summary")} /></label><label>검색 키워드 (| 구분)<input name="keywords" required defaultValue={((detail.keywords as string[] | undefined) ?? []).join(" | ")} /></label><label>SEO 제목 후보 (| 구분)<input name="seo_title_candidates" maxLength={1000} defaultValue={((latestSeo.seo_title_candidates as string[] | undefined) ?? []).join(" | ")} /></label><label>핵심 검색어<input name="primary_keyword" maxLength={80} defaultValue={value(latestSeo, "primary_keyword") || ((detail.keywords as string[] | undefined) ?? [])[0] || ""} /></label><label>대상 지역<input name="target_region" maxLength={80} placeholder="근거가 있을 때만 입력" defaultValue={value(latestSeo, "target_region")} /></label><label>검색 의도<select name="search_intent" defaultValue={value(latestSeo, "search_intent")}><option value="">미기록</option><option value="informational">정보 탐색</option><option value="navigational">특정 사이트 탐색</option><option value="transactional">거래·행동</option><option value="commercial">상업 정보 비교</option></select></label><label>핵심 질문<input name="core_question" maxLength={500} defaultValue={value(latestSeo, "core_question")} /></label><label>핵심 답변<textarea name="core_answer" maxLength={2000} defaultValue={value(latestSeo, "core_answer")} /></label><label>Blogger 라벨 (, 구분)<input name="labels" defaultValue={((latestRevision?.blogger_labels as string[] | undefined) ?? []).join(", ")} /></label><label>원고 HTML<textarea name="html_body" rows={14} required maxLength={100000} defaultValue={value(latestRevision ?? {}, "html_body") || htmlBody} /></label><p>저장 시 서버 허용 목록으로 HTML을 정화하고 새 버전에서 품질 검사를 다시 실행합니다.</p><button disabled={saving}>새 버전 저장</button></form></details> : <p className="notice">이 원고는 읽기 전용입니다. 현재 편집·검토 권한 정책에서 이 원고의 버전은 승인 대상에 포함되지 않습니다.</p>}
             </div>}
             {tab === "sources" && <div className="detail-section">{((detail.sources as Row[] | undefined) ?? []).length === 0 ? <p className="empty-state">연결된 출처가 없습니다.</p> : (detail.sources as Row[]).map(source => <article className="source-card" key={value(source, "id")}><h3>{value(source, "source_name")}</h3><p>게시 {dateLabel(value(source, "published_at"))} · 수집 {dateLabel(value(source, "collected_at"))} · 권리 {value(source, "rights") || "확인 필요"}</p><a href={value(source, "url")} target="_blank" rel="noreferrer">원문 열기 ↗</a></article>)}<h3>검증된 사실</h3>{((detail.facts as Row[] | undefined) ?? []).map(fact => <article className="source-card" key={value(fact, "id")}><strong>{value(fact, "fact_key")}</strong><p>{value(fact, "source_excerpt")}</p><small>검증 상태: {value(fact, "verification_status")}</small></article>)}</div>}
             {tab === "quality" && <div className="detail-section"><p className={machinePassed ? "quality-ok" : "quality-held"}>{machinePassed ? "기계 검사 통과 · 의미 정확성과 자연스러움은 사람 검토가 필요합니다." : "품질 검토가 필요합니다. 이 상태에서는 발행할 수 없습니다."}</p><QualityChecks value={detail.checks} />
@@ -263,6 +295,26 @@ export default function ManuscriptWorkspace() {
       </section>
     </div>}
   </>;
+}
+
+function SeoReadiness({ result }: { result: RenderedPreview }) {
+  const metadata = result.seo_metadata;
+  const stateLabel = (status: SeoCheck["status"]) => status === "ready" ? "준비됨" : status === "review" ? "검토 필요" : "미측정";
+  return <section className={styles.seoPanel} aria-label="게시 전 SEO 점검">
+    <h4>게시 전 SEO 점검</h4>
+    <p>검색 순위나 방문자 수를 예측하지 않습니다. 이 결과는 작성자가 확인할 구체적인 항목이며 게시 승인과 별개입니다.</p>
+    <dl><dt>언어 / 지역</dt><dd>{koreanLanguage(value(metadata, "language_code") || result.language_code)} / {value(metadata, "target_region") || "지역 미지정"}</dd>
+      <dt>검색 의도</dt><dd>{value(metadata, "search_intent") || "미기록"}</dd><dt>제목</dt><dd>{value(metadata, "seo_title") || result.title}{Array.isArray(metadata.seo_title_candidates) && metadata.seo_title_candidates.length ? ` · 후보: ${(metadata.seo_title_candidates as string[]).join(" / ")}` : ""}</dd>
+      <dt>검색 설명</dt><dd>{value(metadata, "search_description") || "미입력"}</dd><dt>핵심 표현</dt><dd>{value(metadata, "primary_keyword") || "미지정"}</dd>
+      <dt>핵심 질문 / 답</dt><dd>{value(metadata, "core_question") || "미기록"}{value(metadata, "core_answer") ? ` — ${value(metadata, "core_answer")}` : ""}</dd>
+      <dt>카테고리 / 라벨</dt><dd>{value(metadata, "category") || "미지정"} / {result.labels.join(", ") || "없음"}</dd>
+      <dt>출처</dt><dd>{Array.isArray(metadata.official_sources) ? metadata.official_sources.length : 0}건 · 공식성 확인 필요</dd>
+      <dt>사실 확인 시각</dt><dd>{metadata.fact_verified_at ? dateLabel(String(metadata.fact_verified_at)) : "미기록"}</dd>
+      <dt>작성자 / 검토 상태</dt><dd>{value(metadata, "author") || "작성자 연결 미확인"} / {value(metadata, "editorial_status") || "미확인"}</dd></dl>
+    <ul className={styles.seoChecks}>{result.seo_checks.map(check => <li key={check.key} data-status={check.status}><span>{stateLabel(check.status)}</span><p>{check.message}</p></li>)}</ul>
+    <p className={styles.gscNote}>Search Console 연결 없음 · 노출수, 클릭수, CTR, 평균 순위, 실제 검색어 및 색인 상태는 미측정입니다.</p>
+    <small>렌더러 {result.renderer_version} · 디자인 {result.design_system_version}</small>
+  </section>;
 }
 
 function QualityChecks({ value }: { value: unknown }) {

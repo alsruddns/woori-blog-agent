@@ -1,0 +1,111 @@
+{
+  "work_id": "P5-CODEX-004-SEO",
+  "executed_at": "2026-10-28",
+  "timezone": "Asia/Seoul",
+  "branch": "develop",
+  "start_commit": "dd5290dbfcb956ec05bbfc37f1e4baaa86ce4b7c",
+  "status": "implementation_and_local_verification_complete",
+  "renderer_version": "1.1.0",
+  "design_system_version": "1.1.0",
+  "features": {
+    "editorial_standard_expanded": true,
+    "shared_css_tokens": true,
+    "markdown_html_sanitization_reused": true,
+    "seo_metadata_model": true,
+    "revision_metadata_migration": 41,
+    "prepublish_seo_checklist": true,
+    "search_console_connected": false,
+    "blogger_theme_changed": false,
+    "live_blogger_theme_compatibility": "not_verified"
+  },
+  "browser_validation": {
+    "playwright_desktop": "passed",
+    "playwright_mobile": "passed",
+    "widths_px": [
+      320,
+      390,
+      430,
+      768,
+      1280
+    ],
+    "horizontal_overflow": false,
+    "sandboxed_stylesheet_loaded": true,
+    "dark_color_scheme": "passed",
+    "api_data": "mocked_e2e_fixture",
+    "screenshots": [
+      "docs/development/assets/P5-CODEX-004-preview-320.png",
+      "docs/development/assets/P5-CODEX-004-preview-desktop.png"
+    ]
+  },
+  "tests": {
+    "pytest_full": {
+      "passed": 251,
+      "failed": 0
+    },
+    "pytest_article_reviews": {
+      "passed": 26,
+      "failed": 0
+    },
+    "ruff": "passed",
+    "mypy": "passed",
+    "wheel": "passed",
+    "dashboard_eslint": "passed",
+    "dashboard_typecheck": "passed",
+    "dashboard_production_build": "passed",
+    "playwright_targeted": {
+      "passed": 2,
+      "failed": 0
+    },
+    "git_diff_check": "passed"
+  },
+  "migration": {
+    "file": "scripts/041_editorial_seo_metadata.sql",
+    "isolated_test_database": "woori_blog_agent_test",
+    "isolated_schema_after": 41,
+    "isolated_role_ops_connect": false,
+    "operational_database_applied": false
+  },
+  "safety": {
+    "operational_db_content_changed": false,
+    "operational_db_migration_applied": false,
+    "blogger_api_requests": 0,
+    "blogger_posts_or_themes_changed": 0,
+    "paid_ai_api_requests": 0,
+    "publish_ready_changed": false,
+    "generation_ready_changed": false,
+    "search_console_connected": false,
+    "search_performance_metrics": "not_measured"
+  },
+  "blogger_platform": {
+    "post_title_html_labels_api_fields": "documented",
+    "per_post_search_description_api_field": "not_documented; editor-side manual step",
+    "custom_permalink_api_field": "not_documented; editor-side manual step",
+    "alt_text": "allowed semantic HTML and manual Blogger editor support; live normalization unverified",
+    "canonical_robots_open_graph_structured_data_sitemap": "theme_or_site_level; live templates unverified"
+  },
+  "official_sources_checked": [
+    "https://developers.google.com/blogger/docs/3.0/reference/posts",
+    "https://developers.google.com/blogger/docs/3.0/reference/posts/insert",
+    "https://support.google.com/blogger/answer/41373?hl=en",
+    "https://support.google.com/blogger/answer/9691230?hl=en"
+  ],
+  "commit": null,
+  "push": null,
+  "post_namespace_css_regression": {
+    "article_review_tests": {
+      "passed": 26,
+      "failed": 0
+    },
+    "playwright_preview": {
+      "passed": 2,
+      "failed": 0,
+      "projects": [
+        "desktop",
+        "mobile"
+      ]
+    },
+    "css_tokens_scoped_to_woori_namespaces": true,
+    "temporary_dashboard_port": 13100,
+    "temporary_server_stopped": true
+  }
+}

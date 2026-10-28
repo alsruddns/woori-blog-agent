@@ -66,7 +66,24 @@
 .metadata h4 { margin: 16px 0 6px; }
 .metadata a { overflow-wrap: anywhere; }
 
+.seoPanel { max-width: 760px; min-width: 0; margin: 12px auto; padding: 18px; border: 1px solid #dce4df; border-radius: 10px; background: #fff; color: #26342e; overflow-wrap: anywhere; }
+.seoPanel h4 { margin: 0 0 8px; font-size: 18px; }
+.seoPanel > p { color: #596a60; font-size: 13px; line-height: 1.65; }
+.seoPanel dl { display: grid; grid-template-columns: minmax(105px, 150px) minmax(0, 1fr); gap: 8px 12px; padding: 14px 0; border-block: 1px solid #e3e9e5; font-size: 13px; }
+.seoPanel dt { color: #68766f; }
+.seoPanel dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.seoChecks { margin: 0; padding: 0; list-style: none; }
+.seoChecks li { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 10px; align-items: start; padding: 10px 0; border-bottom: 1px solid #edf0ee; font-size: 13px; }
+.seoChecks li > span { color: #53645a; font-weight: 700; }
+.seoChecks li[data-status="review"] > span { color: #89561e; }
+.seoChecks li[data-status="not_measured"] > span { color: #69766e; }
+.seoChecks p { margin: 0; line-height: 1.55; }
+.gscNote { padding: 10px 12px; border-radius: 7px; background: #f3f6f4; }
+
 @media (max-width: 640px) {
   .iframe { height: 62vh; }
   .toolbar { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .seoPanel { padding: 14px; }
+  .seoPanel dl { grid-template-columns: minmax(82px, 105px) minmax(0, 1fr); }
+  .seoChecks li { grid-template-columns: 74px minmax(0, 1fr); }
 }

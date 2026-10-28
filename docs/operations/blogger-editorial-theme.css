@@ -1,28 +1,75 @@
-/*
- * Optional, manually reviewed Blogger theme stylesheet.
- * No live Blogger theme is changed by the application.
- * Keep these classes scoped: Blogger templates often define broad h2, table, img rules.
- */
-.wb-article { max-width: 780px; margin-inline: auto; color: #26342e; font: 400 17px/1.82 system-ui, sans-serif; overflow-wrap: anywhere; }
-.wb-article p { margin: 0 0 1.18em; }
-.wb-article .wb-lead { font-size: 1.06em; line-height: 1.86; }
-.wb-article h2 { margin: 2.1em 0 .72em; font-size: 1.48em; line-height: 1.42; }
-.wb-article h3 { margin: 1.7em 0 .62em; font-size: 1.2em; line-height: 1.45; }
-.wb-article a { color: #176b56; text-underline-offset: 3px; overflow-wrap: anywhere; }
-.wb-article blockquote { margin: 1.5em 0; padding: .25em 0 .25em 1em; border-left: 3px solid #9ab7a8; color: #52645b; }
-.wb-article .wb-summary, .wb-article .wb-stat-card { margin: 1.3em 0; padding: 16px 18px; border: 1px solid #dce9e1; border-radius: 8px; background: #f5f9f6; }
-.wb-article .wb-stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 12px; }
-.wb-article .wb-table-wrap { max-width: 100%; margin: 1.4em 0; overflow-x: auto; overscroll-behavior-inline: contain; }
+/* Woori editorial design system v1.1.0. Canonical preview and optional theme stylesheet. */
+.wb-preview-shell, .wb-article {
+  --woori-article-body-size: 17px;
+  --woori-article-body-leading: 1.8;
+  --woori-article-width: 750px;
+  --woori-article-h2-size: 25px;
+  --woori-article-h3-size: 20px;
+  --woori-article-paragraph-gap: 1.15em;
+  --woori-article-heading-gap: 1.9em;
+  --woori-article-ink: #26342e;
+  --woori-article-muted: #5e6e65;
+  --woori-article-border: #dce5df;
+  --woori-article-accent: #176b56;
+  --woori-article-surface: #f5f9f6;
+  --woori-article-radius: 8px;
+}
+
+.wb-preview-shell *, .wb-article * { box-sizing: border-box; }
+.wb-preview-shell {
+  max-width: var(--woori-article-width);
+  margin: 0 auto;
+  padding: 28px clamp(16px, 4vw, 36px) 44px;
+  background: #fff;
+  color: var(--woori-article-ink);
+  font: 400 var(--woori-article-body-size)/var(--woori-article-body-leading)
+    system-ui, -apple-system, "Segoe UI", "Noto Sans KR", "Yu Gothic", "Microsoft JhengHei", sans-serif;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+.wb-post-title { margin: 0 0 26px; font-size: clamp(25px, 4vw, 34px); line-height: 1.32; letter-spacing: -.025em; }
+.wb-article {
+  max-width: var(--woori-article-width);
+  min-width: 0;
+  margin-inline: auto;
+  font: 400 var(--woori-article-body-size)/var(--woori-article-body-leading)
+    system-ui, -apple-system, "Segoe UI", "Noto Sans KR", "Yu Gothic", "Microsoft JhengHei", sans-serif;
+  overflow-wrap: anywhere;
+}
+.wb-article p { margin: 0 0 var(--woori-article-paragraph-gap); }
+.wb-article .wb-lead { font-size: 1.04em; line-height: 1.82; }
+.wb-article h2 { margin: var(--woori-article-heading-gap) 0 .7em; font-size: var(--woori-article-h2-size); line-height: 1.42; letter-spacing: -.02em; }
+.wb-article h3 { margin: 1.55em 0 .6em; font-size: var(--woori-article-h3-size); line-height: 1.45; }
+.wb-article a { color: var(--woori-article-accent); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; word-break: break-word; }
+.wb-article blockquote { margin: 1.4em 0; padding: .25em 0 .25em 1em; border-left: 3px solid #9ab7a8; color: var(--woori-article-muted); }
+.wb-article .wb-summary { margin: 0 0 1.6em; padding: 16px 18px; border: 1px solid var(--woori-article-border); border-left: 4px solid #48836a; border-radius: var(--woori-article-radius); background: var(--woori-article-surface); font-weight: 600; }
+.wb-article .wb-table-wrap { width: 100%; max-width: 100%; margin: 1.35em 0; overflow-x: auto; overscroll-behavior-inline: contain; }
 .wb-article table { width: 100%; border-collapse: collapse; font-size: .94em; }
-.wb-article th, .wb-article td { min-width: 88px; padding: 10px 12px; border: 1px solid #dbe3de; text-align: left; vertical-align: top; }
-.wb-article th { background: #f2f6f3; }
+.wb-article th, .wb-article td { min-width: 72px; padding: 10px 12px; border: 1px solid var(--woori-article-border); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.wb-article th { background: var(--woori-article-surface); font-weight: 700; }
+.wb-article .wb-stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 12px; margin: 1.25em 0; }
+.wb-article .wb-stat-card { min-width: 0; padding: 16px; border: 1px solid var(--woori-article-border); border-radius: 10px; background: #f8faf8; overflow-wrap: anywhere; }
 .wb-article figure { max-width: 100%; margin: 1.4em auto; text-align: center; }
 .wb-article img { display: block; width: auto; height: auto; max-width: 100%; margin-inline: auto; }
-.wb-article figcaption, .wb-article .wb-caption { margin-top: .5em; color: #68766e; font-size: .88em; }
+.wb-article figcaption, .wb-article .wb-caption { margin-top: .5em; color: var(--woori-article-muted); font-size: .88em; }
 .wb-article ul, .wb-article ol { margin: .6em 0 1.2em; padding-left: 1.5em; }
 .wb-article li { margin: .35em 0; }
+.wb-article code { max-width: 100%; overflow-wrap: anywhere; }
+.wb-article hr { margin: 1.8em 0; border: 0; border-top: 1px solid var(--woori-article-border); }
+.wb-image-placeholder { display: grid; gap: 4px; place-items: center; max-width: 100%; min-height: 110px; padding: 16px; border: 1px dashed #9cad9f; border-radius: var(--woori-article-radius); color: var(--woori-article-muted); overflow-wrap: anywhere; text-align: center; }
+.wb-image-placeholder small { font-size: 11px; }
 @media (max-width: 480px) {
-  .wb-article { font-size: 16px; }
-  .wb-article h2 { margin-top: 1.8em; font-size: 1.36em; }
+  .wb-preview-shell { padding: 20px 16px 32px; }
+  .wb-preview-shell, .wb-article { font-size: max(16px, var(--woori-article-body-size)); }
+  .wb-post-title { margin-bottom: 20px; }
+  .wb-article h2 { margin-top: 1.65em; font-size: clamp(23px, 6vw, var(--woori-article-h2-size)); }
+  .wb-article h3 { font-size: clamp(19px, 5vw, var(--woori-article-h3-size)); }
   .wb-article th, .wb-article td { padding: 8px; font-size: .9em; }
+}
+@media (prefers-color-scheme: dark) {
+  .wb-preview-shell { color: #e3ebe6; background: #111a16; }
+  .wb-article .wb-summary, .wb-article th, .wb-article .wb-stat-card { background: #1b2922; border-color: #35473d; }
+  .wb-article th, .wb-article td { border-color: #394b41; }
+  .wb-article blockquote { color: #b9c9bf; }
+  .wb-article figcaption, .wb-article .wb-caption { color: #b1beb6; }
 }

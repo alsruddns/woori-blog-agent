@@ -174,6 +174,10 @@ test("Blogger article preview keeps one title and fits narrow mobile widths", as
     await route.fulfill({ json: {
       title: "Sample policy article", language_code: "ko", post_html: '<article class="wb-article"><h2>Key question</h2><p>A verified paragraph with enough context.</p><figure><img src="https://images.example.test/chart.png" alt="Budget chart"><figcaption>Chart caption</figcaption></figure><div class="wb-table-wrap"><table><tr><td>320px content</td></tr></table></div></article>',
       labels: request.google_trends_based ? ["이슈"] : [], title_in_body: false, publication_performed: false,
+      renderer_version: "1.1.0", design_system_version: "1.1.0", rendered_sha256: "a".repeat(64),
+      seo_metadata: { language_code: "ko", target_region: null, search_intent: null, seo_title: "Sample policy article", search_description: "Search description only.", primary_keyword: "policy", related_terms: [], core_question: null, core_answer: null, category: "finance", blogger_labels: [], official_sources: [{ title: "Official source", url: "https://example.gov/source", official_status: "unverified" }], fact_verified_at: null, editorial_status: "quality_held" },
+      seo_checks: [{ key: "title_matches_article", status: "ready", message: "검색 제목이 실제 게시 제목과 같습니다." }, { key: "search_performance", status: "not_measured", message: "Search Console 미연결" }],
+      search_console: { source: "google_search_console", measured_at: null, impressions: null, clicks: null, ctr: null, average_position: null, queries: [], country: null, index_status: null },
     } });
   });
 
@@ -183,16 +187,25 @@ test("Blogger article preview keeps one title and fits narrow mobile widths", as
   await expect(frame.getByRole("heading", { name: "Sample policy article", level: 1 })).toHaveCount(1);
   await expect(frame.locator("article h1")).toHaveCount(0);
   await expect(frame.getByRole("img", { name: /Budget chart/ })).toBeVisible();
+  await expect(frame.locator('link[href="/blogger-editorial.css"]')).toHaveCount(1);
+  await expect(frame.locator(".wb-post-title")).toHaveCSS("font-size", /\d+px/);
   await page.getByText("원고와 출처 보기").click();
   await expect(page.getByText("Official source")).toBeVisible();
   await page.getByLabel("Google Trends 기반 원고").check();
   await expect(page.getByText("이슈", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "SEO 점검" }).click();
+  await expect(page.getByLabel("게시 전 SEO 점검")).toContainText("Search Console 연결 없음");
+  await expect(page.getByLabel("게시 전 SEO 점검")).toContainText("공식성 확인 필요");
+  await page.getByRole("button", { name: "화면 미리보기" }).click();
 
-  for (const width of [320, 360, 390, 430]) {
+  for (const width of [320, 390, 430, 768, 1280]) {
     await page.setViewportSize({ width, height: 844 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     expect(await frame.locator("html").evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
   }
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(frame.locator(".wb-preview-shell")).toHaveCSS("color", "rgb(227, 235, 230)");
+  await page.emulateMedia({ colorScheme: "light" });
   expect(externalRequests).toEqual([]);
   await mkdir(screenshots, { recursive: true });
   await page.setViewportSize({ width: 320, height: 844 });

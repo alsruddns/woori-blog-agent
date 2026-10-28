@@ -15,6 +15,7 @@ from pydantic import Field, field_validator, model_validator
 from . import collection, official_research, pipeline, topics, trends
 from .ai import Draft, EngineFailure
 from .db import connection
+from .editorial_seo import EditorialSeoMetadata, SearchConsoleSnapshot, evaluate_seo_readiness
 from .grounding import inspect
 from .multilingual import Input
 from .pipeline import required
@@ -327,6 +328,7 @@ class ArticleEditorialRevision(Input):
     existing_remote_post_id: str | None = Field(default=None, min_length=1, max_length=500)
     publication_mode: Literal["draft", "manual", "scheduled"] = "manual"
     planned_publish_at: datetime | None = None
+    seo_metadata: EditorialSeoMetadata | None = None
 
     @model_validator(mode="after")
     def valid_editorial_body_and_schedule(self) -> Self:
@@ -364,6 +366,7 @@ class EditorialPreviewRequest(Input):
     language_code: Literal["ko", "en", "ja", "zh-CN"]
     google_trends_based: bool = False
     labels: list[str] = Field(default_factory=list, max_length=20)
+    seo_metadata: EditorialSeoMetadata | None = None
 
     @field_validator("labels")
     @classmethod
@@ -401,7 +404,29 @@ def editorial_preview(request: EditorialPreviewRequest) -> dict[str, Any]:
             )
     except ValueError as error:
         raise HTTPException(422, str(error)) from error
+    _safe_html, plain_text = sanitize_editorial_html(post_html, post_title=request.title)
     labels = resolve_blogger_labels(request.language_code, request.google_trends_based, request.labels)
+    seo_input = request.seo_metadata
+    if seo_input is None:
+        seo = EditorialSeoMetadata(
+            language_code=request.language_code,
+            seo_title=request.title.strip(),
+            search_description=request.summary.strip(),
+            blogger_labels=labels,
+        )
+    else:
+        seo = seo_input
+        if (
+            seo.language_code != request.language_code
+            or seo.seo_title.strip() != request.title.strip()
+            or seo.search_description.strip() != request.summary.strip()
+        ):
+            raise HTTPException(422, "seo_metadata_must_match_preview_language_title_and_description")
+        seo = seo.model_copy(update={"blogger_labels": labels})
+    seo_checks = evaluate_seo_readiness(
+        seo, title=request.title.strip(), plain_text=plain_text, safe_html=post_html,
+        source_body=request.body, body_format=request.body_format,
+    )
     return {
         "title": request.title.strip(),
         "language_code": request.language_code,
@@ -409,6 +434,12 @@ def editorial_preview(request: EditorialPreviewRequest) -> dict[str, Any]:
         "labels": labels,
         "title_in_body": False,
         "google_trends_based": request.google_trends_based,
+        "renderer_version": "1.1.0",
+        "design_system_version": "1.1.0",
+        "rendered_sha256": hashlib.sha256(post_html.encode("utf-8")).hexdigest(),
+        "seo_metadata": seo.model_dump(mode="json"),
+        "seo_checks": seo_checks,
+        "search_console": SearchConsoleSnapshot().model_dump(mode="json"),
         "publication_performed": False,
     }
 
@@ -546,7 +577,7 @@ def manuscript_detail(evaluation_id: UUID, content_version_id: UUID) -> dict[str
     item = _read_manuscript_detail(evaluation_id, content_version_id)
     with connection() as conn:
         revisions = conn.execute(
-            """SELECT id,revision_number,title,body,html_body,seo_description,blogger_labels,
+            """SELECT id,revision_number,title,body,html_body,seo_description,blogger_labels,seo_metadata,
                 machine_passed,quality_status,body_sha256,created_at,reviewer_name,reason,
                 publication_mode,planned_publish_at,target_blog_id
             FROM article_editorial_versions WHERE evaluation_id=%s AND base_content_version_id=%s
@@ -1845,6 +1876,35 @@ def save_article_revision(request: ArticleEditorialRevision) -> dict[str, Any]:
         raise HTTPException(422, "Article text must be between 20 and 20000 characters after HTML sanitization")
     if len(seo_description) < 10:
         raise HTTPException(422, "SEO description must be at least 10 characters")
+    if request.seo_metadata and (
+        request.seo_metadata.language_code != source["language_code"]
+        or request.seo_metadata.seo_title.strip() != request.title.strip()
+        or request.seo_metadata.search_description.strip() != seo_description
+    ):
+        raise HTTPException(422, "SEO metadata must match the revision language, title, and description")
+    supplied_seo = request.seo_metadata or EditorialSeoMetadata(
+        language_code=source["language_code"],
+        seo_title=request.title.strip(),
+        search_description=seo_description,
+        primary_keyword=request.keywords[0] if request.keywords else None,
+        related_terms=request.keywords[1:],
+        blogger_labels=request.blogger_labels,
+        category=str(source.get("category_slug") or "") or None,
+        editorial_status="unknown",
+    )
+    # Source identity and verification are derived from stored evidence, not client claims.
+    seo_values = supplied_seo.model_dump(mode="python")
+    seo_values.update({
+        "official_sources": [
+            {"title": str(item.get("source_name") or ""), "url": str(item["url"]), "official_status": "unverified"}
+            for item in source["sources"] if item.get("url")
+        ],
+        "blogger_labels": request.blogger_labels,
+        "fact_verified_at": None,
+        "editorial_status": "unknown",
+        "author": None,
+    })
+    seo_metadata = EditorialSeoMetadata.model_validate(seo_values)
     draft = Draft(
         title=request.title,
         body=body_text,
@@ -1861,6 +1921,8 @@ def save_article_revision(request: ArticleEditorialRevision) -> dict[str, Any]:
     )
     body_hash = hashlib.sha256(body_text.encode("utf-8")).hexdigest()
     html_hash = hashlib.sha256(safe_html.encode("utf-8")).hexdigest()
+    seo_metadata_json = seo_metadata.model_dump_json(exclude_none=False)
+    seo_metadata_hash = hashlib.sha256(seo_metadata_json.encode("utf-8")).hexdigest()
     with connection() as conn:
         existing = conn.execute(
             "SELECT * FROM article_editorial_versions WHERE idempotency_key=%s",
@@ -1923,15 +1985,15 @@ def save_article_revision(request: ArticleEditorialRevision) -> dict[str, Any]:
                 revision_number,idempotency_key,reviewer_name,reason,title,body,summary,keywords,
                 machine_checks,machine_passed,quality_status,body_sha256,html_body,html_body_sha256,
                 seo_description,blogger_labels,target_blog_id,publication_mode,planned_publish_at,
-                base_editorial_version_id,base_body_sha256,existing_remote_post_id)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
+                base_editorial_version_id,base_body_sha256,existing_remote_post_id,seo_metadata)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
             (request.evaluation_id,request.content_version_id,revision_number,request.idempotency_key,
              request.reviewer_name,request.reason,request.title,body_text,seo_description,
              request.keywords,Jsonb(quality["checks"]),quality["machine_passed"],
              "machine_checked_review_required" if quality["machine_passed"] else "quality_held",body_hash,
              safe_html,html_hash,seo_description,request.blogger_labels,request.target_blog_id,
              request.publication_mode,request.planned_publish_at,request.base_editorial_version_id,base_body_hash,
-             existing_post_id),
+             existing_post_id,Jsonb(seo_metadata.model_dump(mode="json"))),
         ).fetchone()
         if row is None:
             raise HTTPException(409, "Editorial revision conflict")
@@ -1951,6 +2013,7 @@ def save_article_revision(request: ArticleEditorialRevision) -> dict[str, Any]:
                 "html_body_sha256": html_hash, "target_blog_id": str(request.target_blog_id) if request.target_blog_id else None,
                 "existing_remote_post_id": existing_post_id,
                 "publication_mode": request.publication_mode, "machine_passed": quality["machine_passed"],
+                "seo_metadata_sha256": seo_metadata_hash,
                 "publish_ready": False}),),
         )
         return {"revision": dict(row), "duplicate": False, "publish_ready": False,
