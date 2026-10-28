@@ -289,6 +289,107 @@ def test_editorial_html_allowlist_preserves_formatting_and_drops_active_content(
     assert "[source:123]" in plain and "official source" in plain
 
 
+def test_blogger_markdown_renderer_keeps_title_out_of_body_and_supports_editorial_blocks() -> None:
+    from woori.editorial_html import markdown_to_blogger_html
+
+    html = markdown_to_blogger_html(
+        "---\nlanguage: ko\nlabels: [이슈]\n---\n"
+        "# Taiwan pay proposal\n\n"
+        "A **verified** lead with [an official source](https://example.gov/report).\n\n"
+        "## Two different measures\n\n"
+        "| Measure | Status |\n| --- | --- |\n| Allowance | Proposed |\n| General pay | Planned |\n\n"
+        "> The payment status remains unverified.\n\n"
+        "<script>alert(1)</script>",
+        post_title="Taiwan pay proposal",
+        summary="SEO metadata must not be injected into the article body.",
+    )
+
+    assert html.startswith('<article class="wb-article">')
+    assert "<h1" not in html and "Taiwan pay proposal" not in html
+    assert "<h2>Two different measures</h2>" in html
+    assert '<div class="wb-table-wrap"><table>' in html
+    assert '<th scope="col">Measure</th>' in html
+    assert "<blockquote>The payment status remains unverified.</blockquote>" in html
+    assert "<script" not in html and "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+    assert "SEO metadata must not be injected" not in html
+
+
+@pytest.mark.parametrize("locale", ["ko", "en"])
+def test_codex_evaluation_articles_render_with_sources_and_without_duplicate_h1(locale: str) -> None:
+    from pathlib import Path
+
+    from woori.editorial_html import markdown_to_blogger_html
+
+    root = Path(__file__).resolve().parents[3]
+    path = root / "docs" / "development" / f"P5-CODEX-002-article-{locale}.md"
+    article = path.read_text(encoding="utf-8")
+    title = next(line.removeprefix("# ").strip() for line in article.splitlines() if line.startswith("# "))
+    html = markdown_to_blogger_html(article, post_title=title)
+
+    assert title not in html and "<h1" not in html
+    assert "<h2>" in html and "https://" in html
+    assert "FACT-F" not in html
+    assert "blogger_submission" not in html and "evaluation_only" not in html
+
+
+def test_blogger_html_sanitizer_allows_only_safe_table_image_and_design_hooks() -> None:
+    from woori.editorial_html import sanitize_editorial_html
+
+    safe, _plain = sanitize_editorial_html(
+        '<article class="wb-article" onclick="x()"><div class="wb-table-wrap">'
+        '<table><thead><tr><th scope="col">Value</th></tr></thead><tbody><tr><td>10</td></tr></tbody></table></div>'
+        '<figure class="wb-figure"><img src="https://example.gov/chart.png" alt="Budget chart" onerror="x()">'
+        '<figcaption class="wb-caption">Official chart</figcaption></figure>'
+        '<img src="javascript:alert(1)" alt="unsafe"><script>alert(1)</script></article>'
+    )
+
+    assert 'class="wb-article"' in safe and 'class="wb-table-wrap"' in safe
+    assert '<th scope="col">Value</th>' in safe
+    assert 'src="https://example.gov/chart.png" alt="Budget chart"' in safe
+    assert 'class="wb-caption"' in safe
+    assert "onclick" not in safe and "onerror" not in safe
+    assert "javascript:" not in safe and "alert(1)" not in safe
+    with pytest.raises(ValueError, match="editorial_html_unclosed_h1"):
+        sanitize_editorial_html("<h1>Malformed title<p>body")
+
+
+def test_trends_labels_are_locale_specific_and_only_applied_when_marked() -> None:
+    from woori.editorial_html import resolve_blogger_labels
+
+    assert resolve_blogger_labels("ko", True, ["finance"]) == ["이슈", "finance"]
+    assert resolve_blogger_labels("en", True, []) == ["Issues"]
+    assert resolve_blogger_labels("ja", True, []) == ["話題"]
+    assert resolve_blogger_labels("zh-CN", True, []) == ["热点"]
+    assert resolve_blogger_labels("ko", False, ["finance"]) == ["finance"]
+
+
+def test_editorial_preview_is_sanitized_non_persistent_and_never_duplicates_post_title() -> None:
+    from woori.research_routes import EditorialPreviewRequest, editorial_preview
+
+    result = editorial_preview(EditorialPreviewRequest(
+        title="A verified policy proposal",
+        body="# A verified policy proposal\n\n## What changes\n\nA factual paragraph.",
+        summary="A search-only summary.",
+        language_code="en",
+        google_trends_based=True,
+        labels=["finance"],
+    ))
+
+    assert result["title"] == "A verified policy proposal"
+    assert result["title_in_body"] is False
+    assert result["publication_performed"] is False
+    assert result["labels"] == ["Issues", "finance"]
+    assert "<h1" not in result["post_html"] and "A verified policy proposal" not in result["post_html"]
+    assert "A search-only summary." not in result["post_html"]
+
+    html_result = editorial_preview(EditorialPreviewRequest(
+        title="Same title", body="<h1>Same title</h1><p>Body remains visible.</p>",
+        body_format="html", language_code="ko",
+    ))
+    assert "<h1" not in html_result["post_html"] and "Same title" not in html_result["post_html"]
+    assert "Body remains visible." in html_result["post_html"]
+
+
 def test_editorial_revision_rejects_stale_base_without_inserting_a_version(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

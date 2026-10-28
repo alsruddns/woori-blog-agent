@@ -1,0 +1,28 @@
+/*
+ * Optional, manually reviewed Blogger theme stylesheet.
+ * No live Blogger theme is changed by the application.
+ * Keep these classes scoped: Blogger templates often define broad h2, table, img rules.
+ */
+.wb-article { max-width: 780px; margin-inline: auto; color: #26342e; font: 400 17px/1.82 system-ui, sans-serif; overflow-wrap: anywhere; }
+.wb-article p { margin: 0 0 1.18em; }
+.wb-article .wb-lead { font-size: 1.06em; line-height: 1.86; }
+.wb-article h2 { margin: 2.1em 0 .72em; font-size: 1.48em; line-height: 1.42; }
+.wb-article h3 { margin: 1.7em 0 .62em; font-size: 1.2em; line-height: 1.45; }
+.wb-article a { color: #176b56; text-underline-offset: 3px; overflow-wrap: anywhere; }
+.wb-article blockquote { margin: 1.5em 0; padding: .25em 0 .25em 1em; border-left: 3px solid #9ab7a8; color: #52645b; }
+.wb-article .wb-summary, .wb-article .wb-stat-card { margin: 1.3em 0; padding: 16px 18px; border: 1px solid #dce9e1; border-radius: 8px; background: #f5f9f6; }
+.wb-article .wb-stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 12px; }
+.wb-article .wb-table-wrap { max-width: 100%; margin: 1.4em 0; overflow-x: auto; overscroll-behavior-inline: contain; }
+.wb-article table { width: 100%; border-collapse: collapse; font-size: .94em; }
+.wb-article th, .wb-article td { min-width: 88px; padding: 10px 12px; border: 1px solid #dbe3de; text-align: left; vertical-align: top; }
+.wb-article th { background: #f2f6f3; }
+.wb-article figure { max-width: 100%; margin: 1.4em auto; text-align: center; }
+.wb-article img { display: block; width: auto; height: auto; max-width: 100%; margin-inline: auto; }
+.wb-article figcaption, .wb-article .wb-caption { margin-top: .5em; color: #68766e; font-size: .88em; }
+.wb-article ul, .wb-article ol { margin: .6em 0 1.2em; padding-left: 1.5em; }
+.wb-article li { margin: .35em 0; }
+@media (max-width: 480px) {
+  .wb-article { font-size: 16px; }
+  .wb-article h2 { margin-top: 1.8em; font-size: 1.36em; }
+  .wb-article th, .wb-article td { padding: 8px; font-size: .9em; }
+}

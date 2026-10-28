@@ -153,3 +153,50 @@ test("list request failure is shown as an accessible page error", async ({ page 
   await page.goto("/manuscripts");
   await expect(page.locator("p.error-state[role='alert']")).toContainText("원고 목록을 불러오지 못했습니다");
 });
+
+test("Blogger article preview keeps one title and fits narrow mobile widths", async ({ page }) => {
+  const evaluationId = "11111111-1111-4111-8111-111111111111";
+  const contentVersionId = "22222222-2222-4222-8222-222222222222";
+  const externalRequests: string[] = [];
+  page.on("request", request => {
+    const url = new URL(request.url());
+    if (!["127.0.0.1", "localhost"].includes(url.hostname)) externalRequests.push(url.origin);
+  });
+  await page.route("**/api/research/manuscripts?**", route => route.fulfill({ json: {
+    items: [{ evaluation_id: evaluationId, content_version_id: contentVersionId, title: "Sample policy article", topic: "Sample policy article", category_slug: "finance", language_code: "ko", model: "Qwen3", created_at: "2026-10-28T00:00:00Z", editorial_status: "quality_held", machine_passed: false, publication_status: "draft" }],
+    page: 1, page_size: 25, total: 1, languages: ["ko"], categories: ["finance"],
+  } }));
+  await page.route(`**/api/research/manuscripts/${evaluationId}/${contentVersionId}`, route => route.fulfill({ json: {
+    id: evaluationId, evaluation_id: evaluationId, content_version_id: contentVersionId, topic_key: "phase39t:test", title: "Sample policy article", saved_title: "Sample policy article", saved_body: "# Sample policy article\n\n## Key question\n\nA verified paragraph with enough context.", body: "", body_format: "markdown", language_code: "ko", model: "Qwen3", created_at: "2026-10-28T00:00:00Z", summary: "Search description only.", sources: [{ id: "source-1", source_name: "Official source", url: "https://example.gov/source" }], facts: [], checks: {}, machine_passed: false, editorial_status: "quality_held", editorial_versions: [], review_history: [], review_events: [], publication_approval_events: [], review_actions_allowed: false, publish_ready: false,
+  } }));
+  await page.route("**/api/research/editorial-preview", async route => {
+    const request = route.request().postDataJSON() as { google_trends_based: boolean };
+    await route.fulfill({ json: {
+      title: "Sample policy article", language_code: "ko", post_html: '<article class="wb-article"><h2>Key question</h2><p>A verified paragraph with enough context.</p><figure><img src="https://images.example.test/chart.png" alt="Budget chart"><figcaption>Chart caption</figcaption></figure><div class="wb-table-wrap"><table><tr><td>320px content</td></tr></table></div></article>',
+      labels: request.google_trends_based ? ["이슈"] : [], title_in_body: false, publication_performed: false,
+    } });
+  });
+
+  await page.goto("/manuscripts");
+  await page.getByRole("row", { name: /Sample policy article/ }).click();
+  const frame = page.locator("iframe").contentFrame();
+  await expect(frame.getByRole("heading", { name: "Sample policy article", level: 1 })).toHaveCount(1);
+  await expect(frame.locator("article h1")).toHaveCount(0);
+  await expect(frame.getByRole("img", { name: /Budget chart/ })).toBeVisible();
+  await page.getByText("원고와 출처 보기").click();
+  await expect(page.getByText("Official source")).toBeVisible();
+  await page.getByLabel("Google Trends 기반 원고").check();
+  await expect(page.getByText("이슈", { exact: true })).toBeVisible();
+
+  for (const width of [320, 360, 390, 430]) {
+    await page.setViewportSize({ width, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    expect(await frame.locator("html").evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  }
+  expect(externalRequests).toEqual([]);
+  await mkdir(screenshots, { recursive: true });
+  await page.setViewportSize({ width: 320, height: 844 });
+  await page.screenshot({ path: path.join(screenshots, "P5-CODEX-004-preview-320.png"), fullPage: true });
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.screenshot({ path: path.join(screenshots, "P5-CODEX-004-preview-desktop.png"), fullPage: true });
+});

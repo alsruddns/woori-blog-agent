@@ -356,11 +356,61 @@ class ArticleEditorialRevision(Input):
         return [item.strip() for item in value]
 
 
+class EditorialPreviewRequest(Input):
+    title: str = Field(min_length=1, max_length=500)
+    body: str = Field(min_length=1, max_length=100_000)
+    body_format: Literal["markdown", "html"] = "markdown"
+    summary: str = Field(default="", max_length=500)
+    language_code: Literal["ko", "en", "ja", "zh-CN"]
+    google_trends_based: bool = False
+    labels: list[str] = Field(default_factory=list, max_length=20)
+
+    @field_validator("labels")
+    @classmethod
+    def bounded_preview_labels(cls, value: list[str]) -> list[str]:
+        if any(not label.strip() or len(label.strip()) > 200 for label in value):
+            raise ValueError("blogger_labels_must_be_bounded")
+        return value
+
+
 @router.post("/collections", status_code=201)
 def collect(request: CollectionRequest) -> dict[str, Any]:
     return collection.request(
         request.source_id, request.profile_id, request.idempotency_key, request.auto_generate
     )
+
+
+@router.post("/editorial-preview")
+def editorial_preview(request: EditorialPreviewRequest) -> dict[str, Any]:
+    """Render a sanitized, non-persistent Blogger preview. This route never publishes."""
+    from .editorial_html import (
+        markdown_to_blogger_html,
+        resolve_blogger_labels,
+        sanitize_editorial_html,
+    )
+
+    try:
+        if request.body_format == "markdown":
+            post_html = markdown_to_blogger_html(
+                request.body, post_title=request.title, summary=request.summary
+            )
+        else:
+            safe_body, _plain = sanitize_editorial_html(request.body, post_title=request.title)
+            post_html, _plain = sanitize_editorial_html(
+                f'<article class="wb-article">{safe_body}</article>'
+            )
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
+    labels = resolve_blogger_labels(request.language_code, request.google_trends_based, request.labels)
+    return {
+        "title": request.title.strip(),
+        "language_code": request.language_code,
+        "post_html": post_html,
+        "labels": labels,
+        "title_in_body": False,
+        "google_trends_based": request.google_trends_based,
+        "publication_performed": False,
+    }
 
 
 @router.get("/trends")
@@ -538,7 +588,7 @@ def manuscript_detail(evaluation_id: UUID, content_version_id: UUID) -> dict[str
         raw_html = str(revision.get("html_body") or "")
         if raw_html:
             try:
-                revision["html_body"] = sanitize_editorial_html(raw_html)[0]
+                revision["html_body"] = sanitize_editorial_html(raw_html, post_title=str(revision.get("title") or ""))[0]
             except ValueError:
                 revision["html_body"] = ""
     item["review_history"] = [dict(row) for row in reviews]
@@ -560,7 +610,7 @@ def manuscript_detail(evaluation_id: UUID, content_version_id: UUID) -> dict[str
     item["body_format"] = "html" if "<" in body and ">" in body else "markdown"
     if item["body_format"] == "html":
         try:
-            item["safe_body_html"] = sanitize_editorial_html(body)[0]
+            item["safe_body_html"] = sanitize_editorial_html(body, post_title=str(item.get("saved_title") or ""))[0]
         except ValueError:
             item["safe_body_html"] = ""
     return item
@@ -1783,12 +1833,12 @@ def save_article_revision(request: ArticleEditorialRevision) -> dict[str, Any]:
         raise HTTPException(422, "SEO description cannot be empty")
     if request.html_body:
         try:
-            safe_html, body_text = sanitize_editorial_html(request.html_body)
+            safe_html, body_text = sanitize_editorial_html(request.html_body, post_title=request.title)
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from None
     else:
         body_text = request.body
-        safe_html, _ = sanitize_editorial_html(plain_text_as_html(body_text))
+        safe_html, _ = sanitize_editorial_html(plain_text_as_html(body_text), post_title=request.title)
     if len(request.title.strip()) < 3 or len(request.title) > 200:
         raise HTTPException(422, "Article title must be between 3 and 200 characters")
     if len(body_text.strip()) < 20 or len(body_text) > 20_000:

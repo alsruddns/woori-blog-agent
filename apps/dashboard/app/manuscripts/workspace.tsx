@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import styles from "./article-preview.module.css";
 
 type Row = Record<string, unknown>;
 type ListResult = { items: Row[]; page: number; page_size: number; total: number; languages: string[]; categories: string[] };
@@ -28,9 +29,16 @@ function markdownHtml(source: string) {
   }).join("");
 }
 
-function HtmlPreview({ html, lang }: { html: string; lang: string }) {
-  const source = `<!doctype html><html lang="${escapeHtml(lang)}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: https:; style-src 'unsafe-inline';"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font:16px/1.8 system-ui,sans-serif;max-width:760px;margin:20px auto;padding:0 20px;color:#202a31;overflow-wrap:anywhere}h2,h3{line-height:1.4;margin-top:2em}a{color:#176b56}blockquote{border-left:3px solid #9eb5ac;padding-left:1em;color:#53645d}</style></head><body>${html}</body></html>`;
-  return <iframe className="article-preview" title="원고 본문 미리보기" sandbox="" srcDoc={source} />;
+type RenderedPreview = { title: string; language_code: string; post_html: string; labels: string[]; title_in_body: boolean; publication_performed: boolean };
+
+function HtmlPreview({ html, title, lang }: { html: string; title: string; lang: string }) {
+  const previewCss = `:root{color-scheme:light dark}*{box-sizing:border-box}body{margin:0;background:#fff;color:#26342e;font:400 17px/1.82 system-ui,-apple-system,"Segoe UI",sans-serif;overflow-wrap:anywhere;word-break:normal}.wb-preview-shell{max-width:780px;margin:0 auto;padding:28px clamp(16px,4vw,36px) 44px}.wb-post-title{margin:0 0 26px;font-size:clamp(25px,4vw,34px);line-height:1.32;letter-spacing:-.025em}.wb-article p{margin:0 0 1.18em}.wb-article .wb-lead{font-size:1.06em;line-height:1.86}.wb-article h2{margin:2.1em 0 .72em;font-size:1.48em;line-height:1.42;letter-spacing:-.02em}.wb-article h3{margin:1.7em 0 .62em;font-size:1.2em;line-height:1.45}.wb-article a{color:#176b56;text-decoration-thickness:1px;text-underline-offset:3px;overflow-wrap:anywhere}.wb-article blockquote{margin:1.5em 0;padding:.25em 0 .25em 1em;border-left:3px solid #9ab7a8;color:#52645b}.wb-article .wb-summary{margin:0 0 1.7em;padding:16px 18px;border:1px solid #dce9e1;border-left:4px solid #48836a;border-radius:8px;background:#f5f9f6;font-weight:600}.wb-article .wb-table-wrap{max-width:100%;margin:1.4em 0;overflow-x:auto;overscroll-behavior-inline:contain}.wb-article table{width:100%;border-collapse:collapse;font-size:.94em}.wb-article th,.wb-article td{min-width:88px;padding:10px 12px;border:1px solid #dbe3de;text-align:left;vertical-align:top}.wb-article th{background:#f2f6f3;font-weight:700}.wb-article .wb-stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));gap:12px;margin:1.3em 0}.wb-article .wb-stat-card{padding:16px;border:1px solid #dce6df;border-radius:10px;background:#f8faf8}.wb-article figure{max-width:100%;margin:1.4em auto;text-align:center}.wb-article img{display:block;width:auto;height:auto;max-width:100%;margin:auto}.wb-article figcaption{margin-top:.5em;color:#68766e;font-size:.88em}.wb-article ul,.wb-article ol{margin:.6em 0 1.2em;padding-left:1.5em}.wb-article li{margin:.35em 0}.wb-article code{max-width:100%;overflow-wrap:anywhere}.wb-article hr{margin:2em 0;border:0;border-top:1px solid #dbe3de}@media(max-width:480px){body{font-size:16px}.wb-preview-shell{padding:20px 16px 32px}.wb-post-title{margin-bottom:20px}.wb-article h2{margin-top:1.8em;font-size:1.36em}.wb-article th,.wb-article td{padding:8px;font-size:.9em}}@media(prefers-color-scheme:dark){body{background:#111a16;color:#e3ebe6}.wb-article .wb-summary,.wb-article th,.wb-article .wb-stat-card{background:#1b2922;border-color:#35473d}.wb-article th,.wb-article td{border-color:#394b41}.wb-article blockquote{color:#b9c9bf}.wb-article figcaption{color:#b1beb6}}`;
+  const previewHtml = html.replace(/<img\b([^>]*)>/gi, (_tag, attributes: string) => {
+    const alt = attributes.match(/\balt="([^"]*)"/i)?.[1] ?? "이미지";
+    return `<div class="wb-image-placeholder" role="img" aria-label="${alt}">${alt}<small>이미지 미리보기에서는 외부 요청을 보내지 않습니다.</small></div>`;
+  });
+  const source = `<!doctype html><html lang="${escapeHtml(lang)}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline';"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${previewCss}.wb-image-placeholder{display:grid;gap:4px;place-items:center;max-width:100%;min-height:110px;padding:16px;border:1px dashed #9cad9f;border-radius:8px;color:#52645b;overflow-wrap:anywhere;text-align:center}.wb-image-placeholder small{font-size:11px}</style></head><body><main class="wb-preview-shell"><h1 class="wb-post-title">${escapeHtml(title)}</h1>${previewHtml}</main></body></html>`;
+  return <iframe className={styles.iframe} title="게시 화면 미리보기. 제목은 Blogger 게시글 제목 영역을 나타냅니다." sandbox="" srcDoc={source} />;
 }
 
 export default function ManuscriptWorkspace() {
@@ -46,6 +54,10 @@ export default function ManuscriptWorkspace() {
   const [tab, setTab] = useState("body");
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const [googleTrendsBased, setGoogleTrendsBased] = useState(false);
+  const [previewMode, setPreviewMode] = useState<"rendered" | "source">("rendered");
+  const [renderedPreviewState, setRenderedPreviewState] = useState<{ key: string; result: RenderedPreview } | null>(null);
+  const [previewErrorState, setPreviewErrorState] = useState<{ key: string; message: string } | null>(null);
   const dialog = useRef<HTMLElement>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
   const requestSequence = useRef(0);
@@ -71,13 +83,18 @@ export default function ManuscriptWorkspace() {
   const openDetail = useCallback(async (row: Row, trigger: HTMLElement) => {
     const requestId = ++detailSequence.current;
     previousFocus.current = trigger;
-    setSelected(row); setDetail(null); setTab("body"); setMessage(""); setDetailLoading(true);
+    setSelected(row); setDetail(null); setTab("body"); setMessage(""); setDetailLoading(true); setPreviewMode("rendered"); setRenderedPreviewState(null); setGoogleTrendsBased(false);
     document.body.classList.add("sheet-open");
     try {
       const response = await fetch(`/api/research/manuscripts/${encodeURIComponent(value(row, "evaluation_id"))}/${encodeURIComponent(value(row, "content_version_id"))}`, { cache: "no-store" });
       if (!response.ok) throw new Error("원고 상세 정보를 불러오지 못했습니다.");
       const result = await response.json() as Row;
-      if (detailSequence.current === requestId) setDetail(result);
+      if (detailSequence.current === requestId) {
+        setDetail(result);
+        const localeLabel = ({ ko: "이슈", en: "Issues", ja: "話題", "zh-CN": "热点" } as Record<string, string>)[value(result, "language_code")];
+        const existingLabels = ((result.editorial_versions as Row[] | undefined)?.[0]?.blogger_labels as string[] | undefined) ?? [];
+        setGoogleTrendsBased(Boolean(result.google_trends_based) || Boolean(localeLabel && existingLabels.includes(localeLabel)));
+      }
       requestAnimationFrame(() => { if (detailSequence.current === requestId) dialog.current?.focus(); });
     } catch { setMessage("선택한 원고 상세 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요."); }
     finally { setDetailLoading(false); }
@@ -120,6 +137,11 @@ export default function ManuscriptWorkspace() {
   const submitRevision = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); if (!detail) return;
     const form = new FormData(event.currentTarget);
+    const languageLabel = ({ ko: "이슈", en: "Issues", ja: "話題", "zh-CN": "热点" } as Record<string, string>)[value(detail, "language_code")];
+    const selectedLabels = String(form.get("labels") ?? "").split(",").map(item => item.trim()).filter(Boolean);
+    const bloggerLabels = googleTrendsBased && languageLabel
+      ? [languageLabel, ...selectedLabels.filter(label => label.toLocaleLowerCase() !== languageLabel.toLocaleLowerCase())]
+      : selectedLabels;
     await submit("article-revisions", {
       evaluation_id: value(detail, "id"), content_version_id: value(detail, "content_version_id"),
       base_editorial_version_id: value((detail.editorial_versions as Row[] | undefined)?.[0], "id") || null,
@@ -127,7 +149,7 @@ export default function ManuscriptWorkspace() {
       title: String(form.get("title") ?? ""), body: "", html_body: String(form.get("html_body") ?? ""),
       summary: String(form.get("summary") ?? ""), seo_description: String(form.get("summary") ?? ""),
       keywords: String(form.get("keywords") ?? "").split("|").map(item => item.trim()).filter(Boolean),
-      blogger_labels: String(form.get("labels") ?? "").split(",").map(item => item.trim()).filter(Boolean),
+      blogger_labels: bloggerLabels,
       target_blog_id: null, publication_mode: "manual", planned_publish_at: null,
     });
   };
@@ -142,6 +164,42 @@ export default function ManuscriptWorkspace() {
   const htmlBody = value(latestRevision ?? {}, "html_body") || (value(detail, "body_format") === "html" ? value(detail, "safe_body_html") : markdownHtml(body));
   const latestApproval = approvals[0];
   const publicationApproved = value(latestApproval ?? {}, "action") === "approved";
+  const previewKey = JSON.stringify([
+    value(selected, "content_version_id"), value(latestRevision ?? {}, "id"), googleTrendsBased,
+  ]);
+  const renderedPreview = renderedPreviewState?.key === previewKey ? renderedPreviewState.result : null;
+  const previewError = previewErrorState?.key === previewKey ? previewErrorState.message : "";
+  const previewLoading = Boolean(detail && tab === "body" && !renderedPreview && !previewError);
+
+  useEffect(() => {
+    if (!detail || tab !== "body") return;
+    const controller = new AbortController();
+    const revision = ((detail.editorial_versions as Row[] | undefined) ?? [])[0];
+    const revisionHtml = value(revision ?? {}, "html_body");
+    const bodyValue = revisionHtml || value(detail, "saved_body") || value(detail, "body");
+    const bodyFormat = revisionHtml || value(detail, "body_format") === "html" ? "html" : "markdown";
+    const labels = (revision?.blogger_labels as string[] | undefined) ?? [];
+    fetch("/api/research/editorial-preview", {
+      method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
+      body: JSON.stringify({
+        title: value(revision ?? {}, "title") || value(detail, "saved_title") || value(detail, "title"),
+        body: bodyValue, body_format: bodyFormat,
+        summary: value(revision ?? {}, "seo_description") || value(detail, "summary"),
+        language_code: value(detail, "language_code"), google_trends_based: googleTrendsBased, labels,
+      }),
+    }).then(async response => {
+      if (!response.ok) throw new Error("게시용 HTML 미리보기를 만들지 못했습니다.");
+      return await response.json() as RenderedPreview;
+    }).then(result => {
+      if (!controller.signal.aborted) {
+        setPreviewErrorState(null);
+        setRenderedPreviewState({ key: previewKey, result });
+      }
+    }).catch(reason => {
+      if (!controller.signal.aborted) setPreviewErrorState({ key: previewKey, message: reason instanceof Error ? reason.message : "미리보기 변환 실패" });
+    });
+    return () => controller.abort();
+  }, [detail, tab, googleTrendsBased, previewKey]);
 
   const pageCount = Math.max(1, Math.ceil((data?.total ?? 0) / pageSize));
   const empty = !loading && !error && (data?.items.length ?? 0) === 0;
@@ -176,7 +234,15 @@ export default function ManuscriptWorkspace() {
           <div className="detail-summary"><span>{statusLabel(value(detail, "editorial_status"), machinePassed)}</span><span>작성 {dateLabel(value(detail, "created_at"))}</span><span>발행 준비 안 됨</span></div>
           <nav className="detail-tabs" aria-label="원고 상세 탭" role="tablist">{[["body", "본문"], ["sources", "출처·근거"], ["quality", "품질 검사"], ["history", "변경 이력"]].map(([id, label]) => <button key={id} id={`manuscript-tab-${id}`} type="button" role="tab" aria-controls="manuscript-panel" aria-selected={tab === id} tabIndex={tab === id ? 0 : -1} onClick={() => setTab(id)}>{label}</button>)}</nav>
           <div className="sheet-content" id="manuscript-panel" role="tabpanel" aria-labelledby={`manuscript-tab-${tab}`} tabIndex={0}>
-            {tab === "body" && <div className="body-tab"><p className="article-summary">{value(latestRevision ?? {}, "seo_description") || value(detail, "summary")}</p><HtmlPreview html={htmlBody} lang={value(detail, "language_code")} />
+            {tab === "body" && <div className="body-tab"><p className="article-summary"><strong>검색 설명 (게시 본문 HTML에는 포함되지 않음)</strong><br />{value(latestRevision ?? {}, "seo_description") || value(detail, "summary")}</p>
+              <section className={styles.publicationPreview} aria-label="게시용 미리보기"><div className={styles.toolbar}><div><h3>게시용 미리보기</h3><p>제목은 Blogger 제목 영역에 표시되며 게시 본문 HTML에는 중복하지 않습니다.</p></div><label className={styles.trendLabelToggle}><input type="checkbox" checked={googleTrendsBased} onChange={event => setGoogleTrendsBased(event.target.checked)} /> Google Trends 기반 원고</label></div>
+                <div className={styles.controls} role="group" aria-label="미리보기 보기 선택"><button type="button" aria-pressed={previewMode === "rendered"} onClick={() => setPreviewMode("rendered")}>화면 미리보기</button><button type="button" aria-pressed={previewMode === "source"} onClick={() => setPreviewMode("source")}>게시용 HTML</button></div>
+                {previewLoading && <p role="status">게시용 HTML을 준비하고 있습니다…</p>}{previewError && <p className="quality-held" role="alert">{previewError}</p>}
+                {renderedPreview && <><div className={styles.labels}><strong>게시 라벨</strong>{renderedPreview.labels.length ? renderedPreview.labels.map(label => <span key={label}>{label}</span>) : <small>지정된 라벨 없음</small>}</div>
+                  {previewMode === "rendered" ? <HtmlPreview html={renderedPreview.post_html} lang={renderedPreview.language_code} title={renderedPreview.title} /> : <pre className={styles.htmlSource}>{renderedPreview.post_html}</pre>}
+                  <p className={styles.limitation}>미리보기는 저장소의 공통 칼럼 CSS를 적용한 근사 화면입니다. Blogger 테마의 전역 CSS, 위젯, 글꼴과 폭은 실제 게시 화면과 다를 수 있습니다.</p></>}
+                <details className={styles.metadata}><summary>원고와 출처 보기</summary><h4>원고 원문</h4><pre>{body}</pre><h4>연결된 출처</h4>{((detail.sources as Row[] | undefined) ?? []).length ? <ul>{(detail.sources as Row[]).map(source => <li key={value(source, "id")}><a href={value(source, "url")} target="_blank" rel="noreferrer">{value(source, "source_name") || value(source, "url")}</a></li>)}</ul> : <p>연결된 출처가 없습니다.</p>}</details>
+              </section>
               {detail.review_actions_allowed ? <details className="edit-article"><summary>새 원고 버전 편집</summary><form onSubmit={event => void submitRevision(event)}>
                 <label>작성자<input name="reviewer" required minLength={2} maxLength={80} /></label><label>변경 사유<input name="reason" required minLength={10} maxLength={2000} /></label><label>제목<input name="title" required maxLength={500} defaultValue={value(latestRevision ?? {}, "title") || value(detail, "title")} /></label><label>요약 및 SEO 설명<textarea name="summary" required minLength={1} maxLength={500} defaultValue={value(latestRevision ?? {}, "seo_description") || value(detail, "summary")} /></label><label>검색 키워드 (| 구분)<input name="keywords" required defaultValue={((detail.keywords as string[] | undefined) ?? []).join(" | ")} /></label><label>Blogger 라벨 (, 구분)<input name="labels" defaultValue={((latestRevision?.blogger_labels as string[] | undefined) ?? []).join(", ")} /></label><label>원고 HTML<textarea name="html_body" rows={14} required maxLength={100000} defaultValue={value(latestRevision ?? {}, "html_body") || htmlBody} /></label><p>저장 시 서버 허용 목록으로 HTML을 정화하고 새 버전에서 품질 검사를 다시 실행합니다.</p><button disabled={saving}>새 버전 저장</button></form></details> : <p className="notice">이 원고는 읽기 전용입니다. 현재 편집·검토 권한 정책에서 이 원고의 버전은 승인 대상에 포함되지 않습니다.</p>}
             </div>}
