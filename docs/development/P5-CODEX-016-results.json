@@ -1,0 +1,76 @@
+{
+  "phase": "P5-CODEX-016",
+  "captured_at": "2026-10-29",
+  "branch": "develop",
+  "overall_status": "partial_blocked",
+  "complete_automatic_posting": false,
+  "database": {
+    "schema_version": 48,
+    "migrations_applied": [],
+    "content_versions": 360,
+    "trend_collection_runs": 1,
+    "trend_observations": 10,
+    "trend_geo_verified": ["KR"],
+    "publishing_records": 0
+  },
+  "google_trends": {
+    "live_http_status": 200,
+    "live_request_count": 1,
+    "stored_item_count": 10,
+    "scheduler_implemented": true,
+    "scheduler_connected_to_research_worker": true,
+    "worker_heartbeat": "running",
+    "repeat_scheduled_collection_verified": false,
+    "limits": {
+      "per_region_interval_minutes": 60,
+      "minimum_global_spacing_minutes": 10,
+      "provider_calls_per_hour": 12,
+      "per_process_calls_per_minute": 1
+    }
+  },
+  "generation": {
+    "production_provider_configured": false,
+    "gpt_scheduled_result_received": false,
+    "content_import_inbox_available": true,
+    "automatic_external_file_delivery_verified": false
+  },
+  "blogger": {
+    "live_publisher_adapter_code": "partial_not_queue_integrated",
+    "existing_private_draft_endpoint_called": false,
+    "actual_drafts_created_this_run": 0,
+    "actual_public_posts_created_this_run": 0,
+    "actual_public_urls": [],
+    "four_blog_write_oauth_mapping": false,
+    "public_publish_cost_scope_approved": false,
+    "cloud_billing_and_project_quota_verified": false,
+    "auto_mode": "manual_off",
+    "auto_approval": false
+  },
+  "runtime": {
+    "dashboard_http": 200,
+    "api_health_http": 200,
+    "operations_dashboard_http": 200,
+    "operations_dashboard_schema_version": 48,
+    "research_worker_task": "running",
+    "ai_provider_status": "not_configured",
+    "live_blogger_writes": 0,
+    "paid_ai_calls": 0
+  },
+  "tests": {
+    "scripts_verify_ps1": "passed",
+    "pytest": "281 passed",
+    "ruff": "passed",
+    "mypy": "passed",
+    "wheel_build": "passed",
+    "dashboard_eslint": "passed",
+    "dashboard_production_build": "passed",
+    "dashboard_typecheck": "passed",
+    "git_diff_check": "passed",
+    "http_secret_scan": "passed"
+  },
+  "git": {
+    "commit": null,
+    "pushed": false,
+    "main_changed": false
+  }
+}

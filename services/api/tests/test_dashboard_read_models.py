@@ -219,6 +219,28 @@ def test_model_comparison_read_model_uses_isolated_evaluation_reader(monkeypatch
     assert any("current_database()" in query for query in evaluation.statements)
 
 
+def test_operations_snapshot_reads_migration_marker_without_schema_table_privilege() -> None:
+    from woori.operations_dashboard import dashboard_snapshot
+
+    class SnapshotConnection:
+        def execute(self, query: str, _params: Any = None) -> _Cursor:
+            if "payload->>'version'" in query:
+                return _Cursor([{"version": 48}])
+            if "to_regclass('public.trend_collection_runs')" in query:
+                return _Cursor([{"available": False}])
+            if "count(*)::int AS count FROM publishing_records" in query:
+                return _Cursor([{"count": 0}])
+            if "max(published_at)" in query:
+                return _Cursor([{"at": None}])
+            if "scope_type='global'" in query:
+                return _Cursor([{"scope_type": "global", "scope_key": "", "configured_mode": "manual",
+                                 "emergency_stopped": False, "daily_auto_limit": 1}])
+            return _Cursor([])
+
+    result = dashboard_snapshot(SnapshotConnection())
+    assert result["schema_version"] == 48
+
+
 def test_legacy_manuscript_detail_is_read_only_and_sanitized(monkeypatch: Any) -> None:
     evaluation_id, content_version_id = uuid4(), uuid4()
     monkeypatch.setattr(

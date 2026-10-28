@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 import psycopg
 from psycopg.types.json import Jsonb
 
-from . import collection, pipeline
+from . import collection, pipeline, trends
 from .db import connection
 
 
@@ -161,6 +161,7 @@ def main() -> None:
                 elif args.diagnostic_only:
                     tick()
                 else:
+                    trends.schedule_tick()
                     collection.schedule_tick()
                     collection.tick()
                     pipeline.schedule_tick()

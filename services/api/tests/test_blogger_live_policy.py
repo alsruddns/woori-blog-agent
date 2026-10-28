@@ -5,6 +5,7 @@ from uuid import UUID
 import httpx
 import pytest
 from woori import blogger_drafts, external_policy
+from woori.google_http import GoogleFailure
 
 
 def _request(method: str, path: str, params: dict[str, str] | None = None) -> httpx.Request:
@@ -70,6 +71,28 @@ def test_approved_blogger_operations_are_narrowly_allowlisted(
     external_policy._authorize("google_blogger_read", operation, _request(method, path, params))
 
 
+def test_publish_route_allows_only_exact_blogger_draft_publish_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(external_policy, "billing_credential_names", list)
+    monkeypatch.setattr(external_policy, "_audit", lambda *args, **kwargs: None)
+    monkeypatch.setattr(external_policy, "_blogger_operation_is_approved", lambda op: op == "blogger_public_publish")
+    external_policy._authorize(
+        "google_blogger_read", "blogger_public_publish",
+        _request("POST", "/blogs/123/posts/456/publish"),
+    )
+    with pytest.raises(external_policy.ExternalCallBlocked):
+        external_policy._authorize(
+            "google_blogger_read", "blogger_public_publish",
+            _request("POST", "/blogs/123/posts/456/publish", {"publishDate": "later"}),
+        )
+    with pytest.raises(external_policy.ExternalCallBlocked):
+        external_policy._authorize(
+            "google_blogger_read", "blogger_public_publish",
+            _request("DELETE", "/blogs/123/posts/456"),
+        )
+
+
 @pytest.mark.parametrize(
     ("operation", "method", "path", "params"),
     [
@@ -93,6 +116,52 @@ def test_publish_delete_and_unapproved_blogger_shapes_stay_blocked(
     monkeypatch.setattr(external_policy, "_blogger_operation_is_approved", lambda op: True)
     with pytest.raises(external_policy.ExternalCallBlocked):
         external_policy._authorize("google_blogger_read", operation, _request(method, path, params))
+
+
+def test_public_publish_requires_separate_scope_not_in_existing_owner_attestation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        external_policy,
+        "_blogger_policy_approval",
+        lambda: {"created_at": datetime.now(UTC), "scope": sorted(external_policy.BLOGGER_APPROVAL_SCOPE)},
+    )
+    assert external_policy._blogger_operation_is_approved("blogger_draft_create")
+    assert not external_policy._blogger_operation_is_approved("blogger_public_publish")
+
+
+def test_live_public_publish_gate_blocks_before_transport_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from uuid import UUID
+
+    from woori.blogger_writes import _live_response
+
+    called = False
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal called
+        called = True
+        return httpx.Response(200, json={"id": "123"}, request=request)
+
+    monkeypatch.setattr(external_policy, "billing_credential_names", list)
+    monkeypatch.setattr(external_policy, "_audit", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        external_policy,
+        "_blogger_policy_approval",
+        lambda: {"created_at": datetime.now(UTC), "scope": sorted(external_policy.BLOGGER_APPROVAL_SCOPE)},
+    )
+    monkeypatch.setattr("woori.blogger_writes.google_oauth.access_token", lambda _id: "test-token")
+
+    with pytest.raises(GoogleFailure, match="provider_cost_unverified"):
+        _live_response(
+            connection_id=UUID("00000000-0000-0000-0000-000000000001"),
+            operation="blogger_public_publish",
+            method="POST",
+            path="/blogs/123/posts/456/publish",
+            transport=httpx.MockTransport(handler),
+        )
+    assert called is False
 
 
 def test_policy_approval_requires_exact_scoped_append_only_record(

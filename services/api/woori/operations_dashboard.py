@@ -1,4 +1,5 @@
 """Compact, read-only operational dashboard projection."""
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 
@@ -7,7 +8,13 @@ def _grouped_counts(conn: Any, query: str) -> dict[str, int]:
 
 def dashboard_snapshot(conn: Any) -> dict[str, Any]:
     """Return observed state only; configured schedules are not execution proof."""
-    schema = conn.execute("SELECT max(version)::int AS version FROM schema_migrations").fetchone()
+    # The application role intentionally cannot read schema_migrations. Migration
+    # markers are also append-only in audit_events, which is visible to the app.
+    schema = conn.execute(
+        """SELECT max(CASE WHEN payload->>'version' ~ '^[0-9]{1,3}$'
+                    THEN (payload->>'version')::int END)::int AS version
+        FROM audit_events WHERE event_type LIKE 'schema.%.migrated'"""
+    ).fetchone()
     job_counts = _grouped_counts(conn, """SELECT task_kind || ':' || status AS key,count(*)::int AS count FROM job_runs GROUP BY task_kind,status""")
     generation_counts = _grouped_counts(conn, "SELECT state AS key,count(*)::int AS count FROM generation_results GROUP BY state")
     quality_counts = _grouped_counts(conn, "SELECT status AS key,count(*)::int AS count FROM article_quality_evaluations GROUP BY status")
@@ -21,7 +28,18 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
         FROM publishing_jobs WHERE simulation_only AND adapter_type='fake' GROUP BY blog_id"""
     ).fetchall()}
     trend_available = bool(conn.execute("SELECT to_regclass('public.trend_collection_runs') IS NOT NULL AS available").fetchone()["available"])
-    trends: dict[str, Any] = {"configured":trend_available,"periodic_worker":"inactive","last_collected_at":None,
+    research_worker = conn.execute(
+        "SELECT status,last_seen_at,last_error_category FROM worker_heartbeats WHERE service_name='research_worker'"
+    ).fetchone()
+    worker_fresh = bool(
+        research_worker
+        and research_worker.get("status") == "running"
+        and research_worker.get("last_seen_at")
+        and datetime.now(UTC) - research_worker["last_seen_at"] <= timedelta(seconds=45)
+    )
+    trends: dict[str, Any] = {"configured":trend_available,"periodic_worker":"running" if worker_fresh else "inactive","last_collected_at":None,
+        "worker_heartbeat_at":research_worker.get("last_seen_at") if research_worker else None,
+        "worker_error_category":research_worker.get("last_error_category") if research_worker else None,
         "successful_runs":0,"failed_runs":0,"observations_last_24h":0,"regions":[]}
     if trend_available:
         run_totals = conn.execute("""SELECT count(*) FILTER (WHERE status='succeeded')::int AS succeeded,
@@ -62,7 +80,8 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
             "recent_success_at":None,"recent_failure_reason":None,"last_mock_success_at":mock_state.get("last_success"),
             "last_mock_failure_at":mock_state.get("last_failure"),"last_mock_failure_reason":mock_state.get("failure_reason"),
             "recent_public_url":None,"public_url_note":"게시 URL이 실제 게시 기록에 저장되지 않아 표시할 수 없습니다."})
-    return {"schema_version":int(schema["version"] or 0),"trends":trends,"collection_sources":collection_sources,"jobs":job_counts,
+    schema_version = int(schema["version"] or 0) if schema else 0
+    return {"schema_version":schema_version,"trends":trends,"collection_sources":collection_sources,"jobs":job_counts,
         "generation":{"provider_connected":False,"provider_status":"not_configured","counts":generation_counts,
             "queue_waiting":job_counts.get("content:queued",0),"reason":"운영 원고 생성 Provider가 연결되어 있지 않습니다."},
         "quality":{"machine_passed":quality_counts.get("machine_passed_review_required",0),"held":quality_counts.get("quality_held",0),

@@ -35,7 +35,12 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "methods": {"GET", "POST", "PATCH", "PUT"},
         "rpm": 30,
         "rph": 120,
-        "operations": {"blogger_read", "blogger_draft_create", "blogger_post_update"},
+        "operations": {
+            "blogger_read",
+            "blogger_draft_create",
+            "blogger_post_update",
+            "blogger_public_publish",
+        },
         "paths": ("/blogger/v3/blogs", "/blogger/v3/users/self/blogs"),
         "cost": "Blogger-specific project-owner attestation required; current policy approval is read from append-only audit history",
         "commercial_use": "terms apply; review before monetized operation",
@@ -260,6 +265,9 @@ def _blogger_operation_is_approved(operation: str) -> bool:
         "blogger_read": "blogger_read",
         "blogger_draft_create": "private_draft_create",
         "blogger_post_update": "user_approved_post_update",
+        # Public publishing and unattended operation require a newer, distinct
+        # append-only owner policy record. Existing approvals do not grant them.
+        "blogger_public_publish": "public_post_publish",
     }
     return permitted.get(operation) in approval["scope"]
 
@@ -407,6 +415,14 @@ def _authorize(provider: str, operation: str, request: httpx.Request) -> None:
             method_allowed = request.method in {"PATCH", "PUT"}
             operation_path_allowed = bool(
                 re.fullmatch(rf"/blogger/v3/blogs/{blog_id}/posts/{post_id}", path)
+                and not request.url.query
+            )
+        elif operation == "blogger_public_publish":
+            method_allowed = request.method == "POST"
+            operation_path_allowed = bool(
+                re.fullmatch(
+                    rf"/blogger/v3/blogs/{blog_id}/posts/{post_id}/publish", path
+                )
                 and not request.url.query
             )
         else:

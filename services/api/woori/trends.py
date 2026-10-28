@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import time
 import xml.etree.ElementTree as ET
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from typing import Any
 from uuid import uuid4
@@ -24,6 +24,9 @@ ALLOWED_GEOS = {"KR", "US", "JP", "TW", "HK", "SG"}
 GOOGLE_TRENDS_HELP = "https://support.google.com/trends/answer/3076011?hl=en"
 MAX_RESPONSE_BYTES = 1024 * 1024
 MAX_ITEMS = 20
+COLLECTION_INTERVAL = timedelta(hours=1)
+MIN_REQUEST_SPACING = timedelta(minutes=10)
+SCHEDULER_LOCK = "google_trends_hourly_scheduler"
 NS = {"ht": "https://trends.google.com/trending/rss"}
 
 
@@ -313,3 +316,62 @@ def state() -> dict[str, Any]:
         "configured": bool(exists),
         "source_rank_semantics": "null unless the source explicitly supplies a rank",
     }
+
+
+def choose_due_geo(
+    attempts_by_geo: dict[str, datetime | None],
+    last_global_attempt: datetime | None,
+    now: datetime,
+) -> str | None:
+    """Choose the least-recently-attempted due region under the durable cap."""
+    if now.tzinfo is None:
+        raise ValueError("scheduler_time_must_be_timezone_aware")
+    if last_global_attempt and now - last_global_attempt < MIN_REQUEST_SPACING:
+        return None
+    due: list[tuple[datetime | None, str]] = []
+    for geo in sorted(ALLOWED_GEOS):
+        last_attempt = attempts_by_geo.get(geo)
+        if last_attempt is None or now - last_attempt >= COLLECTION_INTERVAL:
+            due.append((last_attempt, geo))
+    if not due:
+        return None
+    return min(due, key=lambda item: (item[0] or datetime.min.replace(tzinfo=UTC), item[1]))[1]
+
+
+def schedule_tick(now: datetime | None = None) -> dict[str, Any]:
+    """Collect at most one due region; safe for multiple local worker processes."""
+    current = now or datetime.now(UTC)
+    if current.tzinfo is None:
+        raise ValueError("scheduler_time_must_be_timezone_aware")
+    with connection() as guard:
+        locked = guard.execute(
+            "SELECT pg_try_advisory_lock(hashtextextended(%s,0)) AS acquired",
+            (SCHEDULER_LOCK,),
+        ).fetchone()
+        if not locked or not locked["acquired"]:
+            return {"status": "busy", "geo": None, "external_calls": 0}
+        try:
+            per_geo = {
+                str(row["geo"]): row["last_attempt"]
+                for row in guard.execute(
+                    """SELECT geo,max(attempted_at) AS last_attempt
+                    FROM trend_collection_attempts GROUP BY geo"""
+                ).fetchall()
+            }
+            latest = guard.execute(
+                "SELECT max(attempted_at) AS last_attempt FROM trend_collection_attempts"
+            ).fetchone()
+            due_geo = choose_due_geo(
+                per_geo,
+                latest["last_attempt"] if latest else None,
+                current,
+            )
+            if due_geo is None:
+                return {"status": "not_due", "geo": None, "external_calls": 0}
+            result = collect_geo(due_geo)
+            return {**result, "scheduled": True, "external_calls": int(result.get("http_status") == 200)}
+        finally:
+            guard.execute(
+                "SELECT pg_advisory_unlock(hashtextextended(%s,0))",
+                (SCHEDULER_LOCK,),
+            )

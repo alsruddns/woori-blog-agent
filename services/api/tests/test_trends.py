@@ -29,6 +29,20 @@ def test_google_trends_feed_preserves_source_fields_without_inventing_rank() -> 
     assert row["source_updated_at"] == datetime(2026, 10, 27, 8, tzinfo=UTC)
 
 
+def test_hourly_scheduler_spreads_regions_and_respects_global_spacing() -> None:
+    from datetime import timedelta
+
+    now = datetime(2026, 10, 29, 0, 0, tzinfo=UTC)
+    assert trends.choose_due_geo({}, None, now) == "HK"
+    attempts = {"HK": now}
+    assert trends.choose_due_geo(attempts, now, now + timedelta(minutes=9)) is None
+    assert trends.choose_due_geo(attempts, now, now + timedelta(minutes=10)) == "JP"
+    spread = {"HK": now, "JP": now + timedelta(minutes=10)}
+    assert trends.choose_due_geo(spread, now + timedelta(minutes=10), now + timedelta(hours=1)) == "KR"
+    full = {geo: now - timedelta(minutes=5) for geo in trends.ALLOWED_GEOS}
+    assert trends.choose_due_geo(full, now - timedelta(minutes=5), now) is None
+
+
 @pytest.mark.parametrize("geo", ["CN", "KR/../US", "", "GB"])
 def test_google_trends_rejects_unconfigured_geographies(geo: str) -> None:
     with pytest.raises(ValueError, match="trend_geo_not_allowlisted"):
