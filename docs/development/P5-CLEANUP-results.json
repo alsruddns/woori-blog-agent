@@ -1,6 +1,6 @@
 {
   "phase": "P5-CLEANUP-001",
-  "status": "implemented_with_http_secret_scan_unverified",
+  "status": "implemented_and_http_secret_scan_verified",
   "date_local": "2026-10-28",
   "branch": "develop",
   "baseline_commit": "ee88851",
@@ -9,7 +9,8 @@
     "codex_or_gpt_scheduled_execution_implemented": false,
     "local_qwen_llama_execution": "removed_from_repository_runtime",
     "historical_evaluation_records": "preserved_read_only",
-    "manual_editorial_html_seo_publication_preparation": "preserved"
+    "manual_editorial_html_seo_publication_preparation": "preserved",
+    "temporary_server_validation": {"started_via": "scripts/start.ps1", "api_runner_pid": 38780, "api_listener_pid": 5932, "dashboard_runner_pid": 36996, "dashboard_listener_pid": 31612, "shutdown_via": "scripts/stop.ps1", "final_ports_3100_8100": "stopped", "forced_termination": false}
   },
   "external_effects": {
     "model_inference_calls": 0,
@@ -50,8 +51,9 @@
     "nextjs_production_build": "passed",
     "typescript_typecheck": "passed",
     "git_diff_check": "passed",
-    "http_secret_scan": {"status": "not_verified", "reason": "Dashboard on 127.0.0.1:3100 was not running; no server was started for this check"},
-    "browser_e2e": "not_run"
+    "http_secret_scan": {"status": "passed", "script": "scripts/verify-secrets.py", "http_checks": ["/", "/research", "/blogger", "/api/research/state", "/api/blogger/status"], "secrets_printed": false, "publication_flags_remain_disabled": true},
+    "browser_e2e": "not_run",
+    "follow_up_scope": "HTTP secret scan and managed server lifecycle only; full tests and production build not rerun"
   },
   "database": {
     "operations_data_mutated": false,

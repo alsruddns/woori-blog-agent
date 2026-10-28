@@ -64,7 +64,9 @@ GGUF 외 실행 폴더와 압축 파일까지 모두 사용자가 추후 직접 
   - TypeScript typecheck: 통과
   - `git diff --check`: 통과
 - 추가 회귀 테스트: writer 비설정 상태의 생성 API/Worker 차단, 생성 일정/collection auto-generation 차단
-- `scripts/verify-secrets.py` HTTP 검사: Dashboard가 실행 중이지 않아 `127.0.0.1:3100` 연결 거부로 미완료. 서버를 시작하거나 기존 세션을 바꾸지 않았다.
+- `scripts/verify-secrets.py` HTTP scan: passed. The project API and Dashboard were started using the managed scripts for this check. The script checked `/`, `/research` (compatibility route resolves to `/manuscripts`), `/blogger`, `/api/research/state`, and `/api/blogger/status`; no secret was exposed.
+- Temporary server cleanup: API and Dashboard were gracefully stopped with the managed stop script, and ports 3100/8100 were confirmed stopped. Dashboard shutdown was retried only after the active TCP connections drained; no force termination was used.
+- Follow-up scope was limited to the HTTP secret scan and server lifecycle. Full tests and production build were not rerun.
 - 실제 브라우저 검증: 미실행
 - DB 마이그레이션, 운영 DB 조회/수정: 미실행
 - Blogger 및 외부 AI/API 호출: 0건
