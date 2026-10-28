@@ -453,6 +453,98 @@ def test_editorial_preview_returns_deterministic_seo_checks_without_predictive_s
     assert ".wb-article h2" in preview_css and ".wb-article h3" in preview_css
 
 
+def test_publication_package_is_deterministic_non_submitting_and_fails_closed() -> None:
+    from datetime import UTC, datetime
+
+    from woori.blogger_publication_package import build_publication_package
+
+    common = {
+        "title": "지역 정책 설명",
+        "post_html": '<article class="wb-article"><h2>핵심 내용</h2><p>확인된 설명</p></article>',
+        "labels": ["이슈"],
+        "language_code": "ko",
+        "target_blog": {
+            "id": uuid4(), "blog_id": "1234567890", "url": "https://trend-ko.blogspot.com",
+            "display_name": "Trend Korea", "language_code": "ko", "active": True,
+            "connection_verified_at": datetime(2026, 10, 28, tzinfo=UTC),
+        },
+        "content_version_id": str(uuid4()),
+        "editorial_revision_id": str(uuid4()),
+        "revision_number": 2,
+        "body_sha256": "a" * 64,
+        "rendered_sha256": "b" * 64,
+        "seo_metadata": {"seo_title": "지역 정책 설명", "seo_title_candidates": ["정책 변화와 핵심 쟁점"], "search_description": "검색 설명", "official_sources": [{"url": "https://example.gov", "official_status": "verified"}]},
+        "validation": [],
+        "renderer_version": "1.1.0",
+        "design_system_version": "1.1.0",
+    }
+    first = build_publication_package(**common)
+    second = build_publication_package(**common)
+    assert first["package_sha256"] == second["package_sha256"]
+    assert first["generated_at"] != ""
+    assert first["request"]["query"] == {"isDraft": True}
+    assert set(first["request"]["body"]) == {"title", "content", "labels"}
+    assert first["seo"]["search_description_api_supported"] is False
+    assert first["seo"]["title_candidates"] == ["정책 변화와 핵심 쟁점"]
+    assert first["sources"][0]["official_status"] == "unverified"
+    assert first["publish_ready"] is False and first["submission_performed"] is False
+    assert first["editorial_approval"] == "not_evaluated_by_package_builder"
+    assert "live_blogger_access_not_rechecked" in first["blockers"]
+    assert first["theme_compatibility"]["status"] == "live_theme_not_inspected"
+
+    unbound = build_publication_package(**{**common, "target_blog": None, "content_version_id": None})
+    assert "target_blog_not_selected_or_registered" in unbound["blockers"]
+    assert "content_version_identity_missing" in unbound["blockers"]
+    assert unbound["request"]["body"]["title"] == common["title"]
+
+
+def test_editorial_preview_resolves_only_registered_target_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
+    from contextlib import contextmanager
+    from datetime import UTC, datetime
+    from types import SimpleNamespace
+
+    from woori import research_routes
+
+    blog_record_id = uuid4()
+    calls: list[str] = []
+    registered_target = {
+        "id": blog_record_id,
+        "blog_id": "1234567890",
+        "url": "https://trend-ko.blogspot.com",
+        "display_name": "Trend Korea",
+        "language_code": "ko",
+        "active": True,
+        "connection_verified_at": datetime(2026, 10, 27, tzinfo=UTC),
+    }
+
+    class FakeConnection:
+        def execute(self, statement: str, _params: Any = None) -> Any:
+            calls.append(statement)
+            return SimpleNamespace(fetchone=lambda: registered_target)
+
+    @contextmanager
+    def fake_connection() -> Any:
+        yield FakeConnection()
+
+    monkeypatch.setattr(research_routes, "connection", fake_connection)
+    result = research_routes.editorial_preview(research_routes.EditorialPreviewRequest(
+        title="지역 정책 안내",
+        body="## 확인된 내용\n\n독자가 확인할 수 있는 사실입니다.",
+        summary="지역 정책의 확인된 핵심 내용을 설명합니다.",
+        language_code="ko",
+        target_blog_record_id=blog_record_id,
+        content_version_id=uuid4(),
+    ))
+    package = result["publication_package"]
+    assert package["target_blog"]["blog_id"] == "1234567890"
+    assert package["target_blog"]["url"] == registered_target["url"]
+    assert "live_blogger_access_not_rechecked" in package["blockers"]
+    assert package["submission_performed"] is False and package["publish_ready"] is False
+    assert len(calls) == 1 and "SELECT id,blog_id,url" in calls[0]
+    assert not any(word in calls[0].upper() for word in ("INSERT", "UPDATE", "DELETE"))
+
+
+
 def test_seo_source_urls_are_https_only() -> None:
     from pydantic import ValidationError
     from woori.editorial_seo import SeoSource

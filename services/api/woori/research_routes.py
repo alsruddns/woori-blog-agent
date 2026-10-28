@@ -14,6 +14,7 @@ from pydantic import Field, field_validator, model_validator
 
 from . import collection, official_research, pipeline, topics, trends
 from .ai import Draft, EngineFailure
+from .blogger_publication_package import build_publication_package
 from .db import connection
 from .editorial_seo import EditorialSeoMetadata, SearchConsoleSnapshot, evaluate_seo_readiness
 from .grounding import inspect
@@ -367,6 +368,10 @@ class EditorialPreviewRequest(Input):
     google_trends_based: bool = False
     labels: list[str] = Field(default_factory=list, max_length=20)
     seo_metadata: EditorialSeoMetadata | None = None
+    target_blog_record_id: UUID | None = None
+    content_version_id: UUID | None = None
+    editorial_revision_id: UUID | None = None
+    revision_number: int | None = Field(default=None, ge=1)
 
     @field_validator("labels")
     @classmethod
@@ -427,6 +432,32 @@ def editorial_preview(request: EditorialPreviewRequest) -> dict[str, Any]:
         seo, title=request.title.strip(), plain_text=plain_text, safe_html=post_html,
         source_body=request.body, body_format=request.body_format,
     )
+    target_blog = None
+    if request.target_blog_record_id:
+        with connection() as conn:
+            target_blog = conn.execute(
+                """SELECT id,blog_id,url,display_name,language_code,active,connection_verified_at
+                FROM blogger_blogs WHERE id=%s""",
+                (request.target_blog_record_id,),
+            ).fetchone()
+    rendered_hash = hashlib.sha256(post_html.encode("utf-8")).hexdigest()
+    body_hash = hashlib.sha256(request.body.encode("utf-8")).hexdigest()
+    publication_package = build_publication_package(
+        title=request.title.strip(),
+        post_html=post_html,
+        labels=labels,
+        language_code=request.language_code,
+        target_blog=dict(target_blog) if target_blog else None,
+        content_version_id=str(request.content_version_id) if request.content_version_id else None,
+        editorial_revision_id=str(request.editorial_revision_id) if request.editorial_revision_id else None,
+        revision_number=request.revision_number,
+        body_sha256=body_hash,
+        rendered_sha256=rendered_hash,
+        seo_metadata=seo.model_dump(mode="json"),
+        validation=seo_checks,
+        renderer_version="1.1.0",
+        design_system_version="1.1.0",
+    )
     return {
         "title": request.title.strip(),
         "language_code": request.language_code,
@@ -436,7 +467,8 @@ def editorial_preview(request: EditorialPreviewRequest) -> dict[str, Any]:
         "google_trends_based": request.google_trends_based,
         "renderer_version": "1.1.0",
         "design_system_version": "1.1.0",
-        "rendered_sha256": hashlib.sha256(post_html.encode("utf-8")).hexdigest(),
+        "rendered_sha256": rendered_hash,
+        "publication_package": publication_package,
         "seo_metadata": seo.model_dump(mode="json"),
         "seo_checks": seo_checks,
         "search_console": SearchConsoleSnapshot().model_dump(mode="json"),
@@ -583,6 +615,15 @@ def manuscript_detail(evaluation_id: UUID, content_version_id: UUID) -> dict[str
             FROM article_editorial_versions WHERE evaluation_id=%s AND base_content_version_id=%s
             ORDER BY revision_number DESC,id DESC""", (evaluation_id, content_version_id)
         ).fetchall()
+        blogger_targets = (
+            conn.execute(
+                """SELECT id,language_code,url,display_name,blog_id,active,connection_verified_at
+                FROM blogger_blogs WHERE language_code=%s ORDER BY active DESC,display_name,url""",
+                (item["language_code"],),
+            ).fetchall()
+            if item.get("language_code")
+            else []
+        )
         reviews = conn.execute(
             """SELECT id,editorial_version_id,reviewer_name,factual_accuracy,translation_naturalness,
                 reader_value,disposition,comments,requested_changes,created_at
@@ -614,6 +655,7 @@ def manuscript_detail(evaluation_id: UUID, content_version_id: UUID) -> dict[str
             WHERE r.content_version_id=%s ORDER BY r.published_at DESC""", (content_version_id,)
         ).fetchall()
     item["editorial_versions"] = [dict(row) for row in revisions]
+    item["blogger_targets"] = [dict(row) for row in blogger_targets]
     from .editorial_html import sanitize_editorial_html
     for revision in item["editorial_versions"]:
         raw_html = str(revision.get("html_body") or "")

@@ -1,0 +1,78 @@
+{
+  "phase": "P5-CODEX-005",
+  "recorded_at": "2026-10-28T17:34:59+09:00",
+  "branch": "develop",
+  "base_commit": "322a8effc2de8f3d5232548ff84604f31c0e7ea2",
+  "prerequisite_p5_codex_004": {
+    "status": "implemented_and_verified_from_repository",
+    "renderer_version": "1.1.0",
+    "design_system_version": "1.1.0",
+    "seo_model_and_checks": true,
+    "live_blogger_theme_files_available": false
+  },
+  "implementation": {
+    "read_only_registered_blog_selection": true,
+    "deterministic_non_persistent_preparation_json": true,
+    "download_from_preview": true,
+    "illustrative_blogger_post_fields": ["title", "content", "labels"],
+    "search_description_api_field_assumed": false,
+    "publish_ready": false,
+    "submission_performed": false,
+    "editorial_approval_changed": false,
+    "operation_database_writes": 0,
+    "migration_applied": false,
+    "blogger_api_requests": 0,
+    "oauth_requests": 0,
+    "paid_project_provider_api_requests": 0,
+    "live_theme_modified": false,
+    "live_theme_inspected": false,
+    "gsc_metrics": "not_measured"
+  },
+  "theme_compatibility": {
+    "live_templates": "not_verified",
+    "local_fixture_locales": ["ko", "en", "ja", "zh-CN"],
+    "fixture_baselines": ["post-body", "entry-content", "blog-post"],
+    "horizontal_overflow_checks": {
+      "preview_widths_px": [320, 390, 430, 768, 1280, 1920],
+      "fixture_widths_px": [320, 390, 768, 1280, 1920],
+      "failed": 0
+    },
+    "external_requests_from_browser_tests": 0
+  },
+  "browser_tests": {
+    "framework": "Playwright",
+    "projects": ["desktop", "mobile"],
+    "passed": 4,
+    "failed": 0,
+    "coverage": [
+      "preview target selection",
+      "SEO status display",
+      "live access not rechecked blocker display",
+      "preparation JSON download",
+      "four-locale local CSS collision fixtures",
+      "responsive overflow"
+    ],
+    "screenshots": [
+      "docs/development/assets/P5-CODEX-005-package-desktop.png",
+      "docs/development/assets/P5-CODEX-005-package-mobile.png"
+    ],
+    "browser_data_source": "mock API and local fixtures; no live Blogger or production DB"
+  },
+  "verification": {
+    "scripts_verify_ps1": "passed",
+    "ruff": "passed",
+    "mypy": "passed, 35 source files",
+    "pytest": "passed, 253 tests",
+    "python_wheel": "passed",
+    "dashboard_eslint": "passed",
+    "dashboard_production_build": "passed",
+    "dashboard_typescript": "passed",
+    "git_diff_check": "passed",
+    "initial_full_test_attempt": "failed due to legacy manuscript fixture without language_code; guarded read added; final full verification passed"
+  },
+  "artifacts": {
+    "development_record": "docs/development/P5-CODEX-005.md",
+    "theme_guide": "docs/operations/blogger-theme-integration.md",
+    "design_system_contract_updated": "docs/architecture/editorial-design-system.md"
+  }
+}

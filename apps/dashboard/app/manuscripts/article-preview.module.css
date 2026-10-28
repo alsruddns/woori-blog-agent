@@ -80,10 +80,22 @@
 .seoChecks p { margin: 0; line-height: 1.55; }
 .gscNote { padding: 10px 12px; border-radius: 7px; background: #f3f6f4; }
 
+.targetSelector { display: grid; gap: 6px; max-width: 100%; margin: 10px 0; font-size: 13px; font-weight: 650; }
+.targetSelector select { width: min(100%, 620px); min-width: 0; }
+.packageView { max-width: 900px; min-width: 0; margin: 12px 0; padding: 18px; border: 1px solid #dce4df; border-radius: 10px; background: #fff; overflow-wrap: anywhere; }
+.packageView h4 { margin: 0 0 8px; font-size: 18px; }
+.packageView p { color: #58685f; font-size: 13px; line-height: 1.65; }
+.packageView dl { display: grid; grid-template-columns: minmax(115px, 170px) minmax(0, 1fr); gap: 8px 12px; padding: 12px 0; border-block: 1px solid #e3e9e5; font-size: 13px; }
+.packageView dt { color: #68766f; }
+.packageView dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.packageView button { margin-block: 8px; }
+
 @media (max-width: 640px) {
   .iframe { height: 62vh; }
   .toolbar { display: grid; grid-template-columns: minmax(0, 1fr); }
   .seoPanel { padding: 14px; }
   .seoPanel dl { grid-template-columns: minmax(82px, 105px) minmax(0, 1fr); }
   .seoChecks li { grid-template-columns: 74px minmax(0, 1fr); }
+  .packageView { padding: 14px; }
+  .packageView dl { grid-template-columns: minmax(82px, 105px) minmax(0, 1fr); }
 }

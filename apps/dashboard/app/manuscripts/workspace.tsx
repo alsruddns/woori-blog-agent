@@ -30,7 +30,7 @@ function markdownHtml(source: string) {
 }
 
 type SeoCheck = { key: string; status: "ready" | "review" | "not_measured"; message: string };
-type RenderedPreview = { title: string; language_code: string; post_html: string; labels: string[]; title_in_body: boolean; publication_performed: boolean; renderer_version: string; design_system_version: string; seo_metadata: Row; seo_checks: SeoCheck[] };
+type RenderedPreview = { title: string; language_code: string; post_html: string; labels: string[]; title_in_body: boolean; publication_performed: boolean; renderer_version: string; design_system_version: string; seo_metadata: Row; seo_checks: SeoCheck[]; publication_package?: Row };
 
 function HtmlPreview({ html, title, lang }: { html: string; title: string; lang: string }) {
   const previewHtml = html.replace(/<img\b([^>]*)>/gi, (_tag, attributes: string) => {
@@ -55,7 +55,8 @@ export default function ManuscriptWorkspace() {
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [googleTrendsBased, setGoogleTrendsBased] = useState(false);
-  const [previewMode, setPreviewMode] = useState<"rendered" | "source" | "seo">("rendered");
+  const [previewMode, setPreviewMode] = useState<"rendered" | "source" | "seo" | "package">("rendered");
+  const [targetBlogRecordId, setTargetBlogRecordId] = useState("");
   const [renderedPreviewState, setRenderedPreviewState] = useState<{ key: string; result: RenderedPreview } | null>(null);
   const [previewErrorState, setPreviewErrorState] = useState<{ key: string; message: string } | null>(null);
   const dialog = useRef<HTMLElement>(null);
@@ -83,7 +84,7 @@ export default function ManuscriptWorkspace() {
   const openDetail = useCallback(async (row: Row, trigger: HTMLElement) => {
     const requestId = ++detailSequence.current;
     previousFocus.current = trigger;
-    setSelected(row); setDetail(null); setTab("body"); setMessage(""); setDetailLoading(true); setPreviewMode("rendered"); setRenderedPreviewState(null); setGoogleTrendsBased(false);
+    setSelected(row); setDetail(null); setTab("body"); setMessage(""); setDetailLoading(true); setPreviewMode("rendered"); setRenderedPreviewState(null); setGoogleTrendsBased(false); setTargetBlogRecordId("");
     document.body.classList.add("sheet-open");
     try {
       const response = await fetch(`/api/research/manuscripts/${encodeURIComponent(value(row, "evaluation_id"))}/${encodeURIComponent(value(row, "content_version_id"))}`, { cache: "no-store" });
@@ -93,6 +94,7 @@ export default function ManuscriptWorkspace() {
         setDetail(result);
         const localeLabel = ({ ko: "이슈", en: "Issues", ja: "話題", "zh-CN": "热点" } as Record<string, string>)[value(result, "language_code")];
         const existingLabels = ((result.editorial_versions as Row[] | undefined)?.[0]?.blogger_labels as string[] | undefined) ?? [];
+        setTargetBlogRecordId(value((result.editorial_versions as Row[] | undefined)?.[0] ?? {}, "target_blog_id"));
         setGoogleTrendsBased(Boolean(result.google_trends_based) || Boolean(localeLabel && existingLabels.includes(localeLabel)));
       }
       requestAnimationFrame(() => { if (detailSequence.current === requestId) dialog.current?.focus(); });
@@ -171,6 +173,7 @@ export default function ManuscriptWorkspace() {
   const approvals = (detail?.publication_approval_events as Row[] | undefined) ?? [];
   const latestRevision = revisions[0];
   const latestSeo = (latestRevision?.seo_metadata as Row | undefined) ?? {};
+  const bloggerTargets = (detail?.blogger_targets as Row[] | undefined) ?? [];
   const machinePassed = Boolean(latestRevision ? latestRevision.machine_passed : detail?.machine_passed);
   const latestReview = reviews[0];
   const body = value(detail, "saved_body") || value(detail, "body");
@@ -178,7 +181,7 @@ export default function ManuscriptWorkspace() {
   const latestApproval = approvals[0];
   const publicationApproved = value(latestApproval ?? {}, "action") === "approved";
   const previewKey = JSON.stringify([
-    value(selected, "content_version_id"), value(latestRevision ?? {}, "id"), googleTrendsBased,
+    value(selected, "content_version_id"), value(latestRevision ?? {}, "id"), googleTrendsBased, targetBlogRecordId,
   ]);
   const renderedPreview = renderedPreviewState?.key === previewKey ? renderedPreviewState.result : null;
   const previewError = previewErrorState?.key === previewKey ? previewErrorState.message : "";
@@ -200,6 +203,10 @@ export default function ManuscriptWorkspace() {
         body: bodyValue, body_format: bodyFormat,
         summary: value(revision ?? {}, "seo_description") || value(detail, "summary"),
         language_code: value(detail, "language_code"), google_trends_based: googleTrendsBased, labels,
+        target_blog_record_id: targetBlogRecordId || null,
+        content_version_id: value(detail, "content_version_id") || null,
+        editorial_revision_id: value(revision ?? {}, "id") || null,
+        revision_number: revision?.revision_number ?? null,
         seo_metadata: {
           language_code: value(detail, "language_code"),
           target_region: value(revisionSeo, "target_region") || null,
@@ -231,7 +238,7 @@ export default function ManuscriptWorkspace() {
       if (!controller.signal.aborted) setPreviewErrorState({ key: previewKey, message: reason instanceof Error ? reason.message : "미리보기 변환 실패" });
     });
     return () => controller.abort();
-  }, [detail, tab, googleTrendsBased, previewKey]);
+  }, [detail, tab, googleTrendsBased, targetBlogRecordId, previewKey]);
 
   const pageCount = Math.max(1, Math.ceil((data?.total ?? 0) / pageSize));
   const empty = !loading && !error && (data?.items.length ?? 0) === 0;
@@ -268,10 +275,16 @@ export default function ManuscriptWorkspace() {
           <div className="sheet-content" id="manuscript-panel" role="tabpanel" aria-labelledby={`manuscript-tab-${tab}`} tabIndex={0}>
             {tab === "body" && <div className="body-tab"><p className="article-summary"><strong>검색 설명 (게시 본문 HTML에는 포함되지 않음)</strong><br />{value(latestRevision ?? {}, "seo_description") || value(detail, "summary")}</p>
               <section className={styles.publicationPreview} aria-label="게시용 미리보기"><div className={styles.toolbar}><div><h3>게시용 미리보기</h3><p>제목은 Blogger 제목 영역에 표시되며 게시 본문 HTML에는 중복하지 않습니다.</p></div><label className={styles.trendLabelToggle}><input type="checkbox" checked={googleTrendsBased} onChange={event => setGoogleTrendsBased(event.target.checked)} /> Google Trends 기반 원고</label></div>
-                <div className={styles.controls} role="group" aria-label="미리보기 보기 선택"><button type="button" aria-pressed={previewMode === "rendered"} onClick={() => setPreviewMode("rendered")}>화면 미리보기</button><button type="button" aria-pressed={previewMode === "source"} onClick={() => setPreviewMode("source")}>게시용 HTML</button><button type="button" aria-pressed={previewMode === "seo"} onClick={() => setPreviewMode("seo")}>SEO 점검</button></div>
+                <label className={styles.targetSelector}>대상 블로그 (등록 정보만 조회)
+                  <select value={targetBlogRecordId} onChange={event => setTargetBlogRecordId(event.target.value)}>
+                    <option value="">선택 안 함</option>
+                    {bloggerTargets.map(target => <option key={value(target, "id")} value={value(target, "id")} disabled={!target.active}>{value(target, "display_name")} · {value(target, "url")}{target.blog_id ? ` · Blog ID ${value(target, "blog_id")}` : " · ID 미검증"}</option>)}
+                  </select>
+                </label>
+                <div className={styles.controls} role="group" aria-label="미리보기 보기 선택"><button type="button" aria-pressed={previewMode === "rendered"} onClick={() => setPreviewMode("rendered")}>화면 미리보기</button><button type="button" aria-pressed={previewMode === "source"} onClick={() => setPreviewMode("source")}>게시용 HTML</button><button type="button" aria-pressed={previewMode === "seo"} onClick={() => setPreviewMode("seo")}>SEO 점검</button><button type="button" aria-pressed={previewMode === "package"} onClick={() => setPreviewMode("package")}>발행 준비 자료</button></div>
                 {previewLoading && <p role="status">게시용 HTML을 준비하고 있습니다…</p>}{previewError && <p className="quality-held" role="alert">{previewError}</p>}
                 {renderedPreview && <><div className={styles.labels}><strong>게시 라벨</strong>{renderedPreview.labels.length ? renderedPreview.labels.map(label => <span key={label}>{label}</span>) : <small>지정된 라벨 없음</small>}</div>
-                  {previewMode === "rendered" ? <HtmlPreview html={renderedPreview.post_html} lang={renderedPreview.language_code} title={renderedPreview.title} /> : previewMode === "source" ? <pre className={styles.htmlSource}>{renderedPreview.post_html}</pre> : <SeoReadiness result={renderedPreview} />}
+                  {previewMode === "rendered" ? <HtmlPreview html={renderedPreview.post_html} lang={renderedPreview.language_code} title={renderedPreview.title} /> : previewMode === "source" ? <pre className={styles.htmlSource}>{renderedPreview.post_html}</pre> : previewMode === "seo" ? <SeoReadiness result={renderedPreview} /> : renderedPreview.publication_package ? <PublicationPackageView result={renderedPreview} /> : <p role="status">현재 API 응답에 게시 준비 자료가 없습니다. Dashboard와 API 버전을 함께 확인하세요.</p>}
                   <p className={styles.limitation}>미리보기는 저장소의 공통 칼럼 CSS를 적용한 근사 화면입니다. Blogger 테마의 전역 CSS, 위젯, 글꼴과 폭은 실제 게시 화면과 다를 수 있습니다.</p></>}
                 <details className={styles.metadata}><summary>원고와 출처 보기</summary><h4>원고 원문</h4><pre>{body}</pre><h4>연결된 출처</h4>{((detail.sources as Row[] | undefined) ?? []).length ? <ul>{(detail.sources as Row[]).map(source => <li key={value(source, "id")}><a href={value(source, "url")} target="_blank" rel="noreferrer">{value(source, "source_name") || value(source, "url")}</a></li>)}</ul> : <p>연결된 출처가 없습니다.</p>}</details>
               </section>
@@ -314,6 +327,46 @@ function SeoReadiness({ result }: { result: RenderedPreview }) {
     <ul className={styles.seoChecks}>{result.seo_checks.map(check => <li key={check.key} data-status={check.status}><span>{stateLabel(check.status)}</span><p>{check.message}</p></li>)}</ul>
     <p className={styles.gscNote}>Search Console 연결 없음 · 노출수, 클릭수, CTR, 평균 순위, 실제 검색어 및 색인 상태는 미측정입니다.</p>
     <small>렌더러 {result.renderer_version} · 디자인 {result.design_system_version}</small>
+  </section>;
+}
+
+function PublicationPackageView({ result }: { result: RenderedPreview }) {
+  const pkg = result.publication_package ?? {};
+  const json = JSON.stringify(pkg, null, 2);
+  const blockers = Array.isArray(pkg.blockers) ? pkg.blockers as string[] : [];
+  const seo = (pkg.seo && typeof pkg.seo === "object" ? pkg.seo : {}) as Row;
+  const sources = Array.isArray(pkg.sources) ? pkg.sources as Row[] : [];
+  const titleCandidates = Array.isArray(seo.title_candidates) ? seo.title_candidates as string[] : [];
+  const saveJson = () => {
+    const url = URL.createObjectURL(new Blob([json], { type: "application/json;charset=utf-8" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `woori-publication-preparation-${String(pkg.package_sha256 ?? "").slice(0, 12)}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+  return <section className={styles.packageView} aria-label="Blogger 발행 준비 자료">
+    <h4>발행 준비 자료 · 미전송</h4>
+    <p>이 파일은 비공개 준비 결과입니다. Blogger API 요청, 승인, 저장, 예약 또는 게시를 실행하지 않습니다.</p>
+    <dl><dt>대상 블로그</dt><dd>{value((pkg.target_blog as Row | null) ?? {}, "url") || "미선택 또는 등록 정보 없음"}{value((pkg.target_blog as Row | null) ?? {}, "blog_id") ? ` · Blog ID ${value((pkg.target_blog as Row | null) ?? {}, "blog_id")}` : ""}</dd>
+      <dt>언어 / 라벨</dt><dd>{result.language_code} · {result.labels.join(", ") || "라벨 없음"}</dd>
+      <dt>렌더러 / 디자인</dt><dd>{result.renderer_version} / {result.design_system_version}</dd>
+      <dt>자료 생성 / 지문</dt><dd>{dateLabel(value(pkg, "generated_at"))} · {value(pkg, "package_sha256")}</dd>
+      <dt>승인 상태</dt><dd>별도 검토 대상 · publish_ready=false</dd>
+      <dt>미완료 항목</dt><dd>{blockers.length ? blockers.map(item => ({
+        target_blog_not_selected_or_registered: "대상 Blogger를 선택하고 등록 정보를 확인해야 합니다.",
+        target_blog_inactive: "대상 블로그가 비활성 상태입니다.",
+        target_blog_language_mismatch: "원고 언어와 대상 블로그 언어가 다릅니다.",
+        target_blog_mapping_not_verified: "등록 Blog ID 매핑 확인이 필요합니다.",
+        live_blogger_access_not_rechecked: "현재 Blogger 접근 권한은 실조회하지 않았습니다.",
+        content_version_identity_missing: "원고 버전 식별자가 없습니다.",
+      } as Record<string, string>)[item] ?? item).join(" · ") : "등록 매핑 조회됨. 별도 운영 승인과 전송 구현이 필요합니다."}</dd>
+      <dt>SEO 제목</dt><dd>{value(seo, "title") || "미입력"}{titleCandidates.length > 0 && <ul>{titleCandidates.map(candidate => <li key={candidate}>{candidate}</li>)}</ul>}</dd>
+      <dt>검색 설명</dt><dd>{value(seo, "search_description") || "미입력"} · API 전송 대상이 아니며 Blogger 관리자에서 수동 확인</dd>
+      <dt>실제 테마</dt><dd>{value((pkg.theme_compatibility as Row) ?? {}, "status") === "live_theme_not_inspected" ? "미조회 · 테마별 확인 필요" : "확인 상태 미기록"}</dd>
+      <dt>출처</dt><dd>{sources.length ? <ul>{sources.map((source, index) => <li key={`${value(source, "url")}-${index}`}><a href={value(source, "url")} target="_blank" rel="noreferrer">{value(source, "title") || value(source, "url")}</a> · 검증 상태: 미확인</li>)}</ul> : "출처 정보 없음"}</dd></dl>
+    <button type="button" onClick={saveJson}>준비 자료 JSON 저장</button>
+    <details><summary>전체 패키지 JSON 보기</summary><pre className={styles.htmlSource}>{json}</pre></details>
   </section>;
 }
 
