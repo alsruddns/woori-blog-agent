@@ -69,3 +69,9 @@ FastAPI TestClient에서 격리 DB 연결을 다시 확인하고 TW 목록 HTTP 
 남은 검토: (1) 트렌드 신호가 해당 사건을 의미하는지, (2) 기관 간 독립성·사실 맥락, (3) 재사용 고지의 제3자 저작물 예외, (4) 처우·예산 문장의 정책적 맥락, (5) 독자에게 제공할 실질적 분석 가치. 이 검토가 끝날 때까지 원고 작성·발행 준비는 보류한다. 추가 자동 원문 탐색은 provider rolling-hour cap 8회를 유지하므로 한도 만료 전에는 실행하지 않는다.
 
 세부 응답·근거·검사 결과: `docs/development/P5-CONTENT-002-results.json`.
+
+## Git 완료
+
+- 구현·검증 커밋: `03f0cc3bbd5488af9cb67ffb86d65d8703861023` (`Add : [Research] Capture official source facts and packages`)
+- 원격 반영: `origin/develop` 푸시 성공 (`18e7d25` → `03f0cc3`).
+- `main` 미변경. 미추적 `.playwright-mcp/`는 사용자 자료로 보존하고 커밋에서 제외했다.

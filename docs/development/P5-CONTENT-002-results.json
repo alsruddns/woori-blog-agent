@@ -670,6 +670,12 @@
     "official budget/legal wording",
     "whether source-supported analysis adds useful editorial value"
   ],
-  "commit": null,
-  "push": null
+  "commit": "03f0cc3bbd5488af9cb67ffb86d65d8703861023",
+  "push": {
+    "remote": "origin",
+    "branch": "develop",
+    "status": "pushed",
+    "previous_head": "18e7d25",
+    "head": "03f0cc3bbd5488af9cb67ffb86d65d8703861023"
+  }
 }
