@@ -295,7 +295,7 @@ def test_blogger_markdown_renderer_keeps_title_out_of_body_and_supports_editoria
     html = markdown_to_blogger_html(
         "---\nlanguage: ko\nlabels: [이슈]\n---\n"
         "# Taiwan pay proposal\n\n"
-        "A **verified** lead with [an official source](https://example.gov/report).\n\n"
+        "A **verified** lead with [an official source](https://example.gov/report). [source:source-1]\n\n"
         "## Two different measures\n\n"
         "| Measure | Status |\n| --- | --- |\n| Allowance | Proposed |\n| General pay | Planned |\n\n"
         "> The payment status remains unverified.\n\n"
@@ -311,6 +311,7 @@ def test_blogger_markdown_renderer_keeps_title_out_of_body_and_supports_editoria
     assert '<th scope="col">Measure</th>' in html
     assert "<blockquote>The payment status remains unverified.</blockquote>" in html
     assert "<script" not in html and "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+    assert "[source:source-1]" not in html
     assert "SEO metadata must not be injected" not in html
 
 

@@ -1,0 +1,188 @@
+{
+  "package_id": "P5-CODEX-009-RP-US-20261028-01",
+  "topic": "U.S. consumer demand: nominal spending growth, uneven regional experience, and price pressure",
+  "source_region": "US",
+  "working_language": "ko",
+  "category": "economy",
+  "audience_relevance": "Korean-language readers comparing U.S. demand indicators need to distinguish dollar sales growth, price changes, and regional business anecdotes; this package makes no Korea trade or investment impact claim.",
+  "selected_reason": "A current Fed regional report and contemporaneous federal retail-price releases allow a useful comparison of what each measure can and cannot establish.",
+  "fact_checked_at": "2026-10-28T14:13:45Z",
+  "cutoff_note": "Checked on 2026-10-28. Fed contacts collected through Oct. 5; September CPI and retail sales; August BEA PCE. September BEA release scheduled for Oct. 29 and was not yet available at cutoff.",
+  "sources": [
+    {
+      "source_id": "fed-beige-202610",
+      "title": "Beige Book - October 2026",
+      "organization": "Board of Governors of the Federal Reserve System; prepared by Federal Reserve Bank of Philadelphia",
+      "url": "https://www.federalreserve.gov/monetarypolicy/beigebook202610-summary.htm",
+      "published_date": "2026-10-14",
+      "published_at": "2026-10-14T00:00:00Z",
+      "observed_at": "2026-10-28T14:13:45Z",
+      "language_code": "en",
+      "source_type": "government",
+      "rights_status": "unknown",
+      "rights_note": "Article paraphrases factual material and links the source. Page-specific republication and quotation terms have not been independently confirmed; hold for human rights review."
+    },
+    {
+      "source_id": "census-retail-202609",
+      "title": "Advance Monthly Sales for Retail and Food Services: September 2026",
+      "organization": "U.S. Census Bureau",
+      "url": "https://www.census.gov/retail/sales.html",
+      "published_date": "2026-10-15",
+      "published_at": "2026-10-15T12:30:00Z",
+      "observed_at": "2026-10-28T14:13:45Z",
+      "language_code": "en",
+      "source_type": "statistical",
+      "rights_status": "unknown",
+      "rights_note": "Article paraphrases published statistics and links the source. Page-specific reuse terms have not been independently confirmed; hold for human rights review."
+    },
+    {
+      "source_id": "bls-cpi-202609",
+      "title": "Consumer Price Index: September 2026",
+      "organization": "U.S. Bureau of Labor Statistics",
+      "url": "https://www.bls.gov/news.release/archives/cpi_10142026.htm",
+      "published_date": "2026-10-14",
+      "published_at": "2026-10-14T12:30:00Z",
+      "observed_at": "2026-10-28T14:13:45Z",
+      "language_code": "en",
+      "source_type": "statistical",
+      "rights_status": "unknown",
+      "rights_note": "Article paraphrases published statistics and links the source. Page-specific reuse terms have not been independently confirmed; hold for human rights review."
+    },
+    {
+      "source_id": "bea-pi-202608",
+      "title": "Personal Income and Outlays: August 2026",
+      "organization": "U.S. Bureau of Economic Analysis",
+      "url": "https://www.bea.gov/news/2026/personal-income-and-outlays-august-2026",
+      "published_date": "2026-09-30",
+      "published_at": "2026-09-30T12:30:00Z",
+      "observed_at": "2026-10-28T14:13:45Z",
+      "language_code": "en",
+      "source_type": "statistical",
+      "rights_status": "unknown",
+      "rights_note": "Article paraphrases published statistics and links the source. Page-specific reuse terms have not been independently confirmed; hold for human rights review."
+    }
+  ],
+  "facts": [
+    {
+      "fact_id": "F01",
+      "fact": "The October Beige Book said two of 12 Districts reported moderate economic growth; three modest, four slight, and three no significant change.",
+      "source_ids": [
+        "fed-beige-202610"
+      ],
+      "evidence_location": "National Summary > Overall Economic Activity; lines 7-8",
+      "verification_status": "source_span_verified",
+      "factual_state": "unverified",
+      "scope_note": "Qualitative regional contacts; not a national household survey."
+    },
+    {
+      "fact_id": "F02",
+      "fact": "Most Districts reported little or no change in consumer spending; over half said spending was driven by high-income households.",
+      "source_ids": [
+        "fed-beige-202610"
+      ],
+      "evidence_location": "National Summary > Overall Economic Activity; line 8",
+      "verification_status": "source_span_verified",
+      "factual_state": "unverified",
+      "scope_note": "Report of contacts, not measured household expenditure shares."
+    },
+    {
+      "fact_id": "F03",
+      "fact": "Beige Book information was collected on or before October 5, 2026; the report says it summarizes comments from outside the Federal Reserve and is not a commentary on officials' views.",
+      "source_ids": [
+        "fed-beige-202610"
+      ],
+      "evidence_location": "National Summary note; line 57",
+      "verification_status": "source_span_verified",
+      "factual_state": "unverified",
+      "scope_note": "Published October 14, 2026."
+    },
+    {
+      "fact_id": "F04",
+      "fact": "September 2026 advance U.S. retail and food services sales were $745.0 billion, up 0.8% month over month and 6.3% year over year; the sales estimates are not adjusted for price changes.",
+      "source_ids": [
+        "census-retail-202609"
+      ],
+      "evidence_location": "September 2026 release, lead paragraph",
+      "verification_status": "source_span_verified",
+      "factual_state": "unverified",
+      "scope_note": "Seasonally and calendar adjusted, but nominal/current-dollar sales."
+    },
+    {
+      "fact_id": "F05",
+      "fact": "September CPI-U increased 0.6% seasonally adjusted month over month and 3.7% over 12 months on an unadjusted basis; gasoline rose 9.1% in the month and accounted for over half of the monthly all-items increase.",
+      "source_ids": [
+        "bls-cpi-202609"
+      ],
+      "evidence_location": "Release summary lines 181-198",
+      "verification_status": "source_span_verified",
+      "factual_state": "unverified",
+      "scope_note": "Do not subtract from Census retail growth to infer real sales; baskets and methods differ."
+    },
+    {
+      "fact_id": "F06",
+      "fact": "The CPI index excluding food and energy rose 0.3% in September and 2.6% over the 12 months ending September.",
+      "source_ids": [
+        "bls-cpi-202609"
+      ],
+      "evidence_location": "Release summary lines 191-198",
+      "verification_status": "source_span_verified",
+      "factual_state": "unverified",
+      "scope_note": "Core CPI measure, not a forecast of future inflation."
+    },
+    {
+      "fact_id": "F07",
+      "fact": "August 2026 personal consumption expenditures in current dollars increased $190.8 billion, or 0.9%; the personal saving rate was 4.1%.",
+      "source_ids": [
+        "bea-pi-202608"
+      ],
+      "evidence_location": "Release lead and summary, lines 8-15",
+      "verification_status": "source_span_verified",
+      "factual_state": "unverified",
+      "scope_note": "August, current-dollar estimate; not the same period or coverage as September retail sales."
+    },
+    {
+      "fact_id": "F08",
+      "fact": "BEA's page listed September 2026 Personal Income and Outlays as the next release on October 29, 2026.",
+      "source_ids": [
+        "bea-pi-202608"
+      ],
+      "evidence_location": "Release page: Next release notice",
+      "verification_status": "source_span_verified",
+      "factual_state": "unverified",
+      "scope_note": "As of the October 28 article cutoff, the September release had not yet occurred."
+    }
+  ],
+  "independent_source_note": "The four sources are primary publications from three U.S. federal agencies. Census, BLS, and BEA statistics directly measure separate indicators; the Fed Beige Book is qualitative contact reporting. They are complementary, not independent replications of the same measure.",
+  "conflicts_or_limits": [
+    "Nominal sales growth is not real volume growth.",
+    "CPI and retail trade have different baskets and methods; do not derive a real retail growth estimate by subtracting their growth rates.",
+    "Beige Book contacts do not represent a probability sample of U.S. households or firms.",
+    "No official source here establishes a causal impact on Korean exports, asset prices, or individual household outcomes."
+  ],
+  "rights_review": {
+    "status": "unresolved",
+    "note": "All source rights_status values remain unknown pending human review of page-specific terms. Article paraphrases facts and links originals; do not publish until rights review."
+  },
+  "prohibited_claims": [
+    "U.S. real retail sales grew 6.3%.",
+    "High-income households account for a quantified national share of spending.",
+    "September retail growth proves broad household purchasing power improved.",
+    "Beige Book is an official FOMC policy decision or a representative survey.",
+    "The figures predict Fed rate decisions, equity returns, or Korean exports."
+  ],
+  "recommended_structure": [
+    "Open with the apparent gap between nominal sales and qualitative regional reports.",
+    "Explain measure, price adjustment, date, and coverage differences.",
+    "Analyze consumer-spending distribution without generalizing beyond source scope.",
+    "Contrast headline and core CPI and regional business cost reports.",
+    "Explain regional divergence in manufacturing.",
+    "Close with next data release and what remains unknown."
+  ],
+  "publication_state": {
+    "generation_ready": false,
+    "publish_ready": false,
+    "human_review": "pending",
+    "source_rights_review": "pending",
+    "independent_semantic_review": "pending"
+  }
+}

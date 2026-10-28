@@ -170,6 +170,9 @@ def plain_text_as_html(value: str) -> str:
 
 def _inline_markdown(value: str) -> str:
     """Render a deliberately small inline Markdown subset after escaping text."""
+    # Source IDs are internal evidence links consumed by the grounding gate.
+    # They must never leak into the reader-facing Blogger body.
+    value = re.sub(r"\s*\[source:[A-Za-z0-9_.:-]+\]", "", value, flags=re.IGNORECASE)
     token_pattern = re.compile(r"(`[^`]+`|\*\*.+?\*\*|__.+?__|\*[^*\n]+\*|_[^_\n]+_|!?\[[^\]]+\]\([^\s)]+(?:\s+\"[^\"]*\")?\))")
     output: list[str] = []
     cursor = 0

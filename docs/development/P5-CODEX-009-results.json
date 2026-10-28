@@ -1,0 +1,189 @@
+{
+  "task_id": "P5-CODEX-009",
+  "status": "completed_with_model_identity_unverified_and_human_review_pending",
+  "date": "2026-10-28",
+  "branch": "develop",
+  "base_commit": "d76d5e7",
+  "topic": "U.S. consumer spending, inflation, and household experience",
+  "article": {
+    "path": "docs/development/P5-CODEX-009-article-ko.md",
+    "language": "ko",
+    "characters": 4252,
+    "lines": 36,
+    "content_id": "p5-codex-009-us-demand-ko-20261028-r4",
+    "event_group_id": "p5-codex-009-us-demand-20261028",
+    "research_package_id": "P5-CODEX-009-RP-US-20261028-01",
+    "claim_count": 8,
+    "source_count": 4,
+    "generation_method": "manual_codex_import",
+    "model_name": null,
+    "model_identity_note": "Authored in the current Codex interactive session; exact selected model identifier was not exposed for independent verification. No separate API or Codex CLI process was used.",
+    "google_trends_based": false,
+    "blogger_labels": [
+      "경제"
+    ],
+    "generation_ready": false,
+    "publish_ready": false
+  },
+  "sources": [
+    {
+      "id": "fed-beige-202610",
+      "organization": "Federal Reserve",
+      "published_at": "2026-10-14",
+      "coverage_through": "2026-10-05",
+      "url": "https://www.federalreserve.gov/monetarypolicy/beigebook202610-summary.htm",
+      "rights_status": "unknown"
+    },
+    {
+      "id": "census-retail-202609",
+      "organization": "U.S. Census Bureau",
+      "published_at": "2026-10-15",
+      "url": "https://www.census.gov/retail/sales.html",
+      "rights_status": "unknown"
+    },
+    {
+      "id": "bls-cpi-202609",
+      "organization": "U.S. Bureau of Labor Statistics",
+      "published_at": "2026-10-14",
+      "url": "https://www.bls.gov/news.release/archives/cpi_10142026.htm",
+      "rights_status": "unknown"
+    },
+    {
+      "id": "bea-pi-202608",
+      "organization": "U.S. Bureau of Economic Analysis",
+      "published_at": "2026-09-30",
+      "url": "https://www.bea.gov/news/2026/personal-income-and-outlays-august-2026",
+      "rights_status": "unknown"
+    }
+  ],
+  "import": {
+    "path": "docs/development/P5-CODEX-009-content-import.json",
+    "schema": "woori-content-import/1.0",
+    "test_database": "woori_blog_agent_test",
+    "test_role": "woori_test_app",
+    "test_server": "loopback",
+    "import_state": "awaiting_human_review",
+    "revision_count": 1,
+    "machine_passed": true,
+    "machine_failed_checks": [],
+    "semantic_and_rights_review": "human_review_required",
+    "independent_source_verification": false,
+    "generation_ready": false,
+    "publish_ready": false,
+    "final_html_sha256": "cf467f9b097efcae717e4f09dec422e2bdec1e5c0912b8bbe46698268b4a5209",
+    "internal_source_markers_in_reader_html": false,
+    "duplicate_body_h1": false,
+    "review_events_for_final_revision": 0,
+    "localization_requests_for_final_revision": [
+      {
+        "language": "ja",
+        "events": [
+          "requested",
+          "cancelled"
+        ]
+      },
+      {
+        "language": "zh-CN",
+        "events": [
+          "requested",
+          "cancelled"
+        ]
+      }
+    ],
+    "mock_publications_for_final_revision": 0
+  },
+  "seo": {
+    "ready": [
+      "title_matches_article",
+      "search_description",
+      "primary_term",
+      "heading_structure",
+      "source_links"
+    ],
+    "review": [
+      "official_source_status",
+      "fact_review",
+      "blogger_search_description",
+      "blogger_theme_seo",
+      "editorial_review"
+    ],
+    "not_measured": [
+      "search_intent",
+      "link_targets",
+      "claim_source_mapping",
+      "image_alt",
+      "duplicate_content",
+      "search_performance"
+    ]
+  },
+  "browser_e2e": {
+    "p5_codex_009": {
+      "desktop": "passed",
+      "mobile": "passed",
+      "viewports_px": [
+        320,
+        390,
+        768,
+        1280
+      ],
+      "horizontal_overflow": false,
+      "external_requests": 0,
+      "console_errors": 0
+    },
+    "existing_mock_pipeline": {
+      "desktop": "passed",
+      "mobile": "passed",
+      "mock_fixture_outcome": "succeeded",
+      "simulation_only": true,
+      "external_network_calls": 0,
+      "real_blog_mutated": false
+    },
+    "screenshots": [
+      "docs/development/assets/P5-CODEX-009-real-article-desktop-320.png",
+      "docs/development/assets/P5-CODEX-009-real-article-desktop-390.png",
+      "docs/development/assets/P5-CODEX-009-real-article-desktop-768.png",
+      "docs/development/assets/P5-CODEX-009-real-article-desktop-1280.png",
+      "docs/development/assets/P5-CODEX-009-real-article-mobile-320.png",
+      "docs/development/assets/P5-CODEX-009-real-article-mobile-390.png",
+      "docs/development/assets/P5-CODEX-009-real-article-mobile-768.png",
+      "docs/development/assets/P5-CODEX-009-real-article-mobile-1280.png"
+    ]
+  },
+  "database_safety": {
+    "test_database_schema_version": 48,
+    "test_role_can_connect_operations_db": false,
+    "operations_db_accessed": false,
+    "operations_migrations_applied": 0,
+    "operations_writes": 0,
+    "test_database_final_counts": {
+      "imports": 30,
+      "import_versions": 54,
+      "assessments": 38,
+      "mock_publications": 19,
+      "localization_events": 51
+    }
+  },
+  "external_side_effects": {
+    "real_blogger_api_calls": 0,
+    "paid_ai_or_data_api_calls": 0,
+    "auto_mode_enabled": false,
+    "live_blogger_mutations": 0
+  },
+  "verification": {
+    "scripts_verify_ps1": "passed",
+    "pytest": "266 passed",
+    "ruff": "passed",
+    "mypy": "passed (38 source files)",
+    "wheel": "passed",
+    "dashboard_eslint": "passed",
+    "dashboard_production_build": "passed",
+    "typescript": "passed",
+    "git_diff_check": "passed",
+    "verify_secrets_http": "passed"
+  },
+  "git": {
+    "commit": null,
+    "pushed": false,
+    "main_changed": false
+  }
+}
