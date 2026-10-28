@@ -19,7 +19,7 @@ function envelope() {
   };
 }
 
-test("isolated import flows through review, deterministic checks, preview, and fake publisher", async ({ page }, testInfo) => {
+test("isolated import flows through review, deterministic checks, preview, and safe publication gating", async ({ page }, testInfo) => {
   const consoleErrors: string[] = [];
   const expectedSandboxBlocks: string[] = [];
   const expectedValidationResponses: string[] = [];
@@ -32,11 +32,11 @@ test("isolated import flows through review, deterministic checks, preview, and f
   });
   page.on("request", request => { if (!/^https?:\/\/(127\.0\.0\.1|localhost):(?:13100|18100)\//.test(request.url())) externalRequests.push(request.url()); });
   await page.goto("/imports");
-  await expect(page.getByRole("heading", { name: "원고 Import 및 검토" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "원고 가져오기", exact: true })).toBeVisible();
 
   await page.getByLabel("제출자 표시 이름").fill("E2E Editorial Desk");
   await page.getByTestId("import-json").fill(JSON.stringify({ schema_version: "1.0" }));
-  await page.getByRole("button", { name: "검토 대기열에 Import" }).click();
+  await page.getByRole("button", { name: "검토 대기열에 가져오기" }).click();
   await expect(page.getByRole("alert")).toBeVisible();
 
   const content = envelope();
@@ -45,41 +45,55 @@ test("isolated import flows through review, deterministic checks, preview, and f
     buffer: Buffer.from(JSON.stringify({ submitted_by: "E2E Editorial Desk", item: content })),
   });
   await expect(page.getByTestId("import-json")).toHaveValue(JSON.stringify({ submitted_by: "E2E Editorial Desk", item: content }));
-  await page.getByRole("button", { name: "검토 대기열에 Import" }).click();
+  await page.getByRole("button", { name: "검토 대기열에 가져오기" }).click();
   await expect(page.getByTestId("import-detail")).toBeVisible();
   await expect(page.getByTestId("import-title-input")).toHaveValue(content.title);
   await expect(page.getByText("외부 제출 · 독립 검증 미완료")).toBeVisible();
 
+  await page.getByRole("button", { name: "닫기" }).click();
   await page.getByTestId("import-json").fill(JSON.stringify(content));
-  await page.getByRole("button", { name: "검토 대기열에 Import" }).click();
-  await expect(page.getByText("같은 원고가 이미 Import되어 있습니다. 중복 버전이나 검토 기록은 추가하지 않았습니다.")).toBeVisible();
+  await page.getByRole("button", { name: "검토 대기열에 가져오기" }).click();
+  await expect(page.getByText("같은 원고가 이미 등록되어 있습니다. 중복 버전이나 검토 기록은 추가하지 않았습니다.")).toBeVisible();
 
+  await page.locator("details.import-recent summary").click();
+  await page.locator(`[data-testid="import-row"][data-content-id="${content.content_id}"]`).getByRole("button").click();
   await page.getByTestId("import-title-input").fill("Official Agency policy change and reporting calendar");
   await page.getByTestId("import-body-input").fill(`${content.body_markdown}\n\n## Follow-up\n\nReaders can check the same notice for updates to its implementation schedule. [source:source-e2e]`);
   await page.getByTestId("save-import-version").click();
   await expect(page.getByText(/버전 2/)).toBeVisible();
   await page.getByRole("button", { name: "품질·SEO·HTML 검사" }).click();
+  await expect(page.getByText("결정론적 품질·SEO 검사를 기록했습니다. 사실 검증 및 발행은 별도입니다.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "품질·SEO·HTML 검사" })).toBeEnabled();
+  await page.getByRole("tab", { name: "품질·SEO" }).click();
+  await expect(page.getByRole("tab", { name: "품질·SEO" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByText("결정론적 규칙 통과")).toBeVisible();
+  await page.getByRole("tab", { name: "원고 편집" }).click();
   await page.getByRole("button", { name: "게시용 미리보기" }).click();
   const frame = page.frameLocator("[data-testid='import-html-preview']");
   await expect(page.getByTestId("import-detail").getByRole("heading", { name: "Official Agency policy change and reporting calendar", level: 2 })).toBeVisible();
   await expect(frame.getByRole("heading", { name: "What the notice says", level: 2 })).toBeVisible();
   await expect(page.getByText(/official_source_status/)).toHaveCount(0);
 
+  await page.getByRole("tab", { name: "다국어·발행" }).click();
   await page.getByText("원문 문서를 직접 확인했습니다").click();
   await page.getByText("주장과 근거를 대조했습니다").click();
   await page.getByText("저작권·인용 권리를 검토했습니다").click();
   await page.getByRole("button", { name: "편집 검토 통과 기록" }).click();
-  await expect(page.getByText("편집 검토 통과", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("편집 검토 이벤트를 기록했습니다. 이 기록은 Blogger 게시 승인과 다릅니다.")).toBeVisible();
+  await page.getByRole("tab", { name: "다국어·발행" }).click();
+  await expect(page.getByTestId("mock-publish")).toBeEnabled();
   await page.getByTestId("mock-publish").click();
-  await expect(page.getByText(/테스트 어댑터 결과를 기록했습니다/)).toBeVisible();
+  await expect(page.getByText("테스트 어댑터 결과를 기록했습니다. 실제 Blogger에는 변경이 없습니다.")).toBeVisible();
+  await page.getByRole("tab", { name: "다국어·발행" }).click();
   await expect(page.getByText(/모의 결과: succeeded/)).toBeVisible();
   await expect(page.getByText(/publish_ready=false/).last()).toBeVisible();
 
   await page.getByLabel("대상 언어").selectOption("ko");
   await page.getByRole("button", { name: "현지화 원고 요청" }).click();
+  await page.getByRole("tab", { name: "다국어·발행" }).click();
   await expect(page.getByText(/외부 공급자 대기로 저장/)).toBeVisible();
   await page.getByRole("button", { name: "요청 취소" }).click();
+  await page.getByRole("tab", { name: "다국어·발행" }).click();
   await expect(page.getByText("한국어 · 요청 취소")).toBeVisible();
   await expect(page.getByText(/generation_provider_available.*true/)).toHaveCount(0);
 
@@ -96,7 +110,7 @@ test("isolated import flows through review, deterministic checks, preview, and f
       }).filter(element => element.right > window.innerWidth + 1).slice(0, 8),
     }));
     expect(overflow.page, `document overflow at ${width}px: ${JSON.stringify(overflow.offenders)}`).toBe(false);
-    await page.screenshot({ path: path.join(screenshotDir, `P5-CODEX-008-import-${testInfo.project.name}-${width}.png`), fullPage: true });
+    await page.screenshot({ path: path.join(screenshotDir, `P5-UI-003-import-pipeline-${testInfo.project.name}-${width}.png`) });
   }
   expect(externalRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);

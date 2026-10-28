@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useSearchParams } from "next/navigation";
 import styles from "./article-preview.module.css";
 
 type Row = Record<string, unknown>;
@@ -9,6 +10,17 @@ type LocalizedTarget = Row & { language_code: string; blog_id: string; already_p
 type LocalizedPlan = Row & { source: Row; targets: LocalizedTarget[]; requests: Row[]; languages_without_active_blog: Row[]; generation_provider_available: boolean; live_blogger_writes_enabled: false; automatic_publishing_enabled: false };
 const value = (row: Row | null | undefined, key: string) => String(row?.[key] ?? "");
 const koreanLanguage = (code: string) => ({ ko: "한국어", en: "영어", "zh-CN": "중국어 간체", ja: "일본어" } as Record<string, string>)[code] ?? code;
+const categoryNames: Record<string, string> = { economy: "경제", finance: "금융", stocks: "주식", crypto: "암호화폐", technology: "IT", semiconductors: "반도체", ai: "인공지능", policy: "정치·정책" };
+const categoryLabel = (slug: string) => categoryNames[slug] ?? "분야 확인 필요";
+const stateNames: Record<string, string> = {
+  unknown: "미확인", unverified: "사실 검증 미완료", verified: "검증 완료", source_span_verified: "출처 문구 연결 확인",
+  quality_held: "품질 검토 필요", machine_checked: "기계 검사 통과", insufficient_evidence: "근거 자료 부족",
+  not_measured: "측정 안 됨", passed: "통과", failed: "실패", proposed: "제안", planned: "예정",
+  approved: "승인", enacted: "시행", paid: "지급 완료", review_started: "검토 중",
+  changes_requested: "수정 요청", awaiting_human_review: "사람 검토 대기", editorial_review_passed: "편집 검토 통과",
+  approved_for_publication: "발행 승인", revoked: "취소",
+};
+const stateLabel = (raw: string) => stateNames[raw] ?? (raw ? "기록된 평가" : "미확인");
 const recommendationLabel = (reason: string) => reason === "regional_language_and_reader_relevance_require_editorial_selection"
   ? "지역 코드만으로 언어를 정하지 않습니다. 독자 관련성을 직접 검토하세요."
   : reason === "direct_region_language_match" ? "지역·언어 일치 참고 후보이며 독자 관련성을 확인해야 합니다."
@@ -48,9 +60,10 @@ function HtmlPreview({ html, title, lang }: { html: string; title: string; lang:
 }
 
 export default function ManuscriptWorkspace() {
-  const [filters, setFilters] = useState({ q: "", language: "", category: "", status: "", sort: "newest", page: 1 });
-  const [pageSize, setPageSize] = useState(25);
-  const [searchText, setSearchText] = useState("");
+  const query = useSearchParams();
+  const [filters, setFilters] = useState(() => ({ q: query.get("q") ?? "", language: query.get("language") ?? "", category: query.get("category") ?? "", status: query.get("status") ?? "", sort: query.get("sort") ?? "newest", page: Math.max(1, Number(query.get("page") ?? 1) || 1) }));
+  const [pageSize, setPageSize] = useState(() => Math.min(100, Math.max(1, Number(query.get("page_size") ?? 25) || 25)));
+  const [searchText, setSearchText] = useState(() => query.get("q") ?? "");
   const [data, setData] = useState<ListResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -78,6 +91,15 @@ export default function ManuscriptWorkspace() {
   const deepLinkOpened = useRef(false);
 
   useEffect(() => { const timer = setTimeout(() => setFilters(current => ({ ...current, q: searchText, page: 1 })), 250); return () => clearTimeout(timer); }, [searchText]);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    for (const key of ["q", "language", "category", "status"] as const) {
+      const item = filters[key];
+      if (item) params.set(key, item); else params.delete(key);
+    }
+    params.set("sort", filters.sort); params.set("page", String(filters.page)); params.set("page_size", String(pageSize));
+    window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}${window.location.hash}`);
+  }, [filters, pageSize]);
   useEffect(() => {
     const controller = new AbortController();
     const id = ++requestSequence.current;
@@ -324,7 +346,7 @@ export default function ManuscriptWorkspace() {
     <section className="workspace-panel" aria-label="원고 검색 및 목록">
       <div className="toolbar">
         <label className="search-field">제목 검색<input type="search" value={searchText} onChange={event => { setLoading(true); setError(""); setSearchText(event.target.value); }} placeholder="원고 제목 또는 주제" /></label>
-        <label>카테고리<select value={filters.category} onChange={event => { setLoading(true); setError(""); setFilters(current => ({ ...current, category: event.target.value, page: 1 })); }}><option value="">전체</option>{categories.map(item => <option key={item} value={item}>{item === "stocks" ? "주식" : item === "finance" ? "금융" : item}</option>)}</select></label>
+        <label>분야<select value={filters.category} onChange={event => { setLoading(true); setError(""); setFilters(current => ({ ...current, category: event.target.value, page: 1 })); }}><option value="">전체</option>{categories.map(item => <option key={item} value={item}>{categoryLabel(item)}</option>)}</select></label>
         <label>언어<select value={filters.language} onChange={event => { setLoading(true); setError(""); setFilters(current => ({ ...current, language: event.target.value, page: 1 })); }}><option value="">전체</option>{languages.map(item => <option key={item} value={item}>{koreanLanguage(item)}</option>)}</select></label>
         <label>품질 상태<select value={filters.status} onChange={event => { setLoading(true); setError(""); setFilters(current => ({ ...current, status: event.target.value, page: 1 })); }}><option value="">전체</option><option value="quality_held">품질 검토 필요</option><option value="machine_checked">기계 검사 통과</option><option value="failed">처리 실패</option></select></label>
         <label>작성일<select value={filters.sort} onChange={event => { setLoading(true); setError(""); setFilters(current => ({ ...current, sort: event.target.value, page: 1 })); }}><option value="newest">최신순</option><option value="oldest">오래된 순</option></select></label>
@@ -335,17 +357,17 @@ export default function ManuscriptWorkspace() {
       {empty && <div className="empty-state"><strong>표시할 원고가 없습니다.</strong><span>검색어나 필터를 바꾸거나 새로고침해 주세요.</span></div>}
       {data && data.items.length > 0 && <div className="data-grid-scroll"><table className="data-grid"><thead><tr><th>원고 제목</th><th>카테고리</th><th>언어</th><th>AI 모델</th><th>작성일</th><th>검토 상태</th><th>게시 상태</th></tr></thead>
         <tbody>{data.items.map(row => <tr key={value(row, "content_version_id")} tabIndex={0} onClick={event => void openDetail(row, event.currentTarget)} onKeyDown={(event: KeyboardEvent<HTMLTableRowElement>) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); void openDetail(row, event.currentTarget); } }} aria-label={`${value(row, "title")} 상세 보기`}>
-          <td className="title-cell" title={value(row, "title")}>{value(row, "title") || value(row, "topic")}</td><td>{value(row, "category_slug") === "stocks" ? "주식" : value(row, "category_slug") === "finance" ? "금융" : value(row, "category_slug")}</td><td>{koreanLanguage(value(row, "language_code"))}</td><td>{value(row, "model") || "—"}</td><td>{dateLabel(value(row, "created_at"))}</td><td><span className="status-text">{rowStatus.get(value(row, "content_version_id"))}</span></td><td>{value(row, "publication_status") === "published" ? "게시됨" : value(row, "publication_status") === "mock" ? "모의 완료" : "미게시"}</td>
+          <td className="title-cell" title={value(row, "title")}>{value(row, "title") || value(row, "topic")}</td><td>{categoryLabel(value(row, "category_slug"))}</td><td>{koreanLanguage(value(row, "language_code"))}</td><td>{value(row, "model") || "—"}</td><td>{dateLabel(value(row, "created_at"))}</td><td><span className="status-text">{rowStatus.get(value(row, "content_version_id"))}</span></td><td>{value(row, "publication_status") === "published" ? "게시됨" : value(row, "publication_status") === "mock" ? "모의 완료" : "미게시"}</td>
         </tr>)}</tbody></table></div>}
       <nav className="pagination" aria-label="원고 페이지 이동"><button disabled={filters.page <= 1 || loading} onClick={() => { setLoading(true); setFilters(current => ({ ...current, page: current.page - 1 })); }}>이전</button><span>{filters.page} / {pageCount} 페이지</span><button disabled={filters.page >= pageCount || loading} onClick={() => { setLoading(true); setFilters(current => ({ ...current, page: current.page + 1 })); }}>다음</button></nav>
     </section>
 
     {selected && <div className="sheet-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) closeDetail(); }}>
       <section className="detail-sheet" role="dialog" aria-modal="true" aria-labelledby="detail-title" tabIndex={-1} ref={dialog}>
-        <header className="sheet-header"><div><p className="eyebrow">원고 상세</p><h2 id="detail-title">{value(selected, "title") || value(selected, "topic")}</h2><p>{value(selected, "category_slug") === "stocks" ? "주식" : "금융"} · {koreanLanguage(value(selected, "language_code"))} · {value(selected, "model") || "모델 정보 없음"}</p></div><button className="icon-button" type="button" onClick={closeDetail} aria-label="상세 패널 닫기">닫기 <span aria-hidden="true">×</span></button></header>
+        <header className="sheet-header"><div><p className="eyebrow">원고 상세</p><h2 id="detail-title">{value(selected, "title") || value(selected, "topic")}</h2><p>{categoryLabel(value(selected, "category_slug"))} · {koreanLanguage(value(selected, "language_code"))} · {value(selected, "model") || "모델 정보 없음"}</p></div><button className="icon-button" type="button" onClick={closeDetail} aria-label="상세 패널 닫기">닫기 <span aria-hidden="true">×</span></button></header>
         {detailLoading ? <p className="sheet-loading" role="status">원고와 근거를 불러오는 중…</p> : detail ? <>
           <div className="detail-summary"><span>{statusLabel(value(detail, "editorial_status"), machinePassed)}</span><span>작성 {dateLabel(value(detail, "created_at"))}</span><span>발행 준비 안 됨</span></div>
-          <nav className="detail-tabs" aria-label="원고 상세 탭" role="tablist">{[["body", "본문"], ["sources", "출처·근거"], ["quality", "품질 검사"], ["history", "변경 이력"]].map(([id, label]) => <button key={id} id={`manuscript-tab-${id}`} type="button" role="tab" aria-controls="manuscript-panel" aria-selected={tab === id} tabIndex={tab === id ? 0 : -1} onClick={() => setTab(id)}>{label}</button>)}</nav>
+          <nav className="detail-tabs" aria-label="원고 상세 탭" role="tablist">{[["body", "편집·미리보기"], ["sources", "출처·근거"], ["quality", "품질·SEO"], ["localized", "다국어·발행"], ["history", "변경 이력"]].map(([id, label]) => <button key={id} id={`manuscript-tab-${id}`} type="button" role="tab" aria-controls="manuscript-panel" aria-selected={tab === id} tabIndex={tab === id ? 0 : -1} onClick={() => setTab(id)}>{label}</button>)}</nav>
           <div className="sheet-content" id="manuscript-panel" role="tabpanel" aria-labelledby={`manuscript-tab-${tab}`} tabIndex={0}>
             {tab === "body" && <div className="body-tab"><p className="article-summary"><strong>검색 설명 (게시 본문 HTML에는 포함되지 않음)</strong><br />{value(latestRevision ?? {}, "seo_description") || value(detail, "summary")}</p>
               <section className={styles.publicationPreview} aria-label="게시용 미리보기"><div className={styles.toolbar}><div><h3>게시용 미리보기</h3><p>제목은 Blogger 제목 영역에 표시되며 게시 본문 HTML에는 중복하지 않습니다.</p></div><label className={styles.trendLabelToggle}><input type="checkbox" checked={googleTrendsBased} onChange={event => setGoogleTrendsBased(event.target.checked)} /> Google Trends 기반 원고</label></div>
@@ -365,7 +387,7 @@ export default function ManuscriptWorkspace() {
               {detail.review_actions_allowed ? <details className="edit-article"><summary>새 원고 버전 편집</summary><form onSubmit={event => void submitRevision(event)}>
                 <label>작성자<input name="reviewer" required minLength={2} maxLength={80} /></label><label>변경 사유<input name="reason" required minLength={10} maxLength={2000} /></label><label>제목<input name="title" required maxLength={500} defaultValue={value(latestRevision ?? {}, "title") || value(detail, "title")} /></label><label>요약 및 SEO 설명<textarea name="summary" required minLength={1} maxLength={500} defaultValue={value(latestRevision ?? {}, "seo_description") || value(detail, "summary")} /></label><label>검색 키워드 (| 구분)<input name="keywords" required defaultValue={((detail.keywords as string[] | undefined) ?? []).join(" | ")} /></label><label>SEO 제목 후보 (| 구분)<input name="seo_title_candidates" maxLength={1000} defaultValue={((latestSeo.seo_title_candidates as string[] | undefined) ?? []).join(" | ")} /></label><label>핵심 검색어<input name="primary_keyword" maxLength={80} defaultValue={value(latestSeo, "primary_keyword") || ((detail.keywords as string[] | undefined) ?? [])[0] || ""} /></label><label>대상 지역<input name="target_region" maxLength={80} placeholder="근거가 있을 때만 입력" defaultValue={value(latestSeo, "target_region")} /></label><label>검색 의도<select name="search_intent" defaultValue={value(latestSeo, "search_intent")}><option value="">미기록</option><option value="informational">정보 탐색</option><option value="navigational">특정 사이트 탐색</option><option value="transactional">거래·행동</option><option value="commercial">상업 정보 비교</option></select></label><label>핵심 질문<input name="core_question" maxLength={500} defaultValue={value(latestSeo, "core_question")} /></label><label>핵심 답변<textarea name="core_answer" maxLength={2000} defaultValue={value(latestSeo, "core_answer")} /></label><label>Blogger 라벨 (, 구분)<input name="labels" defaultValue={((latestRevision?.blogger_labels as string[] | undefined) ?? []).join(", ")} /></label><label>원고 HTML<textarea name="html_body" rows={14} required maxLength={100000} defaultValue={value(latestRevision ?? {}, "html_body") || htmlBody} /></label><p>저장 시 서버 허용 목록으로 HTML을 정화하고 새 버전에서 품질 검사를 다시 실행합니다.</p><button disabled={saving}>새 버전 저장</button></form></details> : <p className="notice">이 원고는 읽기 전용입니다. 현재 편집·검토 권한 정책에서 이 원고의 버전은 승인 대상에 포함되지 않습니다.</p>}
             </div>}
-            {tab === "body" && <section className="detail-section localized-expansion" aria-labelledby="localized-expansion-title">
+            {tab === "localized" && <section className="detail-section localized-expansion" aria-labelledby="localized-expansion-title">
               <h3 id="localized-expansion-title">다른 언어로 발행</h3>
               <p>원본 자료의 지역과 언어를 기준으로 후보를 안내합니다. 번역이 아닌 현지 독자용 칼럼을 준비하도록 요청하며, 생성 Provider가 없으면 작업은 대기 상태로 남습니다.</p>
               {!localizedPlan && <button type="button" disabled={localizedPlanLoading} onClick={() => void loadLocalizedPlan()}>{localizedPlanLoading ? "대상 확인 중…" : "언어와 Blogger 블로그 선택"}</button>}
@@ -381,7 +403,7 @@ export default function ManuscriptWorkspace() {
                       const unavailable = Boolean(localizedPlan.source.evaluation_only) || target.already_published || Boolean(target.existing_localization);
                       const reason = target.already_published ? "이미 게시됨" : target.existing_localization ? `기존 현지화 원고 v${value(target.existing_localization, "version")}가 있음` : localizedPlan.source.evaluation_only ? "평가 전용 원고" : "";
                       return <label key={key} className="localized-target-option"><input type="checkbox" disabled={unavailable} checked={Boolean(localizedSelection[key])} onChange={event => setLocalizedSelection(current => ({ ...current, [key]: event.target.checked }))} />
-                        <span><strong>{koreanLanguage(target.language_code)} · {value(target, "blog_name")}</strong><small>{value(target, "blog_url")} · Blog ID {value(target, "blogger_blog_id") || "미확인"} · 게시 모드 {value(target, "publication_mode") === "auto" ? "Auto 설정(실행 차단)" : "Manual"}</small>
+                        <span><strong>{koreanLanguage(target.language_code)} · {value(target, "blog_name")}</strong><small>{value(target, "blog_url")} · Blogger 블로그 ID {value(target, "blogger_blog_id") || "미확인"} · 게시 모드 {value(target, "publication_mode") === "auto" ? "자동 게시 설정(실행 차단)" : "수동 게시"}</small>
                           {target.recommended && <small>{recommendationLabel(value(target, "recommendation_reason"))}</small>}{reason && <small className="quality-held">{reason}</small>}
                           {target.published_posts.map((post, index) => <small key={`${value(post, "remote_post_id")}-${index}`}>기존 Blogger 글 · Post ID {value(post, "remote_post_id")} · 블로그 URL {value(post, "url")}</small>)}</span></label>;
                     })}
@@ -389,14 +411,14 @@ export default function ManuscriptWorkspace() {
                   {localizedPlan.languages_without_active_blog.length > 0 && <p className="notice">활성 Blogger 연결이 없어 선택할 수 없는 언어: {localizedPlan.languages_without_active_blog.map(language => koreanLanguage(value(language, "language_code"))).join(", ")}</p>}
                   {["TW", "HK", "SG"].includes(value(localizedPlan.source, "target_country").toUpperCase()) && <p className="notice">대만·홍콩·싱가포르 자료는 지역 코드만으로 중국어 간체 대상이라고 판단하지 않습니다. 원고별 독자 관련성과 언어를 사람이 선택해야 합니다.</p>}
                   <label>선택한 언어 독자에게 제공할 가치와 대상 이유<textarea value={localizedSelectionReason} onChange={event => setLocalizedSelectionReason(event.target.value)} minLength={10} maxLength={1000} required placeholder="사건의 영향 지역, 대상 독자의 배경, 검색 의도와 선택 이유를 적으세요." /></label>
-                  <label className="localized-consent"><input type="checkbox" checked={oneTimeAutoPublishRequested} onChange={event => setOneTimeAutoPublishRequested(event.target.checked)} /> 이 선택 작업에 한해 원고 생성 후 자동 게시 의사를 명시합니다. 현재 게시 잠금과 전체 Manual/Auto 설정은 변경되지 않습니다.</label>
-                  <p>처리 순서: 기존 자료·출처 확인 → 현지화 원고 작성 → 사실·언어·중복·SEO 검사 → HTML 검증 → Manual 검토 또는 사전 Auto 조건 확인. 모든 단계가 통과해도 실제 Blogger 쓰기는 별도 운영 잠금이 해제되기 전까지 차단됩니다.</p>
+                  <label className="localized-consent"><input type="checkbox" checked={oneTimeAutoPublishRequested} onChange={event => setOneTimeAutoPublishRequested(event.target.checked)} /> 이 선택 작업에 한해 원고 생성 후 자동 게시 의사를 명시합니다. 현재 게시 잠금과 전체 수동·자동 설정은 변경되지 않습니다.</label>
+                  <p>처리 순서: 기존 자료·출처 확인 → 현지화 원고 작성 → 사실·언어·중복·SEO 검사 → HTML 검증 → 수동 검토 또는 사전 자동 게시 조건 확인. 모든 단계가 통과해도 실제 Blogger 쓰기는 별도 운영 잠금이 해제되기 전까지 차단됩니다.</p>
                   <button type="submit" disabled={saving || localizedSelectionReason.trim().length < 10 || !Object.values(localizedSelection).some(Boolean)}>선택한 언어 작업 요청</button>
                 </form>
                 {localizedPlan.requests.length > 0 && <div><h4>이 원고의 다국어 요청 이력</h4><ul>{localizedPlan.requests.map(item => { const state = value(item, "latest_state") || value(item, "initial_state"); return <li key={value(item, "id")}>{value(item, "target_language_code")} · {state} · {dateLabel(value(item, "created_at"))} {!["cancelled", "published"].includes(state) && <button type="button" disabled={saving} onClick={() => void cancelLocalizedRequest(value(item, "id"))}>요청 취소</button>}</li>; })}</ul></div>}
               </>}
             </section>}
-            {tab === "sources" && <div className="detail-section">{((detail.sources as Row[] | undefined) ?? []).length === 0 ? <p className="empty-state">연결된 출처가 없습니다.</p> : (detail.sources as Row[]).map(source => <article className="source-card" key={value(source, "id")}><h3>{value(source, "source_name")}</h3><p>게시 {dateLabel(value(source, "published_at"))} · 수집 {dateLabel(value(source, "collected_at"))} · 권리 {value(source, "rights") || "확인 필요"}</p><a href={value(source, "url")} target="_blank" rel="noreferrer">원문 열기 ↗</a></article>)}<h3>검증된 사실</h3>{((detail.facts as Row[] | undefined) ?? []).map(fact => <article className="source-card" key={value(fact, "id")}><strong>{value(fact, "fact_key")}</strong><p>{value(fact, "source_excerpt")}</p><small>검증 상태: {value(fact, "verification_status")}</small></article>)}</div>}
+            {tab === "sources" && <div className="detail-section">{((detail.sources as Row[] | undefined) ?? []).length === 0 ? <p className="empty-state">연결된 출처가 없습니다.</p> : (detail.sources as Row[]).map(source => <article className="source-card" key={value(source, "id")}><h3>{value(source, "source_name")}</h3><p>게시 {dateLabel(value(source, "published_at"))} · 수집 {dateLabel(value(source, "collected_at"))} · 권리 {value(source, "rights") || "확인 필요"}</p><a href={value(source, "url")} target="_blank" rel="noreferrer">원문 열기 ↗</a></article>)}<h3>검증된 사실</h3>{((detail.facts as Row[] | undefined) ?? []).map(fact => <article className="source-card" key={value(fact, "id")}><strong>검증 사실</strong><p>{value(fact, "source_excerpt")}</p><small>검증 상태: {stateLabel(value(fact, "verification_status"))}</small></article>)}</div>}
             {tab === "quality" && <div className="detail-section"><p className={machinePassed ? "quality-ok" : "quality-held"}>{machinePassed ? "기계 검사 통과 · 의미 정확성과 자연스러움은 사람 검토가 필요합니다." : "품질 검토가 필요합니다. 이 상태에서는 발행할 수 없습니다."}</p><QualityChecks value={detail.checks} />
               <details><summary>기계 검사 원본 데이터</summary><pre>{JSON.stringify(detail.checks ?? {}, null, 2)}</pre></details>
               {detail.review_actions_allowed ? <>
@@ -406,7 +428,7 @@ export default function ManuscriptWorkspace() {
                 {publicationApproved && <form onSubmit={event => { event.preventDefault(); const form = new FormData(event.currentTarget); void submit("publication-approvals", { evaluation_id: value(detail, "id"), content_version_id: value(detail, "content_version_id"), editorial_version_id: value(latestRevision ?? {}, "id") || null, event_key: crypto.randomUUID(), actor: String(form.get("actor")), reason: String(form.get("reason")), action: "revoked", supersedes_event_id: value(latestApproval ?? {}, "id") }); }}><label>취소자<input name="actor" required minLength={2} maxLength={80} /></label><label>취소 사유<input name="reason" required minLength={10} maxLength={2000} /></label><button disabled={saving}>승인 취소</button></form>}</section>
               </> : <p className="notice">이 원고의 편집 검토 및 발행 승인 작업은 현재 권한 정책상 허용되지 않습니다. 기록 조회만 가능합니다.</p>}
             </div>}
-            {tab === "history" && <div className="detail-section"><h3>원고 버전</h3>{revisions.length ? revisions.map(revision => <article className="history-card" key={value(revision, "id")}><h4>{value(revision, "title")} · v{value(revision, "revision_number")}</h4><p>{dateLabel(value(revision, "created_at"))} · 작성 {value(revision, "reviewer_name")} · {value(revision, "quality_status")}</p><details><summary>변경 이유와 본문 확인</summary><p>{value(revision, "reason")}</p><pre>{value(revision, "body") || value(revision, "html_body")}</pre></details></article>) : <p>수정 버전이 없습니다.</p>}<h3>검토 및 승인 이력</h3>{reviews.map(review => <article className="history-card" key={value(review, "id")}><strong>{value(review, "reviewer_name")} · {value(review, "disposition")}</strong><p>{dateLabel(value(review, "created_at"))} · 사실 {value(review, "factual_accuracy")} · 번역 {value(review, "translation_naturalness")} · 독자 가치 {value(review, "reader_value")}</p><p>{value(review, "comments")} {value(review, "requested_changes")}</p></article>)}{approvals.map(event => <article className="history-card" key={value(event, "id")}>발행 승인 {value(event, "action")} · {value(event, "actor")} · {dateLabel(value(event, "created_at"))}</article>)}</div>}
+            {tab === "history" && <div className="detail-section"><h3>원고 버전</h3>{revisions.length ? revisions.map(revision => <article className="history-card" key={value(revision, "id")}><h4>{value(revision, "title")} · v{value(revision, "revision_number")}</h4><p>{dateLabel(value(revision, "created_at"))} · 작성 {value(revision, "reviewer_name")} · {stateLabel(value(revision, "quality_status"))}</p><details><summary>변경 이유와 본문 확인</summary><p>{value(revision, "reason")}</p><pre>{value(revision, "body") || value(revision, "html_body")}</pre></details></article>) : <p>수정 버전이 없습니다.</p>}<h3>검토 및 승인 이력</h3>{reviews.map(review => <article className="history-card" key={value(review, "id")}><strong>{value(review, "reviewer_name")} · {stateLabel(value(review, "disposition"))}</strong><p>{dateLabel(value(review, "created_at"))} · 사실 {stateLabel(value(review, "factual_accuracy"))} · 번역 {stateLabel(value(review, "translation_naturalness"))} · 독자 가치 {stateLabel(value(review, "reader_value"))}</p><p>{value(review, "comments")} {value(review, "requested_changes")}</p></article>)}{approvals.map(event => <article className="history-card" key={value(event, "id")}>발행 승인 {stateLabel(value(event, "action"))} · {value(event, "actor")} · {dateLabel(value(event, "created_at"))}</article>)}</div>}
           </div>
           {message && <p role="status" className="sheet-message">{message}</p>}
         </> : <p className="error-state" role="alert">{message || "상세 정보를 표시할 수 없습니다."}</p>}

@@ -1,0 +1,76 @@
+{
+  "phase": "P5-UI-003",
+  "recorded_at": "2026-10-29",
+  "branch": "develop",
+  "ui": {
+    "primary_navigation": ["대시보드", "수집 자료", "원고 관리", "발행 관리", "자동화 관리", "운영 진단"],
+    "model_comparison_moved_to_operations": true,
+    "manuscript_views": ["작성 원고", "외부 검토 대기"],
+    "one_click_external_detail": true,
+    "import_screen_focused_on_import": true,
+    "publication_ui_korean": true,
+    "publication_api_state": "503; localized error state verified, populated tabs not verified",
+    "legacy_routes_preserved": ["/manuscripts", "/imports", "/research", "/model-comparison"]
+  },
+  "browser": {
+    "engine": "installed Chromium via Playwright",
+    "viewport_widths": [320, 390, 768, 1280, 1920],
+    "navigation_and_workspace_tests_passed": 20,
+    "projects": ["desktop", "mobile"],
+    "import_review_preview_mock_flow_passed": 1,
+    "console_errors": 0,
+    "external_requests_in_import_flow": 0,
+    "screenshots": [
+      "assets/P5-UI-003-manuscripts-desktop.png",
+      "assets/P5-UI-003-manuscripts-mobile.png",
+      "assets/P5-UI-003-manuscript-detail-desktop.png",
+      "assets/P5-UI-003-import-detail-1280.png",
+      "assets/P5-UI-003-import-detail-390.png",
+      "assets/P5-UI-003-import-pipeline-desktop-320.png",
+      "assets/P5-UI-003-import-pipeline-desktop-390.png",
+      "assets/P5-UI-003-import-pipeline-desktop-768.png",
+      "assets/P5-UI-003-import-pipeline-desktop-1280.png",
+      "assets/P5-UI-003-publishing-1280.png",
+      "assets/P5-UI-003-publishing-390.png",
+      "assets/P5-UI-003-sources-desktop.png",
+      "assets/P5-UI-003-source-detail-desktop.png",
+      "assets/P5-UI-003-source-detail-mobile.png",
+      "assets/P5-UI-003-operations-desktop.png",
+      "assets/P5-UI-003-operations-mobile.png",
+      "assets/P5-UI-003-model-comparison-desktop.png",
+      "assets/P5-UI-003-model-comparison-mobile.png"
+    ]
+  },
+  "verification": {
+    "scripts_verify_ps1": "passed",
+    "pytest": "266 passed",
+    "ruff": "passed",
+    "mypy": "passed; 38 source files",
+    "python_wheel": "passed in isolated verification",
+    "dashboard_eslint": "passed",
+    "typescript": "passed",
+    "next_production_build": "passed",
+    "verify_secrets_http_test_mode": "passed",
+    "git_diff_check": "passed"
+  },
+  "runtime": {
+    "dashboard": {"url": "http://127.0.0.1:13100", "purpose": "test-only UI", "database": "woori_blog_agent_test", "left_running_for_user": true},
+    "api": {"url": "http://127.0.0.1:18100", "purpose": "test-only API", "left_running_for_user": true},
+    "operational_ports_3100_8100_touched": false,
+    "llama_cpp_11435_touched": false
+  },
+  "data_safety": {
+    "operational_db_writes_or_migrations": 0,
+    "test_db_received_e2e_fixture_content_and_audit_events": true,
+    "real_blogger_writes": 0,
+    "paid_api_calls": 0,
+    "auto_publish_policy_changed": false,
+    "publish_ready_changed": false,
+    "playwright_mcp_preserved_and_unstaged": true
+  },
+  "limitations": [
+    "The isolated publication API returned HTTP 503, so populated pending/history/settings results were not browser-verified.",
+    "No operational DB or real Blogger behavior was exercised."
+  ],
+  "git": {"commit": null, "pushed": false}
+}

@@ -20,7 +20,7 @@ test("manuscript list, filters, paged query, detail tabs and keyboard close", as
 
   if (testInfo.project.name === "desktop") {
     await mkdir(screenshots, { recursive: true });
-    await page.screenshot({ path: path.join(screenshots, "P5-UI-002-manuscripts-desktop.png"), fullPage: true });
+    await page.screenshot({ path: path.join(screenshots, "P5-UI-003-manuscripts-desktop.png"), fullPage: true });
   }
 
   await page.getByLabel(/언어/).selectOption("ko");
@@ -54,18 +54,18 @@ test("manuscript list, filters, paged query, detail tabs and keyboard close", as
   expect(detailPayload.publish_ready).toBe(false);
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
-  await expect(dialog.locator("iframe.article-preview")).toBeVisible();
-  const previewText = await dialog.locator("iframe.article-preview").contentFrame().locator("body").innerText();
+  await expect(dialog.locator(".body-tab iframe")).toBeVisible();
+  const previewText = await dialog.locator(".body-tab iframe").contentFrame().locator("body").innerText();
   expect(previewText.length).toBeGreaterThan(100);
-  await expect(dialog.getByRole("tab")).toHaveCount(4);
+  await expect(dialog.getByRole("tab")).toHaveCount(5);
   if (testInfo.project.name === "mobile") {
     await expect.poll(async () => await dialog.evaluate(el => Math.round(el.getBoundingClientRect().width))).toBeGreaterThanOrEqual(380);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await mkdir(screenshots, { recursive: true });
-    await page.screenshot({ path: path.join(screenshots, "P5-UI-002-manuscripts-mobile.png"), fullPage: true });
+    await page.screenshot({ path: path.join(screenshots, "P5-UI-003-manuscripts-mobile.png"), fullPage: true });
   } else {
     await mkdir(screenshots, { recursive: true });
-    await page.screenshot({ path: path.join(screenshots, "P5-UI-002-manuscript-detail-desktop.png"), fullPage: true });
+    await page.screenshot({ path: path.join(screenshots, "P5-UI-003-manuscript-detail-desktop.png"), fullPage: true });
   }
   await dialog.getByRole("tab", { name: /출처/ }).click();
   await expect(dialog.getByRole("tabpanel")).toBeVisible();
@@ -98,7 +98,7 @@ test("trend observations render from the isolated six-region database", async ({
   await expect(dialog.getByRole("link").first()).toHaveAttribute("href", /^https:\/\//);
   await mkdir(screenshots, { recursive: true });
   await page.screenshot({
-    path: path.join(screenshots, `P5-UI-002-source-detail-${testInfo.project.name}.png`),
+    path: path.join(screenshots, `P5-UI-003-source-detail-${testInfo.project.name}.png`),
     fullPage: true,
   });
   await page.keyboard.press("Escape");
@@ -107,7 +107,7 @@ test("trend observations render from the isolated six-region database", async ({
     await mkdir(screenshots, { recursive: true });
     await page.goto("/sources");
     await expect(page.getByRole("table")).toBeVisible();
-    await page.screenshot({ path: path.join(screenshots, "P5-UI-002-sources-desktop.png"), fullPage: true });
+    await page.screenshot({ path: path.join(screenshots, "P5-UI-003-sources-desktop.png"), fullPage: true });
   }
 });
 
@@ -117,7 +117,7 @@ test("comparison and operations workspaces render at desktop and mobile sizes", 
   expect(comparison?.status()).toBe(200);
   await expect(page.locator("h1")).toBeVisible();
   await page.screenshot({
-    path: path.join(screenshots, `P5-UI-002-model-comparison-${testInfo.project.name}.png`),
+    path: path.join(screenshots, `P5-UI-003-model-comparison-${testInfo.project.name}.png`),
     fullPage: true,
   });
 
@@ -125,7 +125,7 @@ test("comparison and operations workspaces render at desktop and mobile sizes", 
   expect(operations?.status()).toBe(200);
   await expect(page.locator("h1")).toBeVisible();
   await page.screenshot({
-    path: path.join(screenshots, `P5-UI-002-operations-${testInfo.project.name}.png`),
+    path: path.join(screenshots, `P5-UI-003-operations-${testInfo.project.name}.png`),
     fullPage: true,
   });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -144,8 +144,8 @@ test("model comparison and compatibility routes use stored data", async ({ page 
   expect(operations?.status()).toBe(200);
   const research = await page.goto("/research");
   expect(research?.status()).toBe(200);
-  await expect(page).toHaveURL(/\/manuscripts$/);
-  await expect(page.getByRole("heading", { name: /작성 원고/ })).toBeVisible();
+  await expect(page).toHaveURL(/\/manuscripts(?:\?.*)?$/);
+  await expect(page.getByRole("heading", { name: "원고 관리" })).toBeVisible();
 });
 
 test("list request failure is shown as an accessible page error", async ({ page }) => {
