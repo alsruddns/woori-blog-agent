@@ -72,5 +72,9 @@
     "The isolated publication API returned HTTP 503, so populated pending/history/settings results were not browser-verified.",
     "No operational DB or real Blogger behavior was exercised."
   ],
-  "git": {"commit": null, "pushed": false}
+  "git": {
+    "implementation_commit": "1892269 feat(dashboard): streamline Korean editorial workflows",
+    "origin_develop_push_verified": true,
+    "result_record_commit": "recorded in follow-up documentation commit"
+  }
 }
