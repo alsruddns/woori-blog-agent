@@ -85,4 +85,4 @@
 - 테스트 전용 DB는 schema 46까지 준비했고 테스트 앱 계정의 운영 DB CONNECT 거부를 확인했다. Migration 045/046은 운영 DB에 적용하지 않았다.
 - 브라우저 E2E는 이번 변경에서 실행하지 않았다. Dashboard production build와 타입/린트 검사만 완료했다.
 - 운영 DB, 기존 원고, 감사 이력, Blogger, 외부 예약 작업 및 유료 AI API는 변경·호출하지 않았다.
-- 최종 변경은 `develop`에만 커밋·푸시한다. `.playwright-mcp/`는 기존 미추적 상태 그대로 보존한다.
+- 구현 커밋 `76b03f5`를 `origin/develop`에 푸시했다. main은 변경하지 않았고 `.playwright-mcp/`는 미추적 상태 그대로 보존했다.
