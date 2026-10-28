@@ -41,4 +41,5 @@ Live theme CSS and Blogger's final sanitization/rendering behavior are not avail
 - Blogger create/update/delete: 0.
 - `generation_ready` / `publish_ready`: unchanged; no operational state was promoted.
 - Existing untracked `.playwright-mcp/` was preserved and not staged.
-- Commit and push result: to be filled after commit.
+- Implementation commit: `6a81acd` (`Add : [Blogger] Build safe expert-column HTML preview`).
+- This record is finalized in a documentation-only follow-up commit; remote synchronization is reported with the final Git status.
