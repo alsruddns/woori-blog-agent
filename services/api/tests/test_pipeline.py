@@ -9,7 +9,7 @@ import psycopg
 import pytest
 from fastapi.testclient import TestClient
 from woori import pipeline, worker
-from woori.ai import EngineFailure, LocalProvider, MockProvider, provider
+from woori.ai import EngineFailure, MockProvider, provider
 from woori.config import settings
 from woori.db import connection
 from woori.main import app
@@ -31,6 +31,8 @@ def lab(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Any, TestClient, dict
 
         for module in ("pipeline", "research_routes", "main", "multilingual", "topics"):
             monkeypatch.setattr("woori." + module + ".connection", shared)
+        monkeypatch.setattr(pipeline, "PRODUCTION_GENERATOR_CONFIGURED", True)
+        monkeypatch.setattr("woori.research_routes.PRODUCTION_GENERATOR_CONFIGURED", True)
         monkeypatch.setattr(pipeline, "resources_ok", lambda _: True)
         monkeypatch.setattr(
             pipeline, "evaluation_database_isolated",
@@ -136,13 +138,13 @@ def test_operational_and_evaluation_workers_consume_separate_queues(
     keyword_operations, _ = topic(lab)
     keyword_evaluation, _ = topic(lab)
     conn, _api, _headers = lab
-    conn.execute("UPDATE generation_settings SET provider='local',engine='llamacpp'")
+    conn.execute("UPDATE generation_settings SET provider='mock',engine='ollama',model='mock-v1'")
     operations = pipeline.enqueue(
         uuid.UUID(keyword_operations), "queue-operations-" + uuid.uuid4().hex,
     )
     evaluation = pipeline.enqueue(
         uuid.UUID(keyword_evaluation), "queue-evaluation-" + uuid.uuid4().hex,
-        evaluation_only=True, evaluation_model="Qwen3-4B-Q4_K_M.gguf",
+        evaluation_only=True,
     )
     processed: list[uuid.UUID] = []
     monkeypatch.setattr(pipeline, "process", lambda run: processed.append(run["id"]))
@@ -155,7 +157,7 @@ def test_operational_and_evaluation_workers_consume_separate_queues(
 def test_evaluation_can_generate_one_localized_profile_per_isolated_run(lab: Any) -> None:
     keyword_id, _ = topic(lab)
     conn, _api, _headers = lab
-    conn.execute("UPDATE generation_settings SET provider='local',engine='llamacpp'")
+    conn.execute("UPDATE generation_settings SET provider='mock',engine='ollama',model='mock-v1'")
     target = conn.execute(
         "SELECT id FROM language_profiles WHERE language_code='ko' AND target_country=''"
     ).fetchone()
@@ -163,7 +165,6 @@ def test_evaluation_can_generate_one_localized_profile_per_isolated_run(lab: Any
     job = pipeline.enqueue(
         uuid.UUID(keyword_id), "single-language-eval-" + uuid.uuid4().hex,
         profile_ids=[target["id"]], evaluation_only=True,
-        evaluation_model="Qwen3-4B-Q4_K_M.gguf",
     )
     selected = conn.execute(
         "SELECT p.language_code FROM generation_targets t JOIN language_profiles p ON p.id=t.profile_id WHERE t.run_id=%s",
@@ -182,7 +183,7 @@ def test_evaluation_quota_uses_kst_window_and_counts_targets_not_retries(
         lambda _conn, _keyword_id: {"pending": False, "request_is_sec": False},
     )
     conn.execute(
-        "UPDATE generation_settings SET provider='local',engine='llamacpp',evaluation_daily_limit=2"
+        "UPDATE generation_settings SET provider='mock',engine='ollama',model='mock-v1',evaluation_daily_limit=2"
     )
     # A non-KST session timezone must not shift the durable daily quota window.
     conn.execute("SET LOCAL TIME ZONE 'Pacific/Honolulu'")
@@ -193,7 +194,7 @@ def test_evaluation_quota_uses_kst_window_and_counts_targets_not_retries(
     first_key = "quota-kst-previous-day-" + uuid.uuid4().hex
     first = pipeline.enqueue(
         uuid.UUID(keyword_id), first_key, profile_ids=[profile["id"]],
-        evaluation_only=True, evaluation_model="Qwen3-4B-Q4_K_M.gguf",
+        evaluation_only=True,
     )
     conn.execute(
         """UPDATE generation_jobs SET created_at=(
@@ -205,7 +206,7 @@ def test_evaluation_quota_uses_kst_window_and_counts_targets_not_retries(
     second_key = "quota-kst-failed-target-" + uuid.uuid4().hex
     second = pipeline.enqueue(
         uuid.UUID(keyword_id), second_key, profile_ids=[profile["id"]],
-        evaluation_only=True, evaluation_model="Qwen3-4B-Q4_K_M.gguf",
+        evaluation_only=True,
     )
     conn.execute(
         "UPDATE job_runs SET status='failed',error_type='synthetic_quota_fixture' WHERE id=%s",
@@ -213,20 +214,18 @@ def test_evaluation_quota_uses_kst_window_and_counts_targets_not_retries(
     )
     retry = pipeline.enqueue(
         uuid.UUID(keyword_id), second_key, profile_ids=[profile["id"]],
-        evaluation_only=True, evaluation_model="Qwen3-4B-Q4_K_M.gguf",
+        evaluation_only=True,
     )
     assert retry["id"] == second["id"]
 
     third = pipeline.enqueue(
         uuid.UUID(keyword_id), "quota-kst-third-" + uuid.uuid4().hex,
         profile_ids=[profile["id"]], evaluation_only=True,
-        evaluation_model="Qwen3-4B-Q4_K_M.gguf",
     )
     with pytest.raises(EngineFailure, match="daily_evaluation_limit"):
         pipeline.enqueue(
             uuid.UUID(keyword_id), "quota-kst-fourth-" + uuid.uuid4().hex,
             profile_ids=[profile["id"]], evaluation_only=True,
-            evaluation_model="Qwen3-4B-Q4_K_M.gguf",
         )
 
     fingerprints = [
@@ -249,7 +248,7 @@ def test_sec_english_reserves_one_slot_within_existing_evaluation_quota(lab: Any
     fed_keyword, _ = topic(lab)
     conn, _api, _headers = lab
     conn.execute(
-        "UPDATE generation_settings SET provider='local',engine='llamacpp',evaluation_daily_limit=10"
+        "UPDATE generation_settings SET provider='mock',engine='ollama',model='mock-v1',evaluation_daily_limit=10"
     )
     english = conn.execute(
         "SELECT id FROM language_profiles WHERE language_code='en' AND target_country=''"
@@ -260,19 +259,16 @@ def test_sec_english_reserves_one_slot_within_existing_evaluation_quota(lab: Any
         pipeline.enqueue(
             uuid.UUID(fed_keyword), f"quota-priority-fed-{index}-" + uuid.uuid4().hex,
             profile_ids=[english["id"]], evaluation_only=True,
-            evaluation_model="Qwen3-4B-Q4_K_M.gguf",
         )
     sec_keyword, _ = topic(lab, source_name="SEC EDGAR synthetic reviewed source")
     with pytest.raises(EngineFailure, match="sec_english_priority_quota_reserved"):
         pipeline.enqueue(
             uuid.UUID(fed_keyword), "quota-priority-fed-tenth-" + uuid.uuid4().hex,
             profile_ids=[english["id"]], evaluation_only=True,
-            evaluation_model="Qwen3-4B-Q4_K_M.gguf",
         )
     sec_job = pipeline.enqueue(
         uuid.UUID(sec_keyword), "quota-priority-sec-english-" + uuid.uuid4().hex,
         profile_ids=[english["id"]], evaluation_only=True,
-        evaluation_model="Qwen3-4B-Q4_K_M.gguf",
     )
     assert sec_job["status"] == "queued"
     used = conn.execute(
@@ -388,7 +384,7 @@ def test_localized_evaluation_prerequisite_is_independent_of_locale_quota() -> N
 def test_sec_localization_prerequisite_blocks_before_quota_and_audits(lab: Any) -> None:
     keyword_id, _ = topic(lab)
     conn, api, headers = lab
-    conn.execute("UPDATE generation_settings SET provider='local',engine='llamacpp'")
+    conn.execute("UPDATE generation_settings SET provider='mock',engine='ollama',model='mock-v1'")
     source = api.post(
         "/admin/research/sources",
         headers=headers,
@@ -643,8 +639,8 @@ def test_dynamic_language_and_unsupported_local(lab: Any) -> None:
         ).fetchone()["n"]
         == 5
     )
-    with pytest.raises(EngineFailure, match="language_support_unverified"):
-        LocalProvider().generate({}, {"language_verified": False})
+    with pytest.raises(EngineFailure, match="generation_provider_unavailable"):
+        provider("local")
     profile = conn.execute("SELECT * FROM generation_settings LIMIT 1").fetchone()
     payload = {
         k: profile[k]
@@ -652,11 +648,8 @@ def test_dynamic_language_and_unsupported_local(lab: Any) -> None:
             "provider",
             "model",
             "enabled",
-            "language_verified",
-            "verification_reason",
             "daily_limit",
-            "threads",
-            "timeout_seconds",
+            "evaluation_daily_limit",
         )
     }
     payload["prompt_id"] = str(profile["prompt_id"])
@@ -727,18 +720,15 @@ def test_retry_recovery_pause_scheduler(lab: Any, monkeypatch: pytest.MonkeyPatc
             "quantity": 1,
         },
     )
-    assert r.status_code == 201, r.text
-    conn.execute(
-        "UPDATE research_schedules SET next_run_at=now()-interval '1 second' WHERE id=%s",
-        (r.json()["id"],),
-    )
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"] == "generation_provider_not_configured"
     pipeline.schedule_tick()
     pipeline.schedule_tick()
     assert (
         conn.execute(
             "SELECT count(*) AS n FROM generation_jobs WHERE keyword_id=%s", (next_keyword,)
         ).fetchone()["n"]
-        == 1
+        == 0
     )
 
 
@@ -824,53 +814,6 @@ def test_evidence_revocation_and_resources(lab: Any, monkeypatch: pytest.MonkeyP
     )
 
 
-def test_local_wire_protocol_mock_only(monkeypatch: pytest.MonkeyPatch) -> None:
-    import json
-
-    seen = []
-    client_class = httpx.Client
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        seen.append(request)
-        assert request.url.host == "127.0.0.1" and request.url.port == 11434
-        if request.method == "GET":
-            return httpx.Response(
-                200,
-                json={
-                    "models": [
-                        {"name": "tiny:latest", "size": 1000000, "details": {"format": "gguf"}}
-                    ]
-                },
-            )
-        payload = json.loads(request.content)
-        assert payload["options"]["num_gpu"] == 0 and payload["options"]["num_thread"] == 2
-        assert payload["stream"] is False and payload["keep_alive"] == 0
-        return httpx.Response(
-            200,
-            json={
-                "response": json.dumps(
-                    {
-                        "title": "Test title",
-                        "body": "A synthetic body sufficiently long for the protocol test.",
-                        "summary": "A synthetic summary for testing",
-                        "keywords": ["test"],
-                        "source_ids": ["fixture"],
-                    }
-                )
-            },
-        )
-
-    monkeypatch.setattr(
-        httpx, "Client", lambda **kw: client_class(transport=httpx.MockTransport(handler), **kw)
-    )
-    result = LocalProvider().generate(
-        {"instructions": "Use only test data"},
-        {"language_verified": True, "model": "tiny:latest", "timeout_seconds": 5, "threads": 2},
-    )
-    assert result.title == "Test title" and len(seen) == 2
-    with pytest.raises(EngineFailure, match="cloud_or_invalid_model_blocked"):
-        LocalProvider().generate({}, {"language_verified": True, "model": "paid:cloud"})
-    assert len(seen) == 2
 
 
 def test_stale_lease_cannot_commit(lab: Any, monkeypatch: pytest.MonkeyPatch) -> None:

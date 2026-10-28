@@ -1,15 +1,10 @@
-param([ValidateSet('api','dashboard','ai','all')][string]$Service='all',[int]$TimeoutSeconds=12)
+param([ValidateSet('api','dashboard','all')][string]$Service='all',[int]$TimeoutSeconds=12)
 . (Join-Path $PSScriptRoot 'server-common.ps1')
 $manifest = Read-ServerManifest
-$targets = if ($Service -eq 'all') { @('dashboard','api','ai') } else { @($Service) }
+$targets = if ($Service -eq 'all') { @('dashboard','api') } else { @($Service) }
 $table = Get-ProcessTable
 $blocked = $false
 foreach ($name in $targets) {
-  if ($name -eq 'ai') {
-    & (Join-Path $script:ProjectRoot '.venv/Scripts/python.exe') (Join-Path $PSScriptRoot 'stop-local-ai.py')
-    if ($LASTEXITCODE -ne 0) { $blocked=$true; Write-Warning 'AI shutdown was not confirmed; runtime record retained.' }
-    continue
-  }
   $record = $manifest.services[$name]
   if (-not $record) {
     if ((Get-Listeners $script:Services[$name].Port).Count) { $blocked=$true; Write-Warning "$name is unmanaged or its PID record is missing; use Ctrl+C in the verified original project terminal. No process was stopped." }

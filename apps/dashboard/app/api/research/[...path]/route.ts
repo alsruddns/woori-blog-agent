@@ -5,12 +5,12 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
   if (!process.env.ADMIN_TOKEN) return NextResponse.json({ error: "API unavailable" }, { status: 503 });
   const { path } = await context.params;
   const route = path.join("/");
-  const allowed = request.method === "GET" ? (["state", "local-ai", "manuscripts", "trend-observations", "model-comparisons", "topics", "trends"].includes(route)
+  const allowed = request.method === "GET" ? (["state", "manuscripts", "trend-observations", "model-comparisons", "topics", "trends"].includes(route)
     || /^manuscripts\/[0-9a-f-]{36}\/[0-9a-f-]{36}$/.test(route)
     || /^trend-observations\/[0-9a-f-]{36}$/.test(route)
     || /^model-comparisons\/[0-9a-f-]{36}$/.test(route)) : request.method === "POST"
     ? /^(versions\/[a-f0-9-]+\/validate|collections|keywords|sources|jobs|prompts|schedules|editorial-preview|sources\/[a-f0-9-]+\/reviews|jobs\/[a-f0-9-]+\/action|article-reviews|article-review-events|article-revisions|publication-approvals|trends\/collect|topics\/build|topics\/scoring-configs|topics\/[a-f0-9-]+\/(assess|decisions|sources|package)|grouping-proposals\/[a-f0-9-]+\/reviews|topic-sources\/[a-f0-9-]+\/independence-reviews)$/.test(route)
-    : request.method === "PUT" && /^(controls|collections\/[a-f0-9-]+|keywords\/[a-f0-9-]+|settings\/[a-f0-9-]+)$/.test(route);
+    : request.method === "PUT" && /^(controls|collections\/[a-f0-9-]+|keywords\/[a-f0-9-]+)$/.test(route);
   if (!allowed) return NextResponse.json({ error: "Unsupported operation" }, { status: 404 });
   try {
     const body = request.method === "GET" ? undefined : await request.text();

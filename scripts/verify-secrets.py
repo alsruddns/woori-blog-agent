@@ -14,9 +14,6 @@ from woori.secret_scan import contains_secret, contains_secret_in_http_response
 
 root = Path(__file__).resolve().parents[1]
 secrets = []
-local_key = root / ".local/inference.key"
-if local_key.exists():
-    secrets.append(local_key.read_text(encoding="utf-8").strip())
 for name in (
     ".env", ".env.bootstrap", ".env.migration", ".env.evaluation",
     ".env.evaluation-migration", ".env.evaluation-readonly", ".env.test",

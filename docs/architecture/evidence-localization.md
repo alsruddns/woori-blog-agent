@@ -1,3 +1,5 @@
+> Current status: the local-model translation adapter described in this historical record is retired. Evidence snapshots, deterministic protections, glossary history, and quality checks remain; cross-language generation is held until a provider is explicitly implemented.
+
 # Evidence-preserving localization
 
 Schema versions 16–18 add the following additive records:
@@ -21,7 +23,7 @@ The durable content worker appends exact reviewed source spans to `evidence_fact
 
 For local-language output, each source span is sent independently to the local translation adapter. The adapter protects extracted names and approved glossary entries, returns a strict JSON string field, and checks number/date/entity/script/link preservation. The application attaches citation IDs and section structure after translation. A held fact remains visible as held output; it is never converted into an approval. Title candidates are derived from the recorded topic phrase, while meaning, editorial quality, SEO intent and naturalness remain human-review items.
 
-Evaluation-only jobs may use the fixed, already-installed Qwen3 4B Q4 model when the saved profile model differs. The override is captured in each target snapshot and audit event, does not modify generation settings, counts against the same configured daily limit, and remains under the pipeline concurrency and RAM/CPU gates.
+Historical evaluation jobs used a fixed Qwen3 4B Q4 model override captured in target snapshots and audit events. That runtime override is retired. Existing target snapshots and evaluations remain preserved; no new model inference is available.
 
 The Research dashboard displays original excerpts beside persisted localized output, status/metrics, current glossary approvals, and immutable glossary history. It reports actual stored rows only.
 
@@ -40,7 +42,7 @@ Proper-name preservation uses ASCII-character lookarounds rather than Unicode wo
 
 ## Protected number and date spans (Phase 4-L)
 
-Localization inference replaces verified date spans and numeric tokens with type-specific placeholders before sending the excerpt to the local model. A missing or duplicated marker fails the translation; successful output restores the exact original value. `grounding.numbers()` separately normalizes harmless numeric grouping and recognized date display forms. ISO dates followed directly by Korean or other localized particles use ASCII token boundaries so the particle does not make a valid date look like three unsupported numbers. This is a detector correction only; changed values remain a hard failure. The research dashboard shows each fact's stored numeric/date values next to its source excerpt and glossary/revision history.
+Historical localization inference replaced verified date spans and numeric tokens with type-specific placeholders before model translation. The local translation runtime is retired. A missing or duplicated marker fails the translation; successful output restores the exact original value. `grounding.numbers()` separately normalizes harmless numeric grouping and recognized date display forms. ISO dates followed directly by Korean or other localized particles use ASCII token boundaries so the particle does not make a valid date look like three unsupported numbers. This is a detector correction only; changed values remain a hard failure. The research dashboard shows each fact's stored numeric/date values next to its source excerpt and glossary/revision history.
 
 ## Phase 4-M editorial review
 

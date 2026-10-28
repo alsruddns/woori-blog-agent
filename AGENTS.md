@@ -1,3 +1,10 @@
+## Current runtime baseline ? P5-CLEANUP-001
+
+- Qwen3 and llama.cpp execution, model download, status, and lifecycle management have been retired from this repository. Older phase notes below that describe local inference are historical records, not current instructions.
+- Existing model files, shared executables, saved articles, Research Packages, quality evaluations, and audit records are preserved. Never delete them as part of code cleanup.
+- No production manuscript-generation provider is attached. Mock generation is test-only; generation APIs and schedules fail closed. Codex/GPT scheduled or unattended execution is not implemented.
+- Collection, evidence validation, HTML/SEO, editing, human review, publication preparation, and the existing Manual/Auto publishing safeguards remain independent capabilities.
+
 # Codex 개발 규칙
 모든 후속 Codex 작업에 적용한다.
 
@@ -47,13 +54,13 @@ OAuth 토큰·API Key·비밀번호를 코드에 저장하지 않는다. .env �
 - 검색량·경쟁도·CPC는 실제 공급자 근거가 있을 때만 저장하며 NULL을 임의 수치로 대체하지 않는다.
 - 출처 URL·게시/수집/유효 시각·근거·신뢰성·이용 권리·접근 정책·검토 이력을 추적한다. 정정은 새 출처 버전/검토를 추가한다.
 - 사람 검토, 출처 진위·전송 경로 확인, 규칙 검사, 모델 평가와 의미적 사실 검증을 구분한다. 모델 자기평가만으로 승인하지 않는다.
-- AI 레지스트리는 mock/local만 허용한다. 고정 루프백의 설치 GGUF CPU 모델만 사용하며 cloud/원격 모델·유료 fallback을 차단한다.
+- AI 생성 Provider는 현재 운영 연결되어 있지 않다. Mock은 파이프라인 테스트 전용이며, 원고 생성 기능은 별도로 승인·구현된 Provider가 연결될 때까지 사용할 수 없다.
 - 작업 설정/프롬프트/자료/검토 스냅샷과 원본·현지화·콘텐츠 버전·SEO·실행 이력을 연결한다. 재시도는 저장한 타깃을 재사용하고 오래된 임대는 저장을 차단한다.
 - 스케줄은 DB와 영속 전달 원장을 사용한다. CPU/RAM 수용 검사와 실행 옵션을 OS 수준 강제 자원 상한으로 표현하지 않는다.
 
 ## Phase 3.5 실제 추론·수집 정책
-- 공식 배포·라이선스·해시·여유 공간을 확인한 프로젝트 .local 경로만 엔진/모델 설치에 사용한다. 시스템 PATH·다른 프로젝트·기존 DB를 변경하지 않는다.
-- llama.cpp는 127.0.0.1:11435, 기존 Ollama는 127.0.0.1:11434다. 원격 주소·다운로드·유료 추론 fallback을 Provider에서 허용하지 않는다.
+- Qwen3 및 llama.cpp 실행 경로는 제거되었다. 저장된 모델 평가 자료는 이력으로 보존하되 모델 파일·공용 엔진을 자동 삭제하거나 시작·종료하지 않는다.
+- 새 원고 생성 Provider가 연결되기 전에는 수집·품질 검사·HTML/SEO 미리보기·수동 편집 및 검토 기능만 사용한다. Codex/GPT 예약 실행이 구현된 것으로 표시하지 않는다.
 - 수집은 고정 허용 RSS/API에 한정한다. 임의 URL fetch, 리다이렉트, 무단 대량 수집은 금지한다. 1MiB 응답 상한·시각·권리·호출 제한을 적용한다.
 - Fed 공식 Board 본문의 전송 경로/시각/공공영역 사용 조건 확인은 자동 수용할 수 있으나 의미적 사실 검증 완료를 뜻하지 않는다. Wikidata CC0 메타데이터는 주제 후보이며 공식 발표/가격/영업/효능 근거로 자동 승인하지 않는다.
 - 검증되지 않은 모델·언어의 일반 자동 처리는 차단한다. 명시적인 evaluation_only 작업은 품질 검증 선언 없이 시험할 수 있으며 결과는 quality_held로 보존하고 publish_ready=false를 유지한다.
@@ -91,7 +98,7 @@ OAuth 토큰·API Key·비밀번호를 코드에 저장하지 않는다. .env �
 - Keep historical source language as `und` until a source review explicitly records BCP 47 language attribution. Never rewrite the source row to retrofit language metadata; append a review/fact/evaluation record.
 - Treat original-language quotations as quotations in that source language. They cannot satisfy another target language's language check. Never render translated text as a verbatim source quote.
 - Glossary terms are unapproved by default. Use a translated proper name as official only when an approved glossary revision records its source language, target language, official status, and translation source. Glossary revisions and localization evaluations are append-only.
-- Local AI may translate only supplied evidence excerpts or propose localized title/summary/keyword candidates. Validate numbers, dates, known entities, citations, URLs, language fields, repetition, and approved terminology; machine checks do not establish semantic equivalence or naturalness.
+- A future explicitly approved provider may process only supplied evidence excerpts or propose localized candidates. Validate numbers, dates, known entities, citations, URLs, language fields, repetition, and approved terminology; machine checks do not establish semantic equivalence or naturalness. No provider is currently attached.
 - Before localization inference, protect every verified date span and numeric token with typed, unique placeholders alongside protected entity names. Require each placeholder exactly once, restore the exact evidence value, and reject collisions or leaked markers. Formatting normalization may compare equivalent representations, but never changes the recorded value; localized display conversion must be a separate deterministic step with its own tests.
 - Compose localized drafts only from machine-checked fact spans. Any held/missing translation or unresolved claim blocks composition; semantic fidelity, naturalness, rights and editorial approval remain human review items. `publish_ready` remains false until separate human and operations approvals.
 
@@ -110,9 +117,9 @@ OAuth 토큰·API Key·비밀번호를 코드에 저장하지 않는다. .env �
 
 ## Phase 3.8-C3 fact-first localization rules
 - Append reviewed, exact source spans to `evidence_facts`; retain source ID, BCP 47 source language, entity fingerprints, numbers, dates and citation IDs. Never assert semantic verification from span matching alone.
-- Localize one registered fact span at a time with the local provider. The renderer attaches source IDs and article structure deterministically; a model may not create or rewrite citations.
+- Historical C3 outputs and fact spans remain immutable. No local provider is available; a future provider must localize registered fact spans and let the deterministic renderer attach source IDs and structure.
 - Preserve per-fact machine checks and model-call metrics in stage output. Any unsupported claim, number/name drift, unapproved term, language failure, or missing source remains held. Meaning and naturalness require human review.
-- A local model override is allowed only for evaluation-only runs and an explicitly allowlisted, already-installed, checksum-pinned local Qwen 4B evaluation model. The Instruct-2507 comparison model is evaluation-only and must be rejected by operational generation even if an admin setting is changed. Overrides must be audited, must not change saved operational settings, and remain subject to existing per-language daily limits and resource gates.
+- Local model overrides, Qwen execution and model downloads are retired. Historical model identity and evaluation evidence are read-only; cleanup must not delete them.
 - Evaluation-only drafts always keep `publish_ready=false`; test results never activate language verification, production generation, Blogger writes, or automatic publishing.
 
 

@@ -51,14 +51,14 @@ function Editor({ fields, defaults = {}, submit, label, disabled }: {
 }
 
 export default function Research({ initial }: { initial: State }) {
-  const [data, setData] = useState(initial), [local, setLocal] = useState<Row>({}), [busy, setBusy] = useState(false);
+  const [data, setData] = useState(initial), [busy, setBusy] = useState(false);
   const [message, setMessage] = useState(""), [left, setLeft] = useState(""), [right, setRight] = useState("");
   const [measureLeft, setMeasureLeft] = useState(""), [measureRight, setMeasureRight] = useState("");
   const [targetLanguage, setTargetLanguage] = useState("");
   async function refresh() {
-    const [state, ai] = await Promise.all([fetch("/api/research/state", { cache: "no-store" }), fetch("/api/research/local-ai", { cache: "no-store" })]);
-    if (!state.ok || !ai.ok) throw new Error("상태 조회 실패");
-    setData(await state.json() as State); setLocal(await ai.json() as Row);
+    const state = await fetch("/api/research/state", { cache: "no-store" });
+    if (!state.ok) throw new Error("상태 조회 실패");
+    setData(await state.json() as State);
   }
   async function act(path: string, body: Row, method = "POST") {
     setBusy(true);
@@ -73,7 +73,6 @@ export default function Research({ initial }: { initial: State }) {
   }
   const profiles = data.profiles.filter(p => p.active).map(p => ({ value: str(p, "id"), label: profileLabel(p) }));
   const categories = data.categories.map(c => ({ value: str(c, "id"), label: str(c, "slug") }));
-  const promptOptions = data.prompts.map(p => ({ value: str(p, "id"), label: `${str(p, "name")} v${str(p, "version")}` }));
   const profileField: Field = { name: "profile_id", label: "원본 언어·국가", options: profiles };
   const categoryField: Field = { name: "category_id", label: "카테고리", options: categories };
   const versions = [data.versions.find(v => v.id === left), data.versions.find(v => v.id === right)];
@@ -118,10 +117,8 @@ export default function Research({ initial }: { initial: State }) {
     </section>
     <section><h2>Zero additional cost policy</h2><p>External gate: {data.cost_policy?.external_calls_allowed ? "active; check provider-specific blocks" : "blocked by credential or terms review"}</p><p>Paid fallback and automatic paid upgrades are disabled.</p><details><summary>?? ?? ?? ?? JSON</summary><pre>{JSON.stringify({ blockedProviders: data.cost_policy?.blocked_providers ?? [], credentialNames: data.cost_policy?.blocked_credential_names ?? [] }, null, 2)}</pre></details></section>
     <p role="status">{message}</p><button disabled={busy} onClick={() => refresh().catch(() => setMessage("조회 실패"))}>새로 고침</button>
-    <section><h2>실제 로컬 AI 상태·성능 측정</h2>
-      <p>연결 상태: {local.available ? "정상" : "미연결 또는 로딩 중"} · 현재 모델: {str(local, "model") || "확인 전"}</p>
-      <p>실행 백엔드: {str(local, "backend") === "vulkan" ? `Vulkan · 요청 layer ${str(local, "gpu_layers") || "0"}` : "CPU 전용"} · GPU Engine 사용률은 측정 행에 실제 값이 있을 때만 표시합니다. 성능 측정 성공은 사실·번역 품질 합격을 뜻하지 않습니다.</p>
-      <details><summary>설치 모델·버전·해시</summary><pre>{JSON.stringify(local.installed_models ?? [], null, 2)}</pre></details>
+    <section><h2>저장된 모델 평가 기록</h2>
+      <p>아래는 과거에 기록된 평가 자료의 읽기 전용 비교입니다. 현재 원고 생성 Provider는 연결되어 있지 않으며 Codex 예약 실행도 구현되지 않았습니다.</p>
       {data.measurements.map(m => <details key={str(m, "id")}><summary>{str(m, "model")} · {str(m, "language_code")} · {str(m, "status")} · {str(m, "error_category")}</summary>
         <pre>{JSON.stringify({ checks: m.checks, metrics: m.metrics, sample: m.sample }, null, 2)}</pre></details>)}
       <h3>실측 모델 결과 나란히 비교</h3>
@@ -210,9 +207,9 @@ export default function Research({ initial }: { initial: State }) {
       <p>Fed·SEC 공식 자료와 Wikidata CC0 구조화 메타데이터만 허용합니다. Wikidata 후보는 공식 발표·시세·영업·효능 검증 자료가 아니며 승인 대기입니다. 검색량·경쟁도·CPC는 미수집입니다.</p>
       {data.collection_sources.map(s => <article key={str(s, "id")}><h3>{str(s, "name")}</h3><p>{str(s, "endpoint")}</p><p>{str(s, "rights")} · <a href={str(s, "terms_url")} target="_blank" rel="noreferrer">이용 조건</a></p>
         <p>마지막 시도 {str(s, "last_attempt_at")} · 마지막 성공 {str(s, "last_successful_at") || str(s, "last_collected_at")} · 오류 {str(s, "last_error") || "없음"} · 이용 정책 {JSON.stringify(s.source_policy ?? {})}</p>
-        <Editor disabled={busy} label="실제 자료 수집 실행" fields={[profileField, { name: "auto_generate", label: "검증된 모델만 후속 자동 초안 허용", type: "checkbox" }]}
+        <Editor disabled={busy} label="실제 자료 수집 실행" fields={[profileField]}
           submit={body => act("collections", { ...body, source_id: s.id, idempotency_key: crypto.randomUUID() })}/>
-        <Editor disabled={busy} label="수집 스케줄 저장" defaults={s} fields={[profileField, { name: "scheduled", label: "자동 수집", type: "checkbox" }, { name: "interval_minutes", label: "간격 분 (최소 60)", type: "number" }, { name: "auto_generate", label: "후속 자동 초안", type: "checkbox" }]}
+        <Editor disabled={busy} label="수집 스케줄 저장" defaults={s} fields={[profileField, { name: "scheduled", label: "자동 수집", type: "checkbox" }, { name: "interval_minutes", label: "간격 분 (최소 60)", type: "number" }]}
           submit={body => act(`collections/${str(s, "id")}`, body, "PUT")}/>
       </article>)}
       <details><summary>조사 작업 진행·실패·재시도</summary><pre>{JSON.stringify(data.collection_jobs, null, 2)}</pre></details>
@@ -326,12 +323,11 @@ export default function Research({ initial }: { initial: State }) {
         <div style={{ overflowX: "auto" }}><table><thead><tr><th>모델</th><th>체크섬</th><th>실행 상태</th><th>초안 상태</th><th>경과 ms</th><th>기계 검사</th><th>측정</th></tr></thead><tbody>
           {group.map((run, index) => {
             const modelName = str(run, "model");
-            const installed = ((local.installed_models as Row[] | undefined) ?? []).find(item => str(item, "name") === modelName);
             const metadata = (run.result_metadata as Row | undefined) ?? {};
             const quality = (metadata.quality as Row | undefined) ?? {};
             const grounding = (quality.grounding as Row | undefined) ?? {};
             const passed = run.run_status === "succeeded" && quality.structural_pass === true && grounding.rule_pass === true && quality.localization_pass !== false;
-            return <tr key={`${str(run, "run_id")}-${index}`}><td>{modelName || "미기록"}</td><td>{str(installed ?? {}, "sha256") || "평가 산출물 참조"}</td><td>{str(run, "run_status")}</td><td>{str(run, "state") || "저장 초안 없음"}</td><td>{str(run, "elapsed_ms") || "미측정"}</td><td>{passed ? "통과" : "보류 또는 미측정"}</td><td><details><summary>?? ??</summary><pre>{JSON.stringify(quality.metrics ?? metadata.metrics ?? {}, null, 2)}</pre></details></td></tr>;
+            return <tr key={`${str(run, "run_id")}-${index}`}><td>{modelName || "미기록"}</td><td>{str(run, "run_id") ? "저장 평가 기록" : "미기록"}</td><td>{str(run, "run_status")}</td><td>{str(run, "state") || "저장 초안 없음"}</td><td>{str(run, "elapsed_ms") || "미측정"}</td><td>{passed ? "통과" : "보류 또는 미측정"}</td><td><details><summary>측정</summary><pre>{JSON.stringify(quality.metrics ?? metadata.metrics ?? {}, null, 2)}</pre></details></td></tr>;
           })}
         </tbody></table></div>
       </details>)}
@@ -357,15 +353,12 @@ export default function Research({ initial }: { initial: State }) {
       {versions[0] && versions[1] && <p>추가 행 {str(versions[1], "body").split("\n").filter(line => !str(versions[0]!, "body").split("\n").includes(line)).length} · 삭제 행 {str(versions[0], "body").split("\n").filter(line => !str(versions[1]!, "body").split("\n").includes(line)).length}</p>}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 20 }}>{versions.map((v, index) => v && <article key={index}><h3>{str(v, "title")}</h3><p>{str(v, "language")} · {str(v, "state")} · {str(v, "model")} · 원본 {str(v, "source_version_id") || "본 버전"}</p><details><summary>원고 본문 미리보기</summary><pre style={{ whiteSpace: "pre-wrap" }}>{str(v, "body")}</pre></details><button disabled={busy} onClick={() => act(`versions/${str(v, "id")}/validate`, {})}>품질 검사 다시 실행</button><details><summary>메타 설명·규칙/모델 검증·처리 시간·CPU/RAM</summary><pre>{JSON.stringify({ generation: v.result_metadata, latest_checks: v.latest_checks, references: v.source_snapshot }, null, 2)}</pre></details></article>)}</div>
     </section>
-    <section><h2>언어별 모델·프롬프트 정책</h2><p>시험 생성은 품질 평가 완료를 선언하지 않습니다. 언어 지원 검증이 안 된 모델은 정상 자동 처리하지 않습니다. llama.cpp 모델·스레드 변경은 전용 엔진 재시작이 필요합니다.</p>
-      {data.settings.map(s => <article key={str(s, "profile_id")}><h3>{profileLabel(data.profiles.find(p => p.id === s.profile_id) ?? {})}</h3>
-        <Editor disabled={busy} label="언어 실행 정책 저장" defaults={s} fields={[{ name: "provider", label: "Provider", options: [{ value: "mock", label: "Mock 합성 테스트" }, { value: "local", label: "실제 Local" }] }, { name: "engine", label: "로컬 엔진", options: [{ value: "ollama", label: "Ollama 11434" }, { value: "llamacpp", label: "프로젝트 llama.cpp 11435" }] }, { name: "model", label: "설치 모델 이름" }, { name: "prompt_id", label: "프롬프트 버전", options: promptOptions }, { name: "enabled", label: "처리 허용", type: "checkbox" }, { name: "language_verified", label: "언어별 품질 평가 완료 (검증 근거 필수)", type: "checkbox" }, { name: "verification_reason", label: "언어 평가 근거", optional: true }, { name: "daily_limit", label: "일일 작업 한도", type: "number" }, { name: "evaluation_daily_limit", label: "Operations DB evaluation limit (isolated evaluation quota is displayed above)", type: "number" }, { name: "threads", label: "CPU 스레드 1–4", type: "number" }, { name: "timeout_seconds", label: "타임아웃 5–180초", type: "number" }]} submit={body => act(`settings/${str(s, "profile_id")}`, body, "PUT")}/>
-      </article>)}
-      <Editor disabled={busy} label="새 프롬프트 버전 추가" fields={[{ name: "name", label: "영문 이름" }, { name: "instructions", label: "새 지시문", type: "textarea" }]} submit={body => act("prompts", body)}/>
+    <section><h2>원고 생성 연결 상태</h2>
+      <p>생성 Provider 연결: 없음. 자동 원고 생성·Codex 예약 실행은 사용 불가 상태입니다. 수집, 원고 조회·수정, 품질 검사, HTML/SEO 미리보기, 사람 검토 및 발행 준비 기능은 계속 사용할 수 있습니다.</p>
+      <p>과거 모델 비교와 평가 결과는 읽기 전용으로 보존합니다. 수집 스케줄은 자료 수집만 실행하며 원고 초안을 자동 생성하지 않습니다.</p>
     </section>
-    <section id="automation"><h2>자원·초안 스케줄</h2>
+    <section id="automation"><h2>자원·수집 스케줄</h2>
       <Editor disabled={busy} label="자원 정책 저장" defaults={data.controls} fields={[{ name: "paused", label: "전체 중지", type: "checkbox" }, { name: "max_concurrency", label: "동시 작업 1–2", type: "number" }, { name: "cpu_percent", label: "실행 전 CPU 한도 %", type: "number" }, { name: "ram_percent", label: "실행 전 RAM 한도 %", type: "number" }]} submit={body => act("controls", body, "PUT")}/>
-      <Editor disabled={busy} label="카테고리 초안 스케줄 저장" defaults={{ schedule_cron: "0 9 * * *", timezone: "Asia/Seoul", quantity: 1 }} fields={[categoryField, profileField, { name: "active", label: "활성화", type: "checkbox" }, { name: "schedule_cron", label: "Cron (최소 5분)" }, { name: "timezone", label: "시간대" }, { name: "quantity", label: "회당 수량", type: "number" }]} submit={body => act("schedules", body)}/>
       <details><summary>등록 스케줄·전달 상태</summary><pre>{JSON.stringify({ schedules: data.schedules, dispatches: data.dispatches }, null, 2)}</pre></details>
     </section>
     <details><summary>최근 감사 기록</summary><pre>{JSON.stringify(data.events, null, 2)}</pre></details>

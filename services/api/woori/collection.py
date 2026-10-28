@@ -19,7 +19,7 @@ from .ai import EngineFailure
 from .db import connection
 from .external_policy import FreeQuotaExceeded
 from .external_policy import client as external_client
-from .pipeline import emit, enqueue, normalized, required
+from .pipeline import emit, normalized, required
 
 ENDPOINTS = {
     "fed_rss": "https://www.federalreserve.gov/feeds/press_all.xml",
@@ -423,16 +423,15 @@ def collect(run: dict[str, Any]) -> None:
                 primary=item["primary"],
                 rights=source["rights"],
             )
-    # Reconcile all admitted items after commit, so retries do not lose the generation handoff.
+    # Historical generation flags are retained, but no writer provider is currently attached.
     if job["auto_generate"]:
         with connection() as conn:
-            admitted = conn.execute(
-                """SELECT DISTINCT k.id FROM collection_items i JOIN keyword_candidates k ON k.id=i.keyword_id
-                WHERE i.source_id=%s AND k.profile_id=%s AND k.status='selected' AND k.expires_at>now()""",
-                (source["id"], job["profile_id"]),
-            ).fetchall()
-        for keyword in admitted:
-            enqueue(keyword["id"], "collected-" + str(keyword["id"]))
+            emit(
+                conn,
+                "collection.auto_generation_blocked",
+                run["id"],
+                reason="generation_provider_not_configured",
+            )
     with connection() as conn:
         conn.execute(
             "UPDATE collection_sources SET last_collected_at=now(),last_attempt_at=now(),last_successful_at=now(),last_error=NULL WHERE id=%s",

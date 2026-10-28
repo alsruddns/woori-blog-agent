@@ -28,7 +28,7 @@ Windows 로컬 다국어 Blogger 운영 에이전트입니다. Phase 1 기반을
 
 `/research` supports manual Google Trends Trending Now RSS collection for KR, US, JP, TW, HK and SG through the shared external-call policy. The live fetch is metadata-only, bounded, audited and stored as an immutable trend observation, separate from factual research sources. Google does not explicitly supply a rank in this RSS representation, so the application stores no rank; the source-provided traffic label is kept as text. Auto collection is off. Migration 035–036 must be applied through the reviewed database migration process before the operations database can persist these observations; it has only been verified in the isolated test database in this change.
 
-The collector does not automatically select a topic or treat trend data as article evidence. Article generation still requires multiple current, reviewed, topic-relevant factual sources and must pass the existing quality gate. Gemini and other remote AI providers remain disabled under the project zero-cost policy; local Qwen3 remains in use. No generated article was submitted to Blogger as part of this work.
+The collector does not automatically select a topic or treat trend data as article evidence. Article generation still requires multiple current, reviewed, topic-relevant factual sources and must pass the existing quality gate. No production manuscript-generation provider is currently attached. Historical Qwen3 evaluations remain available as read-only records; they are not executable. No generated article was submitted to Blogger as part of this work.
 
 Dashboard: http://127.0.0.1:3100 · Blogger 관리: http://127.0.0.1:3100/blogger · API health: http://127.0.0.1:8100/health · PostgreSQL: 기존 localhost:5432. 다른 프로젝트의 3000/8000 포트는 사용하지 않습니다. 브라우저는 동일 출처 Next 프록시를 사용하며 API CORS는 열지 않습니다.
 
@@ -109,30 +109,13 @@ WooriBlogAgent-Worker와 WooriBlogAgent-Backup을 현재 사용자 Interactive �
 
 
 
-## Phase 3 / 3.5 콘텐츠 리서치·실제 로컬 AI
+## Research and manuscript generation status
 
-[관리 화면](http://127.0.0.1:3100/research)에서 후보/출처/검토, 실제 수집, 모델 상태·성능, 평가 초안, 버전 비교, 최신 품질 검사를 관리한다. 기존 API 8100, Dashboard 3100, PostgreSQL 5432를 유지한다.
+The research API and dashboard continue to support source collection, evidence packages, deterministic quality checks, editorial review, Blogger HTML/SEO previews, and Manual/Auto publication policy configuration. No production manuscript-generation provider is currently connected. Synthetic Mock output is test-only; automatic generation schedules are blocked.
 
-- 실제 무료 수집: Fed 보도자료 RSS/공식 본문, Wikidata CC0 주제 메타데이터. 일곱 카테고리 후보는 수집하지만 모든 카테고리의 공식 발표/영업/효능 검증까지 연결한 것은 아니다.
-- 실제 CPU 추론: 프로젝트 전용 llama.cpp b11889와 Qwen3 0.6B/1.7B Q8_0. 엔진과 모델의 라이선스·해시를 확인하며 .local은 Git 제외다.
-- 실제 네 언어 내부 초안 저장은 검증했다. 두 모델의 품질 문제로 일반 자동 처리는 승인하지 않았고 평가 초안은 quality_held다. 검색량/CPC는 미수집, 운영 발행·유료 AI는 차단한다.
-- 모델별 실제 속도·CPU/RAM과 실패를 보존한다. GPU 이용률은 미측정이며 GPU 가속을 사용한 것으로 보고하지 않는다.
-- 한국어 UI와 Phase 3 개발 규칙의 이전 문자 인코딩 손상을 복구했다. 과거 Git 이력과 DB 감사·콘텐츠 버전을 삭제하지 않는다.
+The project no longer installs, starts, monitors, or stops Qwen3/llama.cpp. Historical Qwen evaluations, original articles, research packages, and audit records remain preserved and visible as stored records. This cleanup does not implement Codex or GPT scheduled/unattended generation.
 
-```powershell
-.venv/Scripts/python scripts/migrate.py
-.venv/Scripts/python scripts/setup-local-ai.py
-.venv/Scripts/python scripts/start-local-ai.py Qwen3-1.7B-Q8_0.gguf
-.venv/Scripts/python scripts/setup-local-ai.py --with-vulkan
-.venv/Scripts/python scripts/start-local-ai.py Qwen3-4B-Q4_K_M.gguf 4 vulkan
-.venv/Scripts/python scripts/benchmark-local-ai.py
-# 기존 API/Dashboard/Windows Worker를 실행한 상태에서 명시적 평가:
-.venv/Scripts/python scripts/verify-live-pipeline.py --evaluation-only
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1
-.venv/Scripts/python scripts/verify-secrets.py
-```
-
-[실제 추론 아키텍처](docs/architecture/live-research.md), [소스·권리·설치·운영](docs/operations/live-research.md), [Phase 3.5 개발 기록](docs/development/P3-5-001.md)을 참조한다. setup은 최소 20GiB 여유를 요구하며 기존 리스너·PATH·다른 프로젝트를 변경하지 않는다.
+Run the API, dashboard, and collection worker through the existing project scripts when needed; there is no local model server startup step.
 
 ## Zero additional cost
 All external requests pass through the closed provider allowlist in `services/api/woori/external_policy.py`. Paid AI, metered services, paid data, proxies, hosting and cloud services are blocked. Free quotas are hard stops; a 429 never triggers retries or provider fallback. Blogger reads are blocked until the Google Cloud project's billing status is verified. The authenticated research state reports provider blocks and suspicious credential variable names only. See [the cost and provider review](docs/operations/zero-cost-policy.md).
@@ -142,17 +125,17 @@ Research generation runs through persisted source, evidence, outline, section, l
 
 ## Evidence-preserving localization
 
-Current source excerpts, reviewed source language, fact snapshots, approved glossary revisions, and per-language localization evaluations are stored separately and append-only. Numeric/date values are placeholder-protected during local translation, and `/research` displays the stored values beside each source excerpt. Original-language excerpts do not count as target-language prose. Cross-language generation uses only the already installed local model; if it is unavailable or the target language is unsupported, the result remains held. The screen shows source/output comparisons, glossary revisions, and review status. See [the localization architecture](docs/architecture/evidence-localization.md), [Phase 3.8-B record](docs/development/P3-8B-001.md), and [measured evaluation](docs/development/P3-8B-evaluation.json).
+Current source excerpts, reviewed source language, fact snapshots, approved glossary revisions, and per-language localization evaluations are stored separately and append-only. Deterministic checks protect numeric/date values and `/research` displays stored values beside each source excerpt. Original-language excerpts do not count as target-language prose. Cross-language generation remains held because no production translation provider is attached. The screen shows stored source/output comparisons, glossary revisions, and review status. See [the localization architecture](docs/architecture/evidence-localization.md), [Phase 3.8-B record](docs/development/P3-8B-001.md), and [measured evaluation](docs/development/P3-8B-evaluation.json).
 
 
 ## Phase 3.8-C1 finance/stock article evaluation
 
-The current source-backed evaluation is limited to Federal Reserve releases and SEC EDGAR filings/XBRL facts. It stores retrieval timestamps and a per-claim fact ledger, generates local-only Qwen drafts for active language profiles, and exposes complete saved drafts and machine checks in `/research`. The recorded C1 run is in [the evaluation artifact](docs/development/P3-8C1-evaluation.json); quality failures remain held and require editorial review. No Blogger write or paid API path is enabled. See the [architecture](docs/architecture/complete-articles.md) and [operations guide](docs/operations/live-research.md).
+Historical source-backed evaluations used Federal Reserve releases and SEC EDGAR filings/XBRL facts. Retrieval timestamps, per-claim fact ledgers, saved drafts and machine checks remain available in `/research`; new production drafts are not generated until an approved provider is attached. The recorded C1 run is in [the evaluation artifact](docs/development/P3-8C1-evaluation.json); quality failures remain held and require editorial review. No Blogger write or paid API path is enabled. See the [architecture](docs/architecture/complete-articles.md) and [operations guide](docs/operations/live-research.md).
 
 Phase 3.8-C2 adds append-only rechecks and preserves future bounded JSON/schema failure excerpts locally. Recheck historical output without regeneration using `.venv/Scripts/python scripts/recheck_article_quality.py`; it refuses to overwrite its evaluation artifact and never promotes drafts. See [C2 regression output](docs/development/P3-8C2-regression.json) and [the development record](docs/development/P3-8C2-001.md).
 # Phase 3.8-C3 fact-first evaluation
 
-The content worker can persist exact source spans in `evidence_facts`, translate each span separately with the local model, attach citations in code, and retain per-fact checks in immutable generation-stage records. Run the bounded Fed/SEC evaluation with `python scripts/run_fact_first_evaluation.py` only when its model and resource preflight pass. This remains evaluation-only and cannot enable Blogger publishing.
+The evidence architecture retains exact source spans in `evidence_facts`, citation links and per-fact checks in immutable generation-stage records. Historical C3 model runs are preserved as records; the retired local inference runner is no longer available.
 
 
 ## Phase 3.9 operations check
@@ -166,7 +149,7 @@ Operations and evaluation have separate daily quotas, with shared global resourc
 
 The local evaluation database is provisioned separately from `woori_blog_agent` by `scripts/provision-evaluation-database.py`. Its snapshot excludes OAuth, Blogger connection/API, publishing, search-performance, and heartbeat rows. Credentials are written only to ignored `.env.evaluation*` files. The dashboard reads evaluation drafts through the separate read-only `woori_eval_reader` role when `EVALUATION_DATABASE_URL` is configured.
 
-After the Asia/Seoul daily evaluation quota resets, start the existing model in evaluation context with `.venv/Scripts/python scripts/start_evaluation_ai.py Qwen3-4B-Q4_K_M.gguf 4 vulkan`, then run one item at a time with `.venv/Scripts/python scripts/run_phase39t_evaluation.py --source fed --language en` (then `ko`, `ja`, `zh-CN`; only proceed to SEC when the Federal Reserve results permit). SEC evaluation follows the same language order. Each target consumes its existing per-language evaluation quota when created, including failures/cancellations; retries reuse that target. Do not clear quota manually. The runner refuses model downloads, checks physical DB isolation, and starts the Worker with `--evaluation --once`. Results are new JSON artifacts under `docs/development`; all outputs remain internal and `publish_ready=false`.
+Phase 3.9-T evaluation artifacts are historical and preserved under `docs/development`. Local Qwen/llama.cpp setup and evaluation commands have been retired. The project currently has no production or scheduled manuscript-generation provider; no Codex/GPT unattended execution is implemented.
 
 
 ### Publication workflow (simulation only)
@@ -183,7 +166,7 @@ Phase 4-B keeps scheduled jobs simulation-only. To process one isolated fake job
 
 ## Phase 4-K model comparison
 
-The existing `Qwen3-4B-Q4_K_M.gguf` remains the default. A separate, pinned `Qwen3-4B-Instruct-2507-Q4_K_M.gguf` is installed for isolated evaluation only; operational generation rejects it. `/research` compares saved Fed/SEC evaluation runs by source, language, model and measured quality. The 2026-10-27 comparison was stopped after repeated held localization checks, so the candidate has no full zh-CN result and is not promoted. All evaluation drafts remain unpublished, require human review, and keep `publish_ready=false`. See [the Phase 4-K evaluation](docs/development/P4-K-results.json), [development record](docs/development/P4-K-001.md), and [pinned model policy](docs/operations/zero-cost-policy.md).
+The Phase 4-K model comparison is a historical evaluation record. Local Qwen3 execution and model overrides have been retired; saved comparisons remain read-only. `/research` compares saved Fed/SEC evaluation runs by source, language, model and measured quality. The 2026-10-27 comparison was stopped after repeated held localization checks, so the candidate has no full zh-CN result and is not promoted. All evaluation drafts remain unpublished, require human review, and keep `publish_ready=false`. See [the Phase 4-K evaluation](docs/development/P4-K-results.json), [development record](docs/development/P4-K-001.md), and [pinned model policy](docs/operations/zero-cost-policy.md).
 
 ## P5-CONTENT-001: trend research packages
 

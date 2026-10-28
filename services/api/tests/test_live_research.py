@@ -1,6 +1,5 @@
 import hashlib
 import json
-import subprocess
 import uuid
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
@@ -12,11 +11,10 @@ from test_pipeline import lab as shared_lab
 from test_pipeline import topic as make_topic
 
 lab = shared_lab
-from woori import collection, external_policy, local_inference, pipeline
+from woori import collection, external_policy, pipeline
 from woori.ai import Draft, EngineFailure
 from woori.grounding import inspect, numbers, proper_names
-from woori.local_inference import LlamaCppProvider
-from woori.localization import fact_ledger, localize_fact
+from woori.localization import localize_fact
 
 _ORIGINAL_EVALUATION_DB_ISOLATION = pipeline.evaluation_database_isolated
 
@@ -55,7 +53,7 @@ def test_external_policy_blocks_unlisted_destination(monkeypatch: pytest.MonkeyP
             httpx.Request("GET", "https://example.com/blogger/v3/blogs/1"),
         )
     with pytest.raises(
-        external_policy.ExternalCallBlocked, match="destination_or_method_not_allowlisted"
+        external_policy.ExternalCallBlocked, match="provider_not_allowlisted"
     ):
         external_policy._authorize(
             "artifact_setup",
@@ -92,46 +90,6 @@ def test_sec_edgar_is_restricted_to_free_submissions_and_companyconcept_paths(
             external_policy._authorize("sec_edgar", "source_collection", httpx.Request("GET", url))
 
 
-def test_model_artifact_gate_is_narrowly_scoped(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(external_policy, "billing_credential_names", list)
-    monkeypatch.setattr(external_policy, "_audit", lambda *args, **kwargs: None)
-    external_policy._authorize(
-        "artifact_setup",
-        "artifact_download",
-        httpx.Request(
-            "GET",
-            "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/bc640142c66e1fdd12af0bd68f40445458f3869b/Qwen3-4B-Q4_K_M.gguf",
-        ),
-    )
-    external_policy._authorize(
-        "artifact_setup",
-        "artifact_download",
-        httpx.Request(
-            "GET",
-            "https://huggingface.co/bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF/resolve/ae44f08e1392f39c0e474af10c3ff8355c8b6688/Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
-        ),
-    )
-    external_policy._authorize(
-        "artifact_setup",
-        "artifact_download",
-        httpx.Request(
-            "GET",
-            "https://huggingface.co/api/models/bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF/revision/ae44f08e1392f39c0e474af10c3ff8355c8b6688?blobs=true",
-        ),
-    )
-    external_policy._authorize(
-        "artifact_setup",
-        "artifact_download",
-        httpx.Request("GET", "https://us.aws.cdn.hf.co/xet-bridge-us/immutable-object-id"),
-    )
-    with pytest.raises(
-        external_policy.ExternalCallBlocked, match="destination_or_method_not_allowlisted"
-    ):
-        external_policy._authorize(
-            "artifact_setup",
-            "artifact_download",
-            httpx.Request("GET", "https://us.aws.cdn.hf.co/other/path"),
-        )
 
 
 def test_evaluation_dashboard_is_empty_when_read_only_connection_is_not_configured(
@@ -159,65 +117,6 @@ def test_worker_single_shot_mode_requires_evaluation_isolation(
         worker.main()
 
 
-def test_localized_translation_records_measured_usage_and_resource_samples(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured_request: dict[str, Any] = {}
-
-    class FakeProcess:
-        pid = 123
-
-        def cpu_percent(self, interval: float | None = None) -> float:
-            return 5.0
-
-        def memory_info(self) -> Any:
-            return type("Memory", (), {"rss": 1024 * 1024 * 128})()
-
-    class FakeResponse:
-        content = b'{"choices":[{"message":{"content":"{\\"localized_text\\":\\"Hello\\"}"}}],"usage":{"prompt_tokens":12,"completion_tokens":3}}'
-
-        def raise_for_status(self) -> None:
-            return None
-
-        def json(self) -> dict[str, Any]:
-            return {
-                "choices": [{"message": {"content": '{"localized_text":"Hello"}'}}],
-                "usage": {"prompt_tokens": 12, "completion_tokens": 3},
-            }
-
-    class FakeClient:
-        def __init__(self, **_kwargs: Any) -> None:
-            pass
-
-        def __enter__(self) -> Any:
-            return self
-
-        def __exit__(self, *_args: object) -> None:
-            return None
-
-        def close(self) -> None:
-            return None
-
-        def post(self, *_args: Any, **kwargs: Any) -> FakeResponse:
-            captured_request.update(kwargs.get("json", {}))
-            return FakeResponse()
-
-    monkeypatch.setattr(local_inference, "runtime", lambda: {"pid": 123, "model": "local", "backend": "cpu", "gpu_layers": 0})
-    monkeypatch.setattr(local_inference, "auth_headers", dict)
-    monkeypatch.setattr(local_inference.psutil, "Process", lambda _pid: FakeProcess())
-    monkeypatch.setattr(local_inference.httpx, "Client", FakeClient)
-    metrics: list[dict[str, Any]] = []
-    result = local_inference.localized_translation(
-        "Hello", "en", [], [], "local", 5, mode="faithful_paraphrase", metrics_sink=metrics
-    )
-    assert result == "Hello"
-    system_prompt = captured_request["messages"][0]["content"]
-    assert "natural target-language editorial prose" in system_prompt
-    assert "Do not copy a complete source sentence" in system_prompt
-    assert metrics[0]["prompt_tokens"] == 12
-    assert metrics[0]["completion_tokens"] == 3
-    assert metrics[0]["succeeded"] is True
-    assert metrics[0]["rss_peak_mib"] >= 128
 
 
 def test_blogger_reads_wait_for_manual_zero_cost_review(
@@ -286,19 +185,6 @@ def test_grounding_rejects_numbers_urls_and_wrong_language() -> None:
     assert result["publish_ready"] is False
 
 
-def test_gpu_counter_is_scoped_to_inference_process(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        local_inference.subprocess,
-        "run",
-        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, "37.5\n", ""),
-    )
-    assert local_inference.gpu_engine_percent(1234) == 37.5
-    monkeypatch.setattr(
-        local_inference.subprocess,
-        "run",
-        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 1, "", ""),
-    )
-    assert local_inference.gpu_engine_percent(1234) is None
 
 
 def test_grounding_requires_source_markers_and_preserves_names() -> None:
@@ -658,122 +544,8 @@ def test_localization_blocks_number_date_and_unapproved_entity_drift() -> None:
     assert preserved_name["checks"]["no_unverified_entity_added"]
 
 
-def test_local_translation_protects_entity_spans_and_fails_if_marker_is_lost(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from woori import local_inference as inference
-
-    monkeypatch.setattr(inference, "runtime", lambda: {"model": "local-test-model"})
-    monkeypatch.setattr(inference, "auth_headers", dict)
-    base_client = httpx.Client
-    observed: list[str] = []
-
-    def execute(response_text: str) -> str:
-        def handler(request: httpx.Request) -> httpx.Response:
-            payload = json.loads(request.content)
-            observed.append(payload["messages"][1]["content"])
-            return httpx.Response(
-                200,
-                json={
-                    "choices": [
-                        {
-                            "message": {
-                                "content": json.dumps(
-                                    {"localized_text": response_text}, ensure_ascii=False
-                                )
-                            }
-                        }
-                    ]
-                },
-            )
-
-        monkeypatch.setattr(
-            inference.httpx,
-            "Client",
-            lambda *args, **kwargs: base_client(transport=httpx.MockTransport(handler), **kwargs),
-        )
-        return inference.localized_translation(
-            "The Federal Reserve Board issued a notice.",
-            "ko",
-            [],
-            ["Federal Reserve Board"],
-            "local-test-model",
-            10,
-        )
-
-    restored = execute("[[LOCKED_ENTITY_0001]]가 공지를 발표했습니다.")
-    assert restored == "Federal Reserve Board가 공지를 발표했습니다."
-    assert "[[LOCKED_ENTITY_0001]]" in observed[0]
-    with pytest.raises(EngineFailure, match="localization_entity_placeholder_error"):
-        execute("기관이 공지를 발표했습니다.")
 
 
-def test_local_translation_locks_dates_and_numbers_and_rejects_missing_or_duplicate_markers(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from woori import local_inference as inference
-
-    monkeypatch.setattr(inference, "runtime", lambda: {"model": "local-test-model"})
-    monkeypatch.setattr(inference, "auth_headers", dict)
-    base_client = httpx.Client
-    observed: list[dict[str, Any]] = []
-
-    def execute(response_text: str) -> str:
-        def handler(request: httpx.Request) -> httpx.Response:
-            payload = json.loads(request.content)
-            observed.append(json.loads(payload["messages"][1]["content"]))
-            return httpx.Response(
-                200,
-                json={
-                    "choices": [
-                        {"message": {"content": json.dumps({"localized_text": response_text})}}
-                    ]
-                },
-            )
-
-        monkeypatch.setattr(
-            inference.httpx,
-            "Client",
-            lambda *args, **kwargs: base_client(transport=httpx.MockTransport(handler), **kwargs),
-        )
-        return inference.localized_translation(
-            "On June 17, 2026, the board reported 1,234 items and a 3.5 percent change.",
-            "ko",
-            [],
-            [],
-            "local-test-model",
-            10,
-        )
-
-    # The exact source date remains immutable. Localized display conversion is
-    # a separate deterministic presentation concern and is not model-authored.
-    expected = "June 17, 2026에 위원회는 1,234개 항목과 3.5 퍼센트 변화를 보고했습니다."
-    response = (
-        "[[LOCKED_DATE_0001]]에 위원회는 [[LOCKED_NUMBER_0002]]개 항목과 "
-        "[[LOCKED_NUMBER_0003]] 퍼센트 변화를 보고했습니다."
-    )
-    assert execute(response) == expected
-    payload = observed[-1]
-    assert "[[LOCKED_DATE_0001]]" in payload["source_excerpt"]
-    assert "[[LOCKED_NUMBER_0002]]" in payload["source_excerpt"]
-    assert "[[LOCKED_NUMBER_0003]]" in payload["source_excerpt"]
-    assert len(payload["protected_values"]) == 3
-    assert "[[LOCKED_" not in expected
-
-    with pytest.raises(EngineFailure, match="localization_protected_value_placeholder_error"):
-        execute("[[LOCKED_DATE_0001]]에 위원회는 [[LOCKED_NUMBER_0002]]개 항목을 보고했습니다.")
-
-    with pytest.raises(EngineFailure, match="localization_protected_value_placeholder_error"):
-        execute(
-            "[[LOCKED_DATE_0001]]에 위원회는 [[LOCKED_NUMBER_0002]]개와 "
-            "[[LOCKED_NUMBER_0002]]개 항목을 보고했습니다."
-        )
-
-    with pytest.raises(EngineFailure, match="localization_protected_value_placeholder_error"):
-        execute(
-            "[[LOCKED_DATE_0001]]에 위원회는 [[LOCKED_NUMBER_0002]]개 항목과 "
-            "[[LOCKED_NUMBER_0003]] 퍼센트 변화를 보고했습니다. [[LOCKED_NUMBER_99999]]"
-        )
 
 
 def test_numeric_and_date_formatting_normalization_does_not_hide_value_changes() -> None:
@@ -832,7 +604,7 @@ def test_reviewed_source_facts_and_localization_are_durable_and_fail_closed(lab:
     assert result.json()["machine_passed"] is False
     assert result.json()["publish_ready"] is False
     saved = result.json()["output_snapshot"]
-    assert saved["status"] == "held_translation_language_unverified"
+    assert saved["status"] == "held_translation_provider_unavailable"
 
     state = api.get("/admin/research/state", headers=headers)
     assert state.status_code == 200
@@ -1261,199 +1033,12 @@ def test_collection_durable_retry_and_idempotency(
     )
 
 
-def test_stream_cancellation_and_model_identity(monkeypatch: pytest.MonkeyPatch) -> None:
-    from woori import local_inference as local
-
-    monkeypatch.setattr(
-        local,
-        "runtime",
-        lambda: {
-            "pid": __import__("os").getpid(),
-            "model": "test.gguf",
-            "engine": "mock transport",
-        },
-    )
-    base = httpx.Client
-    system_prompts: list[str] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.method == "GET":
-            return httpx.Response(200, json={})
-        system_prompts.append(json.loads(request.content)["messages"][0]["content"])
-        return httpx.Response(
-            200,
-            text="data: " + json.dumps({"choices": [{"delta": {"content": "{"}}]}) + "\n\n",
-            headers={"Content-Type": "text/event-stream"},
-        )
-
-    monkeypatch.setattr(
-        httpx, "Client", lambda **kw: base(transport=httpx.MockTransport(handler), **kw)
-    )
-    monkeypatch.setattr(local, "cancelled", lambda _: True)
-    monkeypatch.setattr(local, "auth_headers", lambda: {"Authorization": "Bearer synthetic-test"})
-    context = {"language_code": "en", "sources": [{"id": "source", "evidence": "test"}]}
-    with pytest.raises(EngineFailure, match="generation_cancelled"):
-        LlamaCppProvider().generate(
-            context, {"model": "test.gguf", "language_verified": True, "timeout_seconds": 5}
-        )
-    assert "reader-centered reported explainer or expert column" in system_prompts[0]
-    assert "Avoid repeated caveats and internal workflow language" in system_prompts[0]
-    assert "Never invent expert opinion, interviews, statistics" in system_prompts[0]
-    with pytest.raises(EngineFailure, match="local_model_mismatch"):
-        LlamaCppProvider().generate(context, {"model": "other.gguf", "language_verified": True})
 
 
-def test_inference_resource_monitor_cancels_and_records_cpu_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
-    from types import SimpleNamespace
-
-    from woori.local_inference import InferenceResourceMonitor
-
-    class FakeProcess:
-        def cpu_percent(self, interval: float | None = None) -> float:
-            return 240.0
-
-        def memory_info(self) -> Any:
-            return SimpleNamespace(rss=128 * 1024**2)
-
-    monkeypatch.setattr("woori.local_inference.psutil.cpu_count", lambda: 12)
-    readings = iter([14.0, 79.5, 80.0])
-
-    def read_system_cpu(*, interval: float | None = None) -> float:
-        try:
-            return next(readings)
-        except StopIteration:
-            return 80.0
-
-    monitor = InferenceResourceMonitor(
-        FakeProcess(), system_cpu_reader=read_system_cpu, sample_interval=0.005
-    )
-    aborted: list[bool] = []
-    monitor.start()
-    monitor.attach_abort(lambda: aborted.append(True))
-    assert monitor.interrupted_event.wait(1)
-    with pytest.raises(EngineFailure, match="system_cpu_limit_exceeded") as failure:
-        monitor.check()
-    assert aborted == [True]
-    assert failure.value.metrics["cpu_limit_percent"] == 80.0
-    assert failure.value.metrics["system_cpu_peak_percent"] == 80.0
-    assert failure.value.metrics["process_cpu_peak_percent_machine"] == 20.0
-    assert failure.value.metrics["rss_peak_mib"] == 128.0
-    with pytest.raises(EngineFailure, match="system_cpu_limit_exceeded"):
-        monitor.stop()
 
 
-def test_inference_resource_monitor_fails_closed_when_measurement_stops(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from types import SimpleNamespace
-
-    from woori.local_inference import InferenceResourceMonitor
-
-    class FakeProcess:
-        def cpu_percent(self, interval: float | None = None) -> float:
-            return 12.0
-
-        def memory_info(self) -> Any:
-            return SimpleNamespace(rss=64 * 1024**2)
-
-    monkeypatch.setattr("woori.local_inference.psutil.cpu_count", lambda: 8)
-    calls = 0
-
-    def read_system_cpu(*, interval: float | None = None) -> float:
-        nonlocal calls
-        calls += 1
-        if calls == 1:
-            return 10.0
-        raise OSError("synthetic resource counter failure")
-
-    monitor = InferenceResourceMonitor(
-        FakeProcess(), system_cpu_reader=read_system_cpu, sample_interval=0.005
-    )
-    aborted: list[bool] = []
-    monitor.start()
-    monitor.attach_abort(lambda: aborted.append(True))
-    assert monitor.interrupted_event.wait(1)
-    with pytest.raises(EngineFailure, match="inference_resource_monitor_failed") as failure:
-        monitor.check()
-    assert aborted == [True]
-    assert failure.value.metrics["cpu_limit_percent"] == 80.0
-    with pytest.raises(EngineFailure, match="inference_resource_monitor_failed"):
-        monitor.stop()
 
 
-def test_llama_provider_closes_stream_on_cpu_limit_without_returning_partial_draft(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import threading
-    from types import SimpleNamespace
-
-    from woori import local_inference as local
-
-    stream_started = threading.Event()
-    stream_closed = threading.Event()
-
-    class DelayedStream(httpx.SyncByteStream):
-        def __iter__(self):
-            stream_started.set()
-            yield b'data: {"choices":[{"delta":{"content":"{"}}]}\n\n'
-            while not stream_closed.wait(0.01):
-                continue
-            raise httpx.ReadError("client disconnected")
-
-        def close(self) -> None:
-            stream_closed.set()
-
-    class FakeProcess:
-        def cpu_percent(self, interval: float | None = None) -> float:
-            return 120.0
-
-        def memory_info(self) -> Any:
-            return SimpleNamespace(rss=128 * 1024**2)
-
-    cpu_calls = 0
-
-    def read_system_cpu(*, interval: float | None = None) -> float:
-        nonlocal cpu_calls
-        cpu_calls += 1
-        if cpu_calls == 1:
-            return 12.0
-        stream_started.wait(1)
-        return 82.0
-
-    base_client = httpx.Client
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.method == "GET":
-            return httpx.Response(200, json={})
-        return httpx.Response(200, stream=DelayedStream())
-
-    monkeypatch.setattr(local, "runtime", lambda: {
-        "pid": 123, "model": "test.gguf", "engine": "mocked", "backend": "cpu",
-        "gpu_layers": 0, "threads": 2,
-    })
-    monkeypatch.setattr(local.psutil, "Process", lambda _pid: FakeProcess())
-    monkeypatch.setattr(local.psutil, "cpu_count", lambda: 12)
-    monkeypatch.setattr(local.psutil, "cpu_percent", read_system_cpu)
-    monkeypatch.setattr(local, "RESOURCE_SAMPLE_INTERVAL_SECONDS", 0.01)
-    monkeypatch.setattr(local, "auth_headers", lambda: {"Authorization": "Bearer test"})
-    monkeypatch.setattr(
-        httpx,
-        "Client",
-        lambda **kwargs: base_client(transport=httpx.MockTransport(handler), **kwargs),
-    )
-    context = {
-        "language_code": "en", "sources": [{"id": "source-1", "evidence": "evidence"}],
-        "keyword": "probe", "as_of": "2026-10-28", "instructions": "test only",
-    }
-
-    with pytest.raises(EngineFailure, match="system_cpu_limit_exceeded") as failure:
-        LlamaCppProvider().generate(
-            context,
-            {"model": "test.gguf", "language_verified": True, "engine": "llamacpp", "threads": 2, "timeout_seconds": 5},
-        )
-
-    assert stream_closed.is_set()
-    assert failure.value.metrics["system_cpu_peak_percent"] == 82.0
 
 
 def test_article_parser_excludes_navigation() -> None:
@@ -1475,7 +1060,48 @@ def test_evaluation_cannot_silently_use_mock(lab: Any) -> None:
         json={"keyword_id": keyword, "idempotency_key": uuid.uuid4().hex, "evaluation_only": True},
     )
     assert response.status_code == 409
-    assert response.json()["error"] == "evaluation_requires_real_local_provider"
+    assert response.json()["detail"] == "evaluation_provider_unavailable"
+
+
+def test_generation_and_collection_schedules_fail_closed_without_writer(lab: Any) -> None:
+    _conn, api, headers = lab
+    keyword, profiles = make_topic(lab)
+    profile = str(profiles[0])
+    category = api.get("/admin/research/state", headers=headers).json()["categories"][0]["id"]
+    scheduled = api.post(
+        "/admin/research/schedules",
+        headers=headers,
+        json={"category_id": category, "profile_id": profile, "active": True},
+    )
+    assert scheduled.status_code == 409
+    assert scheduled.json()["detail"] == "generation_provider_not_configured"
+    collection_request = api.post(
+        "/admin/research/collections",
+        headers=headers,
+        json={
+            "source_id": str(uuid.uuid4()), "profile_id": profile,
+            "idempotency_key": "blocked-auto-generation-" + uuid.uuid4().hex,
+            "auto_generate": True,
+        },
+    )
+    assert collection_request.status_code == 409
+    assert collection_request.json()["detail"] == "generation_provider_not_configured"
+    assert keyword
+
+
+def test_unconfigured_writer_blocks_generation_api_and_worker(lab: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    keyword, _profiles = make_topic(lab)
+    _conn, api, headers = lab
+    monkeypatch.setattr("woori.pipeline.PRODUCTION_GENERATOR_CONFIGURED", False)
+    monkeypatch.setattr("woori.research_routes.PRODUCTION_GENERATOR_CONFIGURED", False)
+    response = api.post(
+        "/admin/research/jobs",
+        headers=headers,
+        json={"keyword_id": keyword, "idempotency_key": "writer-off-" + uuid.uuid4().hex},
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"] == "generation_provider_not_configured"
+    assert pipeline.tick() is False
 
 
 def test_quality_revalidation_appends_without_changing_version(lab: Any) -> None:
@@ -1540,95 +1166,8 @@ def test_short_secret_uuid_collision_does_not_hide_plaintext() -> None:
     )
 
 
-def test_fact_first_localization_renders_citations_from_source_registry(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from woori import local_inference
-    from woori.pipeline import render_localized_fact_section
-
-    source = {
-        "id": "src-1", "source_language": "en", "url": "https://example.org/report",
-        "evidence": "The report covers 2026.",
-    }
-    registry = fact_ledger(source)[0]
-    fact = {
-        "fact_id": registry["fact_key"], "source_id": "src-1",
-        "text": registry["source_excerpt"], "source_language": "en",
-        "entities": registry["entities"], "numeric_values": registry["numeric_values"],
-        "date_values": registry["date_values"], "citation_ids": ["src-1"],
-    }
-    monkeypatch.setattr(
-        local_inference, "localized_translation",
-        lambda text, target, glossary, entities, model, timeout, mode="translate", metrics_sink=None, claim_status="unverified": (
-            "??? ??? ?? 2026" if text == source["evidence"]
-            else "??? ??"
-        ),
-    )
-    draft, validation = render_localized_fact_section(
-        [fact], [source], "ko", "English topic", [], "Qwen3-4B-Q4_K_M.gguf", 120, True,
-    )
-    assert draft.body == "??? ??? ?? 2026 [source:src-1]"
-    assert draft.source_ids == ["src-1"]
-    assert draft.title.endswith("??? ??")
-    assert validation["fact_checks"][fact["fact_id"]]["citation_linked"] is True
-    assert draft._metrics["model_calls"] == 2
 
 
-def test_fact_first_model_override_is_evaluation_only_and_bounded(lab: Any) -> None:
-    conn, _api, _headers = lab
-    keyword_id, _profile_ids = make_topic(lab)
-    conn.execute(
-        "UPDATE generation_settings SET provider='local',engine='llamacpp',model='Qwen3-1.7B-Q8_0.gguf'"
-    )
-    job = pipeline.enqueue(
-        uuid.UUID(keyword_id), "fact-first-" + uuid.uuid4().hex,
-        evaluation_only=True, evaluation_model="Qwen3-4B-Q4_K_M.gguf",
-    )
-    snapshots = conn.execute(
-        "SELECT settings_snapshot FROM generation_targets WHERE run_id=%s", (job["id"],)
-    ).fetchall()
-    assert len(snapshots) == 4
-    assert all(
-        row["settings_snapshot"]["model"] == "Qwen3-4B-Q4_K_M.gguf"
-        and row["settings_snapshot"]["evaluation_model_override"] is True
-        and row["settings_snapshot"]["evaluation_only"] is True
-        for row in snapshots
-    )
-    assert conn.execute(
-        "SELECT 1 FROM audit_events WHERE run_id=%s AND event_type='research.evaluation.model.override'",
-        (job["id"],),
-    ).fetchone()
-    candidate = pipeline.enqueue(
-        uuid.UUID(keyword_id), "candidate-model-" + uuid.uuid4().hex,
-        evaluation_only=True, evaluation_model="Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
-    )
-    candidate_models = conn.execute(
-        "SELECT settings_snapshot FROM generation_targets WHERE run_id=%s", (candidate["id"],)
-    ).fetchall()
-    assert all(
-        row["settings_snapshot"]["model"] == "Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf"
-        and row["settings_snapshot"]["evaluation_model_override"] is True
-        for row in candidate_models
-    )
-    with pytest.raises(EngineFailure, match="evaluation_model_override_blocked"):
-        pipeline.enqueue(
-            uuid.UUID(keyword_id), "unsafe-" + uuid.uuid4().hex,
-            evaluation_only=False, evaluation_model="Qwen3-4B-Q4_K_M.gguf",
-        )
-
-    with pytest.raises(EngineFailure, match="evaluation_model_override_blocked"):
-        pipeline.enqueue(
-            uuid.UUID(keyword_id), "unsafe-candidate-" + uuid.uuid4().hex,
-            evaluation_only=False, evaluation_model="Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
-        )
-    conn.execute(
-        "UPDATE generation_settings SET model='Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf'"
-    )
-    with pytest.raises(EngineFailure, match="evaluation_only_model_blocked"):
-        pipeline.enqueue(
-            uuid.UUID(keyword_id), "unsafe-configured-candidate-" + uuid.uuid4().hex,
-            evaluation_only=False,
-        )
 
 
 def test_evaluation_and_operations_have_separate_daily_quotas(
@@ -1644,7 +1183,7 @@ def test_evaluation_and_operations_have_separate_daily_quotas(
     third_keyword, _ = make_topic(lab)
     fourth_keyword, _ = make_topic(lab)
     conn.execute(
-        "UPDATE generation_settings SET provider='local',engine='llamacpp',model='Qwen3-1.7B-Q8_0.gguf'"
+        "UPDATE generation_settings SET provider='mock',engine='ollama',model='mock-v1'"
     )
     usage = conn.execute(
         """SELECT t.profile_id,
@@ -1661,13 +1200,13 @@ def test_evaluation_and_operations_have_separate_daily_quotas(
         )
     pipeline.enqueue(
         uuid.UUID(first_keyword), "limited-eval-" + uuid.uuid4().hex,
-        evaluation_only=True, evaluation_model="Qwen3-4B-Q4_K_M.gguf",
+        evaluation_only=True,
     )
     pipeline.enqueue(uuid.UUID(second_keyword), "ops-quota-independent-" + uuid.uuid4().hex)
     with pytest.raises(EngineFailure, match="daily_evaluation_limit"):
         pipeline.enqueue(
             uuid.UUID(third_keyword), "over-limit-eval-" + uuid.uuid4().hex,
-            evaluation_only=True, evaluation_model="Qwen3-4B-Q4_K_M.gguf",
+            evaluation_only=True,
         )
     with pytest.raises(EngineFailure, match="daily_generation_limit"):
         pipeline.enqueue(uuid.UUID(fourth_keyword), "over-limit-ops-" + uuid.uuid4().hex)
@@ -1676,26 +1215,26 @@ def test_evaluation_and_operations_have_separate_daily_quotas(
 def test_evaluation_enqueue_fails_closed_without_database_isolation(lab: Any) -> None:
     conn, _api, _headers = lab
     keyword_id, _profiles = make_topic(lab)
-    conn.execute("UPDATE generation_settings SET provider='local',engine='llamacpp'")
+    conn.execute("UPDATE generation_settings SET provider='mock',engine='ollama',model='mock-v1'")
     conn.execute("UPDATE pipeline_controls SET evaluation_isolated=false")
     with pytest.raises(EngineFailure, match="evaluation_database_isolation_required"):
         pipeline.enqueue(
             uuid.UUID(keyword_id), "shared-db-eval-" + uuid.uuid4().hex,
-            evaluation_only=True, evaluation_model="Qwen3-4B-Q4_K_M.gguf",
+            evaluation_only=True,
         )
 
 
 def test_evaluation_enqueue_rejects_same_physical_database(lab: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     conn, _api, _headers = lab
     keyword_id, _profiles = make_topic(lab)
-    conn.execute("UPDATE generation_settings SET provider='local',engine='llamacpp'")
+    conn.execute("UPDATE generation_settings SET provider='mock',engine='ollama',model='mock-v1'")
     conn.execute("UPDATE pipeline_controls SET evaluation_isolated=true")
     monkeypatch.setattr(pipeline, "evaluation_database_isolated", _ORIGINAL_EVALUATION_DB_ISOLATION)
     monkeypatch.setenv("WOORI_OPERATION_DATABASE_URL", conn.info.dsn)
     with pytest.raises(EngineFailure, match="evaluation_database_isolation_required"):
         pipeline.enqueue(
             uuid.UUID(keyword_id), "same-physical-db-eval-" + uuid.uuid4().hex,
-            evaluation_only=True, evaluation_model="Qwen3-4B-Q4_K_M.gguf",
+            evaluation_only=True,
         )
 
 

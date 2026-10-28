@@ -17,7 +17,7 @@ import psycopg
 from croniter import croniter
 from psycopg.types.json import Jsonb
 
-from .ai import Draft, EngineFailure, provider
+from .ai import PRODUCTION_GENERATOR_CONFIGURED, Draft, EngineFailure, provider
 from .article_quality import longest_source_overlap, search_intent_phrase
 from .claim_status import (
     STATUS_RULES,
@@ -26,13 +26,8 @@ from .claim_status import (
 )
 from .db import connection
 from .grounding import inspect, numbers, proper_names
-from .localization import EXTRACTOR_VERSION, fact_ledger, localize_fact
+from .localization import EXTRACTOR_VERSION, fact_ledger
 
-EVALUATION_MODEL_ALLOWLIST = {
-    "Qwen3-4B-Q4_K_M.gguf",
-    "Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
-}
-EVALUATION_ONLY_MODELS = {"Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf"}
 EVALUATION_QUOTA_LIMIT = 10
 SEC_ENGLISH_PRIORITY_RESERVED_SLOTS = 1
 
@@ -246,104 +241,9 @@ def render_localized_fact_section(
     keyword: str, glossary: list[dict[str, Any]], model: str, timeout: int,
     include_title: bool,
 ) -> tuple[Draft, dict[str, Any]]:
-    """Translate fact spans individually, then attach source citations in code."""
-    from .grounding import proper_names
-    from .local_inference import localized_translation
-
-    copy = {
-        "en": ("Verified source facts: ", "This review draft contains only statements tied to the cited official source."),
-        "ko": ("공식 자료에서 확인한 사실: ", "이 검토용 초안은 인용한 공식 자료에서 확인한 사실만 담습니다."),
-        "zh-CN": ("官方资料核实的要点：", "本审阅草稿仅整理所引官方资料中核实的事实。"),
-        "ja": ("公式資料で確認した事実：", "この確認用草稿は引用した公式資料で確認できる事実のみを整理します。"),
-    }
-    if language not in copy:
-        raise EngineFailure("localized_article_copy_not_configured")
-    started = time.monotonic()
-    source_by_id = {str(source["id"]): source for source in sources}
-    localized_rows: list[dict[str, Any]] = []
-    model_call_metrics: list[dict[str, Any]] = []
-    calls = 0
-    for fact in facts:
-        source_id = str(fact["source_id"])
-        source = source_by_id.get(source_id)
-        if source is None or fact["text"] not in str(source.get("evidence", "")):
-            raise EngineFailure("fact_registry_source_span_invalid")
-        local_fact = {
-            **fact,
-            "fact_key": fact["fact_id"],
-            "source_excerpt": fact["text"],
-            "citation_ids": [source_id],
-            "source_url": str(source["url"]),
-        }
-        translation_mode = (
-            "faithful_paraphrase" if fact["source_language"] == language else "translate"
-        )
-
-        def translate_fact(
-            text: str, target: str, approved: list[dict[str, Any]], entities: list[str],
-            selected_mode: str = translation_mode,
-            selected_claim_status: str = str(fact.get("claim_status", "unverified")),
-        ) -> str:
-            return localized_translation(
-                text, target, approved, entities, model, timeout, selected_mode,
-                metrics_sink=model_call_metrics,
-                claim_status=selected_claim_status,
-            )
-
-        row = localize_fact(
-            local_fact,
-            language,
-            translator=translate_fact,
-            glossary=glossary,
-            force_local=True,
-        )
-        calls += int(row["ai_calls"])
-        localized_rows.append(row)
-
-    prefix, summary = copy[language]
-    concise_keyword = search_intent_phrase(keyword)
-    if not concise_keyword:
-        raise EngineFailure("search_intent_phrase_requires_review")
-    if include_title and language != "en":
-        translated_keyword = localized_translation(
-            concise_keyword, language, glossary, sorted(proper_names(concise_keyword)), model, timeout,
-            metrics_sink=model_call_metrics,
-        ).strip()
-        calls += 1
-    else:
-        translated_keyword = concise_keyword
-    title = prefix + translated_keyword if include_title else prefix.rstrip()
-    body = "\n\n".join(
-        str(row["text"]).strip() + " " + " ".join(
-            f"[source:{source_id}]" for source_id in row["source_ids"]
-        )
-        for row in localized_rows
-    )
-    source_ids = list(dict.fromkeys(
-        source_id for row in localized_rows for source_id in row["source_ids"]
-    ))
-    draft = Draft(
-        title=title, body=body, summary=summary,
-        keywords=[translated_keyword], source_ids=source_ids,
-    )
-    checks = {
-        row["fact_id"]: {"status": row["status"], **row["checks"]}
-        for row in localized_rows
-    }
-    draft._metrics = {
-        "localization_adapter": "per_fact_local_json_translation",
-        "localization_facts": len(localized_rows), "model_calls": calls,
-        "inference_calls": model_call_metrics,
-        "fact_localization_elapsed_ms": sum(int(row["elapsed_ms"]) for row in localized_rows),
-        "elapsed_ms": round((time.monotonic() - started) * 1000),
-        "localization_checks": checks,
-        "semantic_accuracy": "human_review_required",
-        "naturalness": "human_review_required",
-    }
-    return draft, {
-        "passed": all(row["status"] == "machine_passed" for row in localized_rows),
-        "fact_checks": checks, "ai_calls": calls,
-    }
+    """Retain the generation extension point without embedding a model adapter."""
+    del facts, sources, language, keyword, glossary, model, timeout, include_title
+    raise EngineFailure("generation_provider_unavailable")
 
 
 def evidence(keyword_id: UUID) -> list[dict[str, Any]]:
@@ -362,12 +262,7 @@ def evidence(keyword_id: UUID) -> list[dict[str, Any]]:
 
 def enqueue(
     keyword_id: UUID, key: str, profile_ids: list[UUID] | None = None, evaluation_only: bool = False,
-    evaluation_model: str | None = None,
 ) -> dict[str, Any]:
-    if evaluation_model is not None and (
-        not evaluation_only or evaluation_model not in EVALUATION_MODEL_ALLOWLIST
-    ):
-        raise EngineFailure("evaluation_model_override_blocked")
     if evaluation_only and _sec_localization_prerequisite_missing(
         keyword_id, key, profile_ids
     ):
@@ -397,8 +292,8 @@ def enqueue(
                 raise EngineFailure("inactive_or_unknown_target")
         if not targets:
             raise EngineFailure("source_profile_required")
-        if not evaluation_only and any(t["model"] in EVALUATION_ONLY_MODELS for t in targets):
-            raise EngineFailure("evaluation_only_model_blocked")
+        if any(t["provider"] != "mock" for t in targets):
+            raise EngineFailure("generation_provider_unavailable")
         if evaluation_only:
             source_profile = conn.execute(
                 """SELECT 1 FROM language_profiles p JOIN languages l ON l.code=p.language_code
@@ -409,20 +304,16 @@ def enqueue(
                 raise EngineFailure("source_profile_required")
         elif targets[0]["profile_id"] != keyword["profile_id"]:
             raise EngineFailure("source_profile_required")
-        if evaluation_only and any(t["provider"] != "local" for t in targets):
-            raise EngineFailure("evaluation_requires_real_local_provider")
+        if evaluation_only and any(t["provider"] not in {"mock", "local"} for t in targets):
+            raise EngineFailure("evaluation_provider_unavailable")
+        if any(t["provider"] == "local" for t in targets):
+            raise EngineFailure("generation_provider_unavailable")
         controls = conn.execute("SELECT evaluation_isolated FROM pipeline_controls").fetchone()
         if evaluation_only and (not controls or not evaluation_database_isolated(conn, controls)):
             raise EngineFailure("evaluation_database_isolation_required")
-        if evaluation_only and evaluation_model is not None and any(
-            t["engine"] != "llamacpp" for t in targets
-        ):
-            raise EngineFailure("evaluation_model_override_engine_invalid")
         fingerprint_material: list[Any] = [
             str(keyword_id), sorted(str(t["profile_id"]) for t in targets), evaluation_only,
         ]
-        if evaluation_model is not None:
-            fingerprint_material.append(evaluation_model)
         fingerprint = hashlib.sha256(json.dumps(fingerprint_material).encode()).hexdigest()
         old = conn.execute(
             "SELECT r.*,g.request_fingerprint FROM job_runs r JOIN generation_jobs g ON g.run_id=r.id WHERE r.idempotency_key=%s",
@@ -480,18 +371,9 @@ def enqueue(
         for t in targets:
             snapshot = json.loads(json.dumps(t, default=str))
             snapshot["evaluation_only"] = evaluation_only
-            if evaluation_model is not None:
-                snapshot["model"] = evaluation_model
-                snapshot["evaluation_model_override"] = True
             conn.execute(
                 "INSERT INTO generation_targets VALUES (%s,%s,%s)",
                 (run["id"], t["profile_id"], Jsonb(snapshot)),
-            )
-        if evaluation_model is not None:
-            emit(
-                conn, "evaluation.model.override", run["id"],
-                model=evaluation_model, target_count=len(targets),
-                reason="bounded local quality experiment; saved settings unchanged",
             )
         emit(conn, "queued", run["id"], keyword_id=str(keyword_id), targets=len(targets))
         return run
@@ -896,7 +778,6 @@ def generate_staged_target(
                     break
             except EngineFailure as exc:
                 retryable_validation = exc.category in {
-                    "invalid_local_model_response", "local_model_timeout", "model_response_too_large",
                     "fact_render_contract_size_invalid", "fact_render_contract_marker_invalid",
                     "fact_render_contract_marker_duplicate", "fact_render_contract_coverage_invalid",
                 }
@@ -990,19 +871,8 @@ def process(run: dict[str, Any]) -> None:
             if not active["enabled"]:
                 raise EngineFailure("profile_processing_disabled")
             snapshot = target["settings_snapshot"]
-            if snapshot["provider"] == "local" and (
-                (not active["language_verified"] and not snapshot.get("evaluation_only"))
-                or active["provider"] != "local"
-                or (
-                    active["model"] != snapshot["model"]
-                    and not (
-                        snapshot.get("evaluation_only")
-                        and snapshot.get("evaluation_model_override")
-                        and snapshot["model"] in EVALUATION_MODEL_ALLOWLIST
-                    )
-                )
-            ):
-                raise EngineFailure("language_support_unverified")
+            if snapshot["provider"] != "mock":
+                raise EngineFailure("generation_provider_unavailable")
             lease = conn.execute(
                 """UPDATE job_runs r SET lease_until=now()+interval '300 seconds'
                 FROM generation_jobs j,pipeline_controls c WHERE r.id=%s AND r.id=j.run_id AND r.status='running'
@@ -1297,6 +1167,8 @@ def evaluation_database_isolated(conn: Any, controls: dict[str, Any]) -> bool:
 
 
 def tick(evaluation_only: bool = False) -> bool:
+    if not PRODUCTION_GENERATOR_CONFIGURED:
+        return False
     with connection() as conn:
         conn.execute("SELECT pg_advisory_xact_lock(781205)")
         recovered = conn.execute("""UPDATE job_runs r SET status=CASE WHEN r.attempts>=3 THEN 'failed' ELSE 'queued' END,
@@ -1402,6 +1274,8 @@ def tick(evaluation_only: bool = False) -> bool:
 def schedule_tick() -> None:
     from zoneinfo import ZoneInfo
 
+    if not PRODUCTION_GENERATOR_CONFIGURED:
+        return
     with connection() as conn:
         conn.execute("SELECT pg_advisory_xact_lock(781203)")
         if required(conn.execute("SELECT paused FROM pipeline_controls").fetchone())["paused"]:

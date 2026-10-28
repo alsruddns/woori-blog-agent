@@ -16,11 +16,3 @@ foreach ($name in @('dashboard', 'api')) {
     [pscustomobject]@{ Service=$name; Port=$service.Port; State='listening'; PID=[int]$pidValue; Executable=$proc.Path; StartedUtc=(Get-ProcessStarted ([int]$pidValue)); ProjectOwned=$owned }
   }
 }
-$aiListeners = Get-Listeners 11435
-if ($aiListeners.Count) {
-  foreach ($pidValue in $aiListeners) {
-    $proc = $table | Where-Object Id -eq ([int]$pidValue) | Select-Object -First 1
-    $owned = $proc -and $proc.CommandLine -and $proc.CommandLine.IndexOf((Join-Path $script:ProjectRoot '.local'),[StringComparison]::OrdinalIgnoreCase) -ge 0
-    [pscustomobject]@{ Service='llama.cpp'; Port=11435; State='listening'; PID=[int]$pidValue; Executable=$proc.Path; StartedUtc=(Get-ProcessStarted ([int]$pidValue)); ProjectOwned=[bool]$owned }
-  }
-} else { [pscustomobject]@{ Service='llama.cpp'; Port=11435; State='stopped'; PID=$null; ProjectOwned=$false } }

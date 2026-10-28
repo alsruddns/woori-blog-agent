@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import Field, field_validator, model_validator
 
 from . import collection, official_research, pipeline, topics, trends
-from .ai import Draft, EngineFailure
+from .ai import PRODUCTION_GENERATOR_CONFIGURED, Draft, EngineFailure
 from .blogger_publication_package import build_publication_package
 from .db import connection
 from .editorial_seo import EditorialSeoMetadata, SearchConsoleSnapshot, evaluate_seo_readiness
@@ -204,19 +204,12 @@ class Generate(Input):
 
 
 class ModelSettings(Input):
-    engine: Literal["ollama", "llamacpp"] = "ollama"
-    provider: Literal["mock", "local"] = "mock"
-    model: str = Field(
-        default="mock-v1", min_length=1, max_length=100, pattern=r"^[a-zA-Z0-9_.:-]+$"
-    )
+    provider: Literal["mock"] = "mock"
+    model: Literal["mock-v1"] = "mock-v1"
     enabled: bool = True
-    language_verified: bool = False
-    verification_reason: str = Field(default="", max_length=1000)
     prompt_id: UUID
     daily_limit: int = Field(default=5, ge=1, le=50)
     evaluation_daily_limit: int = Field(default=2, ge=0, le=50)
-    threads: int = Field(default=2, ge=1, le=4)
-    timeout_seconds: int = Field(default=30, ge=5, le=180)
 
 
 class Prompt(Input):
@@ -383,6 +376,8 @@ class EditorialPreviewRequest(Input):
 
 @router.post("/collections", status_code=201)
 def collect(request: CollectionRequest) -> dict[str, Any]:
+    if request.auto_generate:
+        raise HTTPException(409, "generation_provider_not_configured")
     return collection.request(
         request.source_id, request.profile_id, request.idempotency_key, request.auto_generate
     )
@@ -984,6 +979,8 @@ def discover_official_trend_sources(topic_id: UUID) -> dict[str, Any]:
 
 @router.put("/collections/{source_id}")
 def collection_schedule(source_id: UUID, request: CollectionSchedule) -> dict[str, Any]:
+    if request.auto_generate:
+        raise HTTPException(409, "generation_provider_not_configured")
     with connection() as conn:
         return required(
             conn.execute(
@@ -998,35 +995,6 @@ def collection_schedule(source_id: UUID, request: CollectionSchedule) -> dict[st
                 ),
             ).fetchone()
         )
-
-
-@router.get("/local-ai")
-def local_status() -> dict[str, Any]:
-    import json
-
-    import httpx
-
-    from .ai import EngineFailure
-    from .local_inference import ROOT, auth_headers, runtime
-
-    result: dict[str, Any] = {"available": False, "installed_models": []}
-    folder = ROOT / ".local"
-    if (folder / "manifest.json").exists():
-        manifest = json.loads((folder / "manifest.json").read_text())
-        result["installed_models"] = [
-            {**m, "bytes": (folder / m["name"]).stat().st_size}
-            for m in manifest["models"]
-            if (folder / m["name"]).exists()
-        ]
-    try:
-        info = runtime()
-        with httpx.Client(timeout=2, trust_env=False, headers=auth_headers()) as client:
-            result.update(
-                available=client.get("http://127.0.0.1:11435/health").status_code == 200, **info
-            )
-    except (EngineFailure, httpx.HTTPError):
-        pass
-    return result
 
 
 @router.get("/state")
@@ -1252,6 +1220,13 @@ def state() -> dict[str, Any]:
         result["operational_readiness"] = _operational_readiness_snapshot(conn, result)
         result["publishing_enabled"] = False
         result["paid_ai_enabled"] = False
+        result["generation_capability"] = {
+            "provider_attached": False,
+            "scheduled_generation_enabled": False,
+            "mock_available_for_pipeline_tests": True,
+            "codex_scheduled_execution_implemented": False,
+            "reason": "generation_provider_not_configured",
+        }
         return result
 
 
@@ -2446,7 +2421,7 @@ def localize_evidence(request: LocalizeRequest) -> dict[str, Any]:
             "SELECT code,active FROM languages WHERE code=%s", (request.target_language,)
         ).fetchone()
         profile = conn.execute(
-            """SELECT p.id,g.provider,g.model,g.timeout_seconds,g.enabled,g.language_verified,g.daily_limit,
+            """SELECT p.id,g.daily_limit,
             c.translation_supported FROM language_profiles p
             JOIN generation_settings g ON g.profile_id=p.id
             JOIN language_capabilities c ON c.profile_id=p.id
@@ -2480,60 +2455,19 @@ def localize_evidence(request: LocalizeRequest) -> dict[str, Any]:
     model_name = "deterministic-same-language"
     if fact["source_language"] == request.target_language:
         result = localize_fact(fact, request.target_language, glossary=glossary)
-    elif (
-        profile["provider"] != "local"
-        or not profile["enabled"]
-        or not profile["language_verified"]
-        or not profile["translation_supported"]
-    ):
+    else:
         result = {
             "text": fact["source_excerpt"],
             "source_language": fact["source_language"],
             "target_language": request.target_language,
             "fact_id": fact["fact_key"],
             "source_ids": [str(fact["source_id"])],
-            "status": "held_translation_language_unverified",
-            "checks": {"translation_supported_and_verified": False},
+            "status": "held_translation_provider_unavailable",
+            "checks": {"translation_provider_configured": False},
             "ai_calls": 0,
             "human_review_required": True,
             "publish_ready": False,
         }
-    else:
-        from .ai import EngineFailure
-        from .local_inference import localized_translation
-
-        model_name = profile["model"]
-        translator = lambda excerpt, target, terms, entities: localized_translation(
-            excerpt, target, terms, entities, profile["model"], profile["timeout_seconds"]
-        )
-        try:
-            result = localize_fact(fact, request.target_language, translator, glossary)
-        except EngineFailure as error:
-            result = {
-                "text": "",
-                "source_language": fact["source_language"],
-                "target_language": request.target_language,
-                "fact_id": fact["fact_key"],
-                "source_ids": [str(fact["source_id"])],
-                "status": "held_" + error.category,
-                "checks": {"translation_completed": False},
-                "ai_calls": 1,
-                "human_review_required": True,
-                "publish_ready": False,
-            }
-        except Exception:  # noqa: BLE001 - persist a sanitized hold; never expose model errors.
-            result = {
-                "text": "",
-                "source_language": fact["source_language"],
-                "target_language": request.target_language,
-                "fact_id": fact["fact_key"],
-                "source_ids": [str(fact["source_id"])],
-                "status": "held_localization_failed",
-                "checks": {"translation_completed": False},
-                "ai_calls": 1,
-                "human_review_required": True,
-                "publish_ready": False,
-            }
     metrics = {
         "elapsed_ms": result.get("elapsed_ms"),
         "ai_calls": result.get("ai_calls", 0),
@@ -2571,6 +2505,10 @@ def localize_evidence(request: LocalizeRequest) -> dict[str, Any]:
 
 @router.post("/jobs", status_code=201)
 def generate(request: Generate) -> dict[str, Any]:
+    if not PRODUCTION_GENERATOR_CONFIGURED:
+        raise HTTPException(409, "generation_provider_not_configured")
+    if request.evaluation_only:
+        raise HTTPException(409, "evaluation_provider_unavailable")
     return pipeline.enqueue(
         request.keyword_id, request.idempotency_key, request.profile_ids, request.evaluation_only
     )
@@ -2602,8 +2540,6 @@ def job_action(run_id: UUID, request: JobAction) -> dict[str, Any]:
 
 @router.put("/settings/{profile_id}")
 def settings(profile_id: UUID, request: ModelSettings) -> dict[str, Any]:
-    if request.language_verified and len(request.verification_reason.strip()) < 10:
-        raise HTTPException(422, "Language/model evaluation evidence required")
     fields = request.model_dump()
     with connection() as conn:
         row = conn.execute(
@@ -2643,6 +2579,8 @@ def controls(request: Controls) -> dict[str, Any]:
 
 @router.post("/schedules", status_code=201)
 def schedule(request: Schedule) -> dict[str, Any]:
+    if request.active:
+        raise HTTPException(409, "generation_provider_not_configured")
     try:
         now = datetime.now(ZoneInfo(request.timezone))
         iterator = croniter(request.schedule_cron, now)

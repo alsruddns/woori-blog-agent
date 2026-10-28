@@ -1,3 +1,5 @@
+> Current status: this document contains archived PC specifications and historical local-inference measurements. Qwen3/llama.cpp execution and hosted AI providers are not currently attached; do not use those old commands or measurements as current runtime status. Source-collection policies and trend evidence below remain in effect.
+
 # ??? ???????? ??
 
 ???: 2026-10-26. ?? ???? ?? ???/?? API ?? ???? ???? ???. ?? ??? ?? ??/?? ???? ????????CPC? NULL/?????. ??????quota? ???? ? ?? ?? ??? ????? ???.
@@ -46,7 +48,7 @@ On 2026-10-27, two live KR RSS GET requests returned successfully. The first res
 
 ## AI provider eligibility
 
-The existing local Qwen3 provider remains the only enabled content-generation provider. Gemini API documentation describes a free tier for selected models, but free-tier eligibility is project-specific, the free-tier content handling differs from paid tier, and paid use is activated by linking billing; a project API key alone does not prove that calls remain free. No Gemini credential, billing state, or no-paid-fallback guard was verified for this deployment, so Gemini remains disabled. No remote AI API was called.
+No production content-generation provider is currently enabled. Gemini remains disabled under the zero-cost policy; no remote AI API was called. Historical local Qwen3 evaluation records remain read-only and do not represent an available runtime.
 
 ## P5-CONTENT-001 topic evidence gate (2026-10-27)
 

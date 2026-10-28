@@ -1,3 +1,5 @@
+> Current status: this document records the historical Qwen3 article-evaluation architecture. Its saved results and checks remain available, but the local inference provider and runner have been removed. No production writer is currently attached.
+
 # Phase 3.8-C1: official-source complete article evaluation
 
 ## Data flow
@@ -6,7 +8,7 @@ The durable collection queue remains the only route to external sources. Federal
 
 For evaluation, the latest approved and unexpired Fed and SEC records are selected. Their recorded collection timestamp, publication date, rights review, access policy and source excerpt are retained. A versioned deterministic fact ledger splits source excerpts, hashes each fact, and stores source IDs, entity IDs, numeric/date tokens and extraction version. This is traceability metadata, not an independent fact-check of source truth.
 
-The local-only Qwen3 4B Q4_K_M process receives the fact ledger and source record to create an article in each active database language profile. Draft title, summary, keywords, body, source IDs and measured model/resource metrics are checked separately from source-span verification. Full-article checks cover paragraph citations, numeric and name grounding, language/script, repetitions, source overlap, article structure and title/keyword alignment. Unsupported or unverified claims remain held. Human semantic, naturalness and rights review are distinct fields and never inferred from the machine result.
+Historically, the local-only Qwen3 4B Q4_K_M process received the fact ledger and source record to create evaluation articles. The execution provider and runner have since been retired; saved results and deterministic checks remain. Draft title, summary, keywords, body, source IDs and measured model/resource metrics are checked separately from source-span verification. Full-article checks cover paragraph citations, numeric and name grounding, language/script, repetitions, source overlap, article structure and title/keyword alignment. Unsupported or unverified claims remain held. Human semantic, naturalness and rights review are distinct fields and never inferred from the machine result.
 
 Each topic/language evaluation is append-only in `article_quality_evaluations`; any generated content version is inserted into the existing content group/version model. `seo_audits` records deterministic checks. `publish_ready` is always false and Blogger write remains blocked. Re-running uses a new batch ID and creates new evaluations/versions; it does not edit prior evaluation rows.
 
@@ -22,7 +24,7 @@ The current evaluation is deliberately narrow: one Federal Reserve release and o
 
 `scripts/recheck_article_quality.py` reevaluates an existing batch from saved content versions and source records. It creates a new batch and immutable evaluation rows; it never changes the source rows. A historical model failure without a saved version or response is recorded as not replayable. This avoids claiming that a current parser can explain an output that no longer exists.
 
-For future llama.cpp JSON/schema parse failures, the provider may retry once using the same schema and a different fixed seed. It does not fill missing values or repair factual output. Failed raw responses are stored in a local immutable table with a 16 KiB excerpt limit and SHA-256 of the complete response; audit payloads contain the hash and sanitized identifiers only. Script and keyword checks, grouped-number normalization, internal UUID checks and obvious foreign-script checks are separate gates. These remain heuristics; Japanese Han text, semantic equivalence and naturalness still need editorial review.
+Historical llama.cpp JSON/schema handling retried a parse failure once using the same schema and a different fixed seed. No such runtime retry is currently executable. It does not fill missing values or repair factual output. Failed raw responses are stored in a local immutable table with a 16 KiB excerpt limit and SHA-256 of the complete response; audit payloads contain the hash and sanitized identifiers only. Script and keyword checks, grouped-number normalization, internal UUID checks and obvious foreign-script checks are separate gates. These remain heuristics; Japanese Han text, semantic equivalence and naturalness still need editorial review.
 
 ### Phase 3.9-U source copying and search intent
 

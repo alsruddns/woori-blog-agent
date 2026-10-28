@@ -1,15 +1,9 @@
-param([ValidateSet('api','dashboard','ai','all')][string]$Service='all', [string]$AiModel, [ValidateSet(1,2,3,4)][int]$AiThreads=4, [ValidateSet('cpu','vulkan')][string]$AiBackend='cpu')
+param([ValidateSet('api','dashboard','all')][string]$Service='all')
 . (Join-Path $PSScriptRoot 'server-common.ps1')
 $manifest = Read-ServerManifest
 $table = Get-ProcessTable
 $targets = if ($Service -eq 'all') { @('api','dashboard') } else { @($Service) }
 foreach ($name in $targets) {
-  if ($name -eq 'ai') {
-    if (-not $AiModel) { throw 'Specify the already-installed model explicitly with -AiModel; model downloads are not supported.' }
-    & (Join-Path $script:ProjectRoot '.venv/Scripts/python.exe') (Join-Path $PSScriptRoot 'start-local-ai.py') $AiModel $AiThreads $AiBackend
-    if ($LASTEXITCODE -ne 0) { throw 'Project-local AI startup did not complete.' }
-    continue
-  }
   $port = $script:Services[$name].Port
   $listeners = Get-Listeners $port
   if ($listeners.Count) { throw "Port $port is already occupied. Run scripts/status.ps1 and stop only its verified project-owned process." }

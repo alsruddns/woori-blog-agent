@@ -1,0 +1,65 @@
+{
+  "phase": "P5-CLEANUP-001",
+  "status": "implemented_with_http_secret_scan_unverified",
+  "date_local": "2026-10-28",
+  "branch": "develop",
+  "baseline_commit": "ee88851",
+  "runtime": {
+    "production_generation_provider_attached": false,
+    "codex_or_gpt_scheduled_execution_implemented": false,
+    "local_qwen_llama_execution": "removed_from_repository_runtime",
+    "historical_evaluation_records": "preserved_read_only",
+    "manual_editorial_html_seo_publication_preparation": "preserved"
+  },
+  "external_effects": {
+    "model_inference_calls": 0,
+    "paid_ai_api_calls": 0,
+    "blogger_api_calls": 0,
+    "database_migrations": 0,
+    "operations_database_writes": 0,
+    "local_model_or_shared_engine_files_deleted": 0
+  },
+  "local_artifact_inventory": {
+    "gguf_files": [
+      {"path": ".local/Qwen3-0.6B-Q8_0.gguf", "bytes": 639446688},
+      {"path": ".local/Qwen3-1.7B-Q8_0.gguf", "bytes": 1834426016},
+      {"path": ".local/Qwen3-4B-Q4_K_M.gguf", "bytes": 2497280256},
+      {"path": ".local/Qwen3-8B-Q4_K_M.gguf", "bytes": 5027783488},
+      {"path": ".local/Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf", "bytes": 2497280736}
+    ],
+    "gguf_total_bytes": 12496217184,
+    "gguf_total_gib": 11.638,
+    "engine_directories": [
+      {"path": ".local/llama-b11889", "bytes": 62467869},
+      {"path": ".local/llama-b11889-vulkan", "bytes": 104058653}
+    ],
+    "engine_archives": [
+      {"path": ".local/llama-b11889-bin-win-cpu-x64.zip", "bytes": 24226875},
+      {"path": ".local/llama-b11889-bin-win-vulkan-x64.zip", "bytes": 37049027}
+    ],
+    "inference_key_contents_read": false,
+    "local_files_deleted": false
+  },
+  "verification": {
+    "verify_ps1": "passed",
+    "pytest": {"passed": 248, "failed": 0},
+    "ruff": "passed",
+    "mypy": {"passed": true, "source_files": 35},
+    "wheel": {"passed": true, "sha256": "c33fb0e07067491df75a699b7b5b55f58c22f8a1d05888d89c3037014d54fca2"},
+    "dashboard_eslint": "passed",
+    "nextjs_production_build": "passed",
+    "typescript_typecheck": "passed",
+    "git_diff_check": "passed",
+    "http_secret_scan": {"status": "not_verified", "reason": "Dashboard on 127.0.0.1:3100 was not running; no server was started for this check"},
+    "browser_e2e": "not_run"
+  },
+  "database": {
+    "operations_data_mutated": false,
+    "verification_test_database": "woori_blog_agent_test via rollback fixtures",
+    "before_after_operations_db_snapshot": "not_taken"
+  },
+  "git": {
+    "commit": null,
+    "push": "pending"
+  }
+}
