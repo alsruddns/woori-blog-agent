@@ -89,8 +89,13 @@
     "https://support.google.com/blogger/answer/41373?hl=en",
     "https://support.google.com/blogger/answer/9691230?hl=en"
   ],
-  "commit": null,
-  "push": null,
+  "commit": "d7114ffd3fa7a01e81b4557d0bea25ba128e3501",
+  "push": {
+    "remote": "origin",
+    "branch": "develop",
+    "result": "success",
+    "head_matches_remote": true
+  },
   "post_namespace_css_regression": {
     "article_review_tests": {
       "passed": 26,
