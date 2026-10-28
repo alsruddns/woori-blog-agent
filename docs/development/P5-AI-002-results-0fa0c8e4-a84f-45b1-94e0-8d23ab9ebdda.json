@@ -1,0 +1,213 @@
+{
+  "task_id": "P5-AI-002",
+  "batch_id": "0fa0c8e4-a84f-45b1-94e0-8d23ab9ebdda",
+  "recorded_at": "2026-10-28T12:52:17.712606+09:00",
+  "evaluation_only": true,
+  "package": {
+    "database": "woori_blog_agent_test",
+    "id": "de118f17-ab50-46b7-b99f-4aba51f240ce",
+    "topic_id": "e6424812-46e2-5833-aebd-48a630a0c4a7",
+    "version": 1,
+    "sha256": "81bb85afa4e7d0d3ce2de03d6a5ed06268ff0ba770ad34aba703334c14ca0676",
+    "status": "evidence_collected_pending_human_review",
+    "generation_ready": false,
+    "publish_ready": false,
+    "selection": "held",
+    "verified_fact_count": 8,
+    "independent_source_count": 0,
+    "rights_and_semantics": "human_review_required"
+  },
+  "input": {
+    "language": "zh-CN",
+    "source_language": "zh-TW",
+    "source_ids": [
+      "6fc24e73-2ef6-4c0f-9cdb-3ea4c7a6d0d1",
+      "d55a64b6-0bfc-48eb-a59d-57f9144bc7c9",
+      "f8ab3323-7afa-4481-b006-564fa923d200"
+    ],
+    "fact_ids": [
+      "0450e1d3-9ffe-45cf-a104-2472f3c56514",
+      "d7974ad7-1444-4199-9a38-b3577a92e5d2",
+      "ac673c11-7072-47e4-9b6f-89a42405dbed",
+      "65d80576-7219-4c13-bb83-481929d7783b",
+      "a66cf1de-a0c4-4aa6-8af6-d14595ea22ba",
+      "80367ecb-190a-47fd-9683-997a33e95bb6",
+      "6d66f51e-c248-4651-82a3-71324db2679f",
+      "e0ce1ed1-8002-4d07-9d11-ee729128d0e9"
+    ],
+    "prompt_version": "p5-ai-002-package-article-v1",
+    "prompt_sha256": "5a2d0d4d50d1ad865a8e2e12e3ecf545ccde8de6039e9b9d971f1a958a3bfe54",
+    "max_tokens": 1400,
+    "temperature": 0.2,
+    "seed": 35
+  },
+  "model": {
+    "name": "Qwen3-4B-Q4_K_M.gguf",
+    "engine": "llama.cpp b11889",
+    "backend": "vulkan",
+    "threads": 4,
+    "gpu_layers": 20,
+    "file_size_bytes": 2497280256,
+    "sha256_from_pinned_manifest": "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5",
+    "license": "Apache-2.0",
+    "revision": "bc640142c66e1fdd12af0bd68f40445458f3869b"
+  },
+  "status": "generated_for_evaluation",
+  "draft": {
+    "title": "台湾行政机构提出军公教员工待遇提升方案",
+    "body": "FACT-Fn: 行政院考量近年我國經濟成長率相對優於全球及主要經濟體，且自114年以來，消費者物價指數預估累計成長已逾3％，同時民間企業平均薪資與勞工最低工資亦持續成長，提出「116年度軍公教員工待遇提升方案」，包括「專業加給（含教師學術研究加給）及主管職務加給各定額調增2,000元」及「待遇通案調增4％」二項調薪方案，其中，為具體展現政府及時照顧基層同仁及鼓勵擔任主管的決心，專業加給及主管職務加給定額調增，將提前於今（115）年7月1日生效，並以追加預算方式辦理。\n\nFACT-Fn: 經「專業加給（含教師學術研究加給）及主管職務加給各定額調增2,000元」及「待遇通案調增4％」累加調增待遇後，以支領公務人員專業加給表（二）一般行政各職等人員實際待遇調幅為例，委任第1職等初任人員至簡任第14職等非主管人員約在9.98％至5.88％之間，其中公務人員初考、普考、高考三級初任人員調幅分別為9.98％、8.84％、7.8％。\n\nFACT-Fn: 其中，基於及時提升基層人員待遇及鼓勵擔任主管，專業加給（含教師學術研究加給）及主管職務加給定額調增部分，行政院將以追加預算方式提前至115年7月1日生效，並配合追加預算程序發布。\n\nFACT-Fn: 行政院會今（3）日通過主計總處編具之「115年度中央政府總預算追加預算案」，追加編列6,076億元歲出預算，用以「穩定民生」、「社福加碼」、「提升待遇」、「災後重建」、「強化國防」及「啟動兒少成長津貼」等六大面向，同時今（115）年度舉債將比原編列總預算時減少907億元，全案將函請立法院審議。\n\nFACT-Fn: 在「提升待遇」面向，追溯自115年7月1日起，軍公教人員專業加給及主管加給各調增2,000元，共計編列107億元，以強化政府留才攬才競爭力；\n\nFACT-Fn: 另行政院在預算審查結果未經總統公布，尚無法定預算數前即送出追加預算案，其適法性待酌\n\nFACT-Fn: 一、115年度中央政府總預算追加預算案係於9月提出，惟國防部與海巡署分別編列巨額軍事投資及高比率之海巡相關資本支出，允宜審慎衡酌於有限時程下之執行量能，並覈實編列追加預算\n\nFACT-Fn: 四、軍公教人員待遇調整尚缺乏明確法制及客觀量化基準，允宜建立法制化調整機制，以提升待遇調整之客觀性及透明度",
+    "summary": "台湾行政机构提出军公教员工待遇提升方案，包括专业加给及主管职务加给定额调增2,000元及待遇通案调增4%。该方案将提前于2026年7月1日生效，并通过追加预算方式办理。同时，行政院会通过115年度中央政府总预算追加预算案，追加编列6,076亿元岁出预算，用于提升待遇等六大面向。",
+    "keywords": [
+      "台湾军公教员工待遇提升",
+      "专业加给调增",
+      "预算追加",
+      "2026年7月1日生效",
+      "行政机构预算案"
+    ],
+    "source_ids": [
+      "6fc24e73-2ef6-4c0f-9cdb-3ea4c7a6d0d1",
+      "d55a64b6-0bfc-48eb-a59d-57f9144bc7c9",
+      "f8ab3323-7afa-4481-b006-564fa923d200"
+    ]
+  },
+  "full_article_markdown": "# 台湾行政机构提出军公教员工待遇提升方案\n\n台湾行政机构提出军公教员工待遇提升方案，包括专业加给及主管职务加给定额调增2,000元及待遇通案调增4%。该方案将提前于2026年7月1日生效，并通过追加预算方式办理。同时，行政院会通过115年度中央政府总预算追加预算案，追加编列6,076亿元岁出预算，用于提升待遇等六大面向。\n\nFACT-Fn: 行政院考量近年我國經濟成長率相對優於全球及主要經濟體，且自114年以來，消費者物價指數預估累計成長已逾3％，同時民間企業平均薪資與勞工最低工資亦持續成長，提出「116年度軍公教員工待遇提升方案」，包括「專業加給（含教師學術研究加給）及主管職務加給各定額調增2,000元」及「待遇通案調增4％」二項調薪方案，其中，為具體展現政府及時照顧基層同仁及鼓勵擔任主管的決心，專業加給及主管職務加給定額調增，將提前於今（115）年7月1日生效，並以追加預算方式辦理。\n\nFACT-Fn: 經「專業加給（含教師學術研究加給）及主管職務加給各定額調增2,000元」及「待遇通案調增4％」累加調增待遇後，以支領公務人員專業加給表（二）一般行政各職等人員實際待遇調幅為例，委任第1職等初任人員至簡任第14職等非主管人員約在9.98％至5.88％之間，其中公務人員初考、普考、高考三級初任人員調幅分別為9.98％、8.84％、7.8％。\n\nFACT-Fn: 其中，基於及時提升基層人員待遇及鼓勵擔任主管，專業加給（含教師學術研究加給）及主管職務加給定額調增部分，行政院將以追加預算方式提前至115年7月1日生效，並配合追加預算程序發布。\n\nFACT-Fn: 行政院會今（3）日通過主計總處編具之「115年度中央政府總預算追加預算案」，追加編列6,076億元歲出預算，用以「穩定民生」、「社福加碼」、「提升待遇」、「災後重建」、「強化國防」及「啟動兒少成長津貼」等六大面向，同時今（115）年度舉債將比原編列總預算時減少907億元，全案將函請立法院審議。\n\nFACT-Fn: 在「提升待遇」面向，追溯自115年7月1日起，軍公教人員專業加給及主管加給各調增2,000元，共計編列107億元，以強化政府留才攬才競爭力；\n\nFACT-Fn: 另行政院在預算審查結果未經總統公布，尚無法定預算數前即送出追加預算案，其適法性待酌\n\nFACT-Fn: 一、115年度中央政府總預算追加預算案係於9月提出，惟國防部與海巡署分別編列巨額軍事投資及高比率之海巡相關資本支出，允宜審慎衡酌於有限時程下之執行量能，並覈實編列追加預算\n\nFACT-Fn: 四、軍公教人員待遇調整尚缺乏明確法制及客觀量化基準，允宜建立法制化調整機制，以提升待遇調整之客觀性及透明度\n",
+  "article_sha256": "5b205c8897bdc73ed71193ad88ffca70072cbc4e6da861afbd86b705792f8acd",
+  "quality": {
+    "checks": {
+      "source_ids_valid": true,
+      "no_fabricated_urls": true,
+      "source_urls_well_formed": true,
+      "citation_ids_valid": true,
+      "factual_paragraphs_cited": false,
+      "no_unverified_numbers": false,
+      "proper_names_preserved": true,
+      "no_unsupported_proper_names": true,
+      "no_repeated_paragraphs": true,
+      "no_repeated_sentences": true,
+      "rights_recorded": true,
+      "current_sources": true,
+      "language_script_present": true,
+      "language_metadata_matches": true,
+      "no_obvious_high_risk_claims": true,
+      "article_structure": false,
+      "title_body_alignment": true,
+      "keyword_search_intent_coverage": true,
+      "keywords_are_search_terms_not_internal_ids": true,
+      "no_internal_ids_in_user_text": true,
+      "keyword_list_is_bounded_and_unique": true,
+      "no_forbidden_foreign_script_mixing": true,
+      "target_writing_system_present": true,
+      "legal_access_claims_grounded_in_supplied_source": true,
+      "no_mass_direct_quote": false
+    },
+    "machine_passed": false,
+    "grounding_details": {
+      "proper_name_candidates": [],
+      "missing_proper_names": [],
+      "unsupported_proper_names": [],
+      "unexpected_numbers": [
+        "DATE:2026-07-01"
+      ],
+      "uncited_paragraphs": [
+        "FACT-Fn: 行政院考量近年我國經濟成長率相對優於全球及主要經濟體，且自114年以來，消費者物價指數預估累計成長已逾3％，同時民間企業平均薪資與勞工最低工資亦持續成長，提出「116年度軍公教員工待遇提升方案」，包括「專業加給（含教師學術",
+        "FACT-Fn: 經「專業加給（含教師學術研究加給）及主管職務加給各定額調增2,000元」及「待遇通案調增4％」累加調增待遇後，以支領公務人員專業加給表（二）一般行政各職等人員實際待遇調幅為例，委任第1職等初任人員至簡任第14職等非主管人員",
+        "FACT-Fn: 其中，基於及時提升基層人員待遇及鼓勵擔任主管，專業加給（含教師學術研究加給）及主管職務加給定額調增部分，行政院將以追加預算方式提前至115年7月1日生效，並配合追加預算程序發布。",
+        "FACT-Fn: 行政院會今（3）日通過主計總處編具之「115年度中央政府總預算追加預算案」，追加編列6,076億元歲出預算，用以「穩定民生」、「社福加碼」、「提升待遇」、「災後重建」、「強化國防」及「啟動兒少成長津貼」等六大面向，同時今（",
+        "FACT-Fn: 在「提升待遇」面向，追溯自115年7月1日起，軍公教人員專業加給及主管加給各調增2,000元，共計編列107億元，以強化政府留才攬才競爭力；"
+      ],
+      "invalid_source_urls": []
+    },
+    "human_review_required": true,
+    "semantic_accuracy": "human_review_required",
+    "naturalness": "human_review_required",
+    "rights_review": "human_review_required",
+    "publish_ready": false,
+    "word_count": 683,
+    "section_count": 0,
+    "paragraph_count": 8,
+    "source_overlap_words_max": 30,
+    "fact_count": 8,
+    "script_counts": {
+      "hangul": 0,
+      "kana": 0,
+      "cyrillic": 0,
+      "arabic": 0
+    },
+    "search_intent": "Summarize and explain the supplied official filing/release; not investment advice"
+  },
+  "human_review": {
+    "semantic_accuracy": "required",
+    "naturalness": "required",
+    "source_rights": "required",
+    "editorial_value": "required",
+    "reviewed": false
+  },
+  "metrics": {
+    "provider": "local",
+    "engine": "llama.cpp b11889",
+    "model": "Qwen3-4B-Q4_K_M.gguf",
+    "model_calls": 1,
+    "elapsed_seconds": 167.4,
+    "model_metrics": {
+      "wall_seconds": 166.378,
+      "engine": "llama.cpp b11889",
+      "rss_peak_mib": 1420.43,
+      "process_cpu_mean_percent_machine": 27.89,
+      "system_cpu_peak_percent": 82.4,
+      "gpu_utilization_percent": 100.0,
+      "gpu_layers": 20,
+      "backend": "Vulkan GPU offload",
+      "completion_tokens": 1079,
+      "tokens_per_second_wall": 6.49
+    },
+    "package_fact_count": 8,
+    "package_source_count": 3
+  },
+  "quota": {
+    "timezone": "Asia/Seoul",
+    "used_before": 0,
+    "job_targets": 0,
+    "article_evaluations": 0,
+    "limit": 10,
+    "reserved_by_append_only_start_event": true
+  },
+  "resources": {
+    "before": {
+      "system_cpu_samples_percent": [
+        6.1,
+        6.1,
+        5.3,
+        3.3,
+        1.8
+      ],
+      "system_cpu_peak_percent": 6.1,
+      "ram_total_gib": 31.91,
+      "ram_available_gib": 14.72,
+      "ram_used_percent": 53.9,
+      "project_disk_free_gib": 171.97
+    },
+    "after": {
+      "system_cpu_percent": 23.1,
+      "ram_available_gib": 13.41,
+      "ram_used_percent": 58.0,
+      "project_disk_free_gib": 171.86
+    }
+  },
+  "safety": {
+    "evaluation_database": "woori_blog_agent_eval",
+    "package_database": "woori_blog_agent_test",
+    "operational_database_written": false,
+    "other_project_processes_stopped": false,
+    "model_downloaded": false,
+    "nvidia_calls": 0,
+    "other_external_calls": 0,
+    "blogger_calls": 0,
+    "publish_ready": false,
+    "generation_ready_original_unchanged": false
+  },
+  "error": null,
+  "artifact_paths": {
+    "article_markdown": "docs\\development\\P5-AI-002-article-0fa0c8e4-a84f-45b1-94e0-8d23ab9ebdda.md",
+    "results_json": "docs\\development\\P5-AI-002-results-0fa0c8e4-a84f-45b1-94e0-8d23ab9ebdda.json"
+  }
+}
