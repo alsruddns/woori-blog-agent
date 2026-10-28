@@ -15,6 +15,8 @@ const importItem = {
   received_at: "2026-10-28T10:00:00Z",
   seo_metadata: {},
   blogger_labels: [],
+  sources: [{ source_id: "ui003-source", title: "Official policy notice", organization: "Official Agency", url: "https://example.gov/notice", rights_status: "unknown_rights" }],
+  claims: [{ claim_id: "ui003-claim", claim: "The policy is planned.", source_ids: ["ui003-source"], verification_status: "unverified", factual_state: "planned", evidence_excerpt: "The notice describes a planned change." }],
 };
 
 const importDetail = {
@@ -73,6 +75,12 @@ test("manuscript navigation opens one-click import detail and remains responsive
   await expect(dialog.getByRole("tab", { name: "품질·SEO" })).toBeVisible();
   await dialog.getByRole("tab", { name: "출처·근거" }).click();
   await expect(dialog.getByRole("tabpanel").getByRole("heading", { name: "출처와 주장" })).toBeVisible();
+  await expect(dialog.getByRole("tabpanel")).toContainText("이용 권리 미확인");
+  await expect(dialog.getByRole("tabpanel")).toContainText("사실 검증 미완료");
+  await expect(dialog.getByRole("tabpanel")).toContainText("예정");
+  await expect(dialog.getByRole("tabpanel")).toContainText("Official policy notice");
+  await expect(dialog.getByRole("tabpanel")).not.toContainText("unverified");
+  await expect(dialog.getByRole("tabpanel")).not.toContainText("ui003-source");
   await dialog.getByRole("tab", { name: "원고 편집" }).click();
   await expect(dialog.getByTestId("import-title-input")).toHaveValue(importItem.title);
 

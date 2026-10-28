@@ -9,6 +9,8 @@
     "one_click_external_detail": true,
     "import_screen_focused_on_import": true,
     "publication_ui_korean": true,
+    "source_claim_and_review_status_codes_localized": true,
+    "internal_fact_keys_and_source_ids_hidden_from_user_copy": true,
     "publication_api_state": "503; localized error state verified, populated tabs not verified",
     "legacy_routes_preserved": ["/manuscripts", "/imports", "/research", "/model-comparison"]
   },

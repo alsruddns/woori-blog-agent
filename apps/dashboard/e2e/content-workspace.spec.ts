@@ -96,6 +96,8 @@ test("trend observations render from the isolated six-region database", async ({
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole("link").first()).toHaveAttribute("href", /^https:\/\//);
+  await expect(dialog).not.toContainText("source_span_verified");
+  await expect(dialog).not.toContainText("fact_key");
   await mkdir(screenshots, { recursive: true });
   await page.screenshot({
     path: path.join(screenshots, `P5-UI-003-source-detail-${testInfo.project.name}.png`),
