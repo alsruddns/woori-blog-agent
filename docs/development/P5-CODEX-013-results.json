@@ -94,9 +94,10 @@
     "docs/operations/P5-CODEX-013-publisher-readiness.md"
   ],
   "git": {
-    "commit": "pending commit after validation",
-    "origin_develop_push": "pending",
+    "implementation_commit": "347c18694579f886de30f0c86761da7248b52a1d",
+    "implementation_commit_pushed": true,
     "main_changed": false,
-    "untracked_playwright_directory_preserved": true
+    "untracked_playwright_directory_preserved": true,
+    "results_record_commit": "this follow-up commit; final hash is reported in the completion message"
   }
 }
