@@ -48,6 +48,37 @@ def valid_item(**updates: Any) -> dict[str, Any]:
     return item
 
 
+def reviewable_item() -> dict[str, Any]:
+    evidence = (
+        "The Official Agency published a policy notice describing a change to reporting requirements. "
+        "The notice states that the policy is planned to take effect on 2026-11-01. "
+        "The agency says organizations can use its reporting schedule to prepare for the stated date."
+    )
+    item = valid_item(
+        content_id="reviewable-import-article-001",
+        title="Official Agency policy change and reporting schedule",
+        body_markdown=(
+            "## What the notice says\n\nThe Official Agency notice describes a policy change to reporting requirements and states the planned effective date as 2026-11-01. [source:src-official-1]\n\n"
+            "## Why the schedule matters\n\nOrganizations can use the agency reporting schedule to prepare for the stated date, while checking the published notice for the exact requirements. [source:src-official-1]\n\n"
+            "## What readers should follow\n\nThe Official Agency notice is the reference for any later implementation details, so readers should compare updates with the published schedule. [source:src-official-1]"
+        ),
+        sources=[{"source_id": "src-official-1", "title": "Official Agency reporting notice",
+            "organization": "Official Agency", "url": "https://example.gov/policy",
+            "published_at": "2026-10-20T10:00:00Z", "observed_at": "2026-10-28T02:00:00Z",
+            "language_code": "en", "source_type": "government", "rights_status": "public_domain",
+            "rights_note": "Official material is listed as public domain; a human reviewer must confirm terms."}],
+        claims=[{"claim_id": "claim-effective-date", "claim": "The policy is planned to take effect on 2026-11-01.",
+            "source_ids": ["src-official-1"], "evidence_excerpt": evidence,
+            "verification_status": "unverified", "factual_state": "planned"}],
+        seo={"search_intent": "Understand the reporting policy change", "primary_terms": ["reporting policy"],
+            "related_terms": ["effective date"], "seo_title": "Official Agency policy change and reporting schedule",
+            "search_description": "What the Official Agency notice says about the planned reporting policy change, its effective date, and how organizations can follow the published schedule.",
+            "core_question": "What does the reporting policy notice say?",
+            "core_answer": "It describes a reporting requirement change and gives a planned effective date."},
+    )
+    return item
+
+
 def test_eight_editorial_categories_and_overlapping_deduplication_groups() -> None:
     assert {item["slug"] for item in EDITORIAL_CATEGORIES} == {
         "economy", "finance", "stocks", "crypto", "technology", "semiconductors",
@@ -111,6 +142,7 @@ def test_import_endpoint_is_admin_only_idempotent_and_always_review_held(
             assert first.status_code == 201, first.text
             result = first.json()
             assert result["state"] == "awaiting_human_review"
+            assert result["content_version_id"]
             assert result["generation_ready"] is False and result["publish_ready"] is False
             assert result["provider_called"] is False and result["blogger_write_performed"] is False
             assert result["source_fetch_performed"] is False
@@ -124,9 +156,166 @@ def test_import_endpoint_is_admin_only_idempotent_and_always_review_held(
             assert detail.status_code == 200
             assert detail.json()["item"]["body_markdown"] == submission["item"]["body_markdown"].strip()
             assert detail.json()["publish_ready"] is False
+            assert detail.json()["latest_version"]["content_version_id"] == result["content_version_id"]
+            linked = conn.execute("SELECT title,body FROM content_versions WHERE id=%s", (result["content_version_id"],)).fetchone()
+            assert linked and linked["title"] == submission["item"]["title"]
             listed = client.get("/admin/research/content-imports", headers=headers)
             assert listed.status_code == 200
             assert any(item["id"] == result["import_id"] for item in listed.json()["items"])
+
+
+def test_import_assessment_versions_review_localization_and_mock_are_fail_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with connection() as conn, conn.transaction(force_rollback=True):
+        @contextmanager
+        def shared() -> Iterator[Any]:
+            with conn.transaction():
+                yield conn
+
+        monkeypatch.setattr(content_imports, "connection", shared)
+        headers = {"Authorization": "Bearer " + settings().admin_token}
+        with TestClient(app) as client:
+            submitted = client.post("/admin/research/content-imports", headers=headers,
+                json={"submitted_by": "Reviewer", "item": valid_item()})
+            assert submitted.status_code == 201, submitted.text
+            import_id = submitted.json()["import_id"]
+            detail = client.get(f"/admin/research/content-imports/{import_id}", headers=headers).json()
+            first = detail["latest_version"]
+            assert first["version_number"] == 1
+
+            assessment = client.post(f"/admin/research/content-imports/{import_id}/assessment",
+                headers=headers, json={"version_id": first["id"]})
+            assert assessment.status_code == 201, assessment.text
+            assessed = assessment.json()
+            assert assessed["publish_ready"] is False and assessed["generation_ready"] is False
+            assert assessed["independent_source_verification"] is False
+            assert "<script" not in assessed["safe_html"].casefold()
+
+            version_request = {"base_version_id": first["id"], "title": "A clearer imported manuscript title",
+                "body_markdown": "## Main point\n\n" + ("A revised source-linked explanation that keeps the reader context clear. [source:src-official-1]\n\n" * 2),
+                "seo_metadata": valid_item()["seo"], "blogger_labels": [], "author_label": "Editor",
+                "reason": "Clarify the first paragraph and source note"}
+            edited = client.post(f"/admin/research/content-imports/{import_id}/versions", headers=headers, json=version_request)
+            assert edited.status_code == 201, edited.text
+            second = edited.json()
+            assert second["version_number"] == 2 and second["publish_ready"] is False
+            assert second["content_version_id"]
+            assert second["content_version_id"] != first["content_version_id"]
+            conflict = client.post(f"/admin/research/content-imports/{import_id}/versions", headers=headers, json=version_request)
+            assert conflict.status_code == 409
+            stale = dict(version_request, base_version_id=first["id"], title="Stale edit should not replace a newer version")
+            assert client.post(f"/admin/research/content-imports/{import_id}/versions", headers=headers, json=stale).status_code == 409
+
+            start = client.post(f"/admin/research/content-imports/{import_id}/reviews", headers=headers,
+                json={"version_id": second["version_id"], "disposition": "review_started", "reviewer_label": "Editor",
+                    "reason": "Begin source and rights review"})
+            assert start.status_code == 201
+            denied_pass = client.post(f"/admin/research/content-imports/{import_id}/reviews", headers=headers,
+                json={"version_id": second["version_id"], "disposition": "editorial_review_passed", "reviewer_label": "Editor",
+                    "reason": "Attempt without reviewed documents", "sources_examined": True,
+                    "claims_checked": True, "rights_reviewed": True})
+            # The fixture deliberately fails a deterministic gate; human affirmations cannot override it.
+            assert denied_pass.status_code == 409
+            mock = client.post(f"/admin/research/content-imports/{import_id}/mock-publications", headers=headers,
+                json={"version_id": second["version_id"], "idempotency_key": "import-test-mock-001",
+                    "scenario": "success", "requested_by": "Editor"})
+            assert mock.status_code == 409
+
+            localization = client.post(f"/admin/research/content-imports/{import_id}/localizations", headers=headers,
+                json={"target_language": "ko", "requester_label": "Editor", "reason": "Prepare a Korean edition for review"})
+            assert localization.status_code == 201
+            assert localization.json()["status"] == "awaiting_external_provider"
+            assert localization.json()["generation_provider_available"] is False
+            cancellation = client.post(
+                f"/admin/research/content-imports/{import_id}/localizations/ko/cancel", headers=headers,
+                json={"requester_label": "Editor", "reason": "Cancel the Korean localization request"},
+            )
+            assert cancellation.status_code == 201 and cancellation.json()["status"] == "cancelled"
+            localized_item = valid_item(content_id="localized-article-001", relation="localized",
+                parent_content_id="codex-export-article-001", language_code="ko",
+                target_audiences=[{"language_code": "ko", "target_region": "KR", "reader_relevance_reason": "The documented policy directly affects readers in Korea."}])
+            localized = client.post("/admin/research/content-imports", headers=headers,
+                json={"submitted_by": "Reviewer", "item": localized_item})
+            assert localized.status_code == 201, localized.text
+            assert localized.json()["content_version_id"]
+            repeated_language = client.post(f"/admin/research/content-imports/{import_id}/localizations", headers=headers,
+                json={"target_language": "ko", "requester_label": "Editor", "reason": "Request a duplicate Korean edition"})
+            assert repeated_language.status_code == 409
+            final = client.get(f"/admin/research/content-imports/{import_id}", headers=headers).json()
+            assert final["latest_version"]["id"] == second["version_id"]
+            assert final["editorial_review_status"] == "review_started"
+            assert final["publish_ready"] is False and final["generation_ready"] is False
+
+
+def test_import_review_endpoints_fail_closed_until_migration_047(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Result:
+        def __init__(self, row: dict[str, Any]) -> None:
+            self.row = row
+
+        def fetchone(self) -> dict[str, Any]:
+            return self.row
+
+    class OldSchemaConnection:
+        def execute(self, query: str, params: Any = None) -> Result:
+            if "to_regclass('public.schema_migrations')" in query:
+                return Result({"table_name": "schema_migrations"})
+            if "COALESCE(MAX(version),0)" in query:
+                return Result({"version": 34})
+            raise AssertionError("The old-schema guard must stop before reading import tables")
+
+    old_schema = OldSchemaConnection()
+
+    @contextmanager
+    def shared() -> Iterator[Any]:
+        yield old_schema
+
+    monkeypatch.setattr(content_imports, "connection", shared)
+    headers = {"Authorization": "Bearer " + settings().admin_token}
+    with TestClient(app) as client:
+        response = client.get("/admin/research/content-imports", headers=headers)
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Content import manuscript bridge migration 048 is required"
+
+
+def test_import_machine_review_then_fake_publisher_never_changes_live_readiness(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with connection() as conn, conn.transaction(force_rollback=True):
+        @contextmanager
+        def shared() -> Iterator[Any]:
+            with conn.transaction():
+                yield conn
+
+        monkeypatch.setattr(content_imports, "connection", shared)
+        headers = {"Authorization": "Bearer " + settings().admin_token}
+        with TestClient(app) as client:
+            created = client.post("/admin/research/content-imports", headers=headers,
+                json={"submitted_by": "Review Desk", "item": reviewable_item()})
+            assert created.status_code == 201, created.text
+            import_id = created.json()["import_id"]
+            version = client.get(f"/admin/research/content-imports/{import_id}", headers=headers).json()["latest_version"]
+            assessed_response = client.post(f"/admin/research/content-imports/{import_id}/assessment", headers=headers,
+                json={"version_id": version["id"]})
+            assert assessed_response.status_code == 201, assessed_response.text
+            assessment = assessed_response.json()
+            assert assessment["machine_passed"] is True, assessment["machine_checks"]
+            review = client.post(f"/admin/research/content-imports/{import_id}/reviews", headers=headers, json={
+                "version_id": version["id"], "disposition": "editorial_review_passed", "reviewer_label": "Human editor",
+                "reason": "Documents, claims, and reuse rights were checked directly by the reviewer.",
+                "sources_examined": True, "claims_checked": True, "rights_reviewed": True})
+            assert review.status_code == 201, review.text
+            simulated = client.post(f"/admin/research/content-imports/{import_id}/mock-publications", headers=headers, json={
+                "version_id": version["id"], "idempotency_key": "reviewable-import-mock-001",
+                "scenario": "success", "requested_by": "Human editor"})
+            assert simulated.status_code == 201, simulated.text
+            result = simulated.json()
+            assert result["simulation_only"] is True and result["external_network_calls"] == 0
+            assert result["real_blog_mutated"] is False and result["publish_ready"] is False
+            duplicate = client.post(f"/admin/research/content-imports/{import_id}/mock-publications", headers=headers, json={
+                "version_id": version["id"], "idempotency_key": "reviewable-import-mock-001",
+                "scenario": "success", "requested_by": "Human editor"})
+            assert duplicate.status_code == 201 and duplicate.json()["duplicate"] is True
 
 
 def test_import_schema_and_migration_are_versioned_append_only_and_live_safe() -> None:
@@ -134,7 +323,10 @@ def test_import_schema_and_migration_are_versioned_append_only_and_live_safe() -
     schema = root / "docs/schemas/woori-content-import-1.0.schema.json"
     import json
     contract = json.loads(schema.read_text(encoding="utf-8"))
-    assert contract["properties"]["schema_version"]["const"] == "1.0"
+    assert contract["required"] == ["submitted_by", "item"]
+    assert contract["properties"]["item"]["properties"]["schema_version"]["const"] == "1.0"
+    for sample in (root / "docs/schemas/examples").glob("content-import-*.example.json"):
+        content_imports.ImportSubmission.model_validate(json.loads(sample.read_text(encoding="utf-8")))
     migration = (root / "scripts/045_external_content_imports.sql").read_text(encoding="utf-8").casefold()
     runner = (root / "scripts/migrate.py").read_text(encoding="utf-8")
     provisioner = (root / "scripts/provision-test-database.py").read_text(encoding="utf-8")
@@ -146,5 +338,15 @@ def test_import_schema_and_migration_are_versioned_append_only_and_live_safe() -
         "economy", "finance", "stocks", "crypto", "technology",
         "semiconductors", "artificial-intelligence", "policy",
     ))
-    assert "045_external_content_imports.sql" in runner and '45, "external_content_imports"' in provisioner
+    assert "045_external_content_imports.sql" in runner and "047_import_review_pipeline.sql" in runner
+    assert "048_import_content_version_bridge.sql" in runner
+    assert '45, "external_content_imports"' in provisioner and '47, "import_review_pipeline"' in provisioner
+    assert '48, "import_content_version_bridge"' in provisioner
     assert "drop table" not in migration and "delete from" not in migration
+    review_migration = (root / "scripts/047_import_review_pipeline.sql").read_text(encoding="utf-8").casefold()
+    assert "check (generation_ready=false)" in review_migration and "check (publish_ready=false)" in review_migration
+    assert "before update or delete or truncate" in review_migration
+    bridge_migration = (root / "scripts/048_import_content_version_bridge.sql").read_text(encoding="utf-8").casefold()
+    assert "external_content_import_content_links" in bridge_migration
+    assert "content_versions" in bridge_migration and "before update or delete or truncate" in bridge_migration
+    assert "insert into schema_migrations(version) values(48)" in bridge_migration

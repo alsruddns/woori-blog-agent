@@ -1,0 +1,111 @@
+{
+  "phase": "P5-CODEX-008",
+  "date_kst": "2026-10-28",
+  "branch": "develop",
+  "base_commit": "b4b982e",
+  "operations_database": {
+    "inspection": "read_only_transaction",
+    "database": "woori_blog_agent",
+    "latest_schema_version": 34,
+    "migration_047_applied": false,
+    "migration_048_applied": false,
+    "content_version_rows_read_after": 360,
+    "audit_event_rows_read_after": 1422,
+    "writes_performed": 0,
+    "migrations_043_to_048_applied": [],
+    "migration_state_note": "Operations DB is schema 34; migrations 043-048 are not applied. No migration/write was performed."
+  },
+  "test_database": {
+    "database": "woori_blog_agent_test",
+    "latest_schema_version": 48,
+    "operations_connect_denied_for_test_app_role": true,
+    "external_import_rows_after_test": 22,
+    "import_versions_mapped_to_content_versions": 42,
+    "review_events_after_test": 16,
+    "fake_publication_attempts_after_test": 15,
+    "assessment_rows_with_ready_flags": 0,
+    "real_blog_mutations_or_network_calls": 0,
+    "import_versions": 42,
+    "mapped_content_versions": 42,
+    "real_blog_mutations": 0,
+    "external_network_calls": 0
+  },
+  "pipeline": {
+    "manual_import": [
+      "JSON text",
+      "JSON file up to 150 KB"
+    ],
+    "import_versioning": "append_only",
+    "existing_manuscript_model_mapping": "immutable content_versions link per imported version; unreviewed versions remain blocked in existing publisher gates",
+    "duplicate_import": "idempotent",
+    "stale_edit": "conflict_409",
+    "assessment": [
+      "article_quality_heuristics",
+      "seo_readiness",
+      "safe_markdown_html"
+    ],
+    "source_independent_verification": false,
+    "generation_ready": false,
+    "publish_ready": false,
+    "localization_provider_available": false,
+    "localization_state": "awaiting_external_provider",
+    "publication_test": "FakeBloggerPublisher_only",
+    "real_blogger_calls": 0,
+    "other_external_api_calls": 0
+  },
+  "browser_e2e": {
+    "runner": "Playwright Chromium",
+    "projects": [
+      "desktop",
+      "mobile"
+    ],
+    "viewports_px": [
+      320,
+      390,
+      768,
+      1280
+    ],
+    "scenario": "invalid input, JSON file import, duplicate, edit/version, assessment, preview, human attestations, fake publication, localization request/cancel",
+    "result": "passed",
+    "external_requests": 0,
+    "unexpected_console_errors": 0,
+    "expected_console_conditions": [
+      "invalid JSON returns HTTP 422",
+      "sandboxed preview blocks scripts"
+    ],
+    "screenshots": [
+      "assets/P5-CODEX-008-import-desktop-320.png",
+      "assets/P5-CODEX-008-import-desktop-390.png",
+      "assets/P5-CODEX-008-import-desktop-768.png",
+      "assets/P5-CODEX-008-import-desktop-1280.png",
+      "assets/P5-CODEX-008-import-mobile-320.png",
+      "assets/P5-CODEX-008-import-mobile-390.png",
+      "assets/P5-CODEX-008-import-mobile-768.png",
+      "assets/P5-CODEX-008-import-mobile-1280.png"
+    ]
+  },
+  "targeted_tests": {
+    "pytest_content_imports": "9 passed",
+    "pytest_full": "266 passed",
+    "ruff_full": "passed",
+    "mypy_api": "passed, 38 source files",
+    "python_wheel": "passed",
+    "dashboard_lint": "passed",
+    "dashboard_typecheck": "passed",
+    "dashboard_production_build": "passed",
+    "verify_secrets_http": "passed in isolated test mode",
+    "git_diff_check": "passed"
+  },
+  "git": {
+    "commit": "See final report; the result document is included in that commit.",
+    "push": "Pending final verification.",
+    "main_changed": false
+  },
+  "not_done": [
+    "operations migrations 043-048",
+    "ChatGPT scheduled task automatic file delivery",
+    "AI localization generation",
+    "real Blogger draft or public write",
+    "automatic publication activation"
+  ]
+}
