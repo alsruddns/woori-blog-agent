@@ -1,0 +1,102 @@
+{
+  "task_id": "P5-CODEX-013",
+  "recorded_at": "2026-10-29T01:30:00+09:00",
+  "branch": "develop",
+  "status": "partial_fail_closed",
+  "objective": "Harden Blogger Auto Publisher readiness and recovery without operational DB mutation or real Blogger writes.",
+  "phase_012_precondition": {
+    "status": "partial_readiness_review_only",
+    "production_generation_provider": false,
+    "gpt_scheduled_local_delivery_verified": false,
+    "live_blogger_writer": false,
+    "mock_publisher_only": true
+  },
+  "operations_database_read_only_snapshot": {
+    "database": "woori_blog_agent",
+    "schema_version": 34,
+    "content_versions": 360,
+    "audit_events": 1422,
+    "publishing_jobs": 1,
+    "publishing_records": 0,
+    "blogger_write_operations_ledger_rows": 4,
+    "unapplied_repository_migrations": [
+      "035-048"
+    ],
+    "unapplied_migration_count": 14,
+    "interpretation": "blogger_write_operations is a local ledger count and does not establish that any public post exists"
+  },
+  "implemented": [
+    {
+      "area": "migration runner version guard",
+      "change": "scripts/migrate.py now supports repository schema version 048; test asserts the guard matches the highest migration file",
+      "operational_migration_applied": false
+    },
+    {
+      "area": "publisher recovery guidance",
+      "change": "Documented fail-closed handling of auth errors, 429/quota, ambiguous POST timeout, local persistence failure, manual Blogger edits, and post-publication validation failure",
+      "live_network_recovery_implemented": false
+    }
+  ],
+  "publisher_state": {
+    "real_blogger_adapter": false,
+    "worker_adapter": "fake_only",
+    "default_mode": "manual",
+    "auto_live_approval": false,
+    "publish_ready_changed": false,
+    "per_blog_hourly_cap_10_implemented": false,
+    "per_blog_daily_cap_and_interval": "existing policy model, live publishing remains blocked",
+    "durable_live_idempotency_and_reconciliation": false,
+    "post_publish_public_http_verification": false,
+    "oauth_write_scope_currently_verified_this_run": false,
+    "google_cloud_project_quota_and_billing_verified_this_run": false
+  },
+  "verification": {
+    "focused_pytest": {
+      "command": ".venv\\Scripts\\python.exe -m pytest -q services/api/tests/test_migration_runner_guard.py services/api/tests/test_publications.py services/api/tests/test_google.py",
+      "passed": 45,
+      "failed": 0
+    },
+    "full_verify_ps1": {
+      "command": ".\\scripts\\verify.ps1",
+      "status": "passed",
+      "ruff": "passed",
+      "mypy": "passed",
+      "pytest": {
+        "passed": 275,
+        "failed": 0
+      },
+      "wheel": "passed",
+      "dashboard_eslint": "passed",
+      "dashboard_production_build": "passed",
+      "dashboard_typescript": "passed",
+      "git_diff_check": "passed"
+    }
+  },
+  "side_effects": {
+    "operations_db_mutations": 0,
+    "migrations_applied": 0,
+    "blogger_api_requests": 0,
+    "blogger_posts_created_modified_deleted": 0,
+    "paid_ai_api_calls": 0,
+    "new_external_oauth_consent": 0,
+    "backup_or_restore_rehearsal": "not_run; existing rehearsal script appends a completion event to the source DB"
+  },
+  "official_blogger_docs_reviewed": [
+    "https://developers.google.com/blogger/docs/3.0/reference/posts/insert",
+    "https://developers.google.com/blogger/docs/3.0/reference/posts?hl=en",
+    "https://developers.google.com/blogger/docs/3.0/reference/posts/list"
+  ],
+  "files": [
+    "scripts/migrate.py",
+    "services/api/tests/test_migration_runner_guard.py",
+    "docs/development/P5-CODEX-013.md",
+    "docs/development/P5-CODEX-013-results.json",
+    "docs/operations/P5-CODEX-013-publisher-readiness.md"
+  ],
+  "git": {
+    "commit": "pending commit after validation",
+    "origin_develop_push": "pending",
+    "main_changed": false,
+    "untracked_playwright_directory_preserved": true
+  }
+}
