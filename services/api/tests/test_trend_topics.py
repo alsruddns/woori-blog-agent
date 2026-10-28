@@ -240,3 +240,43 @@ def test_scoring_policy_is_versioned_and_thresholds_cannot_be_relaxed(lab: Any) 
     assert api.get("/admin/research/topics", headers=headers).json()["scoring_config"]["version"] == 2
     request["thresholds"]["minimum_score"] = 69
     assert api.post("/admin/research/topics/scoring-configs", headers=headers, json=request).status_code == 422
+
+
+def test_complete_machine_evidence_stays_pending_human_review(lab: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    conn, _api, _headers = lab
+
+    @contextmanager
+    def shared_connection() -> Any:
+        with conn.transaction():
+            yield conn
+
+    monkeypatch.setattr(topics, "connection", shared_connection)
+    run_id, observation_id = uuid4(), uuid4()
+    digest = (uuid4().hex * 2)[:64]
+    conn.execute("INSERT INTO trend_collection_runs(id,provider,geo,status,response_sha256,item_count) VALUES (%s,'google_trends_rss','TW','succeeded',%s,1)", (run_id, digest))
+    conn.execute("""INSERT INTO trend_observations(id,run_id,geo,platform,query,source_rank,source_volume_label,collected_at,source_url,response_sha256)
+        VALUES (%s,%s,'TW','google_trends','Synthetic narrow policy event',NULL,'1,000+',now(),'https://trends.google.com/trending/rss?geo=TW',%s)""", (observation_id, run_id, digest))
+    topics.build_candidates(lookback_hours=1)
+    topic_id = conn.execute("SELECT topic_id FROM trend_topic_memberships WHERE observation_id=%s", (observation_id,)).fetchone()["topic_id"]
+    profile = conn.execute("SELECT id FROM language_profiles WHERE language_code='en' LIMIT 1").fetchone()
+    category = conn.execute("SELECT id FROM categories WHERE slug='finance'").fetchone()
+    keyword_id = conn.execute("""INSERT INTO keyword_candidates(profile_id,category_id,keyword,normalized_keyword,search_intent,collection_source,rationale,expires_at,priority)
+        VALUES (%s,%s,%s,%s,'source evidence test','official source fixture','Isolated fixture; source independence remains unreviewed.',now()+interval '1 day',50) RETURNING id""", (profile["id"], category["id"], "machine evidence " + uuid4().hex, "machine-evidence-" + uuid4().hex)).fetchone()["id"]
+    source_ids = []
+    for index in range(2):
+        source_id = conn.execute("""INSERT INTO research_sources(keyword_id,url,source_name,collected_at,evidence,reliability_reason,rights,access_policy,valid_until,is_primary,revision,source_language)
+            VALUES (%s,%s,%s,now(),%s,'Allowlisted test fixture','Test rights pending human review','Isolated test fixture only',now()+interval '1 day',true,1,'en') RETURNING id""", (keyword_id, f"https://example.invalid/{uuid4().hex}", f"Source {index}", f"Fact span {index} has verified value {index + 1}.\n")).fetchone()["id"]
+        source_ids.append(source_id)
+        conn.execute("INSERT INTO source_reviews(source_id,approved,reason,reviewer,source_language) VALUES (%s,true,'Machine provenance fixture only; human review remains pending.','collector:test-fixture','en')", (source_id,))
+        conn.execute("INSERT INTO trend_topic_sources(topic_id,research_source_id,link_reason,linked_by,idempotency_key) VALUES (%s,%s,'Test evidence link','collector:test-fixture',%s)", (topic_id, source_id, "machine-link-" + uuid4().hex))
+        conn.execute("""INSERT INTO evidence_facts(fact_key,source_id,source_language,source_excerpt,entity_ids,numeric_values,date_values,citation_ids,verification_status,extractor_version)
+            VALUES (%s,%s,'en',%s,'{}',%s,'[]',%s,'source_span_verified','test-span')""", ("machine-fact-" + uuid4().hex, source_id, f"Fact span {index} has verified value {index + 1}.", Jsonb({str(index + 1): str(index + 1)}), [source_id]))
+    conn.execute("""INSERT INTO evidence_facts(fact_key,source_id,source_language,source_excerpt,entity_ids,numeric_values,date_values,citation_ids,verification_status,extractor_version)
+        VALUES (%s,%s,'en','A third exact source span records a verified policy date.','{}','[]','[]',%s,'source_span_verified','test-span')""", ("machine-fact-" + uuid4().hex, source_ids[0], [source_ids[0]]))
+    package = topics.build_package(topic_id)
+    assert package["status"] == "evidence_collected_pending_human_review"
+    assert package["verified_fact_count"] == 3
+    assert package["independent_source_count"] == 0
+    assert package["payload"]["human_review_required"] is True
+    assert package["payload"]["generation_ready"] is False
+    assert package["payload"]["publish_ready"] is False

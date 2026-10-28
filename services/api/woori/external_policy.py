@@ -8,6 +8,9 @@ import re
 import threading
 import time
 from collections import deque
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any, NoReturn
@@ -93,6 +96,23 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "paths": ("/trending/rss",),
         "cost": "Google Trends public RSS export; no key, metered API, or billing account used; application hard caps apply",
         "commercial_use": "Google Trends help documents RSS export; preserve trend attribution and Google terms; no search-volume ranks are inferred",
+        "zero_cost_reviewed": True,
+    },
+    "taiwan_official_documents": {
+        "hosts": {"www.ey.gov.tw", "www.ly.gov.tw"},
+        "methods": {"GET"},
+        "rpm": 8,
+        "rph": 8,
+        "operations": {"source_collection"},
+        "paths_by_host": {
+            "www.ey.gov.tw": (
+                "/robots.txt", "/Page/448DE008087A1971/5020ed44-2196-4da0-9dbe-fe6ae7f44afc",
+                "/Page/9277F759E41CCD91/e6b90fcf-0d42-40e3-b001-1c790c076657", "/Page/2EADDBFEDDB6357E",
+            ),
+            "www.ly.gov.tw": ("/robots.txt", "/Pages/List.aspx", "/Pages/Detail.aspx"),
+        },
+        "cost": "public official web pages; no key, account, or per-request fee identified; low bounded GET quota",
+        "commercial_use": "EY and LY reuse notices permit attributed reuse subject to stated exceptions; rights and semantic review remain required",
         "zero_cost_reviewed": True,
     },
     "artifact_setup": {
@@ -189,6 +209,16 @@ TERMS_REVIEWED_AT = date(2026, 10, 26)
 TERMS_REVIEW_DUE = date(2027, 1, 26)
 _lock = threading.Lock()
 _windows: dict[tuple[str, int], deque[float]] = {}
+_external_run_id: ContextVar[str | None] = ContextVar("external_run_id", default=None)
+
+
+@contextmanager
+def external_run(run_id: str) -> Iterator[None]:
+    token = _external_run_id.set(run_id)
+    try:
+        yield
+    finally:
+        _external_run_id.reset(token)
 
 
 def _dotenv_names() -> dict[str, str]:
@@ -332,10 +362,39 @@ def _audit(provider: str, operation: str, phase: str, **fields: Any) -> None:
 
     from .db import connection
 
+    run_id = _external_run_id.get()
+    payload = {"provider": provider, "operation": operation, **fields}
+    if run_id:
+        payload["run_id"] = run_id
     with connection() as conn:
         conn.execute(
             "INSERT INTO audit_events(event_type,payload) VALUES (%s,%s)",
-            (f"external.{phase}", Jsonb({"provider": provider, "operation": operation, **fields})),
+            (f"external.{phase}", Jsonb(payload)),
+        )
+
+
+def _reserve_taiwan_official_call(host: str, method: str, hourly_limit: int) -> None:
+    """Persist the rolling-hour reservation so restarting cannot reset its cap."""
+    from psycopg.types.json import Jsonb
+
+    from .db import connection
+
+    with connection() as conn:
+        conn.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+            ("external-provider:taiwan_official_documents:rolling-hour",),
+        )
+        count = conn.execute(
+            """SELECT count(*) AS n FROM audit_events
+            WHERE event_type='external.call.started'
+              AND payload->>'provider'='taiwan_official_documents'
+              AND created_at >= now()-interval '1 hour'"""
+        ).fetchone()
+        if count is None or count["n"] >= hourly_limit:
+            raise FreeQuotaExceeded("durable_free_hourly_call_limit_reached")
+        conn.execute(
+            "INSERT INTO audit_events(event_type,payload) VALUES (%s,%s)",
+            ("external.call.started", Jsonb({"provider": "taiwan_official_documents", "operation": "source_collection", "host": host, "method": method, "run_id": _external_run_id.get()})),
         )
 
 
@@ -424,7 +483,10 @@ def _authorize(provider: str, operation: str, request: httpx.Request) -> None:
         for seconds in (60, 3600):
             _windows[(provider, seconds)].append(now)
     try:
-        _audit(provider, operation, "call.started", host=parsed.host, method=request.method)
+        if provider == "taiwan_official_documents":
+            _reserve_taiwan_official_call(parsed.host, request.method, rule["rph"])
+        else:
+            _audit(provider, operation, "call.started", host=parsed.host, method=request.method)
     except psycopg.Error:
         raise ExternalCallBlocked("audit_unavailable") from None
 

@@ -301,3 +301,8 @@
 - Added actual HTTP response status capture for future RSS runs; historical statuses remain null where they were never recorded.
 - Extended `/research` with topic assessment, reviewed source linking, package inspection, and event-group review controls.
 - Tested US, JP, TW, HK and SG Google Trends RSS in the isolated test DB: ten observations each; source rank remained null. All 60 candidates are held; no reviewed factual sources were present, so the example package remains `insufficient_evidence`. No article, AI call, Blogger write, or operations DB migration occurred.
+## P5-CONTENT-002 actual source research (2026-10-28)
+- Added a bounded official-source retriever for an exact Taiwan trend, persisting source revisions, robots/reuse checks, exact source spans, typed facts, package links, and append-only run/provider audits in the isolated test database.
+- Captured three official documents from Taiwan's Executive Yuan and Legislative Yuan, verified eight source excerpts, and created a Research Package that remains held for human source-independence, rights, contextual-accuracy, and reader-value review. No ranking or search volume was inferred from the RSS label.
+- Added an explicit Korean UI distinction between automated provenance checks and human source review. Machine evidence status does not imply content generation or publication readiness.
+- All operational database and Blogger state remained unchanged. No paid API, AI inference, or Blogger request was made. Browser E2E was blocked by execution policy; authenticated isolated FastAPI list/detail integration passed.

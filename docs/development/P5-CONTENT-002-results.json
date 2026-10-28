@@ -1,0 +1,675 @@
+{
+  "task_id": "P5-CONTENT-002",
+  "created_at_kst": "2026-10-28",
+  "branch": "develop",
+  "database_isolation": {
+    "test": {
+      "database": "woori_blog_agent_test",
+      "role": "woori_test_app",
+      "server": "127.0.0.1/32",
+      "schema": 40,
+      "counts": {
+        "trend_observations": 60,
+        "trend_topics": 60,
+        "research_sources": 3,
+        "evidence_facts": 8,
+        "trend_research_packages": 2,
+        "audit_events": 196,
+        "blogger_api_calls": 0
+      }
+    },
+    "operations": {
+      "database": "woori_blog_agent",
+      "role": "woori_owner",
+      "server": "::1/128",
+      "schema": 34,
+      "content_versions": 360,
+      "audit_events": 1422,
+      "trend_observations_table": false,
+      "blogger_api_calls_total_historical": 152,
+      "blogger_api_calls_since_phase_start": 0,
+      "last_blogger_api_call_at": "2026-10-27T22:27:56.379338+09:00",
+      "changed_by_this_task": false,
+      "migration_applied": false
+    }
+  },
+  "trend": {
+    "observation_id": "0f48b072-29c1-4a80-9e87-5fcc9b795fa5",
+    "query": "國 軍 加 薪",
+    "geo": "TW",
+    "platform": "google_trends",
+    "source_rank": null,
+    "source_language": null,
+    "raw_source_interest_label": "10000+",
+    "source_url": "https://trends.google.com/trending/rss?geo=TW",
+    "note": "Preserved as source-provided label only; not interpreted as search volume or rank."
+  },
+  "discovery": {
+    "topic_id": "e6424812-46e2-5833-aebd-48a630a0c4a7",
+    "topic_score": 78.79,
+    "topic_decision": "held",
+    "reason_codes": [
+      "two_independent_sources_not_human_verified",
+      "reader_value_and_analysis_fit_require_human_review"
+    ],
+    "score_thresholds_changed": false,
+    "previous_attempt": {
+      "error": "required_source_fact_span_not_found",
+      "provider_calls": 7,
+      "http_200": 7,
+      "persisted_sources": 0,
+      "cause": "Legislative report required evidence appeared in separate list items; first parser required a single sentence."
+    },
+    "successful_run_id": "b4834d52-b147-4879-b416-aa6aa7e4ea7a",
+    "started_at": "2026-10-28T11:05:14.540268+09:00",
+    "completed_at": "2026-10-28T11:05:29.202904+09:00",
+    "provider_calls_started": 7,
+    "provider_calls_http_200": 7,
+    "provider_calls_total_across_attempts": 14,
+    "documents_captured": 3,
+    "all_requests_via_allowlisted_gate": true,
+    "robots_and_reuse_notices_checked": true
+  },
+  "sources": [
+    {
+      "source_id": "6fc24e73-2ef6-4c0f-9cdb-3ea4c7a6d0d1",
+      "name": "Executive Yuan — 116年度軍公教員工待遇提升方案",
+      "url": "https://www.ey.gov.tw/Page/448DE008087A1971/5020ed44-2196-4da0-9dbe-fe6ae7f44afc",
+      "published_at": "2026-07-02T09:00:00+09:00",
+      "collected_at": "2026-10-28T11:05:18.341173+09:00",
+      "rights_notice": "Official website reuse notice allows no-charge reuse, reproduction, modification and public transmission with attribution; third-party and specially restricted works are excluded. Human source-rights confirmation remains required.",
+      "access_policy": "Fixed allowlisted HTTPS page; robots.txt checked; one bounded 1 MiB GET; redirects, authentication and retries disabled; cite the official page. Rights notice: https://www.ey.gov.tw/Page/2EADDBFEDDB6357E.",
+      "body_sha256": "eb564ab2c83d170c8eb3e2315c7c667e856971bd26d2b781127efa1c063edd31",
+      "revision": 1,
+      "fact_count": 3,
+      "independence_review": "unreviewed",
+      "published_date": "2026-07-02",
+      "published_time_status": "not stated by source"
+    },
+    {
+      "source_id": "d55a64b6-0bfc-48eb-a59d-57f9144bc7c9",
+      "name": "Executive Yuan — 115年度中央政府總預算追加預算案",
+      "url": "https://www.ey.gov.tw/Page/9277F759E41CCD91/e6b90fcf-0d42-40e3-b001-1c790c076657",
+      "published_at": "2026-09-03T09:00:00+09:00",
+      "collected_at": "2026-10-28T11:05:20.715404+09:00",
+      "rights_notice": "Official website reuse notice allows no-charge reuse, reproduction, modification and public transmission with attribution; third-party and specially restricted works are excluded. Human source-rights confirmation remains required.",
+      "access_policy": "Fixed allowlisted HTTPS page; robots.txt checked; one bounded 1 MiB GET; redirects, authentication and retries disabled; cite the official page. Rights notice: https://www.ey.gov.tw/Page/2EADDBFEDDB6357E.",
+      "body_sha256": "7de8f7f6fd54ae3615783ad6fe3fe810535489650e115faa98dd0665b558a4f0",
+      "revision": 1,
+      "fact_count": 2,
+      "independence_review": "unreviewed",
+      "published_date": "2026-09-03",
+      "published_time_status": "not stated by source"
+    },
+    {
+      "source_id": "f8ab3323-7afa-4481-b006-564fa923d200",
+      "name": "Legislative Yuan Budget Center — 115年度中央政府總預算追加預算案評估報告",
+      "url": "https://www.ly.gov.tw/Pages/List.aspx?nodeid=56728",
+      "published_at": null,
+      "collected_at": "2026-10-28T11:05:29.497424+09:00",
+      "rights_notice": "Official website reuse notice allows no-charge reuse, reproduction, modification and public transmission with attribution; third-party and specially restricted works are excluded. Human source-rights confirmation remains required.",
+      "access_policy": "Fixed allowlisted HTTPS page; robots.txt checked; one bounded 1 MiB GET; redirects, authentication and retries disabled; cite the official page. Rights notice: https://www.ly.gov.tw/Pages/List.aspx?nodeid=10772.",
+      "body_sha256": "d9c96bd1070f1d0ab717be5665a1182197fddf5f9c4ac352022960ef0269a0bf",
+      "revision": 1,
+      "fact_count": 3,
+      "independence_review": "unreviewed",
+      "published_date": null,
+      "published_time_status": "not supplied by source"
+    }
+  ],
+  "facts": [
+    {
+      "fact_id": "0450e1d3-9ffe-45cf-a104-2472f3c56514",
+      "fact_key": "0db2846c3465ea2032b9",
+      "source_id": "6fc24e73-2ef6-4c0f-9cdb-3ea4c7a6d0d1",
+      "source_name": "Executive Yuan — 116年度軍公教員工待遇提升方案",
+      "source_url": "https://www.ey.gov.tw/Page/448DE008087A1971/5020ed44-2196-4da0-9dbe-fe6ae7f44afc",
+      "excerpt": "經「專業加給（含教師學術研究加給）及主管職務加給各定額調增2,000元」及「待遇通案調增4％」累加調增待遇後，以支領公務人員專業加給表（二）一般行政各職等人員實際待遇調幅為例，委任第1職等初任人員至簡任第14職等非主管人員約在9.98％至5.88％之間，其中公務人員初考、普考、高考三級初任人員調幅分別為9.98％、8.84％、7.8％。",
+      "entities": [],
+      "numeric_values": [
+        "1.0",
+        "14.0",
+        "2000.0",
+        "4.0",
+        "5.88",
+        "7.8",
+        "8.84",
+        "9.98"
+      ],
+      "date_values": [],
+      "verification_status": "source_span_verified",
+      "extractor_version": "fact-ledger-v1"
+    },
+    {
+      "fact_id": "ac673c11-7072-47e4-9b6f-89a42405dbed",
+      "fact_key": "67cf96b6a3ddf97d952a",
+      "source_id": "6fc24e73-2ef6-4c0f-9cdb-3ea4c7a6d0d1",
+      "source_name": "Executive Yuan — 116年度軍公教員工待遇提升方案",
+      "source_url": "https://www.ey.gov.tw/Page/448DE008087A1971/5020ed44-2196-4da0-9dbe-fe6ae7f44afc",
+      "excerpt": "行政院考量近年我國經濟成長率相對優於全球及主要經濟體，且自114年以來，消費者物價指數預估累計成長已逾3％，同時民間企業平均薪資與勞工最低工資亦持續成長，提出「116年度軍公教員工待遇提升方案」，包括「專業加給（含教師學術研究加給）及主管職務加給各定額調增2,000元」及「待遇通案調增4％」二項調薪方案，其中，為具體展現政府及時照顧基層同仁及鼓勵擔任主管的決心，專業加給及主管職務加給定額調增，將提前於今（115）年7月1日生效，並以追加預算方式辦理。",
+      "entities": [],
+      "numeric_values": [
+        "1.0",
+        "114.0",
+        "115.0",
+        "116.0",
+        "2000.0",
+        "3.0",
+        "4.0",
+        "7.0"
+      ],
+      "date_values": [],
+      "verification_status": "source_span_verified",
+      "extractor_version": "fact-ledger-v1"
+    },
+    {
+      "fact_id": "d7974ad7-1444-4199-9a38-b3577a92e5d2",
+      "fact_key": "1c66db3affc3d7dd3f1f",
+      "source_id": "6fc24e73-2ef6-4c0f-9cdb-3ea4c7a6d0d1",
+      "source_name": "Executive Yuan — 116年度軍公教員工待遇提升方案",
+      "source_url": "https://www.ey.gov.tw/Page/448DE008087A1971/5020ed44-2196-4da0-9dbe-fe6ae7f44afc",
+      "excerpt": "其中，基於及時提升基層人員待遇及鼓勵擔任主管，專業加給（含教師學術研究加給）及主管職務加給定額調增部分，行政院將以追加預算方式提前至115年7月1日生效，並配合追加預算程序發布。",
+      "entities": [],
+      "numeric_values": [
+        "1.0",
+        "115.0",
+        "7.0"
+      ],
+      "date_values": [
+        "DATE:2026-07-01"
+      ],
+      "verification_status": "source_span_verified",
+      "extractor_version": "fact-ledger-v1"
+    },
+    {
+      "fact_id": "65d80576-7219-4c13-bb83-481929d7783b",
+      "fact_key": "8430e1dca33184ca7b8a",
+      "source_id": "d55a64b6-0bfc-48eb-a59d-57f9144bc7c9",
+      "source_name": "Executive Yuan — 115年度中央政府總預算追加預算案",
+      "source_url": "https://www.ey.gov.tw/Page/9277F759E41CCD91/e6b90fcf-0d42-40e3-b001-1c790c076657",
+      "excerpt": "行政院會今（3）日通過主計總處編具之「115年度中央政府總預算追加預算案」，追加編列6,076億元歲出預算，用以「穩定民生」、「社福加碼」、「提升待遇」、「災後重建」、「強化國防」及「啟動兒少成長津貼」等六大面向，同時今（115）年度舉債將比原編列總預算時減少907億元，全案將函請立法院審議。",
+      "entities": [],
+      "numeric_values": [
+        "115.0",
+        "3.0",
+        "6076.0",
+        "907.0"
+      ],
+      "date_values": [],
+      "verification_status": "source_span_verified",
+      "extractor_version": "fact-ledger-v1"
+    },
+    {
+      "fact_id": "a66cf1de-a0c4-4aa6-8af6-d14595ea22ba",
+      "fact_key": "e646f6f94fb059a621df",
+      "source_id": "d55a64b6-0bfc-48eb-a59d-57f9144bc7c9",
+      "source_name": "Executive Yuan — 115年度中央政府總預算追加預算案",
+      "source_url": "https://www.ey.gov.tw/Page/9277F759E41CCD91/e6b90fcf-0d42-40e3-b001-1c790c076657",
+      "excerpt": "在「提升待遇」面向，追溯自115年7月1日起，軍公教人員專業加給及主管加給各調增2,000元，共計編列107億元，以強化政府留才攬才競爭力；",
+      "entities": [],
+      "numeric_values": [
+        "1.0",
+        "107.0",
+        "115.0",
+        "2000.0",
+        "7.0"
+      ],
+      "date_values": [
+        "DATE:2026-07-01"
+      ],
+      "verification_status": "source_span_verified",
+      "extractor_version": "fact-ledger-v1"
+    },
+    {
+      "fact_id": "6d66f51e-c248-4651-82a3-71324db2679f",
+      "fact_key": "a13acfbf1a669fd7b412",
+      "source_id": "f8ab3323-7afa-4481-b006-564fa923d200",
+      "source_name": "Legislative Yuan Budget Center — 115年度中央政府總預算追加預算案評估報告",
+      "source_url": "https://www.ly.gov.tw/Pages/List.aspx?nodeid=56728",
+      "excerpt": "一、115年度中央政府總預算追加預算案係於9月提出，惟國防部與海巡署分別編列巨額軍事投資及高比率之海巡相關資本支出，允宜審慎衡酌於有限時程下之執行量能，並覈實編列追加預算",
+      "entities": [],
+      "numeric_values": [
+        "115.0",
+        "9.0"
+      ],
+      "date_values": [],
+      "verification_status": "source_span_verified",
+      "extractor_version": "fact-ledger-v1"
+    },
+    {
+      "fact_id": "80367ecb-190a-47fd-9683-997a33e95bb6",
+      "fact_key": "6378c3111ddac68dda40",
+      "source_id": "f8ab3323-7afa-4481-b006-564fa923d200",
+      "source_name": "Legislative Yuan Budget Center — 115年度中央政府總預算追加預算案評估報告",
+      "source_url": "https://www.ly.gov.tw/Pages/List.aspx?nodeid=56728",
+      "excerpt": "另行政院在預算審查結果未經總統公布，尚無法定預算數前即送出追加預算案，其適法性待酌",
+      "entities": [],
+      "numeric_values": [],
+      "date_values": [],
+      "verification_status": "source_span_verified",
+      "extractor_version": "fact-ledger-v1"
+    },
+    {
+      "fact_id": "e0ce1ed1-8002-4d07-9d11-ee729128d0e9",
+      "fact_key": "ffb53ef0771c25c7774b",
+      "source_id": "f8ab3323-7afa-4481-b006-564fa923d200",
+      "source_name": "Legislative Yuan Budget Center — 115年度中央政府總預算追加預算案評估報告",
+      "source_url": "https://www.ly.gov.tw/Pages/List.aspx?nodeid=56728",
+      "excerpt": "四、軍公教人員待遇調整尚缺乏明確法制及客觀量化基準，允宜建立法制化調整機制，以提升待遇調整之客觀性及透明度",
+      "entities": [],
+      "numeric_values": [],
+      "date_values": [],
+      "verification_status": "source_span_verified",
+      "extractor_version": "fact-ledger-v1"
+    }
+  ],
+  "research_package": {
+    "id": "de118f17-ab50-46b7-b99f-4aba51f240ce",
+    "version": 1,
+    "sha256": "81bb85afa4e7d0d3ce2de03d6a5ed06268ff0ba770ad34aba703334c14ca0676",
+    "status": "evidence_collected_pending_human_review",
+    "verified_fact_count": 8,
+    "independent_source_count": 0,
+    "eligible_source_count": 3,
+    "human_review_required": true,
+    "generation_ready": false,
+    "publish_ready": false,
+    "payload": {
+      "title": "國 軍 加 薪",
+      "sources": [
+        {
+          "url": "https://www.ey.gov.tw/Page/448DE008087A1971/5020ed44-2196-4da0-9dbe-fe6ae7f44afc",
+          "rights": "Official website reuse notice allows no-charge reuse, reproduction, modification and public transmission with attribution; third-party and specially restricted works are excluded. Human source-rights confirmation remains required.",
+          "publisher": "Executive Yuan — 116年度軍公教員工待遇提升方案",
+          "source_id": "6fc24e73-2ef6-4c0f-9cdb-3ea4c7a6d0d1",
+          "is_primary": true,
+          "source_name": "Executive Yuan — 116年度軍公教員工待遇提升方案",
+          "collected_at": "2026-10-28T11:05:18.341173+09:00",
+          "published_at": "2026-07-02T09:00:00+09:00",
+          "access_policy": "Fixed allowlisted HTTPS page; robots.txt checked; one bounded 1 MiB GET; redirects, authentication and retries disabled; cite the official page. Rights notice: https://www.ey.gov.tw/Page/2EADDBFEDDB6357E.",
+          "source_language": "zh-TW",
+          "comparison_group": null,
+          "independence_review": "unreviewed",
+          "current_review_approved": true
+        },
+        {
+          "url": "https://www.ey.gov.tw/Page/9277F759E41CCD91/e6b90fcf-0d42-40e3-b001-1c790c076657",
+          "rights": "Official website reuse notice allows no-charge reuse, reproduction, modification and public transmission with attribution; third-party and specially restricted works are excluded. Human source-rights confirmation remains required.",
+          "publisher": "Executive Yuan — 115年度中央政府總預算追加預算案",
+          "source_id": "d55a64b6-0bfc-48eb-a59d-57f9144bc7c9",
+          "is_primary": true,
+          "source_name": "Executive Yuan — 115年度中央政府總預算追加預算案",
+          "collected_at": "2026-10-28T11:05:20.715404+09:00",
+          "published_at": "2026-09-03T09:00:00+09:00",
+          "access_policy": "Fixed allowlisted HTTPS page; robots.txt checked; one bounded 1 MiB GET; redirects, authentication and retries disabled; cite the official page. Rights notice: https://www.ey.gov.tw/Page/2EADDBFEDDB6357E.",
+          "source_language": "zh-TW",
+          "comparison_group": null,
+          "independence_review": "unreviewed",
+          "current_review_approved": true
+        },
+        {
+          "url": "https://www.ly.gov.tw/Pages/List.aspx?nodeid=56728",
+          "rights": "Official website reuse notice allows no-charge reuse, reproduction, modification and public transmission with attribution; third-party and specially restricted works are excluded. Human source-rights confirmation remains required.",
+          "publisher": "Legislative Yuan Budget Center — 115年度中央政府總預算追加預算案評估報告",
+          "source_id": "f8ab3323-7afa-4481-b006-564fa923d200",
+          "is_primary": true,
+          "source_name": "Legislative Yuan Budget Center — 115年度中央政府總預算追加預算案評估報告",
+          "collected_at": "2026-10-28T11:05:29.497424+09:00",
+          "published_at": null,
+          "access_policy": "Fixed allowlisted HTTPS page; robots.txt checked; one bounded 1 MiB GET; redirects, authentication and retries disabled; cite the official page. Rights notice: https://www.ly.gov.tw/Pages/List.aspx?nodeid=10772.",
+          "source_language": "zh-TW",
+          "comparison_group": null,
+          "independence_review": "unreviewed",
+          "current_review_approved": true
+        }
+      ],
+      "timeline": [
+        {
+          "date": [
+            "DATE:2026-07-01"
+          ],
+          "fact_id": "d7974ad7-1444-4199-9a38-b3577a92e5d2",
+          "source_id": "6fc24e73-2ef6-4c0f-9cdb-3ea4c7a6d0d1"
+        },
+        {
+          "date": [
+            "DATE:2026-07-01"
+          ],
+          "fact_id": "a66cf1de-a0c4-4aa6-8af6-d14595ea22ba",
+          "source_id": "d55a64b6-0bfc-48eb-a59d-57f9144bc7c9"
+        }
+      ],
+      "topic_id": "e6424812-46e2-5833-aebd-48a630a0c4a7",
+      "unknowns": [
+        "Trend ranking was not supplied.",
+        "Trend RSS does not state query language.",
+        "Cross-geography event identity is unconfirmed.",
+        "Open topic-grouping proposals require human resolution.",
+        "Source independence, rights exceptions, policy interpretation, and semantic support require human review."
+      ],
+      "selection": {
+        "score": 78.79,
+        "signals": {
+          "freshness": {
+            "score": 0.9195674696064815,
+            "age_hours": 1.9303807294444444
+          },
+          "rights_risk": "requires_source_specific_review",
+          "specificity": {
+            "score": 1.0,
+            "token_count": 4,
+            "broad_exact_match": false
+          },
+          "analysis_fit": "human_review_required",
+          "reader_value": "human_review_required",
+          "deduplication_risk": {
+            "safety_score": 1.0,
+            "open_grouping_proposals": 0
+          },
+          "source_interest_label": {
+            "raw": "10000+",
+            "score": 1.0,
+            "value": true
+          },
+          "independent_confirmation": {
+            "score": 0.0,
+            "human_reviewed_independent_groups": 0
+          },
+          "reviewed_source_coverage": {
+            "score": 1.0,
+            "verified_facts": 8,
+            "current_approved_sources": 3
+          }
+        },
+        "decision": "held",
+        "reason_codes": [
+          "two_independent_sources_not_human_verified",
+          "reader_value_and_analysis_fit_require_human_review"
+        ],
+        "human_editorial_approval": false,
+        "score_thresholds_unchanged": true
+      },
+      "background": [
+        {
+          "fact_id": "0450e1d3-9ffe-45cf-a104-2472f3c56514",
+          "source_id": "6fc24e73-2ef6-4c0f-9cdb-3ea4c7a6d0d1",
+          "source_excerpt": "經「專業加給（含教師學術研究加給）及主管職務加給各定額調增2,000元」及「待遇通案調增4％」累加調增待遇後，以支領公務人員專業加給表（二）一般行政各職等人員實際待遇調幅為例，委任第1職等初任人員至簡任第14職等非主管人員約在9.98％至5.88％之間，其中公務人員初考、普考、高考三級初任人員調幅分別為9.98％、8.84％、7.8％。"
+        },
+        {
+          "fact_id": "d7974ad7-1444-4199-9a38-b3577a92e5d2",
+          "source_id": "6fc24e73-2ef6-4c0f-9cdb-3ea4c7a6d0d1",
+          "source_excerpt": "其中，基於及時提升基層人員待遇及鼓勵擔任主管，專業加給（含教師學術研究加給）及主管職務加給定額調增部分，行政院將以追加預算方式提前至115年7月1日生效，並配合追加預算程序發布。"
+        },
+        {
+          "fact_id": "ac673c11-7072-47e4-9b6f-89a42405dbed",
+          "source_id": "6fc24e73-2ef6-4c0f-9cdb-3ea4c7a6d0d1",
+          "source_excerpt": "行政院考量近年我國經濟成長率相對優於全球及主要經濟體，且自114年以來，消費者物價指數預估累計成長已逾3％，同時民間企業平均薪資與勞工最低工資亦持續成長，提出「116年度軍公教員工待遇提升方案」，包括「專業加給（含教師學術研究加給）及主管職務加給各定額調增2,000元」及「待遇通案調增4％」二項調薪方案，其中，為具體展現政府及時照顧基層同仁及鼓勵擔任主管的決心，專業加給及主管職務加給定額調增，將提前於今（115）年7月1日生效，並以追加預算方式辦理。"
+        },
+        {
+          "fact_id": "65d80576-7219-4c13-bb83-481929d7783b",
+          "source_id": "d55a64b6-0bfc-48eb-a59d-57f9144bc7c9",
+          "source_excerpt": "行政院會今（3）日通過主計總處編具之「115年度中央政府總預算追加預算案」，追加編列6,076億元歲出預算，用以「穩定民生」、「社福加碼」、「提升待遇」、「災後重建」、「強化國防」及「啟動兒少成長津貼」等六大面向，同時今（115）年度舉債將比原編列總預算時減少907億元，全案將函請立法院審議。"
+        },
+        {
+          "fact_id": "a66cf1de-a0c4-4aa6-8af6-d14595ea22ba",
+          "source_id": "d55a64b6-0bfc-48eb-a59d-57f9144bc7c9",
+          "source_excerpt": "在「提升待遇」面向，追溯自115年7月1日起，軍公教人員專業加給及主管加給各調增2,000元，共計編列107億元，以強化政府留才攬才競爭力；"
+        },
+        {
+          "fact_id": "80367ecb-190a-47fd-9683-997a33e95bb6",
+          "source_id": "f8ab3323-7afa-4481-b006-564fa923d200",
+          "source_excerpt": "另行政院在預算審查結果未經總統公布，尚無法定預算數前即送出追加預算案，其適法性待酌"
+        },
+        {
+          "fact_id": "6d66f51e-c248-4651-82a3-71324db2679f",
+          "source_id": "f8ab3323-7afa-4481-b006-564fa923d200",
+          "source_excerpt": "一、115年度中央政府總預算追加預算案係於9月提出，惟國防部與海巡署分別編列巨額軍事投資及高比率之海巡相關資本支出，允宜審慎衡酌於有限時程下之執行量能，並覈實編列追加預算"
+        },
+        {
+          "fact_id": "e0ce1ed1-8002-4d07-9d11-ee729128d0e9",
+          "source_id": "f8ab3323-7afa-4481-b006-564fa923d200",
+          "source_excerpt": "四、軍公教人員待遇調整尚缺乏明確法制及客觀量化基準，允宜建立法制化調整機制，以提升待遇調整之客觀性及透明度"
+        }
+      ],
+      "core_facts": [
+        {
+          "fact_id": "0450e1d3-9ffe-45cf-a104-2472f3c56514",
+          "source_id": "6fc24e73-2ef6-4c0f-9cdb-3ea4c7a6d0d1",
+          "entity_ids": [],
+          "source_url": "https://www.ey.gov.tw/Page/448DE008087A1971/5020ed44-2196-4da0-9dbe-fe6ae7f44afc",
+          "date_values": [],
+          "source_name": "Executive Yuan — 116年度軍公教員工待遇提升方案",
+          "collected_at": "2026-10-28T11:05:18.341173+09:00",
+          "published_at": "2026-07-02T09:00:00+09:00",
+          "numeric_values": [
+            "1.0",
+            "14.0",
+            "2000.0",
+            "4.0",
+            "5.88",
+            "7.8",
+            "8.84",
+            "9.98"
+          ],
+          "source_excerpt": "經「專業加給（含教師學術研究加給）及主管職務加給各定額調增2,000元」及「待遇通案調增4％」累加調增待遇後，以支領公務人員專業加給表（二）一般行政各職等人員實際待遇調幅為例，委任第1職等初任人員至簡任第14職等非主管人員約在9.98％至5.88％之間，其中公務人員初考、普考、高考三級初任人員調幅分別為9.98％、8.84％、7.8％。",
+          "verification_status": "source_span_verified"
+        },
+        {
+          "fact_id": "d7974ad7-1444-4199-9a38-b3577a92e5d2",
+          "source_id": "6fc24e73-2ef6-4c0f-9cdb-3ea4c7a6d0d1",
+          "entity_ids": [],
+          "source_url": "https://www.ey.gov.tw/Page/448DE008087A1971/5020ed44-2196-4da0-9dbe-fe6ae7f44afc",
+          "date_values": [
+            "DATE:2026-07-01"
+          ],
+          "source_name": "Executive Yuan — 116年度軍公教員工待遇提升方案",
+          "collected_at": "2026-10-28T11:05:18.341173+09:00",
+          "published_at": "2026-07-02T09:00:00+09:00",
+          "numeric_values": [
+            "1.0",
+            "115.0",
+            "7.0"
+          ],
+          "source_excerpt": "其中，基於及時提升基層人員待遇及鼓勵擔任主管，專業加給（含教師學術研究加給）及主管職務加給定額調增部分，行政院將以追加預算方式提前至115年7月1日生效，並配合追加預算程序發布。",
+          "verification_status": "source_span_verified"
+        },
+        {
+          "fact_id": "ac673c11-7072-47e4-9b6f-89a42405dbed",
+          "source_id": "6fc24e73-2ef6-4c0f-9cdb-3ea4c7a6d0d1",
+          "entity_ids": [],
+          "source_url": "https://www.ey.gov.tw/Page/448DE008087A1971/5020ed44-2196-4da0-9dbe-fe6ae7f44afc",
+          "date_values": [],
+          "source_name": "Executive Yuan — 116年度軍公教員工待遇提升方案",
+          "collected_at": "2026-10-28T11:05:18.341173+09:00",
+          "published_at": "2026-07-02T09:00:00+09:00",
+          "numeric_values": [
+            "1.0",
+            "114.0",
+            "115.0",
+            "116.0",
+            "2000.0",
+            "3.0",
+            "4.0",
+            "7.0"
+          ],
+          "source_excerpt": "行政院考量近年我國經濟成長率相對優於全球及主要經濟體，且自114年以來，消費者物價指數預估累計成長已逾3％，同時民間企業平均薪資與勞工最低工資亦持續成長，提出「116年度軍公教員工待遇提升方案」，包括「專業加給（含教師學術研究加給）及主管職務加給各定額調增2,000元」及「待遇通案調增4％」二項調薪方案，其中，為具體展現政府及時照顧基層同仁及鼓勵擔任主管的決心，專業加給及主管職務加給定額調增，將提前於今（115）年7月1日生效，並以追加預算方式辦理。",
+          "verification_status": "source_span_verified"
+        },
+        {
+          "fact_id": "65d80576-7219-4c13-bb83-481929d7783b",
+          "source_id": "d55a64b6-0bfc-48eb-a59d-57f9144bc7c9",
+          "entity_ids": [],
+          "source_url": "https://www.ey.gov.tw/Page/9277F759E41CCD91/e6b90fcf-0d42-40e3-b001-1c790c076657",
+          "date_values": [],
+          "source_name": "Executive Yuan — 115年度中央政府總預算追加預算案",
+          "collected_at": "2026-10-28T11:05:20.715404+09:00",
+          "published_at": "2026-09-03T09:00:00+09:00",
+          "numeric_values": [
+            "115.0",
+            "3.0",
+            "6076.0",
+            "907.0"
+          ],
+          "source_excerpt": "行政院會今（3）日通過主計總處編具之「115年度中央政府總預算追加預算案」，追加編列6,076億元歲出預算，用以「穩定民生」、「社福加碼」、「提升待遇」、「災後重建」、「強化國防」及「啟動兒少成長津貼」等六大面向，同時今（115）年度舉債將比原編列總預算時減少907億元，全案將函請立法院審議。",
+          "verification_status": "source_span_verified"
+        },
+        {
+          "fact_id": "a66cf1de-a0c4-4aa6-8af6-d14595ea22ba",
+          "source_id": "d55a64b6-0bfc-48eb-a59d-57f9144bc7c9",
+          "entity_ids": [],
+          "source_url": "https://www.ey.gov.tw/Page/9277F759E41CCD91/e6b90fcf-0d42-40e3-b001-1c790c076657",
+          "date_values": [
+            "DATE:2026-07-01"
+          ],
+          "source_name": "Executive Yuan — 115年度中央政府總預算追加預算案",
+          "collected_at": "2026-10-28T11:05:20.715404+09:00",
+          "published_at": "2026-09-03T09:00:00+09:00",
+          "numeric_values": [
+            "1.0",
+            "107.0",
+            "115.0",
+            "2000.0",
+            "7.0"
+          ],
+          "source_excerpt": "在「提升待遇」面向，追溯自115年7月1日起，軍公教人員專業加給及主管加給各調增2,000元，共計編列107億元，以強化政府留才攬才競爭力；",
+          "verification_status": "source_span_verified"
+        },
+        {
+          "fact_id": "80367ecb-190a-47fd-9683-997a33e95bb6",
+          "source_id": "f8ab3323-7afa-4481-b006-564fa923d200",
+          "entity_ids": [],
+          "source_url": "https://www.ly.gov.tw/Pages/List.aspx?nodeid=56728",
+          "date_values": [],
+          "source_name": "Legislative Yuan Budget Center — 115年度中央政府總預算追加預算案評估報告",
+          "collected_at": "2026-10-28T11:05:29.497424+09:00",
+          "published_at": null,
+          "numeric_values": [],
+          "source_excerpt": "另行政院在預算審查結果未經總統公布，尚無法定預算數前即送出追加預算案，其適法性待酌",
+          "verification_status": "source_span_verified"
+        },
+        {
+          "fact_id": "6d66f51e-c248-4651-82a3-71324db2679f",
+          "source_id": "f8ab3323-7afa-4481-b006-564fa923d200",
+          "entity_ids": [],
+          "source_url": "https://www.ly.gov.tw/Pages/List.aspx?nodeid=56728",
+          "date_values": [],
+          "source_name": "Legislative Yuan Budget Center — 115年度中央政府總預算追加預算案評估報告",
+          "collected_at": "2026-10-28T11:05:29.497424+09:00",
+          "published_at": null,
+          "numeric_values": [
+            "115.0",
+            "9.0"
+          ],
+          "source_excerpt": "一、115年度中央政府總預算追加預算案係於9月提出，惟國防部與海巡署分別編列巨額軍事投資及高比率之海巡相關資本支出，允宜審慎衡酌於有限時程下之執行量能，並覈實編列追加預算",
+          "verification_status": "source_span_verified"
+        },
+        {
+          "fact_id": "e0ce1ed1-8002-4d07-9d11-ee729128d0e9",
+          "source_id": "f8ab3323-7afa-4481-b006-564fa923d200",
+          "entity_ids": [],
+          "source_url": "https://www.ly.gov.tw/Pages/List.aspx?nodeid=56728",
+          "date_values": [],
+          "source_name": "Legislative Yuan Budget Center — 115年度中央政府總預算追加預算案評估報告",
+          "collected_at": "2026-10-28T11:05:29.497424+09:00",
+          "published_at": null,
+          "numeric_values": [],
+          "source_excerpt": "四、軍公教人員待遇調整尚缺乏明確法制及客觀量化基準，允宜建立法制化調整機制，以提升待遇調整之客觀性及透明度",
+          "verification_status": "source_span_verified"
+        }
+      ],
+      "geographies": [
+        "TW"
+      ],
+      "observations": [
+        {
+          "geo": "TW",
+          "query": "國 軍 加 薪",
+          "platform": "google_trends",
+          "source_url": "https://trends.google.com/trending/rss?geo=TW",
+          "started_at": "2026-10-27T21:30:00+09:00",
+          "source_rank": null,
+          "collected_at": "2026-10-27T23:25:49.370626+09:00",
+          "observation_id": "0f48b072-29c1-4a80-9e87-5fcc9b795fa5",
+          "source_interest_label": "10000+"
+        }
+      ],
+      "publish_ready": false,
+      "evidence_stage": "complete_source_spans_pending_human_review",
+      "language_status": "not_supplied_by_trends_source",
+      "research_run_id": "b4834d52-b147-4879-b416-aa6aa7e4ea7a",
+      "source_language": "und",
+      "generation_ready": false,
+      "source_conflicts": {
+        "items": [],
+        "status": "human_review_required"
+      },
+      "analytical_angles": [
+        "Explain only implications directly supported by the linked facts; label analysis separately from facts."
+      ],
+      "prohibited_claims": [
+        "Do not infer rank or numeric search volume from RSS order/labels.",
+        "Do not add unsupported statistics, quotations, interviews, causes, forecasts, or first-hand experience.",
+        "Do not claim independent corroboration until distinct-source independence has been reviewed.",
+        "Do not generalize public-service salary examples to military pay unless the source explicitly supports it.",
+        "Do not describe a proposed or budgeted adjustment as fully enacted or paid without current implementation evidence."
+      ],
+      "human_review_items": [
+        "source independence",
+        "cross-geography topic grouping",
+        "source-specific rights exceptions",
+        "interpretation and factual context",
+        "reader value and analysis suitability"
+      ],
+      "recommended_outline": [
+        "What the observed search signal says (with geography and collection time)",
+        "Verified facts and source-linked context",
+        "What the available evidence does not establish",
+        "Cautious analysis questions for human editorial review",
+        "References"
+      ],
+      "verified_fact_count": 8,
+      "eligible_source_count": 3,
+      "human_review_required": true,
+      "human_reviewed_event_group_ids": [],
+      "human_verified_independent_source_groups": 0
+    }
+  },
+  "safety": {
+    "blogger_api_calls_this_phase": 0,
+    "test_db_blogger_api_calls_total": 0,
+    "operations_blogger_calls_since_phase_start": 0,
+    "operations_blogger_calls_historical_total": 152,
+    "ai_inference_calls": 0,
+    "paid_api_calls": 0,
+    "automatic_publication_enabled": false,
+    "publish_ready_true_created": 0,
+    "source_independence_human_approval": false
+  },
+  "dashboard_verification": {
+    "api_testclient_list_http": 200,
+    "api_testclient_detail_http": 200,
+    "source_count": 3,
+    "fact_count": 8,
+    "browser_e2e": "not_run_execution_policy_blocked_temporary_process_start"
+  },
+  "validation": {
+    "pytest": "229 passed",
+    "ruff": "passed",
+    "mypy": "passed (32 source files)",
+    "wheel": "passed",
+    "dashboard_eslint": "passed",
+    "next_production_build": "passed",
+    "typescript": "passed",
+    "git_diff_check": "passed",
+    "focused_pytest": "18 passed"
+  },
+  "human_review_items": [
+    "selection meaning and reader value",
+    "institution-level source independence and conflict interpretation",
+    "publication/reuse rights exceptions",
+    "official budget/legal wording",
+    "whether source-supported analysis adds useful editorial value"
+  ],
+  "commit": null,
+  "push": null
+}

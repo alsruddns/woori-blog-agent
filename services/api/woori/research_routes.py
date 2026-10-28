@@ -12,7 +12,7 @@ from croniter import croniter
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import Field, field_validator, model_validator
 
-from . import collection, pipeline, topics, trends
+from . import collection, official_research, pipeline, topics, trends
 from .ai import Draft, EngineFailure
 from .db import connection
 from .grounding import inspect
@@ -691,8 +691,10 @@ def trend_observation_detail(observation_id: UUID) -> dict[str, Any]:
         sources = conn.execute(
             """SELECT ts.id,ts.link_reason,ts.created_at,s.id AS source_id,s.source_name,s.url,
                 s.published_at,s.collected_at,s.source_language,s.evidence,s.rights,s.access_policy,
-                (SELECT approved FROM source_reviews r WHERE r.source_id=s.id ORDER BY r.review_sequence DESC LIMIT 1) AS approved
+                r.approved,r.reviewer AS review_actor,r.reason AS review_reason
             FROM trend_topic_sources ts JOIN research_sources s ON s.id=ts.research_source_id
+            LEFT JOIN LATERAL (SELECT approved,reviewer,reason FROM source_reviews r
+                WHERE r.source_id=s.id ORDER BY r.review_sequence DESC LIMIT 1) r ON true
             WHERE ts.topic_id=%s ORDER BY ts.created_at DESC""", (topic_id,)
         ).fetchall()
         packages = conn.execute(
@@ -846,6 +848,15 @@ def review_trend_source_independence(
 @router.post("/topics/{topic_id}/package", status_code=201)
 def create_trend_research_package(topic_id: UUID) -> dict[str, Any]:
     return topics.build_package(topic_id)
+
+
+@router.post("/topics/{topic_id}/discover-official-sources", status_code=201)
+def discover_official_trend_sources(topic_id: UUID) -> dict[str, Any]:
+    """Run only the fixed, robots-checked official source catalog for a matching trend."""
+    try:
+        return official_research.discover_for_topic(topic_id)
+    except official_research.OfficialResearchBlocked as exc:
+        raise HTTPException(409, str(exc)) from None
 
 
 @router.put("/collections/{source_id}")

@@ -99,7 +99,7 @@ def _propose_cross_geo_pairs(conn: Any, rows: list[dict[str, Any]]) -> int:
     return proposals
 
 
-def _assess_topic(conn: Any, topic_id: UUID) -> dict[str, Any]:
+def _assess_topic(conn: Any, topic_id: UUID, run_id: UUID | None = None) -> dict[str, Any]:
     config = _current_scoring_config(conn)
     weights = config["weights"]
     thresholds = config["thresholds"]
@@ -228,6 +228,7 @@ def _assess_topic(conn: Any, topic_id: UUID) -> dict[str, Any]:
             conn,
             "trend.topic.assessed",
             topic_id=str(topic_id),
+            run_id=str(run_id) if run_id else None,
             assessment_id=str(row["id"]),
             decision=decision,
             score=score,
@@ -491,13 +492,13 @@ def record_independence_review(topic_source_id: UUID, decision: str, reviewer: s
         return dict(row)
 
 
-def build_package(topic_id: UUID) -> dict[str, Any]:
+def build_package(topic_id: UUID, run_id: UUID | None = None) -> dict[str, Any]:
     with connection() as conn:
         _assert_schema(conn)
         topic = conn.execute("SELECT * FROM trend_topics WHERE id=%s", (topic_id,)).fetchone()
         if topic is None:
             raise EngineFailure("trend_topic_not_found")
-        assessment = _assess_topic(conn, topic_id)
+        assessment = _assess_topic(conn, topic_id, run_id)
         scoring_config = _current_scoring_config(conn)
         observations = conn.execute(
             """SELECT o.* FROM trend_topic_memberships m JOIN trend_observations o ON o.id=m.observation_id
@@ -566,9 +567,16 @@ def build_package(topic_id: UUID) -> dict[str, Any]:
             and len(independent_groups) >= int(thresholds.get("minimum_independent_sources", 2))
             and len(verified_facts) >= int(thresholds.get("minimum_verified_facts", 3))
         )
+        evidence_collected = (
+            key not in BROAD_QUERIES
+            and len(eligible_sources) >= 1
+            and len(verified_facts) >= int(thresholds.get("minimum_verified_facts", 3))
+        )
         payload = {
             "topic_id": str(topic_id),
+            "research_run_id": str(run_id) if run_id else None,
             "title": topic["representative_query"],
+            "selection": {"decision": assessment["decision"], "score": float(assessment["score"]), "reason_codes": assessment["reasons"], "signals": assessment["signals"], "score_thresholds_unchanged": True, "human_editorial_approval": False},
             "source_language": topic["source_language"],
             "language_status": "not_supplied_by_trends_source",
             "geographies": sorted({row["geo"] for row in observations}),
@@ -585,16 +593,19 @@ def build_package(topic_id: UUID) -> dict[str, Any]:
                 {"source_id": str(row["id"]), "source_name": row["source_name"], "url": row["url"], "publisher": row["source_name"], "source_language": row["reviewed_language"], "published_at": row["published_at"].isoformat() if row["published_at"] else None, "collected_at": row["collected_at"].isoformat(), "is_primary": row["is_primary"], "rights": row["rights"], "access_policy": row["access_policy"], "current_review_approved": bool(row["latest_approved"]), "independence_review": row["independence_decision"] or "unreviewed", "comparison_group": row["comparison_group"]}
                 for row in sources
             ],
-            "background": [],
+            "background": [{"fact_id": str(row["id"]), "source_id": str(row["source_id"]), "source_excerpt": row["source_excerpt"]} for row in verified_facts],
             "timeline": [{"date": row["date_values"], "source_id": str(row["source_id"]), "fact_id": str(row["id"])} for row in verified_facts if row["date_values"]],
             "source_conflicts": {"status": "human_review_required", "items": []},
             "analytical_angles": ["Explain only implications directly supported by the linked facts; label analysis separately from facts."],
-            "unknowns": ["Trend ranking was not supplied.", "Trend RSS does not state query language.", "Cross-geography event identity is unconfirmed.", "Source conflicts and semantic support require human review."] + (["No current reviewed evidence source is linked."] if not eligible_sources else []),
-            "prohibited_claims": ["Do not infer rank or numeric search volume from RSS order/labels.", "Do not add unsupported statistics, quotations, interviews, causes, forecasts, or first-hand experience.", "Do not claim independent corroboration until distinct-source independence has been reviewed."],
+            "unknowns": ["Trend ranking was not supplied.", "Trend RSS does not state query language.", "Cross-geography event identity is unconfirmed.", "Open topic-grouping proposals require human resolution.", "Source independence, rights exceptions, policy interpretation, and semantic support require human review."] + (["No current reviewed evidence source is linked."] if not eligible_sources else []),
+            "prohibited_claims": ["Do not infer rank or numeric search volume from RSS order/labels.", "Do not add unsupported statistics, quotations, interviews, causes, forecasts, or first-hand experience.", "Do not claim independent corroboration until distinct-source independence has been reviewed.", "Do not generalize public-service salary examples to military pay unless the source explicitly supports it.", "Do not describe a proposed or budgeted adjustment as fully enacted or paid without current implementation evidence."],
             "recommended_outline": ["What the observed search signal says (with geography and collection time)", "Verified facts and source-linked context", "What the available evidence does not establish", "Cautious analysis questions for human editorial review", "References"],
             "verified_fact_count": len(verified_facts),
             "eligible_source_count": len(eligible_sources),
             "human_verified_independent_source_groups": len(independent_groups),
+            "evidence_stage": "complete_source_spans_pending_human_review" if evidence_collected else "evidence_collection_incomplete",
+            "generation_ready": False,
+            "human_review_items": ["source independence", "cross-geography topic grouping", "source-specific rights exceptions", "interpretation and factual context", "reader value and analysis suitability"],
             "human_review_required": True,
             "publish_ready": False,
         }
@@ -607,7 +618,7 @@ def build_package(topic_id: UUID) -> dict[str, Any]:
         if version_row is None:
             raise EngineFailure("trend_research_package_version_unavailable")
         next_version = version_row["n"]
-        status = "evidence_ready_for_human_review" if sufficient else "insufficient_evidence"
+        status = "evidence_ready_for_human_review" if sufficient else "evidence_collected_pending_human_review" if evidence_collected else "insufficient_evidence"
         row = conn.execute(
             """INSERT INTO trend_research_packages(topic_id,package_version,status,payload,payload_sha256,
             source_ids,fact_ids,verified_fact_count,independent_source_count)
@@ -616,5 +627,5 @@ def build_package(topic_id: UUID) -> dict[str, Any]:
         ).fetchone()
         if row is None:
             raise EngineFailure("trend_research_package_insert_failed")
-        _audit(conn, "trend.research_package.created", topic_id=str(topic_id), package_id=str(row["id"]), package_version=next_version, status=status, source_count=len(eligible_sources), verified_fact_count=len(verified_facts), independence_reviewed_count=len(independent_groups), payload_sha256=digest)
+        _audit(conn, "trend.research_package.created", topic_id=str(topic_id), run_id=str(run_id) if run_id else None, package_id=str(row["id"]), package_version=next_version, status=status, source_count=len(eligible_sources), verified_fact_count=len(verified_facts), independence_reviewed_count=len(independent_groups), payload_sha256=digest)
         return {**dict(row), "idempotent_replay": False}

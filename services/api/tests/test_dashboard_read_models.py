@@ -154,6 +154,55 @@ def test_trend_list_keeps_unavailable_source_rank_null(monkeypatch: Any) -> None
     assert response.json()["total"] == 1
 
 
+def test_trend_detail_distinguishes_automated_source_screen_from_human_review(
+    monkeypatch: Any,
+) -> None:
+    observation_id, topic_id, source_id = uuid4(), uuid4(), uuid4()
+    statements: list[str] = []
+
+    class DetailConnection:
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            return None
+
+        def execute(self, query: str, _params: Any = None) -> _Cursor:
+            statements.append(query)
+            if "to_regclass('public.trend_research_packages')" in query:
+                return _Cursor([{"table_name": "trend_research_packages"}])
+            if "SELECT * FROM trend_observations" in query:
+                return _Cursor([{"id": observation_id, "query": "TW source signal"}])
+            if "FROM trend_topic_memberships m JOIN trend_topics t" in query:
+                return _Cursor([{"id": topic_id, "representative_query": "TW source signal"}])
+            if "FROM trend_topic_sources ts JOIN research_sources s" in query:
+                return _Cursor([{
+                    "source_id": source_id,
+                    "source_name": "Official source fixture",
+                    "approved": True,
+                    "review_actor": "collector:test-provider",
+                    "review_reason": "Automated provenance only; human review pending.",
+                }])
+            if "FROM trend_research_packages WHERE topic_id" in query:
+                return _Cursor([])
+            if "FROM evidence_facts WHERE id=ANY" in query:
+                return _Cursor([])
+            if "FROM article_quality_evaluations q WHERE" in query:
+                return _Cursor([])
+            raise AssertionError(f"Unexpected query: {query}")
+
+    @contextmanager
+    def operations() -> Iterator[DetailConnection]:
+        yield DetailConnection()
+
+    monkeypatch.setattr(research_routes, "connection", operations)
+    result = research_routes.trend_observation_detail(observation_id)
+
+    assert result["sources"][0]["review_actor"] == "collector:test-provider"
+    assert result["sources"][0]["review_reason"].startswith("Automated provenance only")
+    assert any("LEFT JOIN LATERAL" in query and "reviewer,reason" in query for query in statements)
+
+
 def test_model_comparison_read_model_uses_isolated_evaluation_reader(monkeypatch: Any) -> None:
     evaluation = _EvaluationConnection()
     monkeypatch.setattr(psycopg, "connect", lambda *args, **kwargs: evaluation)
