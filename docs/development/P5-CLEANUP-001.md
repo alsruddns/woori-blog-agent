@@ -74,3 +74,7 @@ GGUF 외 실행 폴더와 압축 파일까지 모두 사용자가 추후 직접 
 HTML 변환, SEO, 수집/근거, 수동 편집·검토, 발행 준비 및 Fake Publisher 흐름은 Provider가 없어도 유지된다. 신규 AI 원고 생성과 교차 언어 AI 현지화는 실행할 수 없으며 품질 보류 상태로 남는다. Codex/GPT 예약·무인 생성 구현은 별도 미완료 항목이다.
 
 `.local` 모델/엔진 파일과 inference key 보존 여부는 사용자 소유의 PC 정리 결정에 따른다. 이 커밋에서는 삭제하지 않는다.
+
+## Git
+
+?? ?? `20b8ea0` (`Remove : [AI] Retire Qwen3 local inference runtime`)? `origin/develop`? ????. ?? JSON? ??/?? ??? ???? ?? ?? ?? ?? ??? ????. `main`? ???? ???.

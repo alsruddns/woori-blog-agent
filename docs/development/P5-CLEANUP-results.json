@@ -59,7 +59,8 @@
     "before_after_operations_db_snapshot": "not_taken"
   },
   "git": {
-    "commit": null,
-    "push": "pending"
+    "implementation_commit": "20b8ea0",
+    "implementation_push": "origin/develop succeeded",
+    "results_record_commit": "documented in follow-up Git history"
   }
 }
