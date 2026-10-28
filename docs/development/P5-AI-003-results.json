@@ -1,0 +1,133 @@
+{
+  "task_id": "P5-AI-003",
+  "recorded_at_kst": "2026-10-28T13:08:23.169479+09:00",
+  "branch": "develop",
+  "baseline": {
+    "article_path": "docs/development/P5-AI-002-article-0fa0c8e4-a84f-45b1-94e0-8d23ab9ebdda.md",
+    "article_sha256": "18e27cee8f52b2c62a4d176746b4ada0b16cdeb06acf2d3cde744411f390790b",
+    "result_path": "docs/development/P5-AI-002-results-0fa0c8e4-a84f-45b1-94e0-8d23ab9ebdda.json",
+    "evaluation_id": "9e96f053-af67-4bb3-a60f-a366421a27e6",
+    "evaluation_database": "woori_blog_agent_eval",
+    "evaluation_role": "woori_eval_reader",
+    "readonly_recheck": {
+      "status": "quality_held",
+      "machine_passed": false,
+      "publish_ready": false,
+      "content_version_id": null,
+      "created_at": "2026-10-28T12:52:17.782891+09:00",
+      "evaluation_rows": 72,
+      "publish_ready_true_evaluations": 0,
+      "transaction_read_only": true,
+      "writes": 0
+    },
+    "package": {
+      "id": "de118f17-ab50-46b7-b99f-4aba51f240ce",
+      "version": 1,
+      "sha256": "81bb85afa4e7d0d3ce2de03d6a5ed06268ff0ba770ad34aba703334c14ca0676",
+      "status": "evidence_collected_pending_human_review",
+      "verified_fact_count": 8,
+      "independent_source_count": 0,
+      "generation_ready": false,
+      "publish_ready": false
+    }
+  },
+  "failure_analysis": [
+    {
+      "type": "claim_status_overstatement",
+      "source": "Qwen generation error",
+      "article_summary_exact": "台湾行政机构提出军公教员工待遇提升方案，包括专业加给及主管职务加给定额调增2,000元及待遇通案调增4%。该方案将提前于2026年7月1日生效，并通过追加预算方式办理。同时，行政院会通过115年度中央政府总预算追加预算案，追加编列6,076亿元岁出预算，用于提升待遇等六大面向。",
+      "source_fact_id": "d7974ad7-1444-4199-9a38-b3577a92e5d2",
+      "source_excerpt_exact": "其中，基於及時提升基層人員待遇及鼓勵擔任主管，專業加給（含教師學術研究加給）及主管職務加給定額調增部分，行政院將以追加預算方式提前至115年7月1日生效，並配合追加預算程序發布。",
+      "review_interpretation": "2026-07-01 is the proposed retroactive effective date for the allowance portion, subject to supplementary-budget procedure; actual payment not verified",
+      "finding": "Draft overgeneralizes the proposed early effective date to the whole plan and states it with certainty. Source limits it to the allowance portion and conditions it on supplementary-budget procedure; enactment/payment were not verified."
+    },
+    {
+      "type": "internal_fact_marker_leak",
+      "source": "Qwen generation error",
+      "marker": "FACT-Fn:",
+      "occurrences": 8,
+      "finding": "Internal fact labels appeared in reader text; not a verifier false positive."
+    },
+    {
+      "type": "source_copying",
+      "source": "Qwen generation error; verifier correctly held",
+      "overlap_tokens": 30,
+      "maximum_allowed_exclusive": 25,
+      "finding": "CJK overlap count uses tokenizer comparison units, not natural-language words. Existing gate remains unchanged."
+    },
+    {
+      "type": "structure_and_citations",
+      "source": "Qwen generation error",
+      "heading_count": 0,
+      "paragraph_count": 8,
+      "factual_paragraphs_cited": false,
+      "finding": "No section headings or paragraph-level citations; output remained fact lines."
+    },
+    {
+      "type": "roc_date_false_positive",
+      "source": "verifier defect",
+      "source_date": "115?7?1?",
+      "equivalent_date": "2026-07-01",
+      "unexpected_value": "DATE:2026-07-01",
+      "finding": "Damaged localized-date regex failed exact ROC/Gregorian normalization."
+    }
+  ],
+  "implementation": {
+    "claim_statuses": [
+      "proposed",
+      "planned",
+      "approved",
+      "enacted",
+      "paid",
+      "unverified"
+    ],
+    "default_status": "unverified",
+    "promotion_guard": "Explicit reviewed status plus exact evidence excerpt required for any stronger lifecycle status.",
+    "generation_input": "Per-fact status, status-specific rules, and section outline passed into staged generation/localization.",
+    "lifecycle_gate": "Conservative multilingual lexical escalation check; human meaning review remains required.",
+    "internal_marker_guard": "Added to section and article machine checks; prompts forbid FACT-F labels, IDs and UUIDs.",
+    "date_guard": "Unicode written dates restored; ROC year 115 normalizes to 2026; actual calendar date validation; no gate threshold relaxed.",
+    "persistence": "No new DB status column or migration; explicit status is a reviewed input only."
+  },
+  "reevaluation": {
+    "new_qwen_inference": "not_run",
+    "reason": "P5-AI-002 actual inference reached 82.4% system CPU peak, exceeding the unchanged 80% ceiling. No retry, process termination or cap change.",
+    "improved_article_created": false,
+    "empirical_quality_improvement_proven": false,
+    "baseline_preserved": true
+  },
+  "nvidia_build": {
+    "calls": 0,
+    "article_created": false,
+    "provider_allowlisted": false,
+    "account_model_quota_checked": false,
+    "credential_inspected": false,
+    "source_submission_rights_cleared": false,
+    "decision": "blocked_no_call",
+    "reviewed_at": "2026-10-28",
+    "official_sources": [
+      "https://docs.api.nvidia.com/nim/docs/product",
+      "https://docs.api.nvidia.com/nim/docs/api-quickstart",
+      "https://assets.ngc.nvidia.com/products/api-catalog/legal/NVIDIA%20API%20Trial%20Terms%20of%20Service.pdf"
+    ],
+    "basis": "NVIDIA documents free Developer Program endpoint access for prototyping/evaluation, but model/account quota is not public and was not checked in the account. Trial credits/time are limited and post-credit use can require subscription. Terms describe input/output handling and improvement/security logs. Research Package rights/external submission review remains pending."
+  },
+  "verification": {
+    "targeted": "6 passed",
+    "ruff": "passed",
+    "mypy": "passed",
+    "pytest": "233 passed",
+    "wheel": "passed",
+    "dashboard_eslint": "passed",
+    "dashboard_typecheck": "passed",
+    "dashboard_production_build": "passed",
+    "git_diff_check": "passed",
+    "migration": "not run; no schema change",
+    "operational_db_writes": 0,
+    "evaluation_db_writes": 0,
+    "blogger_calls": 0,
+    "paid_api_calls": 0,
+    "generation_ready": "unchanged false",
+    "publish_ready": "false"
+  }
+}

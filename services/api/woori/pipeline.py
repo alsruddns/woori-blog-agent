@@ -19,6 +19,11 @@ from psycopg.types.json import Jsonb
 
 from .ai import Draft, EngineFailure, provider
 from .article_quality import longest_source_overlap, search_intent_phrase
+from .claim_status import (
+    STATUS_RULES,
+    lifecycle_status_violations,
+    prepare_claims_for_generation,
+)
 from .db import connection
 from .grounding import inspect, numbers, proper_names
 from .localization import EXTRACTOR_VERSION, fact_ledger, localize_fact
@@ -215,9 +220,12 @@ def section_response_valid(
     body_names = proper_names(prose_without_headings)
     unsupported_names = body_names - names
     missing_names = names - body_names
+    status_violations = lifecycle_status_violations(prose_without_headings, facts)
     checks = {
         "source_ids_allowed": bool(actual_sources) and actual_sources.issubset(allowed_source_ids),
         "citations_allowed": cited.issubset(allowed_source_ids) and bool(cited),
+        "no_internal_fact_markers": not re.search(r"\bFACT-F(?:\d+|n)\s*:", draft.body, re.IGNORECASE),
+        "claim_lifecycle_status_supported": not status_violations,
         "numbers_from_evidence": numbers(prose_without_headings).issubset(numbers(material + " " + as_of)),
         "proper_names_preserved": not missing_names,
         "no_unsupported_proper_names": not unsupported_names,
@@ -229,6 +237,7 @@ def section_response_valid(
         "checks": checks,
         "missing_proper_names": sorted(missing_names),
         "unsupported_proper_names": sorted(unsupported_names),
+        "claim_status_violations": status_violations,
     }
 
 
@@ -273,10 +282,12 @@ def render_localized_fact_section(
         def translate_fact(
             text: str, target: str, approved: list[dict[str, Any]], entities: list[str],
             selected_mode: str = translation_mode,
+            selected_claim_status: str = str(fact.get("claim_status", "unverified")),
         ) -> str:
             return localized_translation(
                 text, target, approved, entities, model, timeout, selected_mode,
                 metrics_sink=model_call_metrics,
+                claim_status=selected_claim_status,
             )
 
         row = localize_fact(
@@ -778,7 +789,9 @@ def generate_staged_target(
     for index, section in enumerate(outline, start=1):
         section_sequence = sequence + 1
         allowed = set(section["source_ids"])
-        section_facts = [f for f in facts if f["fact_id"] in section["fact_ids"]]
+        section_facts = prepare_claims_for_generation(
+            [f for f in facts if f["fact_id"] in section["fact_ids"]]
+        )
         if not section_facts or not allowed.issubset(set(source_ids)):
             raise EngineFailure("outline_evidence_reference_invalid")
         scoped_sources = []
@@ -821,6 +834,12 @@ def generate_staged_target(
                 "sources": scoped_sources,
                 "verified_facts": section_facts,
                 "plan": {"section_number": index, "heading": section["heading"]},
+                "article_outline": {
+                    "section_number": index,
+                    "heading": section["heading"],
+                    "fact_ids": [fact["fact_id"] for fact in section_facts],
+                },
+                "claim_status_policy": STATUS_RULES,
             }
             if not is_original:
                 assert localized_source is not None

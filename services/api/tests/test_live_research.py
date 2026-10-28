@@ -408,7 +408,7 @@ def test_grouped_financial_amounts_normalize_to_the_same_numeric_fact() -> None:
 
 def test_inherited_year_date_lists_match_localized_dates() -> None:
     source = "Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026."
-    localized = "2026년 8월 17일, 9월 9일 및 9월 16일 보드의 할인율 회의록."
+    localized = "2026\ub144 8\uc6d4 17\uc77c, 9\uc6d4 9\uc77c, 9\uc6d4 16\uc77c"
     assert numbers(source) == numbers(localized)
     assert numbers("## 1\nThe rate was 5 percent.") == {"5.0"}
     assert numbers("October 13, 2026") == numbers("2026년 10월 13일")
@@ -1377,7 +1377,7 @@ def test_fact_first_localization_renders_citations_from_source_registry(
     }
     monkeypatch.setattr(
         local_inference, "localized_translation",
-        lambda text, target, glossary, entities, model, timeout, mode="translate", metrics_sink=None: (
+        lambda text, target, glossary, entities, model, timeout, mode="translate", metrics_sink=None, claim_status="unverified": (
             "??? ??? ?? 2026" if text == source["evidence"]
             else "??? ??"
         ),
@@ -1537,3 +1537,61 @@ def test_same_language_local_edit_still_checks_target_language() -> None:
     )
     assert result["status"] == "quality_held"
     assert result["checks"]["language_matches"] is False
+
+
+def test_taiwan_minguo_date_matches_its_gregorian_equivalent() -> None:
+    assert numbers("\u6c11\u570b115\u5e747\u67081\u65e5") == numbers("2026-07-01")
+    assert numbers("115\u5e747\u67081\u65e5") == numbers("July 1, 2026")
+
+
+def test_section_claim_gate_blocks_internal_fact_markers() -> None:
+    from woori.grounding import extract_facts
+    from woori.pipeline import section_response_valid
+
+    source = {"id": "source-1", "evidence": "A reviewed source states a proposal is planned."}
+    facts = extract_facts([source])
+    draft = Draft(
+        title="A reviewed proposal",
+        body="FACT-F1: A reviewed source states a proposal is planned. [source:source-1]",
+        summary="A proposal remains under review.",
+        keywords=["proposal"],
+        source_ids=["source-1"],
+    )
+    result = section_response_valid(draft, facts, {"source-1"}, "2026-10-28")
+    assert not result["passed"]
+    assert not result["checks"]["no_internal_fact_markers"]
+
+
+def test_claim_status_cannot_be_promoted_without_reviewed_exact_evidence() -> None:
+    from woori.claim_status import prepare_claim_for_generation
+
+    source_fact = {"fact_id": "fact-1", "text": "The ministry proposed the plan."}
+    assert prepare_claim_for_generation(source_fact)["claim_status"] == "unverified"
+    assert prepare_claim_for_generation({
+        **source_fact,
+        "claim_status": "proposed",
+        "claim_status_basis_excerpt": "proposed the plan",
+        "claim_status_reviewed": True,
+    })["claim_status"] == "proposed"
+    with pytest.raises(ValueError, match="claim_status_evidence_missing"):
+        prepare_claim_for_generation({**source_fact, "claim_status": "enacted"})
+    with pytest.raises(ValueError, match="claim_status_invalid"):
+        prepare_claim_for_generation({**source_fact, "claim_status": "passed"})
+
+
+def test_claim_lifecycle_status_gate_rejects_unearned_certainty() -> None:
+    from woori.claim_status import lifecycle_status_violations
+
+    proposed = [{"claim_status": "proposed"}]
+    assert lifecycle_status_violations("The measure was proposed.", proposed) == []
+    assert lifecycle_status_violations("The measure was approved and enacted.", proposed)
+    unverified = [{"claim_status": "unverified"}]
+    assert lifecycle_status_violations("The amount was paid.", unverified)
+    assert lifecycle_status_violations("The measure will take effect.", unverified)
+    assert lifecycle_status_violations("The source records a proposal.", unverified)
+    approved = [{"claim_status": "approved"}]
+    assert lifecycle_status_violations("The measure was approved.", approved) == []
+    assert lifecycle_status_violations("The measure was enacted.", approved)
+    enacted = [{"claim_status": "enacted"}]
+    assert lifecycle_status_violations("The measure took effect.", enacted) == []
+    assert lifecycle_status_violations("The amount was paid.", enacted)

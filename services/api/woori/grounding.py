@@ -2,7 +2,7 @@
 
 import hashlib
 import re
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 from urllib.parse import urlparse
 
@@ -35,8 +35,9 @@ def numbers(text: str) -> set[str]:
     dates: set[str] = set()
 
     month_pattern = r"\b(" + "|".join(months) + r")\s+(\d{1,2})(?:,\s*(\d{4}))?\b"
+    # Written dates, including Taiwan Minguo years, are compared by date value.
     localized_pattern = (
-        r"(?<!\d)(?:(\d{4})\s*(?:년|年)\s*)?(\d{1,2})\s*(?:월|月)\s*(\d{1,2})\s*(?:일|日)?"
+        r"(?<!\d)(?:(\d{1,4})\s*(?:\u5e74|\ub144)\s*)?(\d{1,2})\s*(?:\u6708|\uc6d4)\s*(\d{1,2})\s*(?:\u65e5|\u53f7|\u865f|\uc77c)?"
     )
 
     def date_lists(sentence: str, pattern: str, kind: str) -> str:
@@ -58,8 +59,14 @@ def numbers(text: str) -> set[str]:
                 explicit = int(match.group(1)) if match.group(1) else None
                 month, day = int(match.group(2)), int(match.group(3))
                 year = explicit or (next(iter(unique_years)) if len(unique_years) == 1 else None)
-            if year and 1 <= month <= 12 and 1 <= day <= 31:
-                dates.add(f"DATE:{year:04d}-{month:02d}-{day:02d}")
+            if year and kind == "localized" and 1 <= year <= 1911:
+                year += 1911
+            if year:
+                try:
+                    normalized_date = date(year, month, day)
+                except ValueError:
+                    continue
+                dates.add(f"DATE:{normalized_date.isoformat()}")
                 replacements.append(match.span())
         for start, end in reversed(replacements):
             sentence = sentence[:start] + " " + sentence[end:]
@@ -79,9 +86,12 @@ def numbers(text: str) -> set[str]:
             year, month, day = int(value[:4]), int(value[4:6]), int(value[6:])
         else:
             year, month, day = (int(x) for x in re.split(r"[-/.]", value))
-        if 1 <= month <= 12 and 1 <= day <= 31:
-            dates.add(f"DATE:{year:04d}-{month:02d}-{day:02d}")
-            return " "
+        try:
+            normalized_date = date(year, month, day)
+        except ValueError:
+            return value
+        dates.add(f"DATE:{normalized_date.isoformat()}")
+        return " "
         return value
 
     # ASCII boundaries keep localized particles (e.g. Korean 조사) outside the

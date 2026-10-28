@@ -125,6 +125,9 @@ def evaluate(
     threshold = 3 if fact_count >= 4 else 2
     checks = {
         **grounded["rule_checks"],
+        "no_internal_fact_markers": not re.search(
+            r"\bFACT-F(?:\d+|n)\s*:", user_text, re.IGNORECASE
+        ),
         "article_structure": len(headings) >= threshold and len(paragraphs) >= threshold,
         "title_body_alignment": bool(title_tokens & body_tokens) if title_tokens else False,
         "keyword_search_intent_coverage": keyword_coverage,
