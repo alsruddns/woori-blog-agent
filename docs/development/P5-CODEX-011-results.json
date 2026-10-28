@@ -100,8 +100,8 @@
   ],
   "git": {
     "implementation_commit": "ffcf7c1",
-    "result_record_commit": "recorded in the follow-up documentation commit",
-    "origin_develop_push": "pending",
+    "result_record_commit": "b18ac24; later push-status update is recorded in git history",
+    "origin_develop_push": "successful through b18ac24",
     "main_changed": false,
     "untracked_playwright_directory_preserved": true
   }

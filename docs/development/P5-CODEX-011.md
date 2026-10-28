@@ -67,5 +67,6 @@ Auto 선호 설정은 라이브 게시 허가와 다르다. 운영 migration, �
 
 - 브랜치: `develop`
 - 구현 커밋: `ffcf7c1`
-- 원격 푸시: 전체 검증 후 수행
+- 결과 기록 커밋: `b18ac24` (후속 푸시 상태 기록은 git log 참조)
+- 원격 푸시: `origin/develop` 성공 (`b18ac24`까지 확인)
 - `main` 변경 금지, 기존 미추적 `.playwright-mcp/` 보존
