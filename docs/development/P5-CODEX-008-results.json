@@ -97,8 +97,8 @@
     "git_diff_check": "passed"
   },
   "git": {
-    "commit": "See final report; the result document is included in that commit.",
-    "push": "Pending final verification.",
+    "commit": "6a639fdf0a27b5b99db5976fbec7235ebdc98beb",
+    "push": "Verified origin/develop contains the implementation commit; final report also records the follow-up results-document commit.",
     "main_changed": false
   },
   "not_done": [
