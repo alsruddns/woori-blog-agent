@@ -1,0 +1,111 @@
+{
+  "task_id": "P5-AI-005",
+  "run_id": "3e22302a-241e-42b7-b343-e1c32e0ae92d",
+  "recorded_at": "2026-10-28T15:12:42+09:00",
+  "branch": "develop",
+  "starting_commit": "95df5cd3567a7bc945c819f4afec3339ed4d7889",
+  "runtime": {
+    "process_count": 1,
+    "pid": 39500,
+    "project_owned_executable": true,
+    "listener": "127.0.0.1:11435",
+    "health_http_status": 200,
+    "idle_slot_after_probe": true,
+    "managed_restart_identity_complete": false,
+    "restart_performed": false,
+    "model": "Qwen3-4B-Q4_K_M.gguf",
+    "model_sha256": "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5",
+    "engine": "llama.cpp b11889",
+    "backend": "vulkan",
+    "options": {
+      "threads": 4,
+      "threads_batch": 4,
+      "gpu_layers_requested": 20,
+      "parallel_slots": 1,
+      "context": 8192
+    }
+  },
+  "system": {
+    "logical_cpus": 12,
+    "total_ram_gib": 31.91,
+    "available_ram_before_gib": 10.89,
+    "disk_free_gib": 171.18,
+    "system_cpu_idle_samples_percent": [17.0, 17.7, 14.8, 10.1, 7.3, 3.9, 1.7, 21.5],
+    "llama_idle_cpu_percent": 0.0,
+    "llama_idle_rss_mib": 1180.7,
+    "concurrent_processes_observed": ["Chrome", "Codex UI", "Windows/System", "security-related processes"],
+    "cause_attribution_for_previous_peak": "not_measured_per_process"
+  },
+  "previous_long_request": {
+    "artifact": "P5-AI-004-results-184610c8-ce45-4dfb-bc2a-f8ceb0517e81.json",
+    "elapsed_seconds": 147.19,
+    "system_cpu_peak_percent": 94.1,
+    "cancelled": true,
+    "valid_article_body": false,
+    "retry_count": 0,
+    "llama_process_cpu_at_peak": null,
+    "gpu_during_inference_percent": null
+  },
+  "probe": {
+    "kind": "single_short_nonpublishing_loopback_request",
+    "preflight_cpu_percent": 9.6,
+    "preflight_available_ram_gib": 10.89,
+    "max_tokens": 8,
+    "prompt_tokens": 25,
+    "completion_tokens": 3,
+    "elapsed_seconds": 1.505,
+    "system_cpu_peak_percent": 49.0,
+    "llama_cpu_mean_percent_of_machine": 17.07,
+    "llama_cpu_peak_percent_of_machine": 31.7,
+    "rss_peak_mib": 2541.0,
+    "gpu_utilization_percent": null,
+    "cpu_limit_percent": 80,
+    "limit_crossed": false,
+    "retry_count": 0,
+    "database_write": false,
+    "blogger_calls": 0,
+    "paid_api_calls": 0
+  },
+  "candidate_settings": [
+    {
+      "threads": 2,
+      "threads_batch": 2,
+      "status": "recommended_for_one_future_controlled_test",
+      "measured_cpu_improvement": null
+    },
+    {
+      "threads": 2,
+      "threads_batch": 1,
+      "status": "unverified_alternative",
+      "measured_cpu_improvement": null
+    }
+  ],
+  "database_audit": {
+    "target": "woori_blog_agent_eval",
+    "server": "127.0.0.1",
+    "configured_role": "woori_eval_reader",
+    "append_attempt": "refused_before_insert_due_to_read_only_role",
+    "rows_changed": 0
+  },
+  "safety": {
+    "system_cpu_cap_percent": 80,
+    "cap_changed": false,
+    "measurements_ignored": false,
+    "other_processes_terminated": 0,
+    "existing_llama_server_stopped": false,
+    "operational_db_changed": false,
+    "evaluation_content_or_quota_changed": false,
+    "publish_ready_changed": false,
+    "blogger_write_calls": 0,
+    "paid_api_calls": 0
+  },
+  "verification": {
+    "source_code_changed": false,
+    "inference_probe_completed": true,
+    "full_test_suite": "not_run_no_source_code_change",
+    "audit_database_insert": "not_performed_read_only_role",
+    "json_validation": "passed",
+    "result_assertions": "passed",
+    "git_diff_check": "passed"
+  }
+}
