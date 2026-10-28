@@ -1,0 +1,57 @@
+{
+  "work_id": "P5-CODEX-007",
+  "recorded_at": "2026-10-28",
+  "branch": "develop",
+  "baseline_commit": "2c69f5f",
+  "implementation": {
+    "country_region_recommendations": {
+      "KR": "ko",
+      "US": "en",
+      "JP": "ja",
+      "CN": "zh-CN",
+      "TW_HK_SG": "manual_reader_relevance_review_required",
+      "unknown": "no_automatic_recommendation"
+    },
+    "localized_request_persistence": "implemented_append_only",
+    "request_cancellation_and_retry": "implemented_as_append_only_event; new idempotency key permits a subsequent request",
+    "target_reader_relevance_reason": "required per selected target and persisted in audit details",
+    "manuscript_and_publication_list_entry_points": "implemented",
+    "provider_to_generate_article": "unavailable_requests_wait_or_block",
+    "blogger_live_writes_enabled": false,
+    "automatic_publishing_enabled_by_this_work": false,
+    "publish_ready_modified": false,
+    "operations_database_migration_applied": false,
+    "test_database_schema_version": 44
+  },
+  "actual_execution": {
+    "ai_generation_calls": 0,
+    "blogger_api_write_calls": 0,
+    "automatic_posts": 0,
+    "evaluation_only_sources_promoted": 0
+  },
+  "validation_before_final_full_verification": {
+    "test_database_provision_and_isolation": "passed; schema 44; operations CONNECT denied for test app role",
+    "targeted_pytest": "9 passed",
+    "ruff_changed_files": "passed",
+    "mypy_changed_modules": "passed",
+    "dashboard_eslint": "passed",
+    "dashboard_typecheck": "passed"
+  },
+  "final_verification": {
+    "scripts_verify_ps1": "passed",
+    "python_tests": "257 passed",
+    "ruff": "passed",
+    "mypy": "passed for 36 API source files",
+    "wheel": "built and verified",
+    "dashboard_eslint": "passed",
+    "dashboard_typecheck": "passed",
+    "dashboard_production_build": "passed",
+    "git_diff_check": "passed"
+  },
+  "git": {
+    "commit": null,
+    "origin_develop_push": "pending",
+    "main_changed": false,
+    "playwright_mcp_preserved": true
+  }
+}

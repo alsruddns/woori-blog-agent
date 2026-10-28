@@ -3,13 +3,13 @@
 import { useState } from "react";
 
 type Candidate = {
-  content_version_id: string; title: string; language_code: string; target_country: string;
+  evaluation_id: string | null; content_version_id: string; title: string; language_code: string; target_country: string;
   blog_id: string; url: string; blogger_blog_id: string | null; machine_passed: boolean;
   human_review_required: boolean; publish_ready: boolean; quality_status: string | null;
   editorial_review_approved?: boolean; publication_approval_approved?: boolean;
   effective_mode?: string; auto_eligibility?: { eligible: boolean; reasons: string[]; simulation_only: boolean };
 };
-type Job = { id: string; content_version_id: string; language_code: string; url: string; status: string; publication_state: string; block_reasons: string[]; simulation_count: number };
+type Job = { id: string; evaluation_id: string | null; content_version_id: string; language_code: string; url: string; status: string; publication_state: string; block_reasons: string[]; simulation_count: number };
 type ModeSetting = { scope_type: "global" | "language" | "blog"; scope_key: string; configured_mode: "manual" | "auto"; daily_auto_limit: number; minimum_interval_minutes: number; allowed_start_hour: number; allowed_end_hour: number; timezone: string; allowed_categories: string[]; excluded_topics: string[]; max_source_age_hours: number; retry_limit: number; emergency_stopped: boolean; operations_auto_approved: boolean; updated_at?: string };
 type SyncPost = { id: string | null; url: string | null; title: string | null; status: string | null; published: string | null; updated: string | null; internal_record: boolean; content_version_id: string | null };
 type SyncResult = { language_code: string; blog_uuid: string; posts: SyncPost[]; next_page_token: string; read_only: true; internal_state_changed: false };
@@ -189,7 +189,8 @@ export default function PublicationManager({ initial }: { initial: PublicationDa
         {data.candidates.map((candidate) => <tr key={`${candidate.content_version_id}-${candidate.blog_id}`}>
           <td>{candidate.title}<small>{candidate.content_version_id}</small></td><td>{candidate.language_code}</td><td>{candidate.url}<small>{candidate.effective_mode ?? "Manual"}</small></td>
           <td>{candidate.quality_status ?? "검사 전"}; 편집 검토 {candidate.editorial_review_approved ? "완료" : "대기"}; 게시 승인 {candidate.publication_approval_approved ? "완료" : "대기"}; 발행 준비={candidate.publish_ready ? "예" : "아니요"}<small>{candidate.auto_eligibility?.reasons.join(", ")}</small></td>
-          <td><button disabled={!!busy || candidate.effective_mode?.startsWith("auto")} onClick={() => void request(candidate)}>{busy === candidate.content_version_id ? "Recording…" : "Manual 요청 기록"}</button>{" "}
+          <td>{candidate.evaluation_id ? <a href={`/manuscripts?open_evaluation_id=${encodeURIComponent(candidate.evaluation_id)}&open_content_version_id=${encodeURIComponent(candidate.content_version_id)}`}>다른 언어로 발행</a> : <span>평가 연결 없음</span>}{" "}
+            <button disabled={!!busy || candidate.effective_mode?.startsWith("auto")} onClick={() => void request(candidate)}>{busy === candidate.content_version_id ? "Recording…" : "Manual 요청 기록"}</button>{" "}
             <button disabled={!!busy} onClick={() => void syncReadOnly(candidate)}>Read-only Blogger sync</button></td>
         </tr>)}
       </tbody></table>
@@ -200,7 +201,7 @@ export default function PublicationManager({ initial }: { initial: PublicationDa
         <td><button disabled={!!busy} onClick={() => void simulate(job)}>{busy === job.id ? "Running…" : "Run offline Fake adapter"}</button>{" "}
           <label>Mock schedule (KST) <input id={`schedule-${job.id}`} type="datetime-local" /></label>{" "}
           <button disabled={!!busy} onClick={() => void schedule(job)}>Queue mock</button>{" "}
-          {job.status === "queued" && <button disabled={!!busy} onClick={() => void cancelSchedule(job)}>Cancel mock</button>}</td></tr>)}
+          {job.status === "queued" && <button disabled={!!busy} onClick={() => void cancelSchedule(job)}>Cancel mock</button>}{job.evaluation_id && <a href={`/manuscripts?open_evaluation_id=${encodeURIComponent(job.evaluation_id)}&open_content_version_id=${encodeURIComponent(job.content_version_id)}`}>다른 언어로 발행</a>}</td></tr>)}
     </tbody></table></section>
   </>;
 }

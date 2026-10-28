@@ -5,8 +5,14 @@ import styles from "./article-preview.module.css";
 
 type Row = Record<string, unknown>;
 type ListResult = { items: Row[]; page: number; page_size: number; total: number; languages: string[]; categories: string[] };
+type LocalizedTarget = Row & { language_code: string; blog_id: string; already_published: boolean; recommended: boolean; existing_localization: Row | null; published_posts: Row[] };
+type LocalizedPlan = Row & { source: Row; targets: LocalizedTarget[]; requests: Row[]; languages_without_active_blog: Row[]; generation_provider_available: boolean; live_blogger_writes_enabled: false; automatic_publishing_enabled: false };
 const value = (row: Row | null | undefined, key: string) => String(row?.[key] ?? "");
 const koreanLanguage = (code: string) => ({ ko: "한국어", en: "영어", "zh-CN": "중국어 간체", ja: "일본어" } as Record<string, string>)[code] ?? code;
+const recommendationLabel = (reason: string) => reason === "regional_language_and_reader_relevance_require_editorial_selection"
+  ? "지역 코드만으로 언어를 정하지 않습니다. 독자 관련성을 직접 검토하세요."
+  : reason === "direct_region_language_match" ? "지역·언어 일치 참고 후보이며 독자 관련성을 확인해야 합니다."
+    : "지역 정보만으로 게시 언어를 추천하지 않습니다.";
 const dateLabel = (raw: string) => { const date = new Date(raw); return Number.isNaN(date.valueOf()) ? "—" : new Intl.DateTimeFormat("ko-KR", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Seoul" }).format(date); };
 const statusLabel = (raw: string, passed: boolean) => {
   if (raw === "editorial_review_passed") return "편집 검토 통과";
@@ -55,6 +61,12 @@ export default function ManuscriptWorkspace() {
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [googleTrendsBased, setGoogleTrendsBased] = useState(false);
+  const [localizedPlan, setLocalizedPlan] = useState<LocalizedPlan | null>(null);
+  const [localizedPlanLoading, setLocalizedPlanLoading] = useState(false);
+  const [localizedSelection, setLocalizedSelection] = useState<Record<string, boolean>>({});
+  const [oneTimeAutoPublishRequested, setOneTimeAutoPublishRequested] = useState(false);
+  const [localizedRequester, setLocalizedRequester] = useState("");
+  const [localizedSelectionReason, setLocalizedSelectionReason] = useState("");
   const [previewMode, setPreviewMode] = useState<"rendered" | "source" | "seo" | "package">("rendered");
   const [targetBlogRecordId, setTargetBlogRecordId] = useState("");
   const [renderedPreviewState, setRenderedPreviewState] = useState<{ key: string; result: RenderedPreview } | null>(null);
@@ -63,6 +75,7 @@ export default function ManuscriptWorkspace() {
   const previousFocus = useRef<HTMLElement | null>(null);
   const requestSequence = useRef(0);
   const detailSequence = useRef(0);
+  const deepLinkOpened = useRef(false);
 
   useEffect(() => { const timer = setTimeout(() => setFilters(current => ({ ...current, q: searchText, page: 1 })), 250); return () => clearTimeout(timer); }, [searchText]);
   useEffect(() => {
@@ -84,7 +97,7 @@ export default function ManuscriptWorkspace() {
   const openDetail = useCallback(async (row: Row, trigger: HTMLElement) => {
     const requestId = ++detailSequence.current;
     previousFocus.current = trigger;
-    setSelected(row); setDetail(null); setTab("body"); setMessage(""); setDetailLoading(true); setPreviewMode("rendered"); setRenderedPreviewState(null); setGoogleTrendsBased(false); setTargetBlogRecordId("");
+    setSelected(row); setDetail(null); setTab("body"); setMessage(""); setDetailLoading(true); setPreviewMode("rendered"); setRenderedPreviewState(null); setGoogleTrendsBased(false); setTargetBlogRecordId(""); setLocalizedPlan(null); setLocalizedSelection({}); setOneTimeAutoPublishRequested(false); setLocalizedRequester(""); setLocalizedSelectionReason("");
     document.body.classList.add("sheet-open");
     try {
       const response = await fetch(`/api/research/manuscripts/${encodeURIComponent(value(row, "evaluation_id"))}/${encodeURIComponent(value(row, "content_version_id"))}`, { cache: "no-store" });
@@ -101,11 +114,72 @@ export default function ManuscriptWorkspace() {
     } catch { setMessage("선택한 원고 상세 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요."); }
     finally { setDetailLoading(false); }
   }, []);
+  useEffect(() => {
+    if (!data || deepLinkOpened.current) return;
+    const params = new URLSearchParams(window.location.search);
+    const evaluationId = params.get("open_evaluation_id");
+    const versionId = params.get("open_content_version_id");
+    if (!evaluationId || !versionId) return;
+    deepLinkOpened.current = true;
+    const row = data.items.find(item => value(item, "evaluation_id") === evaluationId && value(item, "content_version_id") === versionId)
+      ?? { evaluation_id: evaluationId, content_version_id: versionId, title: "원고 상세" };
+    const frame = window.requestAnimationFrame(() => void openDetail(row, document.body));
+    return () => window.cancelAnimationFrame(frame);
+  }, [data, openDetail]);
   const closeDetail = useCallback(() => {
     detailSequence.current += 1;
     setSelected(null); setDetail(null); document.body.classList.remove("sheet-open");
     requestAnimationFrame(() => previousFocus.current?.focus());
   }, []);
+  const loadLocalizedPlan = async () => {
+    if (!detail) return;
+    setLocalizedPlanLoading(true); setMessage("");
+    try {
+      const response = await fetch(`/api/research/localized-publications/targets/${encodeURIComponent(value(detail, "id"))}/${encodeURIComponent(value(detail, "content_version_id"))}`, { cache: "no-store" });
+      const payload = await response.json() as LocalizedPlan & Row;
+      if (!response.ok) throw new Error(String(payload.detail ?? payload.error ?? "다국어 게시 대상을 불러오지 못했습니다."));
+      setLocalizedPlan(payload);
+      setLocalizedSelection({});
+    } catch (reason) { setMessage(reason instanceof Error ? reason.message : "다국어 게시 대상을 불러오지 못했습니다."); }
+    finally { setLocalizedPlanLoading(false); }
+  };
+
+  const submitLocalizedRequests = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!detail || !localizedPlan) return;
+    const form = new FormData(event.currentTarget);
+    const requester = String(form.get("requester") ?? "").trim();
+    const targets = localizedPlan.targets.filter(target => localizedSelection[`${target.language_code}:${target.blog_id}`]).map(target => ({ language_code: target.language_code, blog_id: target.blog_id, selection_reason: localizedSelectionReason.trim() }));
+    if (!targets.length || requester.length < 2 || localizedSelectionReason.trim().length < 10) { setMessage("요청자, 대상 언어·블로그와 독자 관련성 사유(10자 이상)를 입력하세요."); return; }
+    setSaving(true); setMessage("");
+    try {
+      const response = await fetch("/api/research/localized-publications/requests", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ evaluation_id: value(detail, "id"), source_content_version_id: value(detail, "content_version_id"), targets, requester, idempotency_key: crypto.randomUUID(), explicit_confirmation: true, one_time_auto_publish_requested: oneTimeAutoPublishRequested }),
+      });
+      const payload = await response.json() as Row;
+      if (!response.ok) throw new Error(String(payload.detail ?? payload.error ?? "요청을 저장하지 못했습니다."));
+      const items = Array.isArray(payload.items) ? payload.items as Row[] : [];
+      setMessage(items.map(item => `${value(item, "language_code")}: ${value(item, "state")}${item.duplicate ? " (기존 요청 또는 게시글)" : ""}`).join(" · ") || "요청 상태를 확인할 수 없습니다.");
+      await loadLocalizedPlan();
+    } catch (reason) { setMessage(reason instanceof Error ? reason.message : "요청을 저장하지 못했습니다."); }
+    finally { setSaving(false); }
+  };
+  const cancelLocalizedRequest = async (requestId: string) => {
+    if (localizedRequester.trim().length < 2) { setMessage("요청을 취소하려면 요청자 이름을 입력하세요."); return; }
+    setSaving(true); setMessage("");
+    try {
+      const response = await fetch(`/api/research/localized-publications/requests/${encodeURIComponent(requestId)}/cancel`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ actor: localizedRequester.trim(), reason: "사용자가 다국어 원고 요청을 취소했습니다.", idempotency_key: crypto.randomUUID() }),
+      });
+      const payload = await response.json() as Row;
+      if (!response.ok) throw new Error(String(payload.detail ?? payload.error ?? "요청을 취소하지 못했습니다."));
+      setMessage(`다국어 요청 상태: ${value(payload, "state")}`);
+      await loadLocalizedPlan();
+    } catch (reason) { setMessage(reason instanceof Error ? reason.message : "요청을 취소하지 못했습니다."); }
+    finally { setSaving(false); }
+  };
   useEffect(() => {
     if (!selected) return;
     const onKey = (event: globalThis.KeyboardEvent) => {
@@ -291,6 +365,37 @@ export default function ManuscriptWorkspace() {
               {detail.review_actions_allowed ? <details className="edit-article"><summary>새 원고 버전 편집</summary><form onSubmit={event => void submitRevision(event)}>
                 <label>작성자<input name="reviewer" required minLength={2} maxLength={80} /></label><label>변경 사유<input name="reason" required minLength={10} maxLength={2000} /></label><label>제목<input name="title" required maxLength={500} defaultValue={value(latestRevision ?? {}, "title") || value(detail, "title")} /></label><label>요약 및 SEO 설명<textarea name="summary" required minLength={1} maxLength={500} defaultValue={value(latestRevision ?? {}, "seo_description") || value(detail, "summary")} /></label><label>검색 키워드 (| 구분)<input name="keywords" required defaultValue={((detail.keywords as string[] | undefined) ?? []).join(" | ")} /></label><label>SEO 제목 후보 (| 구분)<input name="seo_title_candidates" maxLength={1000} defaultValue={((latestSeo.seo_title_candidates as string[] | undefined) ?? []).join(" | ")} /></label><label>핵심 검색어<input name="primary_keyword" maxLength={80} defaultValue={value(latestSeo, "primary_keyword") || ((detail.keywords as string[] | undefined) ?? [])[0] || ""} /></label><label>대상 지역<input name="target_region" maxLength={80} placeholder="근거가 있을 때만 입력" defaultValue={value(latestSeo, "target_region")} /></label><label>검색 의도<select name="search_intent" defaultValue={value(latestSeo, "search_intent")}><option value="">미기록</option><option value="informational">정보 탐색</option><option value="navigational">특정 사이트 탐색</option><option value="transactional">거래·행동</option><option value="commercial">상업 정보 비교</option></select></label><label>핵심 질문<input name="core_question" maxLength={500} defaultValue={value(latestSeo, "core_question")} /></label><label>핵심 답변<textarea name="core_answer" maxLength={2000} defaultValue={value(latestSeo, "core_answer")} /></label><label>Blogger 라벨 (, 구분)<input name="labels" defaultValue={((latestRevision?.blogger_labels as string[] | undefined) ?? []).join(", ")} /></label><label>원고 HTML<textarea name="html_body" rows={14} required maxLength={100000} defaultValue={value(latestRevision ?? {}, "html_body") || htmlBody} /></label><p>저장 시 서버 허용 목록으로 HTML을 정화하고 새 버전에서 품질 검사를 다시 실행합니다.</p><button disabled={saving}>새 버전 저장</button></form></details> : <p className="notice">이 원고는 읽기 전용입니다. 현재 편집·검토 권한 정책에서 이 원고의 버전은 승인 대상에 포함되지 않습니다.</p>}
             </div>}
+            {tab === "body" && <section className="detail-section localized-expansion" aria-labelledby="localized-expansion-title">
+              <h3 id="localized-expansion-title">다른 언어로 발행</h3>
+              <p>원본 자료의 지역과 언어를 기준으로 후보를 안내합니다. 번역이 아닌 현지 독자용 칼럼을 준비하도록 요청하며, 생성 Provider가 없으면 작업은 대기 상태로 남습니다.</p>
+              {!localizedPlan && <button type="button" disabled={localizedPlanLoading} onClick={() => void loadLocalizedPlan()}>{localizedPlanLoading ? "대상 확인 중…" : "언어와 Blogger 블로그 선택"}</button>}
+              {localizedPlan && <>
+                <p>원본 지역: {value(localizedPlan.source, "target_country") || "미확인"} · 원문 언어: {koreanLanguage(value(localizedPlan.source, "source_language"))} · 사실 자료 {value(localizedPlan.source, "source_count")}건 · 근거 사실 {value(localizedPlan.source, "fact_count")}건</p>
+                {localizedPlan.source.evaluation_only && <p className="quality-held" role="status">평가 전용 원고입니다. 이 자료에서는 새 원고 생성과 발행 요청을 진행할 수 없습니다.</p>}
+                {!localizedPlan.generation_provider_available && <p className="notice">원고 생성 Provider가 연결되지 않았습니다. 요청은 생성되지 않으며 대기 또는 차단 상태로만 기록됩니다.</p>}
+                <form onSubmit={event => void submitLocalizedRequests(event)}>
+                  <label>요청자 이름<input name="requester" minLength={2} maxLength={80} required value={localizedRequester} onChange={event => setLocalizedRequester(event.target.value)} /></label>
+                  <fieldset><legend>추가 언어와 대상 블로그</legend>
+                    {localizedPlan.targets.map(target => {
+                      const key = `${target.language_code}:${target.blog_id}`;
+                      const unavailable = Boolean(localizedPlan.source.evaluation_only) || target.already_published || Boolean(target.existing_localization);
+                      const reason = target.already_published ? "이미 게시됨" : target.existing_localization ? `기존 현지화 원고 v${value(target.existing_localization, "version")}가 있음` : localizedPlan.source.evaluation_only ? "평가 전용 원고" : "";
+                      return <label key={key} className="localized-target-option"><input type="checkbox" disabled={unavailable} checked={Boolean(localizedSelection[key])} onChange={event => setLocalizedSelection(current => ({ ...current, [key]: event.target.checked }))} />
+                        <span><strong>{koreanLanguage(target.language_code)} · {value(target, "blog_name")}</strong><small>{value(target, "blog_url")} · Blog ID {value(target, "blogger_blog_id") || "미확인"} · 게시 모드 {value(target, "publication_mode") === "auto" ? "Auto 설정(실행 차단)" : "Manual"}</small>
+                          {target.recommended && <small>{recommendationLabel(value(target, "recommendation_reason"))}</small>}{reason && <small className="quality-held">{reason}</small>}
+                          {target.published_posts.map((post, index) => <small key={`${value(post, "remote_post_id")}-${index}`}>기존 Blogger 글 · Post ID {value(post, "remote_post_id")} · 블로그 URL {value(post, "url")}</small>)}</span></label>;
+                    })}
+                  </fieldset>
+                  {localizedPlan.languages_without_active_blog.length > 0 && <p className="notice">활성 Blogger 연결이 없어 선택할 수 없는 언어: {localizedPlan.languages_without_active_blog.map(language => koreanLanguage(value(language, "language_code"))).join(", ")}</p>}
+                  {["TW", "HK", "SG"].includes(value(localizedPlan.source, "target_country").toUpperCase()) && <p className="notice">대만·홍콩·싱가포르 자료는 지역 코드만으로 중국어 간체 대상이라고 판단하지 않습니다. 원고별 독자 관련성과 언어를 사람이 선택해야 합니다.</p>}
+                  <label>선택한 언어 독자에게 제공할 가치와 대상 이유<textarea value={localizedSelectionReason} onChange={event => setLocalizedSelectionReason(event.target.value)} minLength={10} maxLength={1000} required placeholder="사건의 영향 지역, 대상 독자의 배경, 검색 의도와 선택 이유를 적으세요." /></label>
+                  <label className="localized-consent"><input type="checkbox" checked={oneTimeAutoPublishRequested} onChange={event => setOneTimeAutoPublishRequested(event.target.checked)} /> 이 선택 작업에 한해 원고 생성 후 자동 게시 의사를 명시합니다. 현재 게시 잠금과 전체 Manual/Auto 설정은 변경되지 않습니다.</label>
+                  <p>처리 순서: 기존 자료·출처 확인 → 현지화 원고 작성 → 사실·언어·중복·SEO 검사 → HTML 검증 → Manual 검토 또는 사전 Auto 조건 확인. 모든 단계가 통과해도 실제 Blogger 쓰기는 별도 운영 잠금이 해제되기 전까지 차단됩니다.</p>
+                  <button type="submit" disabled={saving || localizedSelectionReason.trim().length < 10 || !Object.values(localizedSelection).some(Boolean)}>선택한 언어 작업 요청</button>
+                </form>
+                {localizedPlan.requests.length > 0 && <div><h4>이 원고의 다국어 요청 이력</h4><ul>{localizedPlan.requests.map(item => { const state = value(item, "latest_state") || value(item, "initial_state"); return <li key={value(item, "id")}>{value(item, "target_language_code")} · {state} · {dateLabel(value(item, "created_at"))} {!["cancelled", "published"].includes(state) && <button type="button" disabled={saving} onClick={() => void cancelLocalizedRequest(value(item, "id"))}>요청 취소</button>}</li>; })}</ul></div>}
+              </>}
+            </section>}
             {tab === "sources" && <div className="detail-section">{((detail.sources as Row[] | undefined) ?? []).length === 0 ? <p className="empty-state">연결된 출처가 없습니다.</p> : (detail.sources as Row[]).map(source => <article className="source-card" key={value(source, "id")}><h3>{value(source, "source_name")}</h3><p>게시 {dateLabel(value(source, "published_at"))} · 수집 {dateLabel(value(source, "collected_at"))} · 권리 {value(source, "rights") || "확인 필요"}</p><a href={value(source, "url")} target="_blank" rel="noreferrer">원문 열기 ↗</a></article>)}<h3>검증된 사실</h3>{((detail.facts as Row[] | undefined) ?? []).map(fact => <article className="source-card" key={value(fact, "id")}><strong>{value(fact, "fact_key")}</strong><p>{value(fact, "source_excerpt")}</p><small>검증 상태: {value(fact, "verification_status")}</small></article>)}</div>}
             {tab === "quality" && <div className="detail-section"><p className={machinePassed ? "quality-ok" : "quality-held"}>{machinePassed ? "기계 검사 통과 · 의미 정확성과 자연스러움은 사람 검토가 필요합니다." : "품질 검토가 필요합니다. 이 상태에서는 발행할 수 없습니다."}</p><QualityChecks value={detail.checks} />
               <details><summary>기계 검사 원본 데이터</summary><pre>{JSON.stringify(detail.checks ?? {}, null, 2)}</pre></details>

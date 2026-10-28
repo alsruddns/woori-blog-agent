@@ -429,6 +429,9 @@ def list_publications() -> dict[str, Any]:
             """SELECT j.id,j.content_version_id,j.blog_id,b.language_code,b.url,
                 j.status,j.publication_state,j.scheduled_at,j.schedule_timezone,j.block_reasons,
                 j.attempts,j.retry_count,j.last_error_category,j.updated_at,
+                (SELECT q.evaluation_id FROM article_quality_evaluations q
+                 WHERE q.content_version_id=j.content_version_id
+                 ORDER BY q.created_at DESC,q.id DESC LIMIT 1) AS evaluation_id,
                 (SELECT count(*) FROM publication_attempts a WHERE a.job_id=j.id) AS simulation_count
             FROM publishing_jobs j JOIN blogger_blogs b ON b.id=j.blog_id
             ORDER BY j.scheduled_at DESC,j.id DESC LIMIT 100"""
