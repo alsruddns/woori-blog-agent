@@ -165,7 +165,7 @@ def test_localized_translation_records_measured_usage_and_resource_samples(
     class FakeProcess:
         pid = 123
 
-        def cpu_percent(self) -> float:
+        def cpu_percent(self, interval: float | None = None) -> float:
             return 5.0
 
         def memory_info(self) -> Any:
@@ -191,6 +191,9 @@ def test_localized_translation_records_measured_usage_and_resource_samples(
             return self
 
         def __exit__(self, *_args: object) -> None:
+            return None
+
+        def close(self) -> None:
             return None
 
         def post(self, *_args: Any, **_kwargs: Any) -> FakeResponse:
@@ -1272,6 +1275,159 @@ def test_stream_cancellation_and_model_identity(monkeypatch: pytest.MonkeyPatch)
         )
     with pytest.raises(EngineFailure, match="local_model_mismatch"):
         LlamaCppProvider().generate(context, {"model": "other.gguf", "language_verified": True})
+
+
+def test_inference_resource_monitor_cancels_and_records_cpu_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
+    from types import SimpleNamespace
+
+    from woori.local_inference import InferenceResourceMonitor
+
+    class FakeProcess:
+        def cpu_percent(self, interval: float | None = None) -> float:
+            return 240.0
+
+        def memory_info(self) -> Any:
+            return SimpleNamespace(rss=128 * 1024**2)
+
+    monkeypatch.setattr("woori.local_inference.psutil.cpu_count", lambda: 12)
+    readings = iter([14.0, 79.5, 80.0])
+
+    def read_system_cpu(*, interval: float | None = None) -> float:
+        try:
+            return next(readings)
+        except StopIteration:
+            return 80.0
+
+    monitor = InferenceResourceMonitor(
+        FakeProcess(), system_cpu_reader=read_system_cpu, sample_interval=0.005
+    )
+    aborted: list[bool] = []
+    monitor.start()
+    monitor.attach_abort(lambda: aborted.append(True))
+    assert monitor.interrupted_event.wait(1)
+    with pytest.raises(EngineFailure, match="system_cpu_limit_exceeded") as failure:
+        monitor.check()
+    assert aborted == [True]
+    assert failure.value.metrics["cpu_limit_percent"] == 80.0
+    assert failure.value.metrics["system_cpu_peak_percent"] == 80.0
+    assert failure.value.metrics["process_cpu_peak_percent_machine"] == 20.0
+    assert failure.value.metrics["rss_peak_mib"] == 128.0
+    with pytest.raises(EngineFailure, match="system_cpu_limit_exceeded"):
+        monitor.stop()
+
+
+def test_inference_resource_monitor_fails_closed_when_measurement_stops(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from woori.local_inference import InferenceResourceMonitor
+
+    class FakeProcess:
+        def cpu_percent(self, interval: float | None = None) -> float:
+            return 12.0
+
+        def memory_info(self) -> Any:
+            return SimpleNamespace(rss=64 * 1024**2)
+
+    monkeypatch.setattr("woori.local_inference.psutil.cpu_count", lambda: 8)
+    calls = 0
+
+    def read_system_cpu(*, interval: float | None = None) -> float:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return 10.0
+        raise OSError("synthetic resource counter failure")
+
+    monitor = InferenceResourceMonitor(
+        FakeProcess(), system_cpu_reader=read_system_cpu, sample_interval=0.005
+    )
+    aborted: list[bool] = []
+    monitor.start()
+    monitor.attach_abort(lambda: aborted.append(True))
+    assert monitor.interrupted_event.wait(1)
+    with pytest.raises(EngineFailure, match="inference_resource_monitor_failed") as failure:
+        monitor.check()
+    assert aborted == [True]
+    assert failure.value.metrics["cpu_limit_percent"] == 80.0
+    with pytest.raises(EngineFailure, match="inference_resource_monitor_failed"):
+        monitor.stop()
+
+
+def test_llama_provider_closes_stream_on_cpu_limit_without_returning_partial_draft(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import threading
+    from types import SimpleNamespace
+
+    from woori import local_inference as local
+
+    stream_started = threading.Event()
+    stream_closed = threading.Event()
+
+    class DelayedStream(httpx.SyncByteStream):
+        def __iter__(self):
+            stream_started.set()
+            yield b'data: {"choices":[{"delta":{"content":"{"}}]}\n\n'
+            while not stream_closed.wait(0.01):
+                continue
+            raise httpx.ReadError("client disconnected")
+
+        def close(self) -> None:
+            stream_closed.set()
+
+    class FakeProcess:
+        def cpu_percent(self, interval: float | None = None) -> float:
+            return 120.0
+
+        def memory_info(self) -> Any:
+            return SimpleNamespace(rss=128 * 1024**2)
+
+    cpu_calls = 0
+
+    def read_system_cpu(*, interval: float | None = None) -> float:
+        nonlocal cpu_calls
+        cpu_calls += 1
+        if cpu_calls == 1:
+            return 12.0
+        stream_started.wait(1)
+        return 82.0
+
+    base_client = httpx.Client
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(200, json={})
+        return httpx.Response(200, stream=DelayedStream())
+
+    monkeypatch.setattr(local, "runtime", lambda: {
+        "pid": 123, "model": "test.gguf", "engine": "mocked", "backend": "cpu",
+        "gpu_layers": 0, "threads": 2,
+    })
+    monkeypatch.setattr(local.psutil, "Process", lambda _pid: FakeProcess())
+    monkeypatch.setattr(local.psutil, "cpu_count", lambda: 12)
+    monkeypatch.setattr(local.psutil, "cpu_percent", read_system_cpu)
+    monkeypatch.setattr(local, "RESOURCE_SAMPLE_INTERVAL_SECONDS", 0.01)
+    monkeypatch.setattr(local, "auth_headers", lambda: {"Authorization": "Bearer test"})
+    monkeypatch.setattr(
+        httpx,
+        "Client",
+        lambda **kwargs: base_client(transport=httpx.MockTransport(handler), **kwargs),
+    )
+    context = {
+        "language_code": "en", "sources": [{"id": "source-1", "evidence": "evidence"}],
+        "keyword": "probe", "as_of": "2026-10-28", "instructions": "test only",
+    }
+
+    with pytest.raises(EngineFailure, match="system_cpu_limit_exceeded") as failure:
+        LlamaCppProvider().generate(
+            context,
+            {"model": "test.gguf", "language_verified": True, "engine": "llamacpp", "threads": 2, "timeout_seconds": 5},
+        )
+
+    assert stream_closed.is_set()
+    assert failure.value.metrics["system_cpu_peak_percent"] == 82.0
 
 
 def test_article_parser_excludes_navigation() -> None:

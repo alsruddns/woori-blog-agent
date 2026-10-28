@@ -1377,6 +1377,11 @@ def tick(evaluation_only: bool = False) -> bool:
                     run["id"],
                     category=category,
                     attempt=run["attempts"],
+                    resource_metrics=(
+                        exc.metrics
+                        if isinstance(exc, EngineFailure) and exc.metrics
+                        else None
+                    ),
                 )
                 conn.execute(
                     "INSERT INTO generation_attempts(run_id,attempt,event,error_category) VALUES (%s,%s,%s,%s)",

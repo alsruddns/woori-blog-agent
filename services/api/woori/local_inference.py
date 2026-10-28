@@ -2,11 +2,14 @@
 
 import hashlib
 import json
+import logging
+import math
 import os
 import re
 import subprocess
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +22,146 @@ from .ai import Draft, EngineFailure
 from .db import connection
 
 ROOT = Path(__file__).resolve().parents[3]
+SYSTEM_CPU_LIMIT_PERCENT = 80.0
+RESOURCE_SAMPLE_INTERVAL_SECONDS = 0.25
+
+
+class InferenceResourceMonitor:
+    """Fail-closed, per-request CPU/RSS monitor for local inference."""
+
+    def __init__(
+        self,
+        process: psutil.Process,
+        *,
+        system_cpu_reader: Callable[..., float] | None = None,
+        sample_interval: float = RESOURCE_SAMPLE_INTERVAL_SECONDS,
+        cpu_limit_percent: float = SYSTEM_CPU_LIMIT_PERCENT,
+    ) -> None:
+        self.process = process
+        self.system_cpu_reader = system_cpu_reader or psutil.cpu_percent
+        self.sample_interval = sample_interval
+        self.cpu_limit_percent = min(SYSTEM_CPU_LIMIT_PERCENT, cpu_limit_percent)
+        self.samples: list[dict[str, float | None]] = []
+        self.reason: str | None = None
+        self.abort_failure_category: str | None = None
+        self.stop_event = threading.Event()
+        self.ready_event = threading.Event()
+        self.interrupted_event = threading.Event()
+        self._response_lock = threading.Lock()
+        self._abort: Callable[[], Any] | None = None
+        self._thread = threading.Thread(target=self._sample, name="llama-resource-monitor", daemon=True)
+
+    def start(self) -> None:
+        self._thread.start()
+        if not self.ready_event.wait(2):
+            self._fail("inference_resource_monitor_failed")
+        try:
+            self.check()
+        except EngineFailure:
+            self.stop_event.set()
+            self._thread.join(timeout=1)
+            raise
+
+    def attach_abort(self, callback: Callable[[], Any]) -> None:
+        with self._response_lock:
+            self._abort = callback
+        self.check()
+
+    def _fail(self, reason: str) -> None:
+        if self.reason is None:
+            self.reason = reason
+        self.interrupted_event.set()
+        with self._response_lock:
+            abort = self._abort
+        if abort is not None:
+            try:
+                abort()
+            except Exception as exc:  # noqa: BLE001 - cancellation failure is itself a hard failure
+                self.abort_failure_category = type(exc).__name__
+                self.reason = "inference_request_cancel_failed"
+                logging.getLogger(__name__).warning("Local inference transport cancellation failed")
+
+    def _sample(self) -> None:
+        try:
+            # psutil's non-blocking percentages need a baseline in this same thread.
+            baseline_system = float(self.system_cpu_reader(interval=None))
+            baseline_process = float(self.process.cpu_percent(interval=None))
+            if (
+                not psutil.cpu_count()
+                or not math.isfinite(baseline_system)
+                or not math.isfinite(baseline_process)
+                or baseline_system < 0
+                or baseline_system > 100
+                or baseline_process < 0
+            ):
+                raise RuntimeError("logical_cpu_count_unavailable")
+            baseline_rss = int(self.process.memory_info().rss)
+            if baseline_rss <= 0:
+                raise RuntimeError("process_memory_sample_invalid")
+            self.samples.append({
+                "system_cpu_percent": None,
+                "process_cpu_percent_machine": None,
+                "rss_mib": baseline_rss / 2**20,
+            })
+            self.ready_event.set()
+            while not self.stop_event.wait(self.sample_interval):
+                system_cpu = float(self.system_cpu_reader(interval=None))
+                process_cpu = float(self.process.cpu_percent(interval=None))
+                logical_cpus = psutil.cpu_count()
+                rss = int(self.process.memory_info().rss)
+                if (
+                    not logical_cpus
+                    or not math.isfinite(system_cpu)
+                    or not math.isfinite(process_cpu)
+                    or system_cpu < 0
+                    or system_cpu > 100
+                    or process_cpu < 0
+                    or rss <= 0
+                ):
+                    raise RuntimeError("resource_sample_invalid")
+                self.samples.append({
+                    "system_cpu_percent": system_cpu,
+                    "process_cpu_percent_machine": process_cpu / logical_cpus,
+                    "rss_mib": rss / 2**20,
+                })
+                if len(self.samples) > 512:
+                    del self.samples[:len(self.samples) - 512]
+                if system_cpu >= self.cpu_limit_percent:
+                    self._fail("system_cpu_limit_exceeded")
+                    return
+        except Exception:  # noqa: BLE001 - any monitor failure must stop inference
+            self.ready_event.set()
+            self._fail("inference_resource_monitor_failed")
+
+    def check(self) -> None:
+        if not self.stop_event.is_set() and not self._thread.is_alive() and self.reason is None:
+            self._fail("inference_resource_monitor_stopped")
+        if self.reason:
+            raise EngineFailure(self.reason, metrics=self.metrics())
+
+    def metrics(self) -> dict[str, Any]:
+        system = [sample["system_cpu_percent"] for sample in self.samples if sample["system_cpu_percent"] is not None]
+        process = [sample["process_cpu_percent_machine"] for sample in self.samples if sample["process_cpu_percent_machine"] is not None]
+        rss = [sample["rss_mib"] for sample in self.samples if sample["rss_mib"] is not None]
+        return {
+            "cpu_limit_percent": self.cpu_limit_percent,
+            "system_cpu_peak_percent": max(system, default=None),
+            "process_cpu_mean_percent_machine": round(sum(process) / len(process), 2) if process else None,
+            "process_cpu_peak_percent_machine": max(process, default=None),
+            "rss_peak_mib": max(rss, default=None),
+            "resource_sample_count": len(self.samples),
+            "gpu_utilization_percent": None,
+            "resource_failure_category": self.reason,
+            "abort_failure_category": self.abort_failure_category,
+        }
+
+    def stop(self) -> None:
+        self.stop_event.set()
+        self._thread.join(timeout=2)
+        if self._thread.is_alive():
+            self._fail("inference_resource_monitor_failed")
+            raise EngineFailure(self.reason or "inference_resource_monitor_failed", metrics=self.metrics())
+        self.check()
 
 
 def auth_headers() -> dict[str, str]:
@@ -169,26 +312,8 @@ def localized_translation(
     schema = Translation.model_json_schema()
     inference_pid = int(info.get("pid", os.getpid()))
     process = psutil.Process(inference_pid)
-    samples: list[tuple[float, int, float]] = []
-    gpu_samples: list[float] = []
-    stop = threading.Event()
-
-    def sample() -> None:
-        process.cpu_percent()
-        last_gpu_sample = 0.0
-        while not stop.wait(0.25):
-            try:
-                samples.append((process.cpu_percent() / (psutil.cpu_count() or 1), process.memory_info().rss, psutil.cpu_percent()))
-                if info.get("backend") == "vulkan" and info.get("pid") and time.monotonic() - last_gpu_sample >= 1:
-                    last_gpu_sample = time.monotonic()
-                    measured_gpu = gpu_engine_percent(inference_pid)
-                    if measured_gpu is not None:
-                        gpu_samples.append(measured_gpu)
-            except psutil.Error:
-                break
-
-    sampler = threading.Thread(target=sample, daemon=True)
-    sampler.start()
+    monitor = InferenceResourceMonitor(process)
+    monitor.start()
     started = time.monotonic()
     usage: dict[str, Any] = {}
     succeeded = False
@@ -199,6 +324,7 @@ def localized_translation(
             follow_redirects=False,
             headers=auth_headers(),
         ) as client:
+            monitor.attach_abort(client.close)
             response = client.post(
                 "http://127.0.0.1:11435/v1/chat/completions",
                 json={
@@ -248,6 +374,7 @@ def localized_translation(
                     ],
                 },
             )
+            monitor.check()
             response.raise_for_status()
             if len(response.content) > 20000:
                 raise EngineFailure("localization_response_too_large")
@@ -266,29 +393,33 @@ def localized_translation(
                 localized = localized.replace(token, replacement)
             if "[[LOCKED_" in localized:
                 raise EngineFailure("localization_protected_value_placeholder_error")
+            monitor.check()
             succeeded = True
             return localized
+    except EngineFailure:
+        monitor.check()
+        raise
     except httpx.TimeoutException:
+        monitor.check()
         raise EngineFailure("localization_timeout", True) from None
     except httpx.NetworkError:
+        monitor.check()
         raise EngineFailure("local_engine_unavailable", True) from None
     except (httpx.HTTPError, ValueError, KeyError, TypeError):
+        monitor.check()
         raise EngineFailure("invalid_localization_response") from None
     finally:
-        stop.set()
-        sampler.join(timeout=1)
+        monitor.stop()
         if metrics_sink is not None:
             elapsed = time.monotonic() - started
+            resource_metrics = monitor.metrics()
             metrics_sink.append({
                 "wall_seconds": round(elapsed, 3),
                 "completion_tokens": usage.get("completion_tokens"),
                 "prompt_tokens": usage.get("prompt_tokens"),
                 "tokens_per_second_wall": round(usage["completion_tokens"] / elapsed, 2)
                 if usage.get("completion_tokens") and elapsed else None,
-                "rss_peak_mib": round(max((item[1] for item in samples), default=process.memory_info().rss) / 2**20, 2),
-                "process_cpu_mean_percent_machine": round(sum(item[0] for item in samples) / max(len(samples), 1), 2),
-                "system_cpu_peak_percent": max((item[2] for item in samples), default=None),
-                "gpu_utilization_percent": max(gpu_samples, default=None),
+                **resource_metrics,
                 "gpu_layers": info.get("gpu_layers", 0),
                 "backend": info.get("backend"),
                 "succeeded": succeeded,
@@ -305,32 +436,8 @@ class LlamaCppProvider:
         if policy.get("threads", info.get("threads", 4)) != info.get("threads", 4):
             raise EngineFailure("local_thread_policy_requires_restart")
         process = psutil.Process(info["pid"])
-        samples: list[tuple[float, int, float]] = []
-        gpu_samples: list[float] = []
-        stop = threading.Event()
-
-        def sample() -> None:
-            process.cpu_percent()
-            last_gpu_sample = 0.0
-            while not stop.wait(0.25):
-                try:
-                    samples.append(
-                        (
-                            process.cpu_percent() / (psutil.cpu_count() or 1),
-                            process.memory_info().rss,
-                            psutil.cpu_percent(),
-                        )
-                    )
-                    if info.get("backend") == "vulkan" and time.monotonic() - last_gpu_sample >= 1:
-                        last_gpu_sample = time.monotonic()
-                        measured_gpu = gpu_engine_percent(info["pid"])
-                        if measured_gpu is not None:
-                            gpu_samples.append(measured_gpu)
-                except psutil.Error:
-                    break
-
-        sampler = threading.Thread(target=sample, daemon=True)
-        sampler.start()
+        monitor = InferenceResourceMonitor(process)
+        monitor.start()
         started = time.monotonic()
         schema = Draft.model_json_schema()
         source_ids = [str(s["id"]) for s in context["sources"]]
@@ -370,6 +477,7 @@ class LlamaCppProvider:
                 follow_redirects=False,
                 headers=auth_headers(),
             ) as client:
+                monitor.attach_abort(client.close)
                 health = client.get("http://127.0.0.1:11435/health")
                 if health.status_code == 503:
                     raise EngineFailure("local_model_loading", True)
@@ -399,8 +507,10 @@ class LlamaCppProvider:
                         ],
                     },
                 ) as response:
+                    monitor.attach_abort(response.close)
                     response.raise_for_status()
                     for line in response.iter_lines():
+                        monitor.check()
                         now = time.monotonic()
                         if now - started > policy["timeout_seconds"]:
                             raise EngineFailure("local_model_timeout", True)
@@ -417,19 +527,14 @@ class LlamaCppProvider:
                             text += choice.get("delta", {}).get("content") or ""
                         if len(text) > 50000:
                             raise EngineFailure("model_response_too_large")
+                monitor.check()
             draft = Draft.model_validate_json(text)
             elapsed = time.monotonic() - started
+            resource_metrics = monitor.metrics()
             draft._metrics = {
                 "wall_seconds": round(elapsed, 3),
                 "engine": info["engine"],
-                "rss_peak_mib": round(
-                    max((s[1] for s in samples), default=process.memory_info().rss) / 2**20, 2
-                ),
-                "process_cpu_mean_percent_machine": round(
-                    sum(s[0] for s in samples) / max(len(samples), 1), 2
-                ),
-                "system_cpu_peak_percent": max((s[2] for s in samples), default=None),
-                "gpu_utilization_percent": max(gpu_samples, default=None),
+                **resource_metrics,
                 "gpu_layers": info.get("gpu_layers", 0),
                 "backend": "Vulkan GPU offload"
                 if info.get("backend") == "vulkan"
@@ -440,15 +545,28 @@ class LlamaCppProvider:
                 else None,
             }
             return draft
+        except EngineFailure as exc:
+            monitor.check()
+            if exc.category in {
+                "system_cpu_limit_exceeded",
+                "inference_resource_monitor_failed",
+                "inference_resource_monitor_stopped",
+            }:
+                exc.metrics = monitor.metrics()
+            raise
         except httpx.TimeoutException:
+            monitor.check()
             raise EngineFailure("local_model_timeout", True) from None
         except httpx.NetworkError:
+            monitor.check()
             raise EngineFailure("local_engine_unavailable", True) from None
         except httpx.HTTPStatusError as exc:
+            monitor.check()
             if 400 <= exc.response.status_code < 500:
                 raise EngineFailure("local_model_request_rejected") from None
             raise EngineFailure("local_model_http_error") from None
         except ValidationError:
+            monitor.check()
             raise EngineFailure(
                 "local_model_output_schema_invalid",
                 failure_artifact={
@@ -460,6 +578,7 @@ class LlamaCppProvider:
                 },
             ) from None
         except ValueError:
+            monitor.check()
             raise EngineFailure(
                 "local_model_json_invalid",
                 failure_artifact={
@@ -471,11 +590,13 @@ class LlamaCppProvider:
                 },
             ) from None
         except KeyError:
+            monitor.check()
             raise EngineFailure("local_model_response_missing_field") from None
         except TypeError:
+            monitor.check()
             raise EngineFailure("local_model_response_invalid_type") from None
         except httpx.HTTPError:
+            monitor.check()
             raise EngineFailure("invalid_local_model_response") from None
         finally:
-            stop.set()
-            sampler.join(timeout=1)
+            monitor.stop()

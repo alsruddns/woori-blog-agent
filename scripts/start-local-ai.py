@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 
 import psutil
+from local_ai_process import command_signature
 
 root = Path(__file__).resolve().parents[1]
 folder = root / ".local"
@@ -87,6 +88,11 @@ process = subprocess.Popen(
 time.sleep(1.5)
 if process.poll() is not None:
     raise SystemExit("Project-local inference engine exited during startup")
+managed_process = psutil.Process(process.pid)
+actual_executable = str(Path(managed_process.exe()).resolve())
+if actual_executable != str((engine / "llama-server.exe").resolve()):
+    raise SystemExit("Started process executable did not match the verified project-local engine")
+actual_command = managed_process.cmdline()
 (folder / "runtime.json").write_text(
     json.dumps(
         {
@@ -94,9 +100,15 @@ if process.poll() is not None:
             "model": name,
             "engine": manifest["engine"],
             "threads": threads,
+            "threads_batch": threads,
             "backend": backend,
             "engine_directory": engine_directory,
             "gpu_layers": 0 if backend == "cpu" else 20,
+            "model_sha256": model["sha256"],
+            "process_create_time": managed_process.create_time(),
+            "executable_path": actual_executable,
+            "command_sha256": command_signature(actual_command),
+            "process_group_id": process.pid if sys.platform == "win32" else None,
             "project_root": str(root.resolve()),
             "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "process_group_managed": sys.platform == "win32",
@@ -118,6 +130,7 @@ with connection() as conn:
                     "model": name,
                     "engine": manifest["engine"],
                     "threads": threads,
+                    "threads_batch": threads,
                     "gpu_layers": 0 if backend == "cpu" else 20,
                     "backend": backend,
                     "engine_directory": engine_directory,

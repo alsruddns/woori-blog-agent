@@ -11,10 +11,12 @@ class EngineFailure(RuntimeError):
     def __init__(
         self, category: str, retryable: bool = False, retry_after_seconds: int = 30,
         failure_artifact: dict[str, Any] | None = None,
+        metrics: dict[str, Any] | None = None,
     ) -> None:
         self.category, self.retryable = category, retryable
         self.retry_after_seconds = max(1, min(86400, retry_after_seconds))
         self.failure_artifact = failure_artifact
+        self.metrics = metrics or {}
         self.attempts = 1
         super().__init__(category)
 
