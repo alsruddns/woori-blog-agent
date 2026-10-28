@@ -1,0 +1,168 @@
+{
+  "task_id": "P5-AI-001",
+  "recorded_at": "2026-10-28T12:15:40.226701+09:00",
+  "branch": "develop",
+  "package": {
+    "id": "de118f17-ab50-46b7-b99f-4aba51f240ce",
+    "topic_id": "e6424812-46e2-5833-aebd-48a630a0c4a7",
+    "version": 1,
+    "sha256": "81bb85afa4e7d0d3ce2de03d6a5ed06268ff0ba770ad34aba703334c14ca0676",
+    "status": "evidence_collected_pending_human_review",
+    "verified_fact_count": 8,
+    "source_count": 3,
+    "independent_source_count_recorded": 0,
+    "generation_ready": false,
+    "publish_ready": false
+  },
+  "source_review": {
+    "facts_reviewed": 8,
+    "source_spans_machine_verified": 8,
+    "semantic_review": "human_review_required",
+    "rights_review": "human_review_required_for_third_party_or_restricted_material",
+    "independence": {
+      "executive_yuan_documents": "same issuing institution and policy chain; not independent corroboration of one another",
+      "legislative_yuan_budget_center": "institutionally separate assessment and useful critical perspective; it does not independently verify whether the allowance has been paid",
+      "package_count": "retain recorded independent_source_count=0 until the project's human independence review is completed"
+    },
+    "source_documents": [
+      {
+        "id": "6fc24e73-2ef6-4c0f-9cdb-3ea4c7a6d0d1",
+        "publisher": "Executive Yuan",
+        "title": "116年度軍公教員工待遇提升方案",
+        "published_at": "2026-07-02",
+        "url": "https://www.ey.gov.tw/Page/448DE008087A1971/5020ed44-2196-4da0-9dbe-fe6ae7f44afc",
+        "reviewed_spans": [
+          "Paragraph beginning 行政院考量近年我國經濟成長率... and describing the proposed NT$2,000 increases and 4% general adjustment.",
+          "Paragraph beginning 本案經人事總處... specifying the 2026-07-01 early effective date for the allowances via supplementary-budget procedures and the 2027 budget process for the general 4% adjustment.",
+          "Paragraph beginning 經專業加給... identifying 9.98%-5.88% examples as general-administration civil-service pay examples, not military pay.",
+          "Official source excerpt IDs: ac673c11-7072-47e4-9b6f-89a42405dbed, d7974ad7-1444-4199-9a38-b3577a92e5d2, 0450e1d3-9ffe-45cf-a104-2472f3c56514."
+        ],
+        "role": "Executive Yuan proposal and its stated rationale; not proof of actual payment."
+      },
+      {
+        "id": "d55a64b6-0bfc-48eb-a59d-57f9144bc7c9",
+        "publisher": "Executive Yuan",
+        "title": "115年度中央政府總預算追加預算案",
+        "published_at": "2026-09-03",
+        "url": "https://www.ey.gov.tw/Page/9277F759E41CCD91/e6b90fcf-0d42-40e3-b001-1c790c076657",
+        "reviewed_spans": [
+          "Paragraph beginning 行政院會今（3）日通過... states NT$607.6 billion in total expenditure across six policy areas and that the bill was sent to the Legislative Yuan for review.",
+          "Paragraph beginning 在提升待遇面向... states NT$10.7 billion was budgeted for the military/civil-service/education professional and supervisory allowance increases, each NT$2,000, retroactive from 2026-07-01.",
+          "Official source excerpt IDs: 65d80576-7219-4c13-bb83-481929d7783b, a66cf1de-a0c4-4aa6-8af6-d14595ea22ba."
+        ],
+        "role": "Executive Yuan bill proposal; the whole NT$607.6 billion is not the compensation amount, and the statement is not proof of implementation."
+      },
+      {
+        "id": "f8ab3323-7afa-4481-b006-564fa923d200",
+        "publisher": "Legislative Yuan Budget Center",
+        "title": "115年度中央政府總預算追加預算案評估報告",
+        "published_at": "not supplied in the captured source record; official listing says 2026-09",
+        "url": "https://www.ly.gov.tw/Pages/List.aspx?nodeid=56728",
+        "reviewed_spans": [
+          "The listing states that the assessment report questions the statutory procedure and timing of submitting the supplementary budget before the statutory budget amount was promulgated.",
+          "The summary says the adjustment framework lacks a clear legal basis and objective quantitative criteria.",
+          "Official source excerpt IDs: 80367ecb-190a-47fd-9683-997a33e95bb6, e0ce1ed1-8002-4d07-9d11-ee729128d0e9."
+        ],
+        "role": "Legislative budget analysis and criticism; these are attributed institutional assessments, not a judicial ruling or independent confirmation of payment."
+      }
+    ],
+    "fact_interpretation": [
+      {"fact_id": "ac673c11-7072-47e4-9b6f-89a42405dbed", "status": "proposal combines two allowance increases and a general adjustment; avoid portraying the cited percentage examples as military raises"},
+      {"fact_id": "d7974ad7-1444-4199-9a38-b3577a92e5d2", "status": "2026-07-01 is the proposed retroactive effective date for the allowance portion, subject to supplementary-budget procedure; actual payment not verified"},
+      {"fact_id": "0450e1d3-9ffe-45cf-a104-2472f3c56514", "status": "9.98%-5.88% examples refer to general-administration civil servants and must not be attributed to military personnel"},
+      {"fact_id": "65d80576-7219-4c13-bb83-481929d7783b", "status": "NT$607.6 billion is the total supplementary expenditure proposal, not the treatment-adjustment allocation"},
+      {"fact_id": "a66cf1de-a0c4-4aa6-8af6-d14595ea22ba", "status": "NT$10.7 billion is the stated compensation/allowance allocation; the NT$2,000 figure is per specified allowance, not a universal base-pay increase"},
+      {"fact_id": "e0ce1ed1-8002-4d07-9d11-ee729128d0e9", "status": "Legislative Yuan Budget Center's procedural/legal concern; not a final legal determination"},
+      {"fact_id": "6d66f51e-c248-4651-82a3-71324db2679f", "status": "Legislative report warns about short execution time and spending capacity; not a finding that the treatment measure was executed"},
+      {"fact_id": "80367ecb-190a-47fd-9683-997a33e95bb6", "status": "Legislative report questions budget procedure; do not state its view as settled law"}
+    ]
+  },
+  "supplemental_currentness_checks": [
+    {
+      "checked_at": "2026-10-28",
+      "source": "Legislative Yuan proposal progress page",
+      "url": "https://ppg.ly.gov.tw/ppg/bills/301110233830000/details",
+      "finding": "The public record shows the supplementary-budget proposal as 排入院會 and lists proceedings dated 2026-10-02, 2026-10-06 and 2026-10-13; this does not show final passage."
+    },
+    {
+      "checked_at": "2026-10-28",
+      "source": "Executive Yuan 4023rd Council meeting, dated 2026-10-01",
+      "url": "https://www.ey.gov.tw/Page/4EC2394BE4EE9DD0/3723d2ab-446e-444f-88b4-7b4e220d8a0c",
+      "finding": "The Executive Yuan asks agencies to seek passage of the 2026 supplementary budget by the end of November so subsequent administrative work can proceed. Treat this as evidence that the proposal was still in the legislative process when stated, not evidence of later passage or disbursement."
+    }
+  ],
+  "model_evaluations": {
+    "target_language": "zh-CN",
+    "same_package_input": true,
+    "qwen3": {
+      "model": "Qwen3-4B-Q4_K_M.gguf",
+      "installed_and_health_checked": true,
+      "health_http_status": 200,
+      "backend": "Vulkan",
+      "attempted": false,
+      "model_calls": 0,
+      "article": null,
+      "status": "blocked_before_inference",
+      "reason": "System CPU measured 100%; evaluation policy ceiling is 80%."
+    },
+    "nvidia_build": {
+      "model": null,
+      "attempted": false,
+      "model_calls": 0,
+      "article": null,
+      "status": "blocked_before_request",
+      "reasons": [
+        "NVIDIA provider is not in the shared external provider allowlist.",
+        "No NVIDIA API credential is configured; no account/model free quota or rate limit could be verified.",
+        "Source-specific reuse exceptions remain pending human review before sending excerpts to a hosted model."
+      ]
+    },
+    "comparison": {
+      "status": "not_performed",
+      "factuality_scores": null,
+      "analysis_depth_scores": null,
+      "naturalness_scores": null,
+      "human_review": "required",
+      "generation_ready": false,
+      "publish_ready": false
+    }
+  },
+  "resource_preflight": {
+    "evaluation_database": "woori_blog_agent_eval",
+    "evaluation_role": "woori_eval_app",
+    "loopback_server": true,
+    "evaluation_isolated": true,
+    "pipeline_paused": false,
+    "zh_cn_daily_quota_used": 0,
+    "zh_cn_daily_quota_limit": 10,
+    "ram_total_gib": 31.91,
+    "ram_available_gib": 11.99,
+    "disk_free_gib": 172.22,
+    "cpu_percent_observed": 100.0,
+    "cpu_percent_limit": 80,
+    "decision": "do_not_start_local_inference",
+    "gpu_inference_usage": "not_measured_no_inference"
+  },
+  "audit": {
+    "database": "woori_blog_agent_eval",
+    "event_id": 85085,
+    "event_type": "evaluation.package.comparison.preflight_blocked",
+    "append_only": true
+  },
+  "side_effects": {
+    "model_calls": 0,
+    "external_ai_calls": 0,
+    "blogger_calls": 0,
+    "operational_db_writes": 0,
+    "test_db_writes": 0,
+    "evaluation_db_writes": 1,
+    "evaluation_db_write_purpose": "append-only preflight audit event"
+  },
+  "verification": {
+    "full_project_test_suite_run": false,
+    "reason": "No application code changed; host CPU gate was already closed. Only documentation and JSON validation plus git diff --check are appropriate without adding load.",
+    "json_parse": "passed",
+    "required_state_assertions": "passed",
+    "git_diff_check": "passed"
+  }
+}
