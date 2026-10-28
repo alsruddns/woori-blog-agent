@@ -1,0 +1,104 @@
+{
+  "task_id": "P5-CODEX-015",
+  "recorded_at": "2026-10-29",
+  "branch": "develop",
+  "status": "partial_operational_migration_and_readonly_oauth_verified_live_publishing_blocked",
+  "operations_database": {
+    "database": "woori_blog_agent",
+    "schema_before": 34,
+    "schema_after": 48,
+    "migrations_applied": "035-048",
+    "backup": {
+      "path": "backups/20261028T164859Z.dump",
+      "bytes": 437385,
+      "sha256": "1948111FA09DCFE0D0F9DFEC825F344507899F8506C8F6E812C69AFB41000827",
+      "archive_catalog_verified": true,
+      "isolated_restore_rehearsal": true,
+      "offsite_encryption_key_recovery_verified": false
+    },
+    "data_after": {
+      "content_versions": 360,
+      "audit_events": 1460,
+      "publishing_jobs": 1,
+      "publishing_records": 0,
+      "publication_approval_events": 0,
+      "publish_ready_true": 0,
+      "trend_observations": 0,
+      "trend_topics": 0
+    },
+    "existing_content_deleted_or_rewritten": false
+  },
+  "blogger_oauth": {
+    "write_scope_connections_tested": 2,
+    "refreshes_succeeded": 2,
+    "readonly_account_blog_list_gets": 2,
+    "blog_id_access_verified_per_connection": 4,
+    "blog_ids": {
+      "ko": "3321654108096579717",
+      "en": "5240203250707821039",
+      "ja": "7562596540375659150",
+      "zh-CN": "1931836538202286191"
+    },
+    "google_account_identity_verified": false,
+    "common_oauth_mapping_changed": false,
+    "actual_write_access_tested": false,
+    "secret_values_logged": false
+  },
+  "blogger_publishing": {
+    "real_publisher_implemented": false,
+    "posts_insert_calls": 0,
+    "public_posts_created": 0,
+    "existing_posts_modified_or_deleted": 0,
+    "actual_public_urls": [],
+    "publishing_records": 0,
+    "real_writes_enabled": false,
+    "live_auto_enabled": false,
+    "policy_scope_current": [
+      "blogger_read",
+      "private_draft_create",
+      "user_approved_post_update"
+    ],
+    "cloud_project_billing_and_quota_verified": false
+  },
+  "automation": {
+    "production_generation_provider_configured": false,
+    "gpt_scheduled_local_delivery_verified": false,
+    "gpt_external_schedule_status": "unknown",
+    "trends_scheduled_sources": 0,
+    "active_research_schedules": 0,
+    "operations_trend_observations": 0,
+    "worker_task_registered": true,
+    "worker_task_state": "Ready",
+    "worker_heartbeat_present": false,
+    "market_close_jobs_configured": false,
+    "weekly_finance_jobs_configured": false,
+    "blog_auto_policies_enabled": 0,
+    "language_publishing_limits_enabled": 0
+  },
+  "services": {
+    "api": {"port": 8100, "http_health": 200, "managed_runner_pid": 33920, "left_running": true},
+    "dashboard": {"port": 3100, "http_routes": {"/": 200, "/manuscripts": 200, "/publishing": 200, "/operations": 200, "/blogger": 200}, "managed_runner_pid": 17392, "left_running": true},
+    "llama_cpp_11435": "left_untouched"
+  },
+  "safety": {
+    "verify_secrets_http": "passed",
+    "paid_ai_api_calls": 0,
+    "blogger_write_requests": 0,
+    "automatic_posting_enabled": false,
+    "main_changed": false,
+    "playwright_mcp_preserved": true
+  },
+  "blockers": [
+    "Real Blogger publisher is hard-disabled and absent",
+    "No production article-generation provider is configured",
+    "No scheduled Trends or market/weekly research jobs are active in the operations database",
+    "P5-CODEX-009 evaluation article still has unknown source-rights status and human review pending",
+    "Google Cloud Console billing and project quota were not verified",
+    "Current Blogger owner-attestation scope does not include public post creation or unattended automatic posting"
+  ],
+  "git": {
+    "commit": null,
+    "pushed": false,
+    "main_changed": false
+  }
+}
