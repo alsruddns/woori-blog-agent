@@ -349,6 +349,8 @@ def test_common_connection_requires_fresh_read_proof_and_explicit_approval(
     def handler(request: httpx.Request) -> httpx.Response:
         calls.append(request)
         assert request.method == "GET"
+        if request.url.path.endswith("/users/self"):
+            return httpx.Response(200, json={"id": "8675309"})
         assert request.url.path.endswith("/users/self/blogs")
         return httpx.Response(200, json={"items": entries})
 
@@ -357,8 +359,10 @@ def test_common_connection_requires_fresh_read_proof_and_explicit_approval(
     )
     verified = service.verify_common_connection(writer_id)
     assert verified["verified_blog_count"] == len(blogs)
+    assert verified["blogger_user_id"] == "8675309"
+    assert verified["email_verified"] is False
     assert verified["identity_verified"] is False and verified["writes_enabled"] is False
-    assert len(calls) == 1
+    assert len(calls) == 2
     assert sandbox.execute(
         "SELECT count(*) AS n FROM blogger_blogs WHERE oauth_connection_id=%s", (read_id,)
     ).fetchone()["n"] == len(blogs)
@@ -845,6 +849,8 @@ def test_live_pagination_regression_and_account_path() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         calls.append(request)
         assert request.method == "GET"
+        if request.url.path.endswith("/users/self"):
+            return httpx.Response(200, json={"id": "8675309"})
         if request.url.path.endswith("/users/self/blogs"):
             return httpx.Response(200, json={"items": [{"id": "1001"}]})
         if "pageToken" not in request.url.params:
@@ -854,12 +860,13 @@ def test_live_pagination_regression_and_account_path() -> None:
 
     with httpx.Client(transport=httpx.MockTransport(handler)) as transport:
         reader = BloggerReader(transport, lambda: "test-token", lambda *a: None)
+        assert reader.user()["id"] == "8675309"
         assert reader.account_blogs()["items"][0]["id"] == "1001"
         first = reader.posts("1001")
         assert reader.posts("1001", page_token=first["nextPageToken"])["items"] == []
         with pytest.raises(GoogleFailure, match="invalid_path"):
             reader.get("invalid", "/users/another/blogs")
-    assert len(calls) == 3
+    assert len(calls) == 4
 
 
 def test_account_scoped_audit(

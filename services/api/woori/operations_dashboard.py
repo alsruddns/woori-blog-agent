@@ -50,6 +50,60 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
             "observations_last_24h":conn.execute("SELECT count(*)::int AS count FROM trend_observations WHERE collected_at >= now()-interval '24 hours'").fetchone()["count"],
             "regions":[dict(row) for row in conn.execute("""SELECT geo,count(*)::int AS observations,max(collected_at) AS last_collected_at
                 FROM trend_observations WHERE collected_at >= now()-interval '24 hours' GROUP BY geo ORDER BY geo""").fetchall()]})
+    trend_pipeline: dict[str, Any] = {
+        "search_terms_24h": int(trends["observations_last_24h"]),
+        "unique_issue_groups_24h": 0,
+        "article_candidates": 0,
+        "held_issue_groups_24h": 0,
+        "research_packages_24h": 0,
+        "ai_articles_written_24h": 0,
+        "actual_posts_24h": 0,
+        "article_lineage_available": False,
+        "generation_block_reason": "ai_generation_provider_not_connected",
+        "publication_block_reason": "research_package_and_quality_approval_required",
+        "hold_reasons": [],
+    }
+    topic_schema = conn.execute(
+        "SELECT to_regclass('public.trend_topics') IS NOT NULL AS available"
+    ).fetchone()
+    if topic_schema and topic_schema["available"]:
+        assessed = conn.execute(
+            """WITH latest AS (
+              SELECT DISTINCT ON (a.topic_id) a.topic_id,a.decision
+              FROM trend_topic_assessments a ORDER BY a.topic_id,a.created_at DESC
+            ), recent AS (
+              SELECT DISTINCT m.topic_id FROM trend_topic_memberships m
+              JOIN trend_observations o ON o.id=m.observation_id
+              WHERE o.collected_at>=now()-interval '24 hours'
+            )
+            SELECT count(*) FILTER (WHERE latest.decision='review_required')::int AS candidates,
+                   count(*) FILTER (WHERE latest.decision='held')::int AS held
+            FROM latest JOIN recent USING(topic_id)"""
+        ).fetchone()
+        trend_pipeline.update({
+            "unique_issue_groups_24h": conn.execute(
+                """SELECT count(DISTINCT t.id)::int AS count FROM trend_topics t
+                JOIN trend_topic_memberships m ON m.topic_id=t.id
+                JOIN trend_observations o ON o.id=m.observation_id
+                WHERE o.collected_at>=now()-interval '24 hours'"""
+            ).fetchone()["count"],
+            "article_candidates": assessed["candidates"],
+            "held_issue_groups_24h": assessed["held"],
+        })
+        packages_ready = conn.execute(
+            "SELECT to_regclass('public.trend_research_packages') IS NOT NULL AS available"
+        ).fetchone()
+        if packages_ready and packages_ready["available"]:
+            trend_pipeline["research_packages_24h"] = conn.execute(
+                """SELECT count(*)::int AS count FROM trend_research_packages
+                WHERE created_at>=now()-interval '24 hours'"""
+            ).fetchone()["count"]
+        trend_pipeline["hold_reasons"] = [dict(row) for row in conn.execute(
+            """SELECT reason,count(*)::int AS count FROM (
+              SELECT unnest(reasons) AS reason FROM trend_topic_assessments a
+              WHERE a.created_at>=now()-interval '24 hours'
+            ) recent GROUP BY reason ORDER BY count DESC,reason LIMIT 10"""
+        ).fetchall()]
     collection_sources = [dict(row) for row in conn.execute("""SELECT adapter,name,active,scheduled,interval_minutes,last_successful_at,
         (last_error IS NOT NULL) AS has_error,next_run_at
         FROM collection_sources ORDER BY name""").fetchall()]
@@ -81,7 +135,7 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
             "last_mock_failure_at":mock_state.get("last_failure"),"last_mock_failure_reason":mock_state.get("failure_reason"),
             "recent_public_url":None,"public_url_note":"게시 URL이 실제 게시 기록에 저장되지 않아 표시할 수 없습니다."})
     schema_version = int(schema["version"] or 0) if schema else 0
-    return {"schema_version":schema_version,"trends":trends,"collection_sources":collection_sources,"jobs":job_counts,
+    return {"schema_version":schema_version,"trends":trends,"trend_pipeline":trend_pipeline,"collection_sources":collection_sources,"jobs":job_counts,
         "generation":{"provider_connected":False,"provider_status":"not_configured","counts":generation_counts,
             "queue_waiting":job_counts.get("content:queued",0),"reason":"운영 원고 생성 Provider가 연결되어 있지 않습니다."},
         "quality":{"machine_passed":quality_counts.get("machine_passed_review_required",0),"held":quality_counts.get("quality_held",0),

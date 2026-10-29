@@ -209,6 +209,19 @@ def account_blogs(connection_id: UUID) -> dict[str, Any]:
     return read({"id": None, "language_code": None}, connection_id, lambda r: r.account_blogs())
 
 
+def account_identity(connection_id: UUID) -> dict[str, Any]:
+    """Return the official Blogger profile ID; this does not expose or imply email."""
+    result = read({"id": None, "language_code": None}, connection_id, lambda r: r.user())
+    user_id = numeric_id(str(result.get("id", "")))
+    with connection() as conn:
+        conn.execute(
+            "INSERT INTO audit_events(event_type,payload) VALUES ('blogger.identity.verified',%s)",
+            (Jsonb({"connection_id": str(connection_id), "blogger_user_id": user_id,
+                    "email_verified": False, "source": "blogger_users_get_self"}),),
+        )
+    return {"blogger_user_id": user_id, "email_verified": False}
+
+
 COMMON_CONNECTION_APPROVAL = "I_APPROVE_SHARED_BLOGGER_CONNECTION"
 COMMON_CONNECTION_VERIFICATION_TTL = timedelta(minutes=5)
 
@@ -246,6 +259,7 @@ def verify_common_connection(connection_id: UUID) -> dict[str, Any]:
         ).fetchall()
     if not blogs:
         raise GoogleFailure("active_blogs_not_configured")
+    identity = account_identity(connection_id)
     result = account_blogs(connection_id)
     items = result.get("items")
     if not isinstance(items, list):
@@ -302,6 +316,8 @@ def verify_common_connection(connection_id: UUID) -> dict[str, Any]:
                     {
                         "verification_id": str(verification_id),
                         "connection_id": str(connection_id),
+                        "blogger_user_id": identity["blogger_user_id"],
+                        "email_verified": False,
                         "verified_blog_count": len(verified),
                         "blogs": verified,
                         "identity_verified": False,
@@ -313,6 +329,8 @@ def verify_common_connection(connection_id: UUID) -> dict[str, Any]:
     return {
         "verification_id": str(verification_id),
         "connection_id": str(connection_id),
+        "blogger_user_id": identity["blogger_user_id"],
+        "email_verified": False,
         "verified_blog_count": len(verified),
         "blogs": verified,
         "identity_verified": False,
@@ -398,8 +416,11 @@ def assign_common_connection(
                     {
                         "connection_id": str(connection_id),
                         "verification_id": str(verification_id),
+                        "blogger_user_id": event["payload"].get("blogger_user_id"),
+                        "email_verified": False,
                         "blogs": snapshot,
                         "approval": "explicit_admin_confirmation",
+                        "selection_reason": "operator_preferred_duplicate_blogger_identity",
                         "writes_enabled": False,
                     }
                 ),
@@ -408,6 +429,7 @@ def assign_common_connection(
     return {
         "assigned": True,
         "connection_id": str(connection_id),
+        "blogger_user_id": event["payload"].get("blogger_user_id"),
         "blog_count": len(snapshot),
         "writes_enabled": False,
         "publish_ready": False,

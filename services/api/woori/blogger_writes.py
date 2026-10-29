@@ -228,7 +228,9 @@ class BloggerLivePublisher:
             )
             if (numeric_id(str(verified.get("id", ""))) != post_id
                     or str((verified.get("blog") or {}).get("id", "")) != target["blog_id"]
-                    or verified.get("status") != "DRAFT"):
+                    or verified.get("status") != "DRAFT"
+                    or verified.get("title") != title
+                    or verified.get("content") != html):
                 raise GoogleFailure("draft_readback_mismatch", verify_status)
             result["post_verified"] = True
             result["readback_http_status"] = verify_status

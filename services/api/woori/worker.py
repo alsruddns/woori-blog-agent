@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 import psycopg
 from psycopg.types.json import Jsonb
 
-from . import collection, pipeline, trends
+from . import collection, pipeline, topics, trends
 from .db import connection
 
 
@@ -87,6 +87,14 @@ def tick() -> bool:
     return True
 
 
+def collect_trends_and_build_topics() -> dict[str, object]:
+    """Build exact-query, evidence-gated candidates only after a real feed collection."""
+    result = trends.schedule_tick()
+    if result.get("status") == "succeeded":
+        result["candidate_build"] = topics.build_candidates()
+    return result
+
+
 def _evaluation_database_isolated() -> None:
     operations_url = os.environ.get("WOORI_OPERATION_DATABASE_URL", "")
     if not operations_url:
@@ -161,7 +169,9 @@ def main() -> None:
                 elif args.diagnostic_only:
                     tick()
                 else:
-                    trends.schedule_tick()
+                    # Exact-query topic grouping and evidence scoring are local-only;
+                    # it never creates a manuscript or publication by itself.
+                    collect_trends_and_build_topics()
                     collection.schedule_tick()
                     collection.tick()
                     pipeline.schedule_tick()

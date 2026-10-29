@@ -1,4 +1,4 @@
-"""Run one leased fake-only job in an isolated or project-scoped database."""
+"""Run one fake job or an explicitly confirmed private Blogger draft job."""
 
 from __future__ import annotations
 
@@ -19,10 +19,11 @@ from woori.worker import _evaluation_database_isolated
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run one isolated fake publication job")
+    parser = argparse.ArgumentParser(description="Run one publication queue job")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--evaluation", action="store_true")
     mode.add_argument("--operations-mock-only", action="store_true")
+    mode.add_argument("--operations-confirmed-private-drafts", action="store_true")
     parser.add_argument("--backoff-seconds", type=int, default=30)
     args = parser.parse_args()
     if not 0 <= args.backoff_seconds <= 3600:
@@ -49,7 +50,14 @@ def main() -> None:
                 raise SystemExit(
                     "Refusing any database other than the dedicated project operations DB"
                 )
-    print(json.dumps(run_once(args.backoff_seconds), ensure_ascii=True, default=str))
+    print(json.dumps(
+        run_once(
+            args.backoff_seconds,
+            allow_private_drafts=args.operations_confirmed_private_drafts,
+        ),
+        ensure_ascii=True,
+        default=str,
+    ))
 
 
 if __name__ == "__main__":

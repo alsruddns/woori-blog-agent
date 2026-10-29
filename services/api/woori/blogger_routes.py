@@ -97,9 +97,25 @@ def status() -> dict[str, Any]:
             and bool(connected_writer and connected_writer["available"]),
             "publishing_enabled": False,
             "connections": conn.execute(
-                """SELECT id,label,status,scopes,created_at,expires_at,error_category,
-                updated_at,(refresh_ciphertext IS NOT NULL) AS has_refresh_token
-                FROM google_connections ORDER BY created_at DESC"""
+                """SELECT g.id,g.label,g.status,g.scopes,g.created_at,g.expires_at,g.error_category,
+                g.updated_at,(g.refresh_ciphertext IS NOT NULL) AS has_refresh_token,
+                identity.payload->>'blogger_user_id' AS blogger_user_id,
+                identity.created_at AS identity_verified_at,
+                access.payload->'blogs' AS verified_blogs,
+                access.created_at AS access_verified_at,
+                COALESCE((access.payload->>'verified_blog_count')::int,0) AS verified_blog_count
+                FROM google_connections g
+                LEFT JOIN LATERAL (
+                  SELECT payload,created_at FROM audit_events
+                  WHERE event_type='blogger.identity.verified'
+                    AND payload->>'connection_id'=g.id::text ORDER BY id DESC LIMIT 1
+                ) identity ON true
+                LEFT JOIN LATERAL (
+                  SELECT payload,created_at FROM audit_events
+                  WHERE event_type='blogger.common_connection.verified'
+                    AND payload->>'connection_id'=g.id::text ORDER BY id DESC LIMIT 1
+                ) access ON true
+                ORDER BY g.created_at DESC"""
             ).fetchall(),
             "blogs": conn.execute("""SELECT b.*,l.active AS language_active,g.status AS oauth_status,
                     g.scopes AS oauth_scopes,g.expires_at AS oauth_expires_at

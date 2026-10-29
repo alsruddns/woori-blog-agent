@@ -1,3 +1,4 @@
+import json
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from typing import Self
@@ -175,6 +176,7 @@ def test_live_draft_is_read_back_before_success_is_recorded(
     oauth_id = UUID("00000000-0000-0000-0000-000000000002")
     calls: list[tuple[str, str]] = []
     finish_calls: list[tuple[object, ...]] = []
+    submitted: dict[str, str] = {}
 
     class FakeConnection:
         class Result:
@@ -212,8 +214,9 @@ def test_live_draft_is_read_back_before_success_is_recorded(
         if request.method == "GET" and request.url.path.endswith("/blogs/123"):
             return httpx.Response(200, json={"id": "123", "url": "https://trend-ko.blogspot.com/"}, request=request)
         if request.method == "POST":
+            submitted.update(json.loads(request.content))
             return httpx.Response(200, json={"id": "456", "blog": {"id": "123"}, "status": "DRAFT"}, request=request)
-        return httpx.Response(200, json={"id": "456", "blog": {"id": "123"}, "status": readback_status}, request=request)
+        return httpx.Response(200, json={"id": "456", "blog": {"id": "123"}, "status": readback_status, **submitted}, request=request)
 
     publisher = blogger_writes.BloggerLivePublisher(httpx.MockTransport(handler))
     if verified:
@@ -394,15 +397,75 @@ def test_remote_duplicate_blocks_insert_and_commits_audit(monkeypatch: pytest.Mo
         lambda *_args: (1, "remote-post-9"),
     )
     monkeypatch.setattr(
-        blogger_drafts.oauth,
-        "access_token",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("no token or POST")),
+        blogger_drafts.service,
+        "read",
+        lambda *_args, **_kwargs: {"items": [{"id": "remote-post-9", "title": "fixed test title"}]},
     )
 
     with pytest.raises(blogger_drafts.GoogleFailure, match="matching_remote_test_draft_exists"):
         blogger_drafts.confirm(preview_id, blogger_drafts.CONFIRMATION_PHRASE)
 
     joined = " ".join(query for query, _ in executed)
-    assert "status='duplicate_blocked'" in joined
+    assert "SET status='failed'" in joined
     assert "blogger.draft.duplicate_blocked" in joined
     assert "blogger.draft.requested" not in joined
+
+
+def test_worker_processes_confirmed_draft_through_live_adapter_and_records_readback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    preview_id = UUID("00000000-0000-0000-0000-000000000014")
+    blog_record_id = UUID("00000000-0000-0000-0000-000000000015")
+    connection_id = UUID("00000000-0000-0000-0000-000000000016")
+    payload = {
+        "preview_id": str(preview_id),
+        "connection_id": str(connection_id),
+        "blog_record_id": str(blog_record_id),
+        "blog_id": "123",
+        "language_code": "ko",
+        "title": "Private worker test",
+        "content": "Line one\n\n<script>plain text only</script>",
+        "confirmation_recorded": True,
+    }
+    statements: list[tuple[str, object]] = []
+
+    class FakeConnection:
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def execute(self, query: str, params: object = None) -> "FakeConnection":
+            statements.append((query, params))
+            return self
+
+        def fetchone(self) -> dict[str, object]:
+            return {"idempotency_key": "live-draft:worker-test", "result": payload}
+
+    class Publisher:
+        def create_draft(self, key: str, blog_id: UUID, title: str, body_html: str) -> dict[str, object]:
+            assert key == "live-draft:worker-test"
+            assert blog_id == blog_record_id
+            assert title == "Private worker test"
+            assert body_html == "<p>Line one</p><p>&lt;script&gt;plain text only&lt;/script&gt;</p>"
+            return {"post_id": "456", "blog_id": "123", "status": "DRAFT",
+                    "http_status": 200, "post_verified": True}
+
+    monkeypatch.setattr(blogger_drafts, "connection", lambda: FakeConnection())
+    monkeypatch.setattr(blogger_drafts, "BloggerLivePublisher", Publisher)
+    result = blogger_drafts.process_next_queued_draft()
+
+    assert result == {
+        "preview_id": str(preview_id), "status": "succeeded", "post_id": "456",
+        "verification": {"checked": True, "is_draft": True,
+                          "title_matches": True, "content_matches": True},
+        "error_category": None,
+    }
+    joined = " ".join(query for query, _ in statements)
+    assert "FOR UPDATE SKIP LOCKED" in joined
+    assert "WHERE idempotency_key=%s AND status='uncertain'" in joined
+    assert any(
+        params and "blogger.draft.worker.completed" in params
+        for query, params in statements
+    )

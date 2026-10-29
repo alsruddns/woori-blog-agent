@@ -62,6 +62,31 @@ def test_external_policy_blocks_unlisted_destination(monkeypatch: pytest.MonkeyP
         )
 
 
+def test_blogger_users_self_identity_is_an_allowlisted_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(external_policy, "billing_credential_names", list)
+    monkeypatch.setattr(external_policy, "_audit", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        external_policy,
+        "_blogger_policy_approval",
+        lambda: {"created_at": None, "scope": sorted(external_policy.BLOGGER_APPROVAL_SCOPE)},
+    )
+    external_policy._authorize(
+        "google_blogger_read",
+        "blogger_read",
+        httpx.Request("GET", "https://www.googleapis.com/blogger/v3/users/self"),
+    )
+    with pytest.raises(
+        external_policy.ExternalCallBlocked, match="destination_or_method_not_allowlisted"
+    ):
+        external_policy._authorize(
+            "google_blogger_read",
+            "blogger_read",
+            httpx.Request("GET", "https://www.googleapis.com/blogger/v3/users/other"),
+        )
+
+
 def test_sec_edgar_is_restricted_to_free_submissions_and_companyconcept_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1047,6 +1072,24 @@ def test_article_parser_excludes_navigation() -> None:
         '<p>Navigation content that must never enter evidence extraction.</p><div id="article"><p>Verified official article content with sufficient length.</p></div><p>Footer content that must never enter evidence extraction.</p>'
     )
     assert parser.parts == ["Verified official article content with sufficient length."]
+
+
+def test_trend_worker_builds_candidates_only_after_successful_feed_collection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from woori import worker
+
+    calls: list[str] = []
+    monkeypatch.setattr(worker.trends, "schedule_tick", lambda: {"status": "not_due"})
+    monkeypatch.setattr(worker.topics, "build_candidates", lambda: calls.append("built"))
+    assert worker.collect_trends_and_build_topics() == {"status": "not_due"}
+    assert calls == []
+    monkeypatch.setattr(worker.trends, "schedule_tick", lambda: {"status": "succeeded", "geo": "KR"})
+    monkeypatch.setattr(worker.topics, "build_candidates", lambda: calls.append("built") or {"topic_count": 1})
+    assert worker.collect_trends_and_build_topics() == {
+        "status": "succeeded", "geo": "KR", "candidate_build": {"topic_count": 1}
+    }
+    assert calls == ["built"]
 
 
 def test_evaluation_cannot_silently_use_mock(lab: Any) -> None:

@@ -145,6 +145,29 @@ def test_retry_policy_is_bounded_and_stops_for_auth_or_uncertain_outcomes() -> N
     assert not retryable("uncertain", "uncertain", 0, 2)
 
 
+def test_publication_worker_dispatches_only_explicitly_confirmed_private_drafts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from woori import blogger_drafts, publication_worker
+
+    called: list[bool] = []
+    monkeypatch.setattr(
+        blogger_drafts,
+        "process_next_queued_draft",
+        lambda: called.append(True) or {"preview_id": "draft-1", "status": "succeeded"},
+    )
+    result = publication_worker.tick(allow_private_drafts=True)
+    assert called == [True]
+    assert result == {
+        "job_type": "blogger_private_draft",
+        "preview_id": "draft-1",
+        "status": "succeeded",
+        "private_draft_creation_enabled": True,
+        "public_publication_enabled": False,
+        "simulation_only": False,
+    }
+
+
 def test_publication_mode_defaults_manual_and_auto_requires_allowlist() -> None:
     assert ModeSettingsInput().configured_mode == "manual"
     with pytest.raises(ValidationError, match="category_allowlist"):

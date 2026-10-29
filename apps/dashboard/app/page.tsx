@@ -39,6 +39,19 @@ type Dashboard = {
     observations_last_24h: number;
     regions: { geo: string; observations: number; last_collected_at: string }[];
   };
+  trend_pipeline: {
+    search_terms_24h: number;
+    unique_issue_groups_24h: number;
+    article_candidates: number;
+    held_issue_groups_24h: number;
+    research_packages_24h: number;
+    ai_articles_written_24h: number;
+    actual_posts_24h: number;
+    article_lineage_available: boolean;
+    generation_block_reason: string;
+    publication_block_reason: string;
+    hold_reasons: { reason: string; count: number }[];
+  };
   jobs: Record<string, number>;
   generation: { provider_connected: boolean; provider_status: string; counts: Record<string, number>; queue_waiting: number; reason: string };
   quality: { machine_passed: number; held: number; failed: number; human_review_required: number };
@@ -122,6 +135,13 @@ export default async function Page() {
           <article className="ops-stat-card"><p className="eyebrow">원고 생성</p><strong>{dashboard.generation.queue_waiting.toLocaleString("ko-KR")}</strong><p>대기 작업 · 생성 Provider 연결 안 됨</p><Status tone="blocked">자동 생성 차단</Status></article>
           <article className="ops-stat-card"><p className="eyebrow">품질 검토</p><strong>{dashboard.quality.human_review_required.toLocaleString("ko-KR")}</strong><p>기계 검사 후 사람 검토 대기</p><p className="ops-inline-counts">보류 {dashboard.quality.held} · 실패 {dashboard.quality.failed}</p></article>
           <article className="ops-stat-card"><p className="eyebrow">게시 대기</p><strong>{dashboard.publishing.queued_mock_jobs.toLocaleString("ko-KR")}</strong><p>모의 작업 대기 · 실제 Blogger 기록 {dashboard.publishing.recorded_posts}</p><Status tone="blocked">실제 쓰기 잠금</Status></article>
+        </section>
+
+        <section className="workspace-panel">
+          <div className="section-heading"><div><p className="eyebrow">Google Trends → 원고 → Blogger</p><h2>주제 선별 및 게시 단계별 실적</h2></div><Link href="/sources">수집 주제와 근거 보기</Link></div>
+          <div className="ops-inline-counts"><span>검색어 관측 {dashboard.trend_pipeline.search_terms_24h}</span> · <span>고유 이슈 그룹 {dashboard.trend_pipeline.unique_issue_groups_24h}</span> · <span>기사 후보 {dashboard.trend_pipeline.article_candidates}</span> · <span>보류 이슈 {dashboard.trend_pipeline.held_issue_groups_24h}</span> · <span>Research Package {dashboard.trend_pipeline.research_packages_24h}</span> · <span>AI 원고 {dashboard.trend_pipeline.ai_articles_written_24h}</span> · <span>실제 게시 {dashboard.trend_pipeline.actual_posts_24h}</span></div>
+          <p>Google Trends RSS 순위는 제공되지 않으면 NULL로 유지되며 검색량 순위로 해석하지 않습니다. 동일 검색어 그룹은 동일 사건으로 확정되지 않습니다. Trends 연계 원고 이력: {dashboard.trend_pipeline.article_lineage_available ? "연결됨" : "미연결"}. 현재 생성 차단: {dashboard.trend_pipeline.generation_block_reason}; 게시 차단: {dashboard.trend_pipeline.publication_block_reason}.</p>
+          {dashboard.trend_pipeline.hold_reasons.length ? <ul>{dashboard.trend_pipeline.hold_reasons.map(item => <li key={item.reason}>{item.reason}: {item.count}</li>)}</ul> : <p>최근 24시간 후보 보류 사유 집계 없음</p>}
         </section>
 
         <section className="workspace-panel">

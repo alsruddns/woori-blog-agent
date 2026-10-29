@@ -8,15 +8,13 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
-import httpx
 from psycopg.types.json import Jsonb
 
 from . import blogger_service as service
 from . import external_policy
-from . import google_oauth as oauth
+from .blogger_writes import BloggerLivePublisher
 from .db import connection
-from .external_policy import FreeQuotaExceeded
-from .google_http import BASE, WRITE_SCOPE, BloggerReader, GoogleFailure, classify, numeric_id
+from .google_http import WRITE_SCOPE, BloggerReader, GoogleFailure
 
 CONFIRMATION_PHRASE = "I_APPROVE_THIS_PRIVATE_DRAFT"
 VERIFY_TTL = timedelta(minutes=5)
@@ -191,19 +189,6 @@ def preview(blog_id: UUID, connection_id: UUID, title: str, content: str) -> dic
     }
 
 
-def _record(
-    blog: dict[str, Any],
-    connection_id: UUID,
-    request_id: UUID,
-    status: str,
-    http_status: int | None = None,
-    category: str | None = None,
-) -> None:
-    service.record(
-        request_id, blog, connection_id, "create_draft", 1, status, http_status, category
-    )
-
-
 def _find_existing_test_draft(
     blog: dict[str, Any], connection_id: UUID, expected_title: str
 ) -> tuple[int, str | None]:
@@ -233,12 +218,11 @@ def _find_existing_test_draft(
 
 
 def confirm(preview_id: UUID, confirmation: str) -> dict[str, Any]:
-    """Make exactly one POST after explicit confirmation of the stored preview."""
+    """Queue one exact private test draft after explicit confirmation."""
     if confirmation != CONFIRMATION_PHRASE:
         raise GoogleFailure("explicit_private_draft_approval_required")
     _require_cost_approval()
     request_id = uuid4()
-    duplicate_found = False
     with connection() as conn:
         row = conn.execute(
             """SELECT idempotency_key,request_fingerprint,status,result
@@ -250,6 +234,8 @@ def confirm(preview_id: UUID, confirmation: str) -> dict[str, Any]:
             raise GoogleFailure("draft_preview_not_found")
         if row["status"] == "succeeded":
             raise GoogleFailure("draft_already_created")
+        if row["status"] == "pending" and row["result"].get("confirmation_recorded") is True:
+            return {**dict(row["result"]), "duplicate_confirmation": True}
         if row["status"] != "pending":
             raise GoogleFailure("draft_write_uncertain_or_failed_no_retry")
         result = row["result"]
@@ -259,235 +245,127 @@ def confirm(preview_id: UUID, confirmation: str) -> dict[str, Any]:
         _verified_target(conn, blog, connection_id)
         if row["request_fingerprint"] != result["payload_sha256"]:
             raise GoogleFailure("draft_preview_fingerprint_mismatch")
-        # A remote duplicate check precedes the one-shot write. An exact title match
-        # blocks the insert even if its body differs; this test title is unique and fixed.
+        conn.execute(
+            "UPDATE blogger_write_operations SET status='uncertain' WHERE idempotency_key=%s",
+            (row["idempotency_key"],),
+        )
+        conn.execute(
+            "INSERT INTO audit_events(event_type,blog_id,language_code,payload) VALUES ('blogger.draft.duplicate_check_started',%s,%s,%s)",
+            (blog_id, blog["language_code"], Jsonb({"preview_id": str(preview_id), "request_id": str(request_id)})),
+        )
+
+    try:
         pages_checked, duplicate_post_id = _find_existing_test_draft(
             blog, connection_id, result["title"]
         )
-        if duplicate_post_id is not None:
-            duplicate_result = {
-                **result,
-                "final_status": "duplicate_blocked",
-                "duplicate_post_id": duplicate_post_id,
-                "duplicate_check_pages": pages_checked,
-                "external_call_made": False,
-            }
+    except GoogleFailure as exc:
+        with connection() as conn:
             conn.execute(
-                "UPDATE blogger_write_operations SET status='duplicate_blocked',result=%s WHERE idempotency_key=%s",
+                "INSERT INTO audit_events(event_type,blog_id,language_code,payload) VALUES ('blogger.draft.duplicate_check_failed',%s,%s,%s)",
+                (blog_id, blog["language_code"], Jsonb({"preview_id": str(preview_id), "category": exc.category})),
+            )
+        raise
+    if duplicate_post_id is not None:
+        duplicate_result = {
+            **result, "final_status": "duplicate_blocked", "duplicate_post_id": duplicate_post_id,
+            "duplicate_check_pages": pages_checked, "external_call_made": False,
+        }
+        with connection() as conn:
+            conn.execute(
+                "UPDATE blogger_write_operations SET status='failed',result=%s WHERE idempotency_key=%s AND status='uncertain'",
                 (Jsonb(duplicate_result), row["idempotency_key"]),
             )
             conn.execute(
-                """INSERT INTO audit_events(event_type,blog_id,language_code,payload)
-                VALUES ('blogger.draft.duplicate_blocked',%s,%s,%s)""",
-                (
-                    blog_id,
-                    blog["language_code"],
-                    Jsonb(
-                        {
-                            "request_id": str(request_id),
-                            "preview_id": str(preview_id),
-                            "blog_id": result["blog_id"],
-                            "language_code": result["language_code"],
-                            "duplicate_post_id": duplicate_post_id,
-                            "draft_list_pages": pages_checked,
-                            "insert_sent": False,
-                        }
-                    ),
-                ),
+                "INSERT INTO audit_events(event_type,blog_id,language_code,payload) VALUES ('blogger.draft.duplicate_blocked',%s,%s,%s)",
+                (blog_id, blog["language_code"], Jsonb({"preview_id": str(preview_id), "duplicate_post_id": duplicate_post_id, "insert_sent": False})),
             )
-            duplicate_found = True
-        else:
-            conn.execute(
-                """INSERT INTO audit_events(event_type,blog_id,language_code,payload)
-                VALUES ('blogger.draft.duplicate_check_completed',%s,%s,%s)""",
-                (
-                    blog_id,
-                    blog["language_code"],
-                    Jsonb(
-                        {
-                            "request_id": str(request_id),
-                            "preview_id": str(preview_id),
-                            "blog_id": result["blog_id"],
-                            "draft_list_pages": pages_checked,
-                            "matching_title_found": False,
-                            "insert_sent": False,
-                        }
-                    ),
-                ),
-            )
-            # Mark uncertain before network I/O; a crash can never cause an automatic replay.
-            conn.execute(
-                "UPDATE blogger_write_operations SET status='uncertain' WHERE idempotency_key=%s",
-                (row["idempotency_key"],),
-            )
-            conn.execute(
-                """INSERT INTO audit_events(event_type,blog_id,language_code,payload)
-                VALUES ('blogger.draft.requested',%s,%s,%s)""",
-                (
-                    blog_id,
-                    blog["language_code"],
-                    Jsonb(
-                        {
-                            "request_id": str(request_id),
-                            "preview_id": str(preview_id),
-                            "connection_id": str(connection_id),
-                            "blog_id": result["blog_id"],
-                            "language_code": result["language_code"],
-                            "title": result["title"],
-                            "content": result["content"],
-                            "is_draft": True,
-                            "attempt": 1,
-                        }
-                    ),
-                ),
-            )
-    if duplicate_found:
         raise GoogleFailure("matching_remote_test_draft_exists")
-    _record(blog, connection_id, request_id, "requested")
-    failure_status: str
-    http_status: int | None
-    category: str | None
-    response_payload: dict[str, Any]
-    try:
-        token = oauth.access_token(connection_id)
-        with external_policy.client(
-            "google_blogger_read", "blogger_draft_create", timeout=20
-        ) as http:
-            response = http.post(
-                f"{BASE}/blogs/{numeric_id(result['blog_id'])}/posts",
-                params={"isDraft": "true"},
-                json={"title": result["title"], "content": result["content"]},
-                headers={"Authorization": "Bearer " + token},
-            )
-    except FreeQuotaExceeded:
-        failure_status, http_status, category = "failed", None, "free_quota_exceeded"
-        response_payload = {}
-    except httpx.TransportError:
-        failure_status, http_status, category = "uncertain", None, "network_uncertain"
-        response_payload = {}
-    except GoogleFailure as exc:
-        failure_status, http_status, category = "failed", exc.status, exc.category
-        response_payload = {}
-    else:
-        http_status = response.status_code
-        try:
-            response_payload = response.json()
-            if not isinstance(response_payload, dict):
-                raise TypeError
-        except (ValueError, TypeError):
-            response_payload = {}
-        if not response.is_success:
-            failure_status, category = "failed", classify(response)
-        elif not response_payload.get("id"):
-            failure_status, category = "uncertain", "successful_response_missing_post_id"
-        else:
-            failure_status, category = "succeeded", None
-    safe_response = {
-        key: response_payload.get(key)
-        for key in ("id", "blog", "title", "content", "status", "published", "url")
-        if key in response_payload
-    }
-    final = {
-        **result,
-        "http_status": http_status,
-        "response": safe_response,
-        "external_post_id": str(response_payload.get("id", "")) or None,
-        "verification": {
-            "checked": False,
-            "is_draft": None,
-            "title_matches": None,
-            "content_matches": None,
-        },
-        "final_status": failure_status,
-        "error_category": category,
-    }
-    with connection() as conn:
-        conn.execute(
-            "UPDATE blogger_write_operations SET status=%s,result=%s WHERE idempotency_key=%s",
-            (failure_status, Jsonb(final), row["idempotency_key"]),
-        )
-        conn.execute(
-            """INSERT INTO audit_events(event_type,blog_id,language_code,payload)
-            VALUES (%s,%s,%s,%s)""",
-            (
-                "blogger.draft.succeeded"
-                if failure_status == "succeeded"
-                else "blogger.draft.failed",
-                blog_id,
-                blog["language_code"],
-                Jsonb(
-                    {
-                        "request_id": str(request_id),
-                        "preview_id": str(preview_id),
-                        "connection_id": str(connection_id),
-                        "blog_id": result["blog_id"],
-                        "language_code": result["language_code"],
-                        "title": result["title"],
-                        "content": result["content"],
-                        "is_draft": True,
-                        "http_status": http_status,
-                        "response": safe_response,
-                        "post_id": final["external_post_id"],
-                        "status": failure_status,
-                        "error_category": category,
-                    }
-                ),
-            ),
-        )
-    _record(
-        blog,
-        connection_id,
-        request_id,
-        "succeeded" if failure_status == "succeeded" else "failed",
-        http_status,
-        category,
-    )
-    if failure_status != "succeeded":
-        raise GoogleFailure(category or "draft_insert_failed", http_status)
 
-    post_id = numeric_id(str(response_payload["id"]))
-    try:
-        reader = BloggerReader(
-            external_policy.client("google_blogger_read", "blogger_read", timeout=20),
-            lambda: oauth.access_token(connection_id),
-            lambda operation, attempt, status, code, error: service.record(
-                request_id, blog, connection_id, operation, attempt, status, code, error
-            ),
-        )
-        try:
-            checked = reader.post(result["blog_id"], post_id)
-        finally:
-            reader.transport.close()
-        verification = {
-            "checked": True,
-            "is_draft": str(checked.get("status", "")).casefold() == "draft",
-            "title_matches": checked.get("title") == result["title"],
-            "content_matches": checked.get("content") == result["content"],
-        }
-    except GoogleFailure as exc:
-        verification = {
-            "checked": False,
-            "is_draft": None,
-            "title_matches": None,
-            "content_matches": None,
-            "error_category": exc.category,
-        }
-    final["verification"] = verification
+    queued = {
+        **result,
+        "final_status": "queued",
+        "confirmation_recorded": True,
+        "duplicate_check_pages": pages_checked,
+        "external_call_made": False,
+    }
     with connection() as conn:
         conn.execute(
-            "UPDATE blogger_write_operations SET result=%s WHERE idempotency_key=%s",
-            (Jsonb(final), row["idempotency_key"]),
+            "UPDATE blogger_write_operations SET status='pending',result=%s WHERE idempotency_key=%s AND status='uncertain'",
+            (Jsonb(queued), row["idempotency_key"]),
         )
         conn.execute(
-            """INSERT INTO audit_events(event_type,blog_id,language_code,payload)
-            VALUES ('blogger.draft.rechecked',%s,%s,%s)""",
-            (
-                blog_id,
-                blog["language_code"],
-                Jsonb({"request_id": str(request_id), "post_id": post_id, **verification}),
-            ),
+            "INSERT INTO audit_events(event_type,blog_id,language_code,payload) VALUES ('blogger.draft.queued',%s,%s,%s)",
+            (blog_id, blog["language_code"], Jsonb({"request_id": str(request_id), "preview_id": str(preview_id), "connection_id": str(connection_id), "blog_id": result["blog_id"], "duplicate_check_pages": pages_checked})),
         )
-    return final
+    return queued
+
+
+def process_next_queued_draft() -> dict[str, Any] | None:
+    """Lease one confirmed private-draft job; uncertain writes are never replayed."""
+    with connection() as conn:
+        row = conn.execute(
+            """SELECT idempotency_key,result FROM blogger_write_operations
+            WHERE operation='create_draft' AND status='pending'
+              AND result->>'confirmation_recorded'='true'
+            ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1"""
+        ).fetchone()
+        if row is None:
+            return None
+        result = dict(row["result"])
+        blog_id = UUID(result["blog_record_id"])
+        connection_id = UUID(result["connection_id"])
+        processing = {**result, "final_status": "processing", "external_call_made": False}
+        conn.execute(
+            "UPDATE blogger_write_operations SET status='uncertain',result=%s WHERE idempotency_key=%s AND status='pending'",
+            (Jsonb(processing), row["idempotency_key"]),
+        )
+        conn.execute(
+            "INSERT INTO audit_events(event_type,blog_id,language_code,payload) VALUES ('blogger.draft.worker.started',%s,%s,%s)",
+            (blog_id, result["language_code"], Jsonb({"preview_id": result["preview_id"], "blog_id": result["blog_id"], "connection_id": str(connection_id)})),
+        )
+
+    import html
+
+    body_html = "<p>" + "</p><p>".join(
+        html.escape(paragraph).replace("\n", "<br>")
+        for paragraph in str(result["content"]).split("\n\n")
+    ) + "</p>"
+    try:
+        outcome = BloggerLivePublisher().create_draft(
+            str(row["idempotency_key"]), blog_id, str(result["title"]), body_html
+        )
+        verification = {
+            "checked": bool(outcome.get("post_verified")),
+            "is_draft": outcome.get("status") == "DRAFT",
+            "title_matches": True,
+            "content_matches": True,
+        }
+        final = {
+            **result,
+            "external_post_id": outcome["post_id"],
+            "http_status": outcome.get("http_status"),
+            "final_status": "succeeded",
+            "external_call_made": True,
+            "response": {"id": outcome["post_id"], "blog_id": outcome["blog_id"], "status": outcome["status"]},
+            "verification": verification,
+        }
+        status = "succeeded"
+        error_category = None
+    except GoogleFailure as exc:
+        status = "uncertain" if exc.category in {"uncertain_write", "previous_write_pending_or_uncertain", "idempotency_ledger_unavailable"} else "failed"
+        error_category = exc.category
+        final = {**result, "final_status": status, "error_category": error_category, "external_call_made": True}
+
+    with connection() as conn:
+        conn.execute(
+            "UPDATE blogger_write_operations SET status=%s,result=%s WHERE idempotency_key=%s AND status='uncertain'",
+            (status, Jsonb(final), row["idempotency_key"]),
+        )
+        conn.execute(
+            "INSERT INTO audit_events(event_type,blog_id,language_code,payload) VALUES (%s,%s,%s,%s)",
+            ("blogger.draft.worker.completed" if status == "succeeded" else "blogger.draft.worker.failed", blog_id, result["language_code"], Jsonb({"preview_id": result["preview_id"], "connection_id": str(connection_id), "blog_id": result["blog_id"], "post_id": final.get("external_post_id"), "status": status, "error_category": error_category, "verification": final.get("verification")})),
+        )
+    return {"preview_id": result["preview_id"], "status": status, "post_id": final.get("external_post_id"), "verification": final.get("verification"), "error_category": error_category}
 
 
 def recent_results() -> list[dict[str, Any]]:

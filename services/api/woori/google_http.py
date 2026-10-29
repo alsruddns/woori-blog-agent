@@ -66,7 +66,7 @@ class BloggerReader:
         self, operation: str, path: str, params: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         if (
-            (not path.startswith("/blogs/") and path != "/users/self/blogs")
+            (not path.startswith("/blogs/") and path not in ("/users/self", "/users/self/blogs"))
             or ".." in path
             or "?" in path
         ):
@@ -119,6 +119,9 @@ class BloggerReader:
 
     def account_blogs(self) -> dict[str, Any]:
         return self.get("list_account_blogs", "/users/self/blogs")
+
+    def user(self) -> dict[str, Any]:
+        return self.get("get_account_identity", "/users/self")
 
     def blog(self, blog_id: str) -> dict[str, Any]:
         return self.get("get_blog", f"/blogs/{numeric_id(blog_id)}")

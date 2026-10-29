@@ -81,3 +81,7 @@ The Blogger API price and Google Cloud project billing association are separate 
 | Phase 4-E decision | Keep `google_blogger_read.zero_cost_reviewed=false`, `calls_allowed=false`, and `provider_cost_unverified`. OAuth GET and public feed GET were not executed. Actual Blogger writes remain blocked. | Local external policy is unchanged. |
 
 An absent price entry is not evidence of free use. Re-review needs explicit official zero-cost evidence and an account-side billing check; do not relax the application gate based only on a free quota or public URL.
+
+## P5-CODEX-019 Blogger draft worker gate (2026-10-29)
+
+The confirmed private-draft operation queue is now callable by the operations-only publication worker, but this does not change the zero-cost decision above. Before executing `scripts/publication-worker.py --operations-confirmed-private-drafts`, an operator must verify the project's Blogger API quota/usage and Cloud Billing association in Google Cloud Console. The app's append-only owner attestation is not a live Cloud Console check. A quota cap alone is not a spending cap. Until both the zero-cost condition and quota headroom are verified, do not enqueue/execute a live test draft. No Blogger POST was performed during P5-CODEX-019.

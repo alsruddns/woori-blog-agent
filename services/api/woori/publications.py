@@ -462,7 +462,13 @@ def list_publications() -> dict[str, Any]:
             """SELECT count(*) AS n FROM publishing_jobs
             WHERE status='queued' AND simulation_only AND adapter_type='fake'"""
         ).fetchone()
+        queued_drafts = conn.execute(
+            """SELECT count(*) AS n FROM blogger_write_operations
+            WHERE operation='create_draft' AND status='pending'
+              AND result->>'confirmation_recorded'='true'"""
+        ).fetchone()
         assert queued is not None
+        assert queued_drafts is not None
         for candidate in candidates:
             candidate["mode_policy"] = resolve_mode(
                 mode_data["settings"], str(candidate["language_code"]), str(candidate["blog_id"])
@@ -486,9 +492,10 @@ def list_publications() -> dict[str, Any]:
             "simulations": [dict(row) for row in attempts],
             "worker": dict(worker) if worker else None,
             "queued_mock_jobs": queued["n"],
+            "queued_confirmed_private_drafts": queued_drafts["n"],
             "real_writes_enabled": False,
             "publish_ready_enabled": False,
-            "adapter_available": "fake_only",
+            "adapter_available": "fake_and_confirmed_private_draft_worker",
             "mode_policy": mode_data,
             "auto_candidate_count": sum(
                 1 for candidate in candidates if candidate["auto_eligibility"]["eligible"]
@@ -839,10 +846,19 @@ def publication_worker_status() -> dict[str, Any]:
             """SELECT count(*) AS n FROM publishing_jobs
             WHERE status='queued' AND simulation_only AND adapter_type='fake'"""
         ).fetchone()
+        queued_drafts = conn.execute(
+            """SELECT count(*) AS n FROM blogger_write_operations
+            WHERE operation='create_draft' AND status='pending'
+              AND result->>'confirmation_recorded'='true'"""
+        ).fetchone()
         assert queued is not None
+        assert queued_drafts is not None
         return {
             "heartbeat": dict(row) if row else None,
             "queued_mock_jobs": queued["n"],
+            "queued_confirmed_private_drafts": queued_drafts["n"],
+            "private_draft_worker_available": True,
+            "public_publication_enabled": False,
             "real_writes_enabled": False,
         }
 

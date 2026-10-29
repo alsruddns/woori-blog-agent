@@ -41,7 +41,11 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "blogger_post_update",
             "blogger_public_publish",
         },
-        "paths": ("/blogger/v3/blogs", "/blogger/v3/users/self/blogs"),
+        "paths": (
+            "/blogger/v3/blogs",
+            "/blogger/v3/users/self",
+            "/blogger/v3/users/self/blogs",
+        ),
         "cost": "Blogger-specific project-owner attestation required; current policy approval is read from append-only audit history",
         "commercial_use": "terms apply; review before monetized operation",
         "zero_cost_reviewed": False,
@@ -400,7 +404,7 @@ def _authorize(provider: str, operation: str, request: httpx.Request) -> None:
         if operation == "blogger_read":
             method_allowed = request.method == "GET"
             operation_path_allowed = bool(
-                path == "/blogger/v3/users/self/blogs"
+                path in ("/blogger/v3/users/self", "/blogger/v3/users/self/blogs")
                 or re.fullmatch(rf"/blogger/v3/blogs/{blog_id}(?:/posts(?:/{post_id})?)?", path)
                 or path == "/blogger/v3/blogs/byurl"
             )

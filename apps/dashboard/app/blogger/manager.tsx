@@ -24,6 +24,11 @@ type Connection = {
   expires_at: string | null;
   has_refresh_token: boolean;
   error_category: string | null;
+  blogger_user_id: string | null;
+  identity_verified_at: string | null;
+  verified_blog_count: number;
+  verified_blogs: { language_code: string; url: string; blog_id: string }[] | null;
+  access_verified_at: string | null;
 };
 type Post = {
   id: string;
@@ -87,6 +92,8 @@ type CommonVerification = {
   verification_id: string;
   connection_id: string;
   verified_blog_count: number;
+  blogger_user_id: string;
+  email_verified: false;
   blogs: {
     blog_record_id: string;
     language_code: string;
@@ -221,7 +228,7 @@ export default function Manager({ initial }: { initial: State }) {
       });
       setCommonVerification(result as CommonVerification);
       setMessage(
-        `읽기 전용으로 ${result.verified_blog_count}개 블로그 접근을 확인했습니다. 아직 연결 매핑은 변경되지 않았습니다.`,
+        `Blogger profile ID ${result.blogger_user_id}; ${result.verified_blog_count}개 블로그 접근을 확인했습니다. Google 이메일은 요청하지 않았고 기존 매핑은 변경되지 않았습니다.`,
       );
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "공통 연결 검증 실패");
@@ -293,9 +300,9 @@ export default function Manager({ initial }: { initial: State }) {
       const result = await call(`draft-previews/${draftPreview.preview_id}/confirm`, "POST", {
         confirmation: "I_APPROVE_THIS_PRIVATE_DRAFT",
       });
-      setMessage(
-        `실제 Blogger 초안 요청 결과: ${result.external_post_id ?? result.error_category ?? result.final_status}. 공개 게시하지 않았습니다.`,
-      );
+      setMessage(result.final_status === "queued"
+        ? "명시적으로 승인한 비공개 초안을 게시 Worker 큐에 등록했습니다. Worker 처리 전에는 Blogger API 쓰기 호출이 없습니다."
+        : `비공개 초안 상태: ${result.external_post_id ?? result.error_category ?? result.final_status}. 공개 게시하지 않았습니다.`);
       setDraftPreview(null);
       router.refresh();
     } catch (e) {
@@ -420,6 +427,8 @@ export default function Manager({ initial }: { initial: State }) {
             {` · 읽기 ${c.scopes?.some((scope) => scope === "https://www.googleapis.com/auth/blogger.readonly" || scope === "https://www.googleapis.com/auth/blogger") ? "허용" : "없음"}`}
             {` · 쓰기 ${c.scopes?.includes("https://www.googleapis.com/auth/blogger") ? "OAuth 범위 있음" : "없음"}`}
             {` · 연결 ${c.created_at}`}
+            {c.blogger_user_id && ` · Blogger profile ID ${c.blogger_user_id} (확인 ${c.identity_verified_at ?? "시각 미상"})`}
+            {` · 접근 검증 ${c.verified_blog_count}개 (${c.access_verified_at ?? "미검증"})`}
             {` · 만료 ${c.expires_at ?? "미확인"}`}
             {` · 갱신 토큰 ${c.has_refresh_token ? "암호화 저장됨" : "없음"}`}
             {c.error_category && ` · ${c.error_category}`}{" "}
@@ -440,7 +449,7 @@ export default function Manager({ initial }: { initial: State }) {
           <option value="">연결 선택</option>
           {writeConnections.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.label} · {c.id.slice(0, 8)}
+                {c.label} · {c.created_at} · {c.blogger_user_id ? `Blogger ${c.blogger_user_id}` : c.id.slice(0, 8)}
               </option>
           ))}
         </select>
@@ -459,7 +468,7 @@ export default function Manager({ initial }: { initial: State }) {
       {commonVerification && commonVerification.connection_id === account && (
         <section aria-label="공통 OAuth 연결 검증 결과">
           <p>
-            {commonVerification.verified_blog_count}개 블로그 접근 확인. 계정 신원 미확인 · 쓰기 API 호출 없음.
+            Blogger profile ID {commonVerification.blogger_user_id} · {commonVerification.verified_blog_count}개 블로그 접근 확인. 이메일 동의는 요청하지 않았으며 Google 계정 이메일은 미확인.
           </p>
           <ul>
             {commonVerification.blogs.map((blog) => (

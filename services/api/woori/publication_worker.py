@@ -6,6 +6,7 @@ from typing import Any
 
 from psycopg.types.json import Jsonb
 
+from . import blogger_drafts
 from .db import connection
 from .publications import FakeBloggerPublisher
 from .worker import heartbeat
@@ -26,10 +27,22 @@ def _append_audit(conn: Any, event_type: str, payload: dict[str, Any]) -> None:
     )
 
 
-def tick(backoff_seconds: int = 30) -> dict[str, Any] | None:
-    """Recover expired fake leases and execute at most one due fake job."""
+def tick(
+    backoff_seconds: int = 30, *, allow_private_drafts: bool = False
+) -> dict[str, Any] | None:
+    """Process one explicitly approved private draft or one due fake job."""
     if not 0 <= backoff_seconds <= 3600:
         raise ValueError("invalid_backoff")
+    if allow_private_drafts:
+        draft = blogger_drafts.process_next_queued_draft()
+        if draft is not None:
+            return {
+                "job_type": "blogger_private_draft",
+                **draft,
+                "private_draft_creation_enabled": True,
+                "public_publication_enabled": False,
+                "simulation_only": False,
+            }
     with connection() as conn:
         recovered = conn.execute(
             """SELECT id,attempts,max_retries,publication_state FROM publishing_jobs
@@ -172,11 +185,18 @@ def tick(backoff_seconds: int = 30) -> dict[str, Any] | None:
         }
 
 
-def run_once(backoff_seconds: int = 30) -> dict[str, Any]:
+def run_once(
+    backoff_seconds: int = 30, *, allow_private_drafts: bool = False
+) -> dict[str, Any]:
     heartbeat("running", service_name="publication_worker")
     try:
-        result = tick(backoff_seconds)
-        return {"processed": result is not None, "result": result, "real_writes_enabled": False}
+        result = tick(backoff_seconds, allow_private_drafts=allow_private_drafts)
+        return {
+            "processed": result is not None,
+            "result": result,
+            "private_draft_creation_enabled": allow_private_drafts,
+            "public_publication_enabled": False,
+        }
     except Exception:
         heartbeat("degraded", "publication_worker_failed", "publication_worker")
         raise
