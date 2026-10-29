@@ -153,21 +153,9 @@ def save_mode_settings(request: ModeSettingsInput) -> dict[str, Any]:
         current = _mode_settings(conn)
         if current["migration_required"]:
             raise HTTPException(409, "Publication settings migration 042 is required")
-        if request.configured_mode == "auto":
-            # Auto is a write-capable operating mode, not a preference-only
-            # preview. Keep it unavailable until this release has a verified
-            # live Publisher and an explicit operations approval path.
-            raise HTTPException(
-                409,
-                detail={
-                    "code": "auto_publication_unavailable",
-                    "reasons": [
-                        "live_blogger_publisher_not_enabled",
-                        "operations_auto_approval_required",
-                    ],
-                    "real_writes_enabled": False,
-                },
-            )
+        # Auto preferences may be recorded for review, but this does not
+        # activate the policy or permit Blogger writes. Runtime dispatch has
+        # independent activation and live-write gates and remains disabled.
         if request.scope_type == "language":
             found = conn.execute(
                 "SELECT 1 FROM languages WHERE code=%s AND active", (request.scope_key,)
@@ -542,14 +530,34 @@ def list_publications() -> dict[str, Any]:
                 candidate["mode_policy"]["configured_mode"],
                 emergency_stopped=bool(mode_data["emergency_stopped"]),
             )
+            # The compact candidate read model does not carry the immutable,
+            # current proofs required by the Auto policy. Missing proof must
+            # stay unknown instead of triggering a per-row fallback query or
+            # borrowing the separate human/manual approval state.
             candidate["auto_eligibility"] = assess_auto_candidate(
                 {
                     "machine_passed": candidate["machine_passed"],
-                    "publish_ready": candidate["publish_ready"],
-                    "editorial_review_passed": candidate["editorial_review_approved"],
+                    "source_accessible": False,
+                    "source_body_verified": False,
+                    "key_facts_verified": False,
+                    "claim_evidence_semantically_verified": False,
+                    "independent_verification_satisfied": False,
+                    "source_rights_cleared": False,
+                    "language_quality_passed": False,
+                    "topic_relevance_passed": False,
+                    "seo_passed": False,
+                    "html_safe": False,
+                    "not_duplicate": False,
+                    "sources_current": False,
+                    "blog_mapping_valid": False,
+                    "not_evaluation_only": False,
+                    "topic": candidate.get("title"),
                 },
                 requested_mode=candidate["mode_policy"]["configured_mode"],
                 emergency_stopped=bool(mode_data["emergency_stopped"]),
+                settings=candidate["mode_policy"],
+                auto_policy_active=False,
+                live_writes_enabled=False,
             )
         return {
             "candidates": [dict(row) for row in candidates],
@@ -567,7 +575,8 @@ def list_publications() -> dict[str, Any]:
             "auto_candidate_count": sum(
                 1 for candidate in candidates if candidate["auto_eligibility"]["eligible"]
             ),
-            "auto_runtime_status": "disabled_pending_separate_operations_approval",
+            "auto_runtime_status": "disabled_pending_separate_activation",
+            "auto_policy_active": False,
         }
 
 

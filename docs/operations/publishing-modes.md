@@ -4,7 +4,7 @@
 
 게시 모드는 전체 기본값과 언어별·블로그별 오버라이드로 저장합니다. 해석 우선순위는 블로그 → 언어 → 전체이며, 기본값은 Manual입니다. 설정 저장은 `publication.mode.changed` 감사 이벤트를 추가합니다. Migration 042를 적용하지 않은 DB에서는 설정을 읽기 전용 기본값으로 보여주며 변경 요청은 거부합니다.
 
-현재 릴리스는 운영 자동 게시 승인 경로를 제공하지 않습니다. Auto를 저장하면 이는 향후 운영 정책의 요청값일 뿐이며, 화면과 API는 `live_auto_enabled=false`, `real_writes_enabled=false`, `publish_ready_enabled=false`를 계속 반환합니다. 현재 자격 확인은 검증 자료가 누락되어도 통과시키지 않으며, 운영 승인·자료 권리·신선도·SEO·HTML 안전성·사실 검토를 확인할 근거가 없는 후보는 차단합니다. 게시 Worker와 Blogger adapter는 Fake 전용입니다.
+Auto settings are stored as policy preferences only. `auto_eligible` is evaluated independently from human editorial review, publication approval events, and `publish_ready`; it requires every structured source, factual, semantic, rights, language, SEO, HTML, freshness, duplicate, and mapping gate to be positively verified. Unknown evidence fails closed. Dispatch additionally requires separate policy activation, no emergency stop, and live Blogger writes enabled. Current runtime keeps all three off.
 
 ## Manual 흐름
 
@@ -12,13 +12,13 @@
 
 ## Auto 설정 및 중지
 
-Auto 선호값에는 허용 카테고리 목록이 필요합니다. 설정은 하루 최대 건수, 최소 간격, 허용 시간대, 제외 주제, 출처 최대 나이, 재시도 상한을 저장합니다. 초기값은 하루 1건, 최소 24시간 간격, KST 09–17, 출처 최대 24시간, 재시도 0회입니다. 설정값만으로 작업을 예약하거나 실행하지 않습니다. 자동 게시 후보는 모든 자격을 다시 검사하고, 확인하지 못한 조건은 보류합니다.
+Auto preferences require an explicit category allowlist and are audited. Saving a preference does not activate unattended dispatch and does not create per-article human approval records. The current policy limits remain the configured values in the database; this document does not change operational settings. Candidates with unverifiable semantic fact support, rights, language quality, freshness, or blog-wide duplication remain held.
 
 `긴급 자동 게시 중지`는 전역 설정을 true로 변경하고 별도 감사 이벤트를 추가합니다. Dashboard에서는 중지를 해제할 수 없습니다. 재개 기능이 제공되지 않는 것은 실수로 Auto가 살아나는 것을 방지하기 위한 현재 운영 잠금입니다. 향후 별도 운영 승인과 변경 검토가 필요합니다.
 
 ## 실제 운영 활성화 전 체크리스트
 
-실제 Blogger 쓰기, Auto 승인, `publish_ready` 정책 변경은 이 개발 릴리스에서 허용되지 않습니다. 별도 운영 전환에서는 정확한 Blogger API 비용·쿼터 및 OAuth 권한 확인, 네 블로그 ID 매핑, 품질·출처 권리·신선도 게이트의 실제 데이터 연결, 멱등성/불확실 응답 복구, 관리자 권한 확인, 백업 및 운영 마이그레이션 절차, 명시적 운영 승인과 감사 기록을 먼저 완료해야 합니다. Blogger에서 사용자가 직접 바꾼 글은 자동으로 덮어쓰지 않아야 합니다.
+Live Blogger writes and Auto dispatch remain disabled until the separate initial operating transition is explicitly confirmed and the live API path, account permissions, policy checks, and recovery controls are verified. This implementation does not set `publish_ready`, fabricate human reviews, or publish content.
 
 ## Migration
 

@@ -62,17 +62,23 @@ class ModeSettingsInput(BaseModel):
 
 
 AUTO_REQUIRED_FLAGS = (
+    # These are evidence assertions, not user-supplied import fields. Callers
+    # must derive them from persisted, reviewed evidence and current checks.
     "machine_passed",
+    "source_accessible",
+    "source_body_verified",
+    "key_facts_verified",
+    "claim_evidence_semantically_verified",
+    "independent_verification_satisfied",
+    "source_rights_cleared",
+    "language_quality_passed",
+    "topic_relevance_passed",
     "seo_passed",
     "html_safe",
-    "editorial_review_passed",
-    "sources_current",
-    "source_rights_approved",
-    "topic_relevance_passed",
-    "blog_mapping_valid",
     "not_duplicate",
+    "sources_current",
+    "blog_mapping_valid",
     "not_evaluation_only",
-    "publish_ready",
 )
 
 
@@ -85,42 +91,46 @@ def assess_auto_candidate(
     daily_published_count: int | None = None,
     last_published_at: datetime | None = None,
     now: datetime | None = None,
+    auto_policy_active: bool = False,
+    live_writes_enabled: bool = False,
 ) -> dict[str, Any]:
-    """Pure conservative eligibility check; never authorizes a live network write."""
+    """Assess content independently from human review and runtime dispatch authorization.
+
+    `auto_eligible` never records or implies a human review/approval. Dispatch
+    remains fail-closed until the separately activated operating policy and
+    real Blogger write path are both available.
+    """
     reasons: list[str] = []
-    if requested_mode != "auto":
-        reasons.append("auto_mode_not_configured")
-    if emergency_stopped:
-        reasons.append("emergency_stop_enabled")
+    content_reasons: list[str] = []
     for flag in AUTO_REQUIRED_FLAGS:
         if evidence.get(flag) is not True:
-            reasons.append(f"{flag}_not_verified")
+            content_reasons.append(f"{flag}_not_verified")
     policy = settings or {}
     category = evidence.get("category")
     allowed_categories = policy.get("allowed_categories") or []
     if not category or category not in allowed_categories:
-        reasons.append("category_not_allowlisted")
+        content_reasons.append("category_not_allowlisted")
     topic = str(evidence.get("topic") or "").casefold()
     if any(str(excluded).casefold() in topic for excluded in policy.get("excluded_topics", [])):
-        reasons.append("topic_excluded")
+        content_reasons.append("topic_excluded")
     daily_limit = int(policy.get("daily_auto_limit", 1))
     if daily_published_count is None:
-        reasons.append("daily_publication_usage_not_verified")
+        content_reasons.append("daily_publication_usage_not_verified")
     elif daily_published_count >= daily_limit:
-        reasons.append("daily_publication_limit_reached")
+        content_reasons.append("daily_publication_limit_reached")
     if (
         last_published_at is None
         or last_published_at.tzinfo is None
         or last_published_at.utcoffset() is None
     ):
-        reasons.append("minimum_interval_not_verified")
+        content_reasons.append("minimum_interval_not_verified")
     else:
         elapsed = ((now or datetime.now(UTC)) - last_published_at.astimezone(UTC)).total_seconds() / 60
         if elapsed < int(policy.get("minimum_interval_minutes", 1440)):
-            reasons.append("minimum_publication_interval_not_met")
+            content_reasons.append("minimum_publication_interval_not_met")
     current = now or datetime.now(UTC)
     if current.tzinfo is None or current.utcoffset() is None:
-        reasons.append("publication_window_not_verified")
+        content_reasons.append("publication_window_not_verified")
     else:
         try:
             local_hour = current.astimezone(ZoneInfo(str(policy.get("timezone", "Asia/Seoul")))).hour
@@ -130,12 +140,29 @@ def assess_auto_candidate(
                 local_hour >= start_hour or local_hour < end_hour
             )
             if not inside_window:
-                reasons.append("outside_publication_window")
+                content_reasons.append("outside_publication_window")
         except (ZoneInfoNotFoundError, ValueError, TypeError):
-            reasons.append("publication_window_not_verified")
-    # This application release intentionally has no operations approval path.
-    reasons.extend(("operations_auto_approval_required", "live_blogger_writes_disabled"))
-    return {"eligible": False, "reasons": list(dict.fromkeys(reasons)), "simulation_only": True}
+            content_reasons.append("publication_window_not_verified")
+    auto_eligible = not content_reasons
+    reasons.extend(content_reasons)
+    if requested_mode != "auto":
+        reasons.append("auto_mode_not_configured")
+    if emergency_stopped:
+        reasons.append("emergency_stop_enabled")
+    if not auto_policy_active:
+        reasons.append("auto_policy_not_activated")
+    if not live_writes_enabled:
+        reasons.append("live_blogger_writes_disabled")
+    return {
+        "eligible": auto_eligible,
+        "auto_eligible": auto_eligible,
+        "dispatchable": auto_eligible and requested_mode == "auto" and not emergency_stopped
+            and auto_policy_active and live_writes_enabled,
+        "reasons": list(dict.fromkeys(reasons)),
+        "human_review_required": False,
+        "human_approval_recorded": False,
+        "simulation_only": True,
+    }
 
 
 def effective_mode(configured_mode: str, *, emergency_stopped: bool) -> str:

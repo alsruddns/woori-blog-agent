@@ -7,7 +7,7 @@ type Candidate = {
   blog_id: string; url: string; blogger_blog_id: string | null; machine_passed: boolean;
   human_review_required: boolean; publish_ready: boolean; quality_status: string | null;
   editorial_review_approved?: boolean; publication_approval_approved?: boolean;
-  effective_mode?: string; auto_eligibility?: { eligible: boolean; reasons: string[]; simulation_only: boolean };
+  effective_mode?: string; auto_eligibility?: { eligible: boolean; auto_eligible: boolean; dispatchable: boolean; reasons: string[]; human_review_required: false; human_approval_recorded: false; simulation_only: boolean };
 };
 type Job = { id: string; evaluation_id: string | null; content_version_id: string; content_title?: string | null; language_code: string; url: string; status: string; publication_state: string; block_reasons: string[]; simulation_count: number; adapter_type?: string; simulation_only?: boolean; remote_post_id?: string | null; remote_url?: string | null; remote_status?: string | null; remote_verified_at?: string | null; published_at?: string | null; live_attempt_count?: number; last_error_category?: string | null };
 type ModeSetting = { scope_type: "global" | "language" | "blog"; scope_key: string; configured_mode: "manual" | "auto"; daily_auto_limit: number; minimum_interval_minutes: number; allowed_start_hour: number; allowed_end_hour: number; timezone: string; allowed_categories: string[]; excluded_topics: string[]; max_source_age_hours: number; retry_limit: number; emergency_stopped: boolean; operations_auto_approved: boolean; updated_at?: string };
@@ -182,7 +182,7 @@ export default function PublicationManager({ initial }: { initial: PublicationDa
             <option value="">선택</option>{data.mode_policy.blogs.map(blog => <option key={blog.id} value={blog.id}>{blog.display_name} · {blog.url}</option>)}
           </select></label>}
           <label>게시 모드 <select value={selectedMode} onChange={event => setSelectedMode(event.target.value as "manual" | "auto")}>
-          <option value="manual">수동 게시</option><option value="auto" disabled>자동 게시 (Publisher 연결 및 운영 승인 후 사용 가능)</option>
+          <option value="manual">수동 게시</option><option value="auto">Auto 정책 설정 (비활성 상태로 저장)</option>
           </select></label>
           {selectedMode === "auto" && <>
             <label>허용 분야 <select multiple value={categories.split(",").map(value => value.trim()).filter(Boolean)} onChange={event => setCategories(Array.from(event.currentTarget.selectedOptions, option => option.value).join(", "))}>{Object.entries(categoryNames).map(([slug, name]) => <option key={slug} value={slug}>{name}</option>)}</select></label>
@@ -213,7 +213,7 @@ export default function PublicationManager({ initial }: { initial: PublicationDa
       {data.candidates.length ? <div className="publication-table-scroll"><table><thead><tr><th>원고</th><th>언어</th><th>대상 블로그·모드</th><th>검토·게시 상태</th><th>작업</th></tr></thead><tbody>
         {data.candidates.map((candidate) => <tr key={`${candidate.content_version_id}-${candidate.blog_id}`}>
           <td>{candidate.title}<small>원고 버전 {candidate.content_version_id.slice(0, 8)}</small></td><td>{languageLabel(candidate.language_code)}</td><td>{candidate.url}<small>{candidate.effective_mode === "auto" ? "자동 게시 설정 · 실행 차단" : "수동 게시"}</small></td>
-          <td>품질 {candidate.quality_status ? stateNames[candidate.quality_status] ?? "검토 필요" : "검사 전"} · 편집 검토 {candidate.editorial_review_approved ? "완료" : "대기"} · 발행 승인 {candidate.publication_approval_approved ? "완료" : "대기"}<small>{candidate.publish_ready ? "게시 준비됨" : "게시 준비 안 됨"} · 세부 차단 사유는 운영 진단에서 확인</small></td>
+          <td>품질 {candidate.quality_status ? stateNames[candidate.quality_status] ?? "검토 필요" : "검사 전"} · 편집 검토 {candidate.editorial_review_approved ? "완료" : "대기"} · 발행 승인 {candidate.publication_approval_approved ? "완료" : "대기"}<small>{candidate.publish_ready ? "게시 준비됨" : "게시 준비 안 됨"} · 세부 차단 사유는 운영 진단에서 확인</small>{candidate.auto_eligibility && <small>Auto eligible: {candidate.auto_eligibility.auto_eligible ? "yes" : "held"} | dispatch: {candidate.auto_eligibility.dispatchable ? "ready" : "disabled"} | {candidate.auto_eligibility.reasons.join(", ")}</small>}</td>
           <td>{candidate.evaluation_id ? <a href={`/manuscripts?open_evaluation_id=${encodeURIComponent(candidate.evaluation_id)}&open_content_version_id=${encodeURIComponent(candidate.content_version_id)}`}>다른 언어로 발행</a> : <span>평가 연결 없음</span>}{" "}
             <button disabled={!!busy || candidate.effective_mode?.startsWith("auto")} onClick={() => void request(candidate)}>{busy === candidate.content_version_id ? "기록 중…" : "수동 발행 요청 기록"}</button>{" "}
             <button className="secondary-button" disabled={!!busy} onClick={() => void syncReadOnly(candidate)}>Blogger 게시물 읽기 확인</button></td>

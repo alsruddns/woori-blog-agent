@@ -221,19 +221,40 @@ def test_publication_mode_defaults_manual_and_auto_requires_allowlist() -> None:
     assert auto.retry_limit == 0
 
 
-def test_auto_mode_cannot_be_saved_until_live_publisher_and_operations_approval_exist(
+def test_auto_mode_preferences_can_be_saved_without_activating_dispatch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from fastapi import HTTPException
     from woori import publications
 
     class FakeConnection:
-        def execute(self, *_: object, **__: object) -> None:
-            raise AssertionError("blocked Auto settings must not write to the database")
+        def __init__(self) -> None:
+            self.statements: list[str] = []
+
+        def execute(self, query: str, *_: object, **__: object) -> Any:
+            self.statements.append(query)
+
+            class Result:
+                def fetchall(self) -> list[dict[str, str]]:
+                    return [{"slug": "policy"}]
+
+                def fetchone(self) -> dict[str, Any]:
+                    return {
+                        "scope_type": "global", "scope_key": "", "configured_mode": "auto",
+                        "daily_auto_limit": 1, "minimum_interval_minutes": 1440,
+                        "allowed_start_hour": 9, "allowed_end_hour": 17,
+                        "timezone": "Asia/Seoul", "allowed_categories": ["policy"],
+                        "excluded_topics": [], "max_source_age_hours": 24,
+                        "retry_limit": 0, "emergency_stopped": False,
+                        "operations_auto_approved": False, "updated_at": None,
+                    }
+
+            return Result()
+
+    fake_conn = FakeConnection()
 
     class Context:
         def __enter__(self) -> FakeConnection:
-            return FakeConnection()
+            return fake_conn
 
         def __exit__(self, *_: object) -> None:
             return None
@@ -245,20 +266,14 @@ def test_auto_mode_cannot_be_saved_until_live_publisher_and_operations_approval_
         lambda _: {"migration_required": False, "emergency_stopped": False},
     )
 
-    with pytest.raises(HTTPException) as caught:
-        publications.save_mode_settings(
-            ModeSettingsInput(configured_mode="auto", allowed_categories=["policy"])
-        )
-
-    assert caught.value.status_code == 409
-    assert caught.value.detail == {
-        "code": "auto_publication_unavailable",
-        "reasons": [
-            "live_blogger_publisher_not_enabled",
-            "operations_auto_approval_required",
-        ],
-        "real_writes_enabled": False,
-    }
+    result = publications.save_mode_settings(
+        ModeSettingsInput(configured_mode="auto", allowed_categories=["policy"])
+    )
+    assert result["configured_mode"] == "auto"
+    assert result["live_auto_enabled"] is False
+    assert result["real_writes_enabled"] is False
+    assert result["operations_auto_approved"] is False
+    assert any("publication.mode.changed" in statement for statement in fake_conn.statements)
 
 
 def test_mode_scope_precedence_is_blog_then_language_then_global() -> None:
@@ -275,12 +290,24 @@ def test_mode_scope_precedence_is_blog_then_language_then_global() -> None:
 
 
 def test_auto_eligibility_never_enables_live_publication() -> None:
+    from datetime import UTC, datetime, timedelta
+
     from woori.publication_modes import AUTO_REQUIRED_FLAGS, assess_auto_candidate
 
     evidence = {key: True for key in AUTO_REQUIRED_FLAGS}
-    result = assess_auto_candidate(evidence, requested_mode="auto", emergency_stopped=False)
-    assert result["eligible"] is False
-    assert "operations_auto_approval_required" in result["reasons"]
+    evidence.update({"category": "finance", "topic": "markets"})
+    now = datetime(2026, 1, 1, 3, 0, tzinfo=UTC)
+    policy = {"allowed_categories": ["finance"], "daily_auto_limit": 1,
+              "minimum_interval_minutes": 5, "timezone": "Asia/Seoul",
+              "allowed_start_hour": 0, "allowed_end_hour": 23}
+    result = assess_auto_candidate(
+        evidence, requested_mode="auto", emergency_stopped=False, settings=policy,
+        daily_published_count=0, last_published_at=now - timedelta(minutes=6), now=now,
+    )
+    assert result["auto_eligible"] is True
+    assert result["human_review_required"] is False
+    assert result["human_approval_recorded"] is False
+    assert result["dispatchable"] is False
     assert "live_blogger_writes_disabled" in result["reasons"]
     stopped = assess_auto_candidate(evidence, requested_mode="auto", emergency_stopped=True)
     assert "emergency_stop_enabled" in stopped["reasons"]
@@ -292,9 +319,12 @@ def test_auto_candidate_fails_closed_for_missing_verification_and_publish_ready(
     result = assess_auto_candidate(
         {"machine_passed": True}, requested_mode="auto", emergency_stopped=False
     )
-    assert "seo_passed_not_verified" in result["reasons"]
-    assert "source_rights_approved_not_verified" in result["reasons"]
-    assert "publish_ready_not_verified" in result["reasons"]
+    assert "claim_evidence_semantically_verified_not_verified" in result["reasons"]
+    assert "source_rights_cleared_not_verified" in result["reasons"]
+    assert "language_quality_passed_not_verified" in result["reasons"]
+    assert "editorial_review_passed_not_verified" not in result["reasons"]
+    assert "publish_ready_not_verified" not in result["reasons"]
+    assert result["auto_eligible"] is False
     assert result["simulation_only"] is True
 
 
