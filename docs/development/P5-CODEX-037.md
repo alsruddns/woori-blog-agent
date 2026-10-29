@@ -46,5 +46,5 @@
 ## 커밋 및 남은 문제
 
 - P5-CODEX-036 선행 커밋: `f384645b98bdf71004a686a05c3b7cfc0b642aa7` (`origin/develop` push 완료).
-- P5-CODEX-037 커밋 SHA와 원격 push 상태는 이 기록의 후속 변경에서 연결한다.
+- P5-CODEX-037 커밋: `e32a0b1ddb23781bd28ad56050d9cae1f1161ea0`; `origin/develop` push 완료. 이 SHA 기록은 이 개발 기록의 후속 문서 커밋으로 연결한다.
 - 남은 작업: 기존 ChatGPT/Codex 예약 task의 본문을 전용 지시문으로 업데이트하고 실제 예약 실행을 관측해야 한다. 예약 JSON Import 이후에도 의미·권리 검토와 독립 검증이 남으면 자동 게시하지 않는다. stale Research Worker를 소유 터미널에서 안전하게 재시작하고 heartbeat를 새로 확인해야 자동 Import가 운영 DB에 반영된다. Publication Worker와 Auto 정책은 현 상태 그대로 비활성이다.
