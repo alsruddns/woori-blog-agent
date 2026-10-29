@@ -49,7 +49,7 @@
 - Mock Publisher fail-closed 회귀 테스트: 1 passed (격리 DB).
 - Ruff 변경 파일 검사: passed. `git diff --check`: passed.
 - 운영 감사: run `05d67548-0135-4b77-b21b-5cc0a7b709ae`; 작업 시작·완료와 Import 평가 이벤트 저장. 감사 요약의 잘못된 콘텐츠 버전 참조는 immutable 감사 이벤트를 수정하지 않고 후속 correction 이벤트로 바로잡았다.
-- 커밋: 본 기록 작성 후 `git log`에 연결 예정.
+- 구현 커밋: `b664fdd` (`fix : [P5-CODEX-021] connect Fed manuscript import checks`), `origin/develop` push 완료. 이 개발 기록의 최종 보고 항목은 후속 git history에서 확인한다.
 
 ## 남은 문제
 
