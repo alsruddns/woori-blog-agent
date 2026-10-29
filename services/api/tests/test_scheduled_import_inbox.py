@@ -16,7 +16,11 @@ from woori.config import settings
 from woori.content_imports import ScheduledImportEnvelope, ScheduledImportOrigin
 from woori.db import connection
 from woori.main import app
-from woori.scheduled_import_inbox import process_inbox_once, validate_envelope
+from woori.scheduled_import_inbox import (
+    process_inbox_once,
+    retry_quarantined_file,
+    validate_envelope,
+)
 
 
 def scheduled_payload(**updates: object) -> dict[str, object]:
@@ -240,6 +244,90 @@ def test_inbox_records_exact_safe_pydantic_validation_reason(tmp_path: Path) -> 
     assert any(error["type"] == "value_error" and "unrecognized_or_unreviewed_blogger_label" in error["message"]
                for error in outcome["validation_errors"])
     assert (tmp_path / "quarantine" / "invalid-label.processing.json").read_text(encoding="utf-8") == original
+
+
+def test_quarantine_retry_is_audited_and_moves_original_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from contextlib import contextmanager
+
+    from woori import db
+
+    root = tmp_path / "inbox"
+    quarantine = root / "quarantine"
+    quarantine.mkdir(parents=True)
+    filename = "global-it-ai-2026-10-30-en-3d10f8d2-b4d8-454b-afc2-bab153a4013f.processing.json"
+    source = quarantine / filename
+    payload = scheduled_payload()
+    payload["scheduled_origin"].update({  # type: ignore[union-attr]
+        "task_type": "scheduled_article", "task_id": "global-it-ai",
+        "occurrence_id": "global-it-ai-2026-10-30-01", "market_date": None,
+        "target_language_code": "en", "target_blog_id": "5240203250707821039",
+        "target_blog_url": "https://trend-journal-en.blogspot.com",
+    })
+    payload["item"].update({  # type: ignore[union-attr]
+        "content_id": "3d10f8d2-b4d8-454b-afc2-bab153a4013f", "language_code": "en",
+        "category": "artificial-intelligence",
+        "target_audiences": [{"language_code": "en", "target_region": "US",
+                               "reader_relevance_reason": "Written for global technology readers."}],
+        "blogger_labels": ["Artificial Intelligence"],
+    })
+    original = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    source.write_bytes(original)
+    expected_sha = __import__("hashlib").sha256(original).hexdigest()
+    statements: list[tuple[str, object]] = []
+
+    class FakeConnection:
+        def execute(self, query: str, params: object = None) -> SimpleNamespace:
+            statements.append((query, params))
+            if "scheduled_import.file_outcome" in query:
+                return SimpleNamespace(fetchone=lambda: {"id": 178105, "payload": {}})
+            return SimpleNamespace(fetchone=lambda: None)
+
+    @contextmanager
+    def fake_connection():
+        yield FakeConnection()
+
+    monkeypatch.setattr(db, "connection", fake_connection)
+    result = retry_quarantined_file(root, filename)
+    ready = root / "ready" / (filename.removesuffix(".processing.json") + ".ready.json")
+    assert result["status"] == "requeued"
+    assert result["file_sha256"] == expected_sha
+    assert not source.exists() and ready.read_bytes() == original
+    assert len(statements) == 4
+    assert "scheduled_import.quarantine_retry_requested" in statements[-1][0]
+    assert statements[-1][1][1].obj["prior_outcome_event_id"] == 178105
+
+
+@pytest.mark.parametrize("existing_query", ["external_content_imports", "content.import.scheduled_origin_recorded"])
+def test_quarantine_retry_refuses_existing_import_or_origin(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, existing_query: str
+) -> None:
+    from contextlib import contextmanager
+
+    from woori import db
+
+    root = tmp_path / "inbox"
+    quarantine = root / "quarantine"
+    quarantine.mkdir(parents=True)
+    filename = "retry.processing.json"
+    source = quarantine / filename
+    source.write_text(json.dumps(scheduled_payload()), encoding="utf-8")
+
+    class FakeConnection:
+        def execute(self, query: str, _params: object = None) -> SimpleNamespace:
+            if "scheduled_import.file_outcome" in query:
+                return SimpleNamespace(fetchone=lambda: {"id": 1, "payload": {}})
+            exists = existing_query in query
+            return SimpleNamespace(fetchone=lambda: {"id": 2} if exists else None)
+
+    @contextmanager
+    def fake_connection():
+        yield FakeConnection()
+
+    monkeypatch.setattr(db, "connection", fake_connection)
+    with pytest.raises(ValueError, match="already"):
+        retry_quarantined_file(root, filename)
+    assert source.exists()
+    assert not list((root / "ready").glob("*.ready.json"))
 
 
 def test_inbox_records_http_status_and_sanitized_api_detail(tmp_path: Path) -> None:

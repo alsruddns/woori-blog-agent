@@ -150,6 +150,93 @@ def _recover_interrupted(directories: dict[str, Path], *, stale_after_seconds: i
     return recovered
 
 
+def retry_quarantined_file(root: Path, filename: str) -> dict[str, Any]:
+    """Audited, fail-closed requeue for a previously quarantined scheduled export.
+
+    The exact quarantine file is moved (never copied or rewritten) only when its
+    checksum matches an earlier invalid-envelope outcome and no import/origin
+    record already exists. The normal inbox worker then performs the import.
+    """
+    from psycopg.types.json import Jsonb
+
+    from .db import connection
+
+    if Path(filename).name != filename or not filename.endswith(".processing.json"):
+        raise ValueError("quarantine_retry_requires_exact_processing_filename")
+    directories = _safe_directories(root)
+    source = directories["quarantine"] / filename
+    if _is_reparse_point(source) or not source.is_file():
+        raise FileNotFoundError("quarantined_file_not_found_or_unsafe")
+    size = source.stat().st_size
+    if size <= 0 or size > MAX_FILE_BYTES:
+        raise ValueError("quarantined_file_size_invalid")
+    raw = source.read_bytes()
+    file_sha256 = hashlib.sha256(raw).hexdigest()
+    envelope = validate_envelope(raw)
+    file_key = _file_key(Path(filename.removesuffix(".processing.json") + ".ready.json"))
+    target_name = filename.removesuffix(".processing.json") + ".ready.json"
+    target = directories["ready"] / target_name
+    if target.exists():
+        raise FileExistsError("quarantine_retry_ready_destination_exists")
+
+    with connection() as conn:
+        prior = conn.execute(
+            """SELECT id,payload FROM audit_events
+            WHERE event_type='scheduled_import.file_outcome'
+              AND payload->>'file_sha256'=%s
+              AND payload->>'file_key'=%s
+              AND payload->>'status'='quarantined'
+              AND payload->>'reason'='invalid_envelope'
+            ORDER BY id DESC LIMIT 1""",
+            (file_sha256, file_key),
+        ).fetchone()
+        if not prior:
+            raise ValueError("matching_quarantine_audit_not_found")
+        imported = conn.execute(
+            "SELECT id FROM external_content_imports WHERE external_content_id=%s LIMIT 1",
+            (envelope.item.content_id,),
+        ).fetchone()
+        if imported:
+            raise ValueError("content_already_imported_retry_refused")
+        origin = conn.execute(
+            """SELECT id FROM audit_events
+            WHERE event_type='content.import.scheduled_origin_recorded'
+              AND payload->>'occurrence_id'=%s LIMIT 1""",
+            (envelope.scheduled_origin.occurrence_id,),
+        ).fetchone()
+        if origin:
+            raise ValueError("scheduled_occurrence_already_recorded_retry_refused")
+        conn.execute(
+            """INSERT INTO audit_events(event_type,language_code,payload)
+            VALUES ('scheduled_import.quarantine_retry_requested',%s,%s)""",
+            (envelope.item.language_code, Jsonb({
+                "file_key": file_key,
+                "file_sha256": file_sha256,
+                "original_quarantine_file": filename,
+                "ready_file": target_name,
+                "prior_outcome_event_id": prior["id"],
+                "content_id": envelope.item.content_id,
+                "occurrence_id": envelope.scheduled_origin.occurrence_id,
+                "reason": "retry_after_worker_schema_refresh",
+                "blogger_writes": 0,
+            })),
+        )
+    # Commit the retry audit before the file becomes visible to the running
+    # Worker. If the move fails, the quarantine file remains available for an
+    # explicit retry and the append-only request event is still truthful.
+    _move(source, target)
+    return {
+        "status": "requeued",
+        "file_key": file_key,
+        "file_sha256": file_sha256,
+        "prior_outcome_event_id": prior["id"],
+        "content_id": envelope.item.content_id,
+        "occurrence_id": envelope.scheduled_origin.occurrence_id,
+        "ready_file": str(target),
+        "blogger_writes": 0,
+    }
+
+
 def process_inbox_once(
     root: Path,
     api_base_url: str,
@@ -356,6 +443,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Import complete, user-reviewed scheduled Work export files")
     parser.add_argument("--operations", action="store_true", help="Target the local operations API on port 8100")
     parser.add_argument("--confirm-operations-import", action="store_true", help="Confirm that review-held content will be written to the operations DB")
+    parser.add_argument("--retry-quarantined", metavar="FILENAME", help="Audited requeue of one exact quarantine processing filename")
     args = parser.parse_args()
     os.chdir(project_root)
     if args.operations != args.confirm_operations_import:
@@ -363,6 +451,13 @@ def main() -> None:
     inbox = project_root / ".local" / "gpt-scheduled-import"
     if _is_reparse_point(project_root / ".local") or _is_reparse_point(inbox):
         raise SystemExit("Scheduled import inbox must not use a symlink or junction")
+    if args.retry_quarantined:
+        try:
+            result = retry_quarantined_file(inbox, args.retry_quarantined)
+        except (ValueError, OSError) as exc:
+            raise SystemExit(str(exc)) from None
+        print(json.dumps(result, ensure_ascii=True, separators=(",", ":")))
+        return
     url = "http://127.0.0.1:8100" if args.operations else "http://127.0.0.1:18100"
     try:
         result = process_inbox_once(
