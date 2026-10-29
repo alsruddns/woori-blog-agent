@@ -22,11 +22,14 @@ export default function ManuscriptManager() {
   return <>
     <div className="workspace-toolbar-row">
       <nav className="workspace-tabs" role="tablist" aria-label="원고 유형">
-        <button role="tab" aria-selected={view === "written"} onClick={() => selectView("written")}>작성 원고</button>
-        <button role="tab" aria-selected={view === "external"} onClick={() => selectView("external")}>외부 검토 대기</button>
+        <button role="tab" aria-selected={view === "written"} onClick={() => selectView("written")}>원고 목록</button>
+        <button role="tab" aria-selected={view === "external"} onClick={() => selectView("external")}>가져온 원고</button>
       </nav>
-      <Link className="primary-action" href="/imports">원고 가져오기</Link>
+      <Link className="primary-action" href="/imports">새 원고 가져오기</Link>
     </div>
+    <p className="workspace-list-help">{view === "written"
+      ? "내부 평가 및 저장된 원고의 최신 대표 버전입니다. 이전 버전은 상세의 변경 이력에서 확인할 수 있습니다."
+      : "Codex 예약·수동 Import 등 가져온 원고와 현재 검토 상태입니다. 같은 계열은 최신 대표 원고만 표시하며 이전 버전은 상세 이력에 보존됩니다."}</p>
     {view === "written" ? <ManuscriptWorkspace /> : <ExternalImportQueue />}
   </>;
 }

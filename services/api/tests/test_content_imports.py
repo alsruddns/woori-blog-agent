@@ -4,7 +4,8 @@ import json
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
+from uuid import uuid4
 
 import psycopg
 import pytest
@@ -113,6 +114,100 @@ def test_eight_editorial_categories_and_overlapping_deduplication_groups() -> No
     categories = {item["slug"]: item for item in EDITORIAL_CATEGORIES}
     assert categories["finance"]["deduplication_group"] == categories["stocks"]["deduplication_group"]
     assert categories["technology"]["deduplication_group"] == categories["semiconductors"]["deduplication_group"]
+
+
+def test_import_list_read_model_returns_latest_lineage_representative(monkeypatch: pytest.MonkeyPatch) -> None:
+    statements: list[str] = []
+    representative = {
+        "id": "import-revision", "external_content_id": "revision-article",
+        "event_group_id": "event-policy-2026-001", "language_code": "en", "source_region": "US",
+        "category": "policy", "title": "Latest revised article", "content_sha256": "a" * 64,
+        "state": "awaiting_human_review", "received_at": "2026-10-30T00:00:00Z",
+        "generation_method": "chatgpt_scheduled_export", "model_name": "Codex scheduled",
+        "google_trends_based": False, "content_version_id": "latest-content-version",
+        "editorial_review_status": "editorial_review_passed", "machine_passed": True,
+    }
+
+    class Cursor:
+        def __init__(self, rows: list[dict[str, Any]]):
+            self.rows = rows
+
+        def fetchone(self) -> dict[str, Any] | None:
+            return self.rows[0] if self.rows else None
+
+        def fetchall(self) -> list[dict[str, Any]]:
+            return self.rows
+
+    class ReadOnlyConnection:
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            return None
+
+        def execute(self, query: str, _params: Any = None) -> Cursor:
+            statements.append(query)
+            if "to_regclass('public.external_content_import_content_links')" in query:
+                return Cursor([{"table_name": "external_content_import_content_links"}])
+            if "WITH RECURSIVE import_lineage" in query:
+                return Cursor([representative])
+            raise AssertionError(f"Unexpected import list query: {query}")
+
+    monkeypatch.setattr(content_imports, "connection", lambda: ReadOnlyConnection())
+    headers = {"Authorization": "Bearer " + settings().admin_token}
+    with TestClient(app) as client:
+        response = client.get("/admin/research/content-imports", headers=headers)
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert len(payload["items"]) == 1
+    assert payload["items"][0]["title"] == "Latest revised article"
+    assert payload["items"][0]["editorial_review_status"] == "editorial_review_passed"
+    assert any("PARTITION BY COALESCE(group_id::text,root_content_id,external_content_id)" in query
+               for query in statements)
+    assert any("content_version_number DESC NULLS LAST" in query for query in statements)
+
+
+def test_import_revision_chain_shows_one_list_item_and_preserves_parent_history(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with connection() as conn, conn.transaction(force_rollback=True):
+        @contextmanager
+        def shared() -> Iterator[Any]:
+            with conn.transaction():
+                yield conn
+
+        monkeypatch.setattr(content_imports, "connection", shared)
+        headers = {"Authorization": "Bearer " + settings().admin_token}
+        original_id = "lineage-original-" + str(uuid4())
+        revision_id = "lineage-revision-" + str(uuid4())
+        event_group = "lineage-event-" + str(uuid4())
+        original_item = valid_item(content_id=original_id, event_group_id=event_group,
+                                   title="A reader guide to the verified policy update")
+        revision_item = valid_item(content_id=revision_id, event_group_id=event_group,
+                                   parent_content_id=original_id, relation="revision",
+                                   title="A clearer reader guide to the verified policy update",
+                                   body_markdown="## What changed\n\n" +
+                                   ("The revised guide explains the supported policy details with a clear source link. [source:src-official-1]\n\n" * 2))
+        with TestClient(app) as client:
+            original = client.post("/admin/research/content-imports", headers=headers,
+                                   json={"submitted_by": "Lineage test", "item": original_item})
+            assert original.status_code == 201, original.text
+            revision = client.post("/admin/research/content-imports", headers=headers,
+                                   json={"submitted_by": "Lineage test", "item": revision_item})
+            assert revision.status_code == 201, revision.text
+            listing = client.get("/admin/research/content-imports?limit=100", headers=headers)
+            assert listing.status_code == 200, listing.text
+            family = [row for row in listing.json()["items"] if row["external_content_id"] in {original_id, revision_id}]
+            assert len(family) == 1
+            assert family[0]["external_content_id"] == revision_id
+
+            detail = client.get(
+                f"/admin/research/content-imports/{revision.json()['import_id']}", headers=headers,
+            )
+            assert detail.status_code == 200, detail.text
+            prior = [row for row in detail.json()["lineage_history"] if row["external_content_id"] == original_id]
+            assert prior and "A grounded explanation" in prior[0]["body_markdown"]
 
 
 def test_country_is_context_only_and_multi_locale_needs_reader_rationale() -> None:

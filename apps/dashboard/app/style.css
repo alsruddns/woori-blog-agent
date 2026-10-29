@@ -550,3 +550,30 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 :root[data-theme="dark"] .data-grid tbody tr:hover { color:var(--ink); }
 
 @media(max-width:700px){.post-review-card header{display:grid}.post-review-add{grid-template-columns:1fr}.post-review-add>label{font-weight:700}.post-review-actions>div>button{flex:1 1 150px}}
+
+/* P5-CODEX-056: consistent manuscript actions, readable lineage lists, and responsive labels */
+.page-heading { align-items:flex-start; }
+.page-heading > .primary-action,.page-heading > .secondary-button { align-self:flex-start; flex:none; min-height:40px; }
+.workspace-toolbar-row { align-items:center; }
+.workspace-list-help { margin:0 0 14px; color:var(--muted); font-size:13px; line-height:1.55; }
+button,.primary-action,.secondary-button { min-height:40px; padding:8px 13px; border-radius:8px; line-height:1.3; }
+.import-title { display:-webkit-box; max-width:360px; overflow:hidden; -webkit-box-orient:vertical; -webkit-line-clamp:2; line-clamp:2; overflow-wrap:anywhere; }
+.import-list-scroll td:first-child { min-width:220px; }
+.import-list-scroll td:first-child button { max-width:100%; white-space:normal; }
+.data-grid .title-cell { max-width:320px; white-space:normal; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; line-clamp:2; }
+.status-text { border:1px solid var(--line); background:var(--surface-raised); color:var(--ink); }
+@media(max-width:700px) {
+  .workspace-toolbar-row { align-items:stretch; }
+  .workspace-toolbar-row .workspace-tabs { width:100%; }
+  .workspace-toolbar-row .primary-action { align-self:stretch; }
+  .page-heading > .primary-action,.page-heading > .secondary-button { align-self:stretch; text-align:center; }
+  .import-list-scroll td:nth-child(1)::before { content:"원고"; }
+  .import-list-scroll td:nth-child(2)::before { content:"생성 경로"; }
+  .import-list-scroll td:nth-child(3)::before { content:"분야"; }
+  .import-list-scroll td:nth-child(4)::before { content:"언어"; }
+  .import-list-scroll td:nth-child(5)::before { content:"자료 지역"; }
+  .import-list-scroll td:nth-child(6)::before { content:"검토 상태"; }
+  .import-list-scroll td:nth-child(7)::before { content:"최근 접수"; }
+}
+:root[data-theme="dark"] .workspace-list-help { color:var(--muted); }
+:root[data-theme="dark"] .import-title { color:var(--accent-strong); }

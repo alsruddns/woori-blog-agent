@@ -533,21 +533,45 @@ def manuscript_list(
         clauses.append("machine_passed")
     elif status == "failed":
         clauses.append("status='failed'")
-    order = "created_at ASC" if sort == "oldest" else "created_at DESC"
+    order = "representative_updated_at ASC" if sort == "oldest" else "representative_updated_at DESC"
     where = " AND ".join(clauses)
     try:
         with psycopg.connect(url, connect_timeout=2, row_factory=dict_row) as conn:
             identity = conn.execute("SELECT current_database() AS db,current_user AS role").fetchone()
             if not identity or identity["db"] != "woori_blog_agent_eval" or identity["role"] != "woori_eval_reader":
                 raise HTTPException(503, "Evaluation database identity check failed")
-            base = """SELECT DISTINCT ON (q.content_version_id) q.id AS evaluation_id,
-                q.content_version_id,q.language_code,q.topic,q.topic_key,q.title,q.summary,
-                q.model,q.machine_passed,q.human_review_required,q.status,q.created_at,
-                v.version AS content_version,
-                CASE WHEN q.topic ILIKE 'Apple Inc. 10-Q%%' THEN 'stocks' ELSE 'finance' END AS category_slug
-                FROM article_quality_evaluations q JOIN content_versions v ON v.id=q.content_version_id
-                WHERE (q.topic ILIKE 'Federal Reserve%%' OR q.topic ILIKE 'Apple Inc. 10-Q%%')
-                ORDER BY q.content_version_id,q.created_at DESC,q.id DESC"""
+            base = """WITH RECURSIVE version_roots AS (
+                  SELECT id,source_version_id,id AS root_version_id FROM content_versions
+                  WHERE source_version_id IS NULL
+                  UNION ALL
+                  SELECT child.id,child.source_version_id,parent.root_version_id
+                  FROM content_versions child JOIN version_roots parent ON child.source_version_id=parent.id
+                ), latest_evaluations AS (
+                  SELECT DISTINCT ON (q.content_version_id) q.id AS evaluation_id,
+                    q.content_version_id,q.language_code,q.topic,q.topic_key,q.title,q.summary,
+                    q.model,q.machine_passed,q.human_review_required,q.status,q.created_at,
+                    v.version AS content_version,v.created_at AS version_created_at,v.group_id,
+                    COALESCE(v.localization_id::text,v.language) AS localization_key,
+                    COALESCE(root.root_version_id,v.id) AS lineage_root,
+                    CASE WHEN q.topic ILIKE 'Apple Inc. 10-Q%%' THEN 'stocks' ELSE 'finance' END AS category_slug
+                  FROM article_quality_evaluations q JOIN content_versions v ON v.id=q.content_version_id
+                  LEFT JOIN version_roots root ON root.id=v.id
+                  WHERE (q.topic ILIKE 'Federal Reserve%%' OR q.topic ILIKE 'Apple Inc. 10-Q%%')
+                  ORDER BY q.content_version_id,q.created_at DESC,q.id DESC
+                ), ranked_representatives AS (
+                  SELECT latest_evaluations.*,
+                    row_number() OVER (
+                      PARTITION BY COALESCE(group_id::text,lineage_root::text,content_version_id::text),
+                        localization_key
+                      ORDER BY content_version DESC,version_created_at DESC,created_at DESC,
+                        content_version_id DESC
+                    ) AS representative_rank
+                  FROM latest_evaluations
+                )
+                SELECT evaluation_id,content_version_id,language_code,topic,topic_key,title,summary,
+                  model,machine_passed,human_review_required,status,created_at,version_created_at AS representative_updated_at,
+                  content_version,category_slug
+                FROM ranked_representatives WHERE representative_rank=1"""
             total_row = conn.execute(
                 f"SELECT count(*)::int AS total FROM ({base}) latest WHERE {where}", params
             ).fetchone()
@@ -622,6 +646,17 @@ def manuscript_detail(evaluation_id: UUID, content_version_id: UUID) -> dict[str
     """Load a selected manuscript's full evidence and editorial history on demand."""
     item = _read_manuscript_detail(evaluation_id, content_version_id)
     with connection() as conn:
+        content_lineage = conn.execute(
+            """WITH RECURSIVE lineage AS (
+              SELECT id,source_version_id,group_id,localization_id,language,version,title,body,created_at
+              FROM content_versions WHERE id=%s
+              UNION ALL
+              SELECT parent.id,parent.source_version_id,parent.group_id,parent.localization_id,
+                parent.language,parent.version,parent.title,parent.body,parent.created_at
+              FROM content_versions parent JOIN lineage child ON child.source_version_id=parent.id
+            ) SELECT id,source_version_id,group_id,localization_id,language,version,title,body,created_at
+              FROM lineage ORDER BY version DESC,created_at DESC,id DESC""", (content_version_id,)
+        ).fetchall()
         revisions = conn.execute(
             """SELECT id,revision_number,title,body,html_body,seo_description,blogger_labels,seo_metadata,
                 machine_passed,quality_status,body_sha256,created_at,reviewer_name,reason,
@@ -669,6 +704,7 @@ def manuscript_detail(evaluation_id: UUID, content_version_id: UUID) -> dict[str
             WHERE r.content_version_id=%s ORDER BY r.published_at DESC""", (content_version_id,)
         ).fetchall()
     item["editorial_versions"] = [dict(row) for row in revisions]
+    item["content_lineage"] = [dict(row) for row in content_lineage]
     item["blogger_targets"] = [dict(row) for row in blogger_targets]
     from .editorial_html import sanitize_editorial_html
     for revision in item["editorial_versions"]:

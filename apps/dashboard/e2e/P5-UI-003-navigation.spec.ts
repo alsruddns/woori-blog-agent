@@ -58,13 +58,14 @@ test("manuscript navigation opens one-click import detail and remains responsive
       await route.fulfill({ status: 409, json: { detail: "This UI fixture does not permit writes." } });
     }
   });
+  await page.route("**/api/publications/scheduled-auto-first-post?**", route => route.fulfill({ json: { status: "not_authorized" } }));
 
   await page.goto("/manuscripts");
   await expect(page.getByRole("navigation", { name: "주 메뉴" })).toBeVisible();
   await expect(page.getByRole("link", { name: "원고 관리" })).toHaveAttribute("aria-current", "page");
   await expect(page.getByText("18개 원고")).toBeVisible();
-  await expect(page.getByRole("tab", { name: /외부 검토 대기/ })).toBeVisible();
-  await page.getByRole("tab", { name: /외부 검토 대기/ }).click();
+  await expect(page.getByRole("tab", { name: /가져온 원고/ })).toBeVisible();
+  await page.getByRole("tab", { name: /가져온 원고/ }).click();
   await expect(page.getByRole("link", { name: importItem.title })).toBeVisible();
   await page.getByRole("link", { name: importItem.title }).click();
   await expect(page).toHaveURL(new RegExp(`/imports\\?open_import_id=${importId}`));

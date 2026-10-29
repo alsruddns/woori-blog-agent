@@ -4,6 +4,34 @@ import path from "node:path";
 
 const screenshots = path.resolve(__dirname, "../../../docs/development/assets");
 
+test("manuscript views explain latest representative version and show current review state", async ({ page }) => {
+  await page.route("**/api/research/manuscripts?**", route => route.fulfill({ json: {
+    items: [{ evaluation_id: "evaluation-latest", content_version_id: "version-latest", title: "Representative article",
+      topic: "Representative topic", category_slug: "finance", language_code: "ko", model: "Codex",
+      created_at: "2026-10-30T00:00:00Z", representative_updated_at: "2026-10-30T01:00:00Z",
+      editorial_status: "editorial_review_passed", publication_status: "not_published", machine_passed: true }],
+    page: 1, page_size: 25, total: 1, languages: ["ko"], categories: ["finance"],
+  } }));
+  await page.route("**/api/research/content-imports", route => route.fulfill({ json: { items: [{
+    id: "import-latest", external_content_id: "content-latest", title: "Representative imported article",
+    generation_method: "chatgpt_scheduled_export", google_trends_based: false, category: "finance",
+    language_code: "ko", source_region: "KR", state: "awaiting_human_review", received_at: "2026-10-30T01:00:00Z",
+    editorial_review_status: "editorial_review_passed", machine_passed: true,
+  }] } }));
+
+  await page.goto("/manuscripts");
+  await expect(page.getByRole("tab", { name: "원고 목록" })).toBeVisible();
+  await expect(page.getByText(/이전 버전은 상세의 변경 이력에서 확인/)).toBeVisible();
+  await expect(page.getByRole("row", { name: /Representative article/ })).toHaveCount(1);
+  await page.getByRole("tab", { name: "가져온 원고" }).click();
+  await expect(page.getByText(/같은 원고 계열은 최신 대표 버전만 표시/)).toBeVisible();
+  await expect(page.getByTestId("external-import-row")).toHaveCount(1);
+  await expect(page.getByTestId("external-import-row")).toContainText("편집 검토 완료");
+  if ((page.viewportSize()?.width ?? 1440) <= 700) {
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  }
+});
+
 test("manuscript list, filters, paged query, detail tabs and keyboard close", async ({ page }, testInfo) => {
   const listResponsePromise = page.waitForResponse(response =>
     response.url().includes("/api/research/manuscripts?") && response.status() === 200,

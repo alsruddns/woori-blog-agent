@@ -27,11 +27,13 @@ const recommendationLabel = (reason: string) => reason === "regional_language_an
     : "지역 정보만으로 게시 언어를 추천하지 않습니다.";
 const dateLabel = (raw: string) => { const date = new Date(raw); return Number.isNaN(date.valueOf()) ? "—" : new Intl.DateTimeFormat("ko-KR", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Seoul" }).format(date); };
 const statusLabel = (raw: string, passed: boolean) => {
-  if (raw === "editorial_review_passed") return "편집 검토 통과";
+  if (raw === "editorial_review_passed") return "편집 검토 완료";
   if (raw === "in_review") return "검토 중";
   if (raw === "revision_needed") return "수정 필요";
+  if (raw === "reviewed_not_passed") return "검토 보류";
   if (raw === "failed") return "처리 실패";
-  return passed ? "사람 검토 대기" : "품질 검토 필요";
+  if (!passed) return "품질 검토 필요";
+  return "편집 검토 대기";
 };
 const escapeHtml = (s: string) => s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 
@@ -68,6 +70,7 @@ export default function ManuscriptWorkspace() {
   const [data, setData] = useState<ListResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [listRefreshKey, setListRefreshKey] = useState(0);
   const [selected, setSelected] = useState<Row | null>(null);
   const [detail, setDetail] = useState<Row | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -101,7 +104,7 @@ export default function ManuscriptWorkspace() {
     if (showRetiredModels) params.set("include_retired_models", "true"); else params.delete("include_retired_models");
     params.set("sort", filters.sort); params.set("page", String(filters.page)); params.set("page_size", String(pageSize));
     window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}${window.location.hash}`);
-  }, [filters, pageSize, showRetiredModels]);
+  }, [filters, pageSize, showRetiredModels, listRefreshKey]);
   useEffect(() => {
     const controller = new AbortController();
     const id = ++requestSequence.current;
@@ -117,7 +120,7 @@ export default function ManuscriptWorkspace() {
       .catch(() => { if (!controller.signal.aborted && requestSequence.current === id) setError("원고 목록을 불러오지 못했습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요."); })
       .finally(() => { if (requestSequence.current === id) setLoading(false); });
     return () => controller.abort();
-  }, [filters, pageSize, showRetiredModels]);
+  }, [filters, pageSize, showRetiredModels, listRefreshKey]);
 
   const openDetail = useCallback(async (row: Row, trigger: HTMLElement) => {
     const requestId = ++detailSequence.current;
@@ -242,6 +245,8 @@ export default function ManuscriptWorkspace() {
         const response = await fetch(`/api/research/manuscripts/${encodeURIComponent(value(selected, "evaluation_id"))}/${encodeURIComponent(value(selected, "content_version_id"))}`, { cache: "no-store" });
         if (response.ok) setDetail(await response.json() as Row);
       }
+      setLoading(true);
+      setListRefreshKey(current => current + 1);
     } catch (reason) { setMessage(reason instanceof Error ? reason.message : "저장 실패"); }
     finally { setSaving(false); }
   }, [selected]);
@@ -373,7 +378,7 @@ export default function ManuscriptWorkspace() {
       {empty && <div className="empty-state"><strong>표시할 원고가 없습니다.</strong><span>검색어나 필터를 바꾸거나 새로고침해 주세요.</span></div>}
       {data && data.items.length > 0 && <div className="data-grid-scroll"><table className="data-grid"><thead><tr><th>원고 제목</th><th>카테고리</th><th>언어</th><th>AI 모델</th><th>작성일</th><th>검토 상태</th><th>게시 상태</th></tr></thead>
         <tbody>{data.items.map(row => <tr key={value(row, "content_version_id")} tabIndex={0} onClick={event => void openDetail(row, event.currentTarget)} onKeyDown={(event: KeyboardEvent<HTMLTableRowElement>) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); void openDetail(row, event.currentTarget); } }} aria-label={`${value(row, "title")} 상세 보기`}>
-          <td className="title-cell" title={value(row, "title")}>{value(row, "title") || value(row, "topic")}</td><td>{categoryLabel(value(row, "category_slug"))}</td><td>{koreanLanguage(value(row, "language_code"))}</td><td>{value(row, "model") || "—"}</td><td>{dateLabel(value(row, "created_at"))}</td><td><span className="status-text">{rowStatus.get(value(row, "content_version_id"))}</span></td><td>{value(row, "publication_status") === "published" ? "게시됨" : value(row, "publication_status") === "mock" ? "모의 완료" : "미게시"}</td>
+          <td className="title-cell" title={value(row, "title")}>{value(row, "title") || value(row, "topic")}</td><td>{categoryLabel(value(row, "category_slug"))}</td><td>{koreanLanguage(value(row, "language_code"))}</td><td>{value(row, "model") || "—"}</td><td>{dateLabel(value(row, "representative_updated_at") || value(row, "created_at"))}</td><td><span className="status-text">{rowStatus.get(value(row, "content_version_id"))}</span></td><td>{value(row, "publication_status") === "published" ? "게시됨" : value(row, "publication_status") === "mock" ? "모의 완료" : "미게시"}</td>
         </tr>)}</tbody></table></div>}
       <nav className="pagination" aria-label="원고 페이지 이동"><button disabled={filters.page <= 1 || loading} onClick={() => { setLoading(true); setFilters(current => ({ ...current, page: current.page - 1 })); }}>이전</button><span>{filters.page} / {pageCount} 페이지</span><button disabled={filters.page >= pageCount || loading} onClick={() => { setLoading(true); setFilters(current => ({ ...current, page: current.page + 1 })); }}>다음</button></nav>
     </section>
@@ -444,7 +449,7 @@ export default function ManuscriptWorkspace() {
                 {publicationApproved && <form onSubmit={event => { event.preventDefault(); const form = new FormData(event.currentTarget); void submit("publication-approvals", { evaluation_id: value(detail, "id"), content_version_id: value(detail, "content_version_id"), editorial_version_id: value(latestRevision ?? {}, "id") || null, event_key: crypto.randomUUID(), actor: String(form.get("actor")), reason: String(form.get("reason")), action: "revoked", supersedes_event_id: value(latestApproval ?? {}, "id") }); }}><label>취소자<input name="actor" required minLength={2} maxLength={80} /></label><label>취소 사유<input name="reason" required minLength={10} maxLength={2000} /></label><button disabled={saving}>승인 취소</button></form>}</section>
               </> : <p className="notice">이 원고의 편집 검토 및 발행 승인 작업은 현재 권한 정책상 허용되지 않습니다. 기록 조회만 가능합니다.</p>}
             </div>}
-            {tab === "history" && <div className="detail-section"><h3>원고 버전</h3>{revisions.length ? revisions.map(revision => <article className="history-card" key={value(revision, "id")}><h4>{value(revision, "title")} · v{value(revision, "revision_number")}</h4><p>{dateLabel(value(revision, "created_at"))} · 작성 {value(revision, "reviewer_name")} · {stateLabel(value(revision, "quality_status"))}</p><details><summary>변경 이유와 본문 확인</summary><p>{value(revision, "reason")}</p><pre>{value(revision, "body") || value(revision, "html_body")}</pre></details></article>) : <p>수정 버전이 없습니다.</p>}<h3>검토 및 승인 이력</h3>{reviews.map(review => <article className="history-card" key={value(review, "id")}><strong>{value(review, "reviewer_name")} · {stateLabel(value(review, "disposition"))}</strong><p>{dateLabel(value(review, "created_at"))} · 사실 {stateLabel(value(review, "factual_accuracy"))} · 번역 {stateLabel(value(review, "translation_naturalness"))} · 독자 가치 {stateLabel(value(review, "reader_value"))}</p><p>{value(review, "comments")} {value(review, "requested_changes")}</p></article>)}{approvals.map(event => <article className="history-card" key={value(event, "id")}>발행 승인 {stateLabel(value(event, "action"))} · {value(event, "actor")} · {dateLabel(value(event, "created_at"))}</article>)}</div>}
+            {tab === "history" && <div className="detail-section"><h3>원고 버전</h3>{((detail.content_lineage as Row[] | undefined) ?? []).filter(version => value(version, "id") !== value(detail, "content_version_id")).map(version => <article className="history-card" key={value(version, "id")}><h4>계열 이전 버전 · v{value(version, "version")} · {value(version, "title")}</h4><p>{dateLabel(value(version, "created_at"))} · 버전 ID {value(version, "id")}</p><details><summary>이전 원고 본문 보기</summary><pre>{value(version, "body")}</pre></details></article>)}{revisions.length ? revisions.map(revision => <article className="history-card" key={value(revision, "id")}><h4>{value(revision, "title")} · v{value(revision, "revision_number")}</h4><p>{dateLabel(value(revision, "created_at"))} · 작성 {value(revision, "reviewer_name")} · {stateLabel(value(revision, "quality_status"))}</p><details><summary>변경 이유와 본문 확인</summary><p>{value(revision, "reason")}</p><pre>{value(revision, "body") || value(revision, "html_body")}</pre></details></article>) : <p>수정 버전이 없습니다.</p>}<h3>검토 및 승인 이력</h3>{reviews.map(review => <article className="history-card" key={value(review, "id")}><strong>{value(review, "reviewer_name")} · {stateLabel(value(review, "disposition"))}</strong><p>{dateLabel(value(review, "created_at"))} · 사실 {stateLabel(value(review, "factual_accuracy"))} · 번역 {stateLabel(value(review, "translation_naturalness"))} · 독자 가치 {stateLabel(value(review, "reader_value"))}</p><p>{value(review, "comments")} {value(review, "requested_changes")}</p></article>)}{approvals.map(event => <article className="history-card" key={value(event, "id")}>발행 승인 {stateLabel(value(event, "action"))} · {value(event, "actor")} · {dateLabel(value(event, "created_at"))}</article>)}</div>}
           </div>
           {message && <p role="status" className="sheet-message">{message}</p>}
         </> : <p className="error-state" role="alert">{message || "상세 정보를 표시할 수 없습니다."}</p>}

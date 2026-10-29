@@ -550,15 +550,53 @@ def list_content_imports(limit: int = Query(default=50, ge=1, le=100)) -> dict[s
     with connection() as conn:
         _require_import_review_schema(conn)
         rows = conn.execute(
-            """SELECT i.id,i.external_content_id,i.event_group_id,i.language_code,i.source_region,i.category,
+            """WITH RECURSIVE import_lineage AS (
+              SELECT id,external_content_id,parent_content_id,external_content_id AS root_content_id
+              FROM external_content_imports WHERE parent_content_id IS NULL
+              UNION ALL
+              SELECT child.id,child.external_content_id,child.parent_content_id,parent.root_content_id
+              FROM external_content_imports child JOIN import_lineage parent
+                ON child.parent_content_id=parent.external_content_id
+            ), latest_imports AS (
+              SELECT i.id,i.external_content_id,i.event_group_id,i.language_code,i.source_region,i.category,
                 i.title,i.content_sha256,i.state,i.received_at,i.generation_method,i.model_name,
-                i.google_trends_based,
-                mapped.content_version_id
-            FROM external_content_imports i LEFT JOIN LATERAL (
-              SELECT l.content_version_id FROM external_content_import_versions v
-              JOIN external_content_import_content_links l ON l.import_id=v.import_id AND l.import_version_id=v.id
-              WHERE v.import_id=i.id ORDER BY v.version_number DESC LIMIT 1
-            ) mapped ON true ORDER BY i.received_at DESC,i.id DESC LIMIT %s""", (limit,),
+                NULL::boolean AS google_trends_based,i.parent_content_id,lineage.root_content_id,
+                mapped.import_version_id,mapped.content_version_id,cv.group_id,cv.localization_id,
+                cv.version AS content_version_number,cv.created_at AS content_version_created_at,
+                COALESCE(review.event_type,'awaiting_human_review') AS editorial_review_status,
+                COALESCE(assessment.machine_passed,false) AS machine_passed
+              FROM external_content_imports i
+              LEFT JOIN import_lineage lineage ON lineage.id=i.id
+              LEFT JOIN LATERAL (
+                SELECT v.id AS import_version_id,l.content_version_id FROM external_content_import_versions v
+                LEFT JOIN external_content_import_content_links l ON l.import_id=v.import_id AND l.import_version_id=v.id
+                WHERE v.import_id=i.id ORDER BY v.version_number DESC,v.created_at DESC,v.id DESC LIMIT 1
+              ) mapped ON true
+              LEFT JOIN content_versions cv ON cv.id=mapped.content_version_id
+              LEFT JOIN LATERAL (
+                SELECT event_type FROM external_content_import_review_events
+                WHERE import_id=i.id AND version_id=mapped.import_version_id
+                ORDER BY created_at DESC,id DESC LIMIT 1
+              ) review ON true
+              LEFT JOIN LATERAL (
+                SELECT machine_passed FROM external_content_import_assessments
+                WHERE import_id=i.id AND version_id=mapped.import_version_id
+                ORDER BY assessed_at DESC,id DESC LIMIT 1
+              ) assessment ON true
+            ), ranked AS (
+              SELECT latest_imports.*,row_number() OVER (
+                PARTITION BY COALESCE(group_id::text,root_content_id,external_content_id),language_code,
+                  COALESCE(localization_id::text,language_code)
+                ORDER BY content_version_number DESC NULLS LAST,content_version_created_at DESC NULLS LAST,
+                  received_at DESC,id DESC
+              ) AS representative_rank
+              FROM latest_imports
+            )
+            SELECT id,external_content_id,event_group_id,language_code,source_region,category,title,
+              content_sha256,state,received_at,generation_method,model_name,google_trends_based,
+              content_version_id,editorial_review_status,machine_passed
+            FROM ranked WHERE representative_rank=1
+            ORDER BY received_at DESC,id DESC LIMIT %s""", (limit,),
         ).fetchall()
         return {"items": [dict(row) for row in rows], "categories": [dict(row) for row in EDITORIAL_CATEGORIES],
             "generator_available": False, "publication_enabled": False, "requires_human_review": True}
@@ -582,6 +620,21 @@ def get_content_import(import_id: UUID) -> dict[str, Any]:
               ON l.import_id=v.import_id AND l.import_version_id=v.id
             WHERE v.import_id=%s ORDER BY v.version_number DESC""",
             (import_id,),
+        ).fetchall()
+        lineage_history = conn.execute(
+            """WITH RECURSIVE import_lineage AS (
+              SELECT id,external_content_id,parent_content_id,received_at FROM external_content_imports WHERE id=%s
+              UNION ALL
+              SELECT parent.id,parent.external_content_id,parent.parent_content_id,parent.received_at
+              FROM external_content_imports parent JOIN import_lineage child
+                ON child.parent_content_id=parent.external_content_id
+            )
+            SELECT i.id AS import_id,i.external_content_id,i.received_at,v.id AS import_version_id,
+              v.version_number,v.title,v.body_markdown,v.content_sha256,v.author_label,v.change_reason,v.created_at,
+              l.content_version_id
+            FROM import_lineage i JOIN external_content_import_versions v ON v.import_id=i.id
+            LEFT JOIN external_content_import_content_links l ON l.import_id=v.import_id AND l.import_version_id=v.id
+            ORDER BY i.received_at DESC,v.version_number DESC,v.created_at DESC,v.id DESC""", (import_id,)
         ).fetchall()
         assessments = conn.execute(
             "SELECT id,version_id,machine_checks,seo_checks,machine_passed,safe_html,html_sha256,assessed_at,independent_source_verification,generation_ready,publish_ready FROM external_content_import_assessments WHERE import_id=%s ORDER BY assessed_at DESC,id DESC",
@@ -612,7 +665,9 @@ def get_content_import(import_id: UUID) -> dict[str, Any]:
         ).fetchall()
         latest_review = next((review for review in reversed(reviews) if latest and str(review["version_id"]) == str(latest["id"])), None)
         return {"item": dict(row), "latest_version": dict(latest) if latest else None,
-            "versions": [dict(version) for version in versions], "assessments": [dict(check) for check in assessments],
+            "versions": [dict(version) for version in versions],
+            "lineage_history": [dict(version) for version in lineage_history],
+            "assessments": [dict(check) for check in assessments],
             "source_verifications": [dict(event) for event in source_verifications],
             "events": [dict(event) for event in events], "reviews": [dict(review) for review in reviews],
             "editorial_review_status": latest_review["event_type"] if latest_review else "awaiting_human_review",

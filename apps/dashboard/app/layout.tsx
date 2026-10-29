@@ -9,7 +9,7 @@ export default function Layout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="ko">
+    <html lang="ko" suppressHydrationWarning>
       <body>
         <Script id="woori-theme-init" strategy="beforeInteractive">
           {`try{var t=localStorage.getItem('woori-theme')||'system';var d=t==='system'?matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light':t;document.documentElement.dataset.theme=d}catch(e){document.documentElement.dataset.theme='light'}`}

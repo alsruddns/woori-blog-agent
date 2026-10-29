@@ -143,6 +143,9 @@ def test_manuscript_list_is_paginated_and_excludes_body_and_json(
     assert archived.json()["items"][0]["publish_ready"] is False
     assert not {"body", "saved_body", "metrics", "checks"}.intersection(archived.json()["items"][0])
     assert any("LIMIT %s OFFSET %s" in query for query in evaluation.statements)
+    assert any("PARTITION BY COALESCE(group_id::text,lineage_root::text,content_version_id::text)" in query
+               for query in evaluation.statements)
+    assert any("ORDER BY representative_updated_at DESC" in query for query in evaluation.statements)
     assert all("v.body" not in query for query in evaluation.statements)
 
 

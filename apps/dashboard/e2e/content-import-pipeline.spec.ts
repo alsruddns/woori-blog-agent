@@ -37,7 +37,7 @@ test("isolated import flows through review, deterministic checks, preview, and s
   await page.getByLabel("제출자 표시 이름").fill("E2E Editorial Desk");
   await page.getByTestId("import-json").fill(JSON.stringify({ schema_version: "1.0" }));
   await page.getByRole("button", { name: "검토 대기열에 가져오기" }).click();
-  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.locator(".quality-held").filter({ hasText: "원고 형식 검증에 실패했습니다." })).toBeVisible();
 
   const content = envelope();
   await page.getByLabel("JSON 파일 가져오기").setInputFiles({
@@ -48,9 +48,10 @@ test("isolated import flows through review, deterministic checks, preview, and s
   await page.getByRole("button", { name: "검토 대기열에 가져오기" }).click();
   await expect(page.getByTestId("import-detail")).toBeVisible();
   await expect(page.getByTestId("import-title-input")).toHaveValue(content.title);
-  await expect(page.getByText("외부 제출 · 독립 검증 미완료")).toBeVisible();
+  await expect(page.getByText("근거 검토 대기")).toBeVisible();
 
   await page.getByRole("button", { name: "닫기" }).click();
+  await expect(page.getByTestId("import-detail")).toBeHidden();
   await page.getByTestId("import-json").fill(JSON.stringify(content));
   await page.getByRole("button", { name: "검토 대기열에 가져오기" }).click();
   await expect(page.getByText("같은 원고가 이미 등록되어 있습니다. 중복 버전이나 검토 기록은 추가하지 않았습니다.")).toBeVisible();
@@ -66,7 +67,7 @@ test("isolated import flows through review, deterministic checks, preview, and s
   await expect(page.getByRole("button", { name: "품질·SEO·HTML 검사" })).toBeEnabled();
   await page.getByRole("tab", { name: "품질·SEO" }).click();
   await expect(page.getByRole("tab", { name: "품질·SEO" })).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByText("결정론적 규칙 통과")).toBeVisible();
+  await expect(page.getByText("규칙 기계 검사 통과")).toBeVisible();
   await page.getByRole("tab", { name: "원고 편집" }).click();
   await page.getByRole("button", { name: "게시용 미리보기" }).click();
   const frame = page.frameLocator("[data-testid='import-html-preview']");
@@ -80,6 +81,7 @@ test("isolated import flows through review, deterministic checks, preview, and s
   await page.getByText("저작권·인용 권리를 검토했습니다").click();
   await page.getByRole("button", { name: "편집 검토 통과 기록" }).click();
   await expect(page.getByText("편집 검토 이벤트를 기록했습니다. 이 기록은 Blogger 게시 승인과 다릅니다.")).toBeVisible();
+  await expect(page.getByTestId("import-detail").getByText(/상태: 편집 검토 통과/)).toBeVisible();
   await page.getByRole("tab", { name: "다국어·발행" }).click();
   await expect(page.getByTestId("mock-publish")).toBeEnabled();
   await page.getByTestId("mock-publish").click();
