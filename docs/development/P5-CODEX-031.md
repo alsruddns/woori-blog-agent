@@ -41,6 +41,7 @@ Rights review 조인을 유효한 `JOIN LATERAL ... ON true`로 수정하고 별
 
 - `services/api/tests/test_publications.py` 선택 검사: **3 passed** (candidate query parse, fail-closed eligibility, exact-version approval requirement)
 - 첫 테스트 시도는 test-only `ADMIN_TOKEN` 미설정으로 실패했으며, 격리 DB만 사용하는 길이 제한 통과 테스트 값으로 재실행했다. 값은 개발 기록에 저장하지 않았다.
+- Ruff 변경 파일 검사: 통과. `git diff --check`: 통과.
 - 운영 DB 직접 연결 진단은 별도 실행환경에 DB 암호 설정이 없어 실패했다. 인증된 운영 API 읽기 상태를 대체 성공으로 과장하지 않았다.
 - 실제 Blogger GET/POST, 초안 생성, 공개 발행: 수행 안 함
 - Dashboard 기록 및 KST 게시 건수: 실제 게시가 없어 0건 변동
@@ -63,4 +64,5 @@ Rights review 조인을 유효한 `JOIN LATERAL ... ON true`로 수정하고 별
 3. 수정된 코드가 실행 중인 API/Worker에 적용됐는지 확인. 사용자 프로세스 재시작이 필요하나 이번 작업에서는 하지 않았다.
 4. 공개 Worker heartbeat 부재 및 실제 Blogger 공개 게시 end-to-end 검증.
 
-커밋 SHA: 후속 `git log`로 확인. 원격 push: 후속 기록.
+구현 커밋: `4180a4cb8cd1f52c30b6abc298dd0eb7bb311f9e` (`develop`).
+`origin/develop` push: 성공. 이 개발 기록을 반영한 후속 문서 커밋은 `git log`로 연결한다.
