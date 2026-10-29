@@ -141,7 +141,10 @@ def test_bare_korean_month_range_and_relative_year_match_source_phrases() -> Non
     from woori.scheduled_auto_verification import _quantity_facts
 
     assert ("year_month_range", "04-09") in _quantity_facts("2026년 4~9월 기간")
+    assert ("year_month_range", "04-09") in _quantity_facts("4~9월 기간")
+    assert ("year_month", "2026-09") in _quantity_facts("2026년 4월부터 9월까지")
     assert ("year_month_range", "04-09") in _quantity_facts("April-to-September figure")
+    assert ("calendar_month", "09") in _quantity_facts("September")
     assert ("year_offset", "1") in _quantity_facts("1년 전보다 낮았다")
     assert ("year_offset", "1") in _quantity_facts("lower than a year earlier")
 

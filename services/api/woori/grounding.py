@@ -127,7 +127,7 @@ def numbers(text: str) -> set[str]:
     normalized_values: set[str] = set(dates)
     typed_quantities = _quantity_facts(text)
     for kind, value in typed_quantities:
-        if kind in {"GBP", "year_month", "year_month_range", "ordinal", "year_offset"}:
+        if kind in {"GBP", "year_month", "year_month_range", "calendar_month", "ordinal", "year_offset"}:
             normalized_values.add(f"FACT:{kind}:{value}")
 
     # Normalize month periods and relative-year phrases as typed facts. Remove
@@ -137,6 +137,11 @@ def numbers(text: str) -> set[str]:
         r"(?:(?:20\d{2})\s*(?:\u5e74|\ub144)\s*)?\d{1,2}\s*(?:\u6708|\uc6d4)?\s*(?:~|\uc5d0\uc11c|\ubd80\ud130)\s*\d{1,2}\s*(?:\u6708|\uc6d4)(?:\uae4c\uc9c0)?",
         " ", text,
     )
+    text = re.sub(
+        r"20\d{2}\s*(?:\u5e74|\ub144)\s*(?:1[0-2]|0?[1-9])\s*(?:\u6708|\uc6d4)",
+        " ", text,
+    )
+    text = re.sub(r"(?<!\d)(?:1[0-2]|0?[1-9])\s*\uc6d4", " ", text)
     text = re.sub(
         r"\b(?:january|february|march|april|may|june|july|august|september|october|november|december)\s*(?:-to-|\s+to\s+)\s*(?:january|february|march|april|may|june|july|august|september|october|november|december)\b",
         " ", text, flags=re.IGNORECASE,

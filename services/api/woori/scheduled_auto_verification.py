@@ -32,7 +32,16 @@ _PERCENT_POINTS = re.compile(
 _PERCENT = re.compile(rf"({_NUMBER_VALUE})\s*(?:%|percent\b)", re.IGNORECASE)
 _KO_MONTH_RANGE = re.compile(r"(20\d{2})년\s*(1[0-2]|0?[1-9])\s*~\s*(1[0-2]|0?[1-9])월")
 _KO_YEAR_MONTH = re.compile(r"(20\d{2})년\s*(1[0-2]|0?[1-9])월")
-_KO_BARE_MONTH_RANGE = re.compile(r"(?<!\d)(1[0-2]|0?[1-9])\s*월?\s*(?:~|부터)\s*(1[0-2]|0?[1-9])\s*월(?:까지)?")
+_KO_BARE_MONTH_RANGE = re.compile(
+    r"(?:(?P<year>20\d{2})\s*년\s*)?"
+    r"(?P<start>1[0-2]|0?[1-9])\s*월?\s*(?:~|부터)\s*"
+    r"(?P<end>1[0-2]|0?[1-9])\s*월(?:까지)?"
+)
+_KO_MONTH = re.compile(r"(?<!\d)(1[0-2]|0?[1-9])\s*월")
+_EN_MONTH = re.compile(
+    r"\b(january|february|march|april|may|june|july|august|september|october|november|december)\b",
+    re.IGNORECASE,
+)
 _YEAR_OFFSET_EN = re.compile(r"\b(?:a|one)\s+year\s+(?:ago|earlier)\b", re.IGNORECASE)
 _YEAR_OFFSET_KO = re.compile(r"(?<!\d)1\s*년\s*(?:전|앞서)")
 _EN_MONTH_RANGE = re.compile(
@@ -103,12 +112,24 @@ def _quantity_facts(text: str) -> set[tuple[str, str]]:
         start_month = int(match.group(2))
         end_month = int(match.group(3))
         facts.add(("year_month_range", f"{start_month:02d}-{end_month:02d}"))
+        facts.add(("calendar_month", f"{start_month:02d}"))
+        facts.add(("calendar_month", f"{end_month:02d}"))
         facts.add(("year_month", f"{int(match.group(1)):04d}-{end_month:02d}"))
         consumed.append(match.span())
     for match in _EN_MONTH_RANGE.finditer(text):
         start_month = _EN_MONTHS[match.group(1).casefold()]
         end_month = _EN_MONTHS[match.group(2).casefold()]
         facts.add(("year_month_range", f"{start_month:02d}-{end_month:02d}"))
+        facts.add(("calendar_month", f"{start_month:02d}"))
+        facts.add(("calendar_month", f"{end_month:02d}"))
+        consumed.append(match.span())
+    for match in _KO_BARE_MONTH_RANGE.finditer(text):
+        start_month, end_month = int(match.group("start")), int(match.group("end"))
+        facts.add(("year_month_range", f"{start_month:02d}-{end_month:02d}"))
+        facts.add(("calendar_month", f"{start_month:02d}"))
+        facts.add(("calendar_month", f"{end_month:02d}"))
+        if match.group("year"):
+            facts.add(("year_month", f"{match.group('year')}-{end_month:02d}"))
         consumed.append(match.span())
     for match in _KO_YEAR_MONTH.finditer(text):
         if any(start <= match.start() and match.end() <= end for start, end in consumed):
@@ -119,9 +140,18 @@ def _quantity_facts(text: str) -> set[tuple[str, str]]:
         month = _EN_MONTHS[match.group(1).casefold()]
         facts.add(("year_month", f"{int(match.group(2)):04d}-{month:02d}"))
         consumed.append(match.span())
-    for match in _KO_BARE_MONTH_RANGE.finditer(text):
-        facts.add(("year_month_range", f"{int(match.group(1)):02d}-{int(match.group(2)):02d}"))
-        consumed.append(match.span())
+
+    for pattern, group_index in ((_KO_MONTH, 1), (_EN_MONTH, 1)):
+        for match in pattern.finditer(text):
+            if any(start <= match.start() and match.end() <= end for start, end in consumed):
+                continue
+            value = (
+                int(match.group(group_index))
+                if pattern is _KO_MONTH
+                else _EN_MONTHS[match.group(group_index).casefold()]
+            )
+            facts.add(("calendar_month", f"{value:02d}"))
+            consumed.append(match.span())
 
     for pattern in (_YEAR_OFFSET_EN, _YEAR_OFFSET_KO):
         for match in pattern.finditer(text):
