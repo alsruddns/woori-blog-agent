@@ -28,7 +28,7 @@ KR→ko, US→en, JP→ja, 중국 본토 CN→zh-CN은 지역과 언어가 직�
 
 ## 운영 전 완료 조건
 
-1. 검토된 Research Package를 소비하고 원고 버전을 append-only로 저장하는 허용된 생성 Provider를 연결합니다. ChatGPT 예약 작업이나 Codex UI가 로컬 시스템에 결과를 전달한다고 가정하지 않습니다.
+1. 대상 Research Package가 해당 언어와 블로그에 적합한지 검토합니다. 공식 Codex 데스크톱 Local Scheduled 작업은 외부 초안 파일 작성 수단으로 허용되며, 기존 `woori-scheduled-content-import/1.0` 경로를 사용합니다. 2026-10-29 probe는 로컬 파일 쓰기만 확인했으므로 실제 원고 envelope와 Import 성공을 별도 확인합니다. 예약 출력이 import 또는 승인·버전 저장을 대신하지 않습니다.
 2. 언어별 사실·날짜·숫자·고유명사·출처·권리·최신성 검사를 수행하고 사람의 자연스러움 및 의미 검토를 유지합니다.
 3. 해당 언어의 HTML·SEO·라벨 검증과 중복 콘텐츠 검토를 완료합니다.
 4. 대상 블로그의 Blog ID와 기존 게시 연결을 재확인합니다.

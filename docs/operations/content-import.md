@@ -1,8 +1,8 @@
-# Manual external manuscript import
+# External manuscript import
 
 ## Current operating path
 
-The application has no production AI generator connected. ChatGPT Scheduled Tasks and Codex are not registered as background providers, and this repository does not create scheduled tasks or call a hidden Codex process. The supported handoff is a user-reviewed JSON export imported from **원고 가져오기** (`/imports`).
+The application has no in-process production AI generator connected and does not create or manage Codex Scheduled tasks. Official Codex desktop Local Scheduled tasks may write an external `woori-scheduled-content-import/1.0` envelope into `.local/gpt-scheduled-import/ready/`; one metadata-only local file probe was confirmed on 2026-10-29, while article-envelope generation and Import are not yet verified. The supported intake paths are manual import from **원고 가져오기** (`/imports`) and the separately configured local scheduled-import inbox. Neither path implies approval.
 
 An import is an intake record, not a manuscript approval. The API validates the versioned envelope, BCP 47 target locale allowlist, category, explicit reader relevance, source manifest, claim-to-source references, HTTPS source URLs, timestamps, SEO metadata, and issue label. It does not fetch a source URL or trust a submitted verification flag as proof. The immutable record and receipt event remain in `external_content_imports` and `external_content_import_events`, always in `awaiting_human_review`, with `generation_ready=false` and `publish_ready=false`.
 
@@ -23,14 +23,13 @@ Contract: [`woori-content-import/1.0`](../schemas/woori-content-import-1.0.schem
 
 Use the detail panel to inspect the complete Markdown, submitted source metadata, rights notes, and claims. The panel is review-only. It does not render imported markup as HTML, promote it into `content_versions`, create an editorial approval, or queue a Publisher job. That promotion bridge is intentionally not implemented: the current evaluation and operational manuscript stores use separate provenance/quality records, and imported self-attestation cannot satisfy those gates. A human must verify source documents and claim spans; a future promotion workflow must create new immutable versions and run the existing quality/SEO/editorial review before publication. Blogger real writes, Auto activation, and external AI calls remain disabled.
 
-## ChatGPT Scheduled Tasks capability review
+## Codex desktop Scheduled tasks capability review
 
-Official documentation describes scheduled tasks as ChatGPT-run work with supported schedules and supported connected-app events. Current documented event-triggered app sources include Gmail, Slack, and GitHub; the documentation does not define a generic webhook endpoint or automatic local file/API delivery for this project. Project files are unavailable to a scheduled task created in a ChatGPT Project. Work on desktop may use local files when the user opens a local folder and grants access, but the local task is not thereby an integration into this application's API. Codex remains a separate workflow. Therefore scheduled output should be reviewed and manually exported/imported; no unattended delivery is claimed.
+Official OpenAI documentation supports Codex desktop Scheduled tasks operating in a selected local project. The scheduled task runs unattended using the configured sandbox/approval policy; the computer and app must remain available for local files. A probe file write was confirmed on 2026-10-29, but the probe was not a manuscript envelope and did not exercise Import. Local file writing is not an API/webhook integration: the task must write a complete envelope to the existing inbox, and the existing Import Worker must separately acknowledge it. Codex CLI and IDE do not manage Scheduled tasks; use the desktop Scheduled UI. Do not treat a ChatGPT web-only task as local-file capable.
 
-The documentation says eligible models, availability, and usage limits depend on the specific task, account plan, and workspace. It does not promise strict machine-readable export conformance or establish that every account's scheduled work is covered without additional metered usage. The local schema validator, not prompt wording, is the machine-readable contract. No task or external account setting was created or changed here.
+The documentation says eligible models, availability, and usage limits depend on the specific task, account plan, and workspace. It does not establish this account's remaining usage or whether additional credits are enabled. The local schema validator, not prompt wording, is the machine-readable contract. Task scheduling is external and operator-managed; no hidden scheduler/provider is created by this repository. Check account usage before enabling recurring tasks where additional-credit spend is possible.
 
-- [Scheduled tasks in ChatGPT](https://help.openai.com/en/articles/10291617-scheduled-tasks-in-chatgpt)
+- [Scheduled tasks — OpenAI Learn](https://learn.chatgpt.com/docs/automations)
 - [ChatGPT Work and Codex](https://help.openai.com/en/articles/20001275-chatgpt-work-and-codex)
-- [Set up scheduled tasks](https://developers.openai.com/training/walkthroughs/scheduled-tasks)
 
-Recheck the official product documentation and the account's available app surface before designing any future automated handoff. This phase did not create a task, connect an app, change permissions, call an AI endpoint, or make a Blogger request.
+The 2026-10-29 scheduled probe did not create a manuscript, Import record, or Blogger request. The exact account usage allowance and whether additional Codex credits are enabled are not visible to the project; recurring tasks must not be enabled until the operator confirms the account's usage settings and selected schedule.

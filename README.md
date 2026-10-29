@@ -111,9 +111,9 @@ WooriBlogAgent-Worker와 WooriBlogAgent-Backup을 현재 사용자 Interactive �
 
 ## Research and manuscript generation status
 
-The research API and dashboard continue to support source collection, evidence packages, deterministic quality checks, editorial review, Blogger HTML/SEO previews, and Manual/Auto publication policy configuration. No production manuscript-generation provider is currently connected. Synthetic Mock output is test-only; automatic generation schedules are blocked.
+The research API and dashboard continue to support source collection, evidence packages, deterministic quality checks, editorial review, Blogger HTML/SEO previews, and Manual/Auto publication policy configuration. No in-process production manuscript-generation provider is connected. Synthetic Mock output is test-only. Official Codex desktop Scheduled tasks may write Research Package-based draft envelopes into the local scheduled-import inbox; a probe file write was confirmed on 2026-10-29, while manuscript generation and Import have not yet completed end to end. Internal generation APIs remain fail-closed.
 
-The project no longer installs, starts, monitors, or stops Qwen3/llama.cpp. Historical Qwen evaluations, original articles, research packages, and audit records remain preserved and visible as stored records. This cleanup does not implement Codex or GPT scheduled/unattended generation.
+The project no longer installs, starts, monitors, or stops Qwen3/llama.cpp. Historical Qwen evaluations, original articles, research packages, and audit records remain preserved and visible as stored records. A separate official Codex desktop Local Scheduled task can author a review-held draft file from an existing Research Package; this external task is not an in-process generator and does not bypass Import, review, rights, eligibility, or Blogger gates.
 
 Run the API, dashboard, and collection worker through the existing project scripts when needed; there is no local model server startup step.
 
@@ -149,7 +149,7 @@ Operations and evaluation have separate daily quotas, with shared global resourc
 
 The local evaluation database is provisioned separately from `woori_blog_agent` by `scripts/provision-evaluation-database.py`. Its snapshot excludes OAuth, Blogger connection/API, publishing, search-performance, and heartbeat rows. Credentials are written only to ignored `.env.evaluation*` files. The dashboard reads evaluation drafts through the separate read-only `woori_eval_reader` role when `EVALUATION_DATABASE_URL` is configured.
 
-Phase 3.9-T evaluation artifacts are historical and preserved under `docs/development`. Local Qwen/llama.cpp setup and evaluation commands have been retired. The project currently has no production or scheduled manuscript-generation provider; no Codex/GPT unattended execution is implemented.
+Phase 3.9-T evaluation artifacts are historical and preserved under `docs/development`. Local Qwen/llama.cpp setup and evaluation commands have been retired. The project has no in-process production manuscript-generation provider. The separately configured official Codex desktop Local Scheduled export is allowed for draft-file creation, but only a real Research Package-based envelope and Import receipt prove manuscript delivery; it does not enable review, auto eligibility, or Blogger writes.
 
 
 ### Publication workflow (simulation only)

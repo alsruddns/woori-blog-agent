@@ -82,14 +82,14 @@ The Blogger API price and Google Cloud project billing association are separate 
 
 An absent price entry is not evidence of free use. Re-review needs explicit official zero-cost evidence and an account-side billing check; do not relax the application gate based only on a free quota or public URL.
 
-## ChatGPT Work desktop scheduled tasks (2026-10-29)
+## Codex desktop Local Scheduled tasks (2026-10-29)
 
 | Item | Finding | Decision |
 |---|---|---|
-| Local-file capability | OpenAI's ChatGPT Learn documentation says scheduled tasks in the desktop app can run in a local project or an isolated worktree. Tasks that need local files require the computer and desktop app to remain available. Web-only scheduled tasks cannot directly use a local folder. On 2026-10-29 15:51 KST, the existing local task wrote `.local/gpt-scheduled-import/probe/scheduled-test.json`. | A scheduled local-project probe succeeded. It is metadata only, not a `woori-scheduled-content-import/1.0` manuscript and not proof of Import Worker receipt. |
+| Local-file capability | OpenAI's ChatGPT Learn documentation says Codex desktop Scheduled tasks can run in the local project or a worktree, with local files requiring the computer and app to remain available. On 2026-10-29 15:51 KST, the user-confirmed Codex Scheduled run wrote `.local/gpt-scheduled-import/probe/scheduled-test.json`. | One scheduled local-project file-write probe is verified. It is metadata only, not a `woori-scheduled-content-import/1.0` manuscript and not proof of Import Worker receipt. |
 | Usage/price basis | OpenAI Help says Work follows the Codex usage structure and refers to plan-included usage and additional credits. The exact allowance and whether additional credits are enabled/consumed depend on the user's plan/workspace and are not visible to this repository. | No account-level no-additional-currency guarantee can be made. Do not create or trigger scheduled generation until the operator confirms the account's usage/credit setting is acceptable. |
-| Local transfer | The existing local-project scheduled task wrote a 268-byte probe metadata file. No `*.ready.json` article envelope or Import audit receipt was observed. | Count one verified scheduled probe; keep scheduled manuscript generation, ready-file delivery, and automatic Import counts at zero until each has its own real artifact and receipt. A worktree artifact or manually copied file is not local automatic delivery. |
-| External API | The task uses ChatGPT Work's own scheduled execution; no OpenAI API key or repository API provider is configured by this policy. | No API integration or paid API fallback is permitted. |
+| Local transfer | The Codex Scheduled run wrote a 268-byte probe metadata file. No `*.ready.json` article envelope or Import audit receipt was observed. | Count one verified scheduled file probe; keep scheduled manuscript generation, ready-file delivery, and automatic Import counts at zero until each has its own real artifact and receipt. A worktree artifact or manually copied file is not local automatic delivery. |
+| External API | The task uses the Codex desktop Scheduled product, not the OpenAI API; no OpenAI API key or repository API provider is configured for manuscript generation. | No API integration or paid API fallback is permitted. |
 
 Official references, reviewed 2026-10-29: [Scheduled tasks](https://learn.chatgpt.com/docs/automations) and [ChatGPT Work and Codex](https://help.openai.com/en/articles/20001275-chatgpt-work-and-codex). Account-specific availability, quotas, price and credit settings remain unverified; recheck before enabling a recurring task or changing the usage plan.
 

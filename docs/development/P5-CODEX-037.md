@@ -66,3 +66,10 @@
 - 예약 task 등록·자동 실행·파일 전달·Import를 수행하지 않았으므로 이 단계들의 실적은 각각 0 / 미검증이다. 본 문서의 기록은 변경 후 후속 개발 기록 커밋으로 연결한다.
 - 분류: 예약 원고 자동 실행 `NOT VERIFIED`; 공식 근거 조사(최신 shortlist) `BLOCKED/UNSUPPORTED SOURCE ROUTE`; Research Package 사용 원고 Import `NOT RUN`; auto eligibility 및 실제 발행 Job `0`; Blogger 공개 게시 `0`; Auto `OFF`.
 - 후속 변경 커밋: `733252312b37cba5d0349950b4772f8572b7ace5` (새 1회성 작업 지시문과 후속 운영 기록). 이 줄은 개발 기록을 갱신하는 다음 커밋으로 연결한다.
+
+
+## P5-CODEX-038 policy correction - 2026-10-29
+
+The project owner clarified that the 2026-10-29 15:51:06 KST file update was produced by an actual Codex desktop Scheduled execution. This overrides the earlier conservative report that the probe did not establish scheduled execution. The local file's 15:33:29 KST NTFS CreationTime and 15:51:06 KST embedded execution/LastWriteTime remain distinct timestamps; the user-confirmed Scheduled run is the authoritative execution context. The 268-byte file remains probe metadata, not an article envelope. An append-only `codex.scheduled_local_file_probe.confirmed` event records the provided file hash and those timestamps.
+
+This establishes official local Scheduled execution and probe-file write capability, not Research Package manuscript generation, ready-envelope transfer, Worker Import, article quality, Blogger authorization, or publishing. P5-CODEX-038 updates the baseline accordingly while keeping internal AI provider status false and all downstream gates unchanged.

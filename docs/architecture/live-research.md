@@ -4,7 +4,7 @@
 
 The FastAPI research API and Dashboard support bounded source collection, source review, trend observations, topic assessment, Research Packages, evidence facts, deterministic quality checks, editorial review, Blogger-safe HTML/SEO previews, and publication preparation. Existing content, evaluations, audit events, and publication records remain in their current databases.
 
-No production manuscript-generation or translation provider is attached. The local Qwen3/llama.cpp provider, model overrides, setup/download scripts, and runtime controls have been retired. API generation requests, content-generation schedules, and collection-to-generation handoffs fail closed. The synthetic MockProvider is test-only. Codex/GPT scheduled or unattended execution is not implemented.
+No in-process production manuscript-generation or translation provider is attached. The local Qwen3/llama.cpp provider, model overrides, setup/download scripts, and runtime controls have been retired. API generation requests and project-owned content-generation schedules fail closed. Official Codex desktop Scheduled tasks are permitted as a separate external local-project draft exporter; one probe-file write was confirmed on 2026-10-29, but no scheduled manuscript envelope or Import receipt has yet been verified. The synthetic MockProvider is test-only.
 
 Cross-language localization is stored as held with zero model calls unless it is deterministic same-language normalization. Existing fact ledgers, source snapshots, glossary history, and prior localization evaluations are preserved. No held result is promoted automatically.
 
@@ -12,7 +12,7 @@ Cross-language localization is stored as held with zero model calls unless it is
 
 Fixed RSS/API adapters retrieve bounded data through the provider allowlist. Each observation retains the actual source-provided fields, retrieval time, source URL, payload identity, rights/access review and audit events. Missing ranks remain null. Trend observations and topic similarity do not themselves establish factual support.
 
-Official sources and reviewed source spans are linked to topic candidates. A Research Package records facts, sources, conflicts, uncertainty and use restrictions. Insufficient or unreviewed evidence remains held. Source collection may run without any manuscript writer. Legacy `auto_generate` flags do not trigger generation; the handoff is blocked and audited.
+Official sources and reviewed source spans are linked to topic candidates. A Research Package records facts, sources, conflicts, uncertainty and use restrictions. Insufficient or unreviewed evidence remains held. Source collection may run without any manuscript writer. Legacy `auto_generate` flags do not start an in-process generator; they remain blocked and audited. An operator-configured Codex Scheduled task may read a selected package and export a draft envelope only; it cannot change package review state or call Import/Blogger APIs.
 
 ## Preserved generation and editorial boundaries
 

@@ -1,4 +1,4 @@
-> Current status: persisted stage records and deterministic quality gates remain supported. The local llama.cpp model-call execution described below is historical; no production generator or scheduled Codex/GPT execution is attached.
+> Current status: persisted stage records and deterministic quality gates remain supported. The local llama.cpp model-call execution described below is historical. No in-process production generator is attached. An official Codex desktop Local Scheduled task may act as an external draft-file exporter; a probe file was written on 2026-10-29, but article generation and Import remain unverified.
 
 # Evidence-backed staged generation
 

@@ -5,6 +5,7 @@ from contextlib import contextmanager
 import psycopg
 import pytest
 from fastapi.testclient import TestClient
+from psycopg.types.json import Jsonb
 from woori.config import settings
 from woori.db import connection
 from woori.main import app
@@ -98,6 +99,10 @@ def test_database_audit_and_worker(
 def test_operations_dashboard_is_read_only_and_reports_unverified_automation(
     rollback_lab: psycopg.Connection[dict[str, object]],
 ) -> None:
+    rollback_lab.execute(
+        "INSERT INTO audit_events(event_type,payload) VALUES (%s,%s)",
+        ("codex.scheduled_local_file_probe.confirmed", Jsonb({"artifact_type": "probe_metadata_not_manuscript"})),
+    )
     versions_before = rollback_lab.execute("SELECT count(*) AS n FROM content_versions").fetchone()["n"]
     audits_before = rollback_lab.execute("SELECT count(*) AS n FROM audit_events").fetchone()["n"]
     with TestClient(app) as client:
@@ -109,12 +114,15 @@ def test_operations_dashboard_is_read_only_and_reports_unverified_automation(
     assert response.status_code == 200
     state = response.json()
     assert state["generation"]["provider_connected"] is False
+    assert state["generation"]["codex_scheduled_export_supported"] is True
+    assert state["scheduled_import"]["local_file_probe_runs"] == 1
+    assert state["scheduled_import"]["scheduled_article_imports"] == 0
     assert state["publishing"]["live_writes_enabled"] is False
     assert state["publishing"]["auto_enabled"] is False
-    assert state["publication_policy"]["hourly_limit_status"] == "not_configured"
+    assert state["publication_policy"]["hourly_limit_status"] == "configured_internal_cap"
     schedule_status = {row["key"]: row["status"] for row in state["schedules"]}
     assert schedule_status["google_trends"] == "inactive"
-    assert schedule_status["gpt_scheduled_import"] == "external_status_unknown"
+    assert schedule_status["gpt_scheduled_import"] == "partial"
     assert schedule_status["market_close"] == "not_configured"
     assert state["search_console_connected"] is False
     assert state["recent_public_url"] is None

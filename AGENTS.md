@@ -1,8 +1,12 @@
-## Current runtime baseline ? P5-CLEANUP-001
+## Current runtime baseline — P5-CODEX-038 (2026-10-29)
 
 - Qwen3 and llama.cpp execution, model download, status, and lifecycle management have been retired from this repository. Older phase notes below that describe local inference are historical records, not current instructions.
 - Existing model files, shared executables, saved articles, Research Packages, quality evaluations, and audit records are preserved. Never delete them as part of code cleanup.
-- No production manuscript-generation provider is attached. Mock generation is test-only; generation APIs and schedules fail closed. Codex/GPT scheduled or unattended execution is not implemented.
+- No in-process production manuscript-generation provider is attached. Mock generation is test-only; internal generation APIs and project-owned generation schedules fail closed.
+- Official Codex desktop Scheduled tasks may be used as an external local-project manuscript authoring/export path. A scheduled execution wrote the local probe `.local/gpt-scheduled-import/probe/scheduled-test.json` at 2026-10-29 15:51 KST; this verifies probe-file writing only. It does not verify Research Package article generation, ready-envelope delivery, Import, quality/rights approval, auto eligibility, or Blogger publication.
+- Scheduled runs use the account's default sandbox/approval settings and any administrator-enforced requirements; use the narrowest local-project permissions. The computer and Codex desktop must remain available for local files. Create/manage tasks in the desktop Scheduled UI; repository code, Codex CLI, and the IDE extension do not register them.
+- Codex scheduled authoring must read the selected existing Research Package and existing import schemas, write only a complete UTF-8 envelope through `incoming/` then atomic rename into `ready/`, and fail without a ready file when evidence or schema requirements are unmet. It must not call Blogger, modify the database, run Git commit/push, or grant approval. The existing Import Worker and all quality, editorial, rights, publication, and Blogger gates remain independent and fail closed.
+- No in-process AI Provider is connected; the external Codex scheduled export is not an API Provider and must not set `provider_connected`, `generation_ready`, `auto_eligible`, or `publish_ready` by itself.
 - Collection, evidence validation, HTML/SEO, editing, human review, publication preparation, and the existing Manual/Auto publishing safeguards remain independent capabilities.
 
 # Codex 개발 규칙
@@ -60,7 +64,7 @@ OAuth 토큰·API Key·비밀번호를 코드에 저장하지 않는다. .env �
 
 ## Phase 3.5 실제 추론·수집 정책
 - Qwen3 및 llama.cpp 실행 경로는 제거되었다. 저장된 모델 평가 자료는 이력으로 보존하되 모델 파일·공용 엔진을 자동 삭제하거나 시작·종료하지 않는다.
-- 새 원고 생성 Provider가 연결되기 전에는 수집·품질 검사·HTML/SEO 미리보기·수동 편집 및 검토 기능만 사용한다. Codex/GPT 예약 실행이 구현된 것으로 표시하지 않는다.
+- 새 in-process 원고 생성 Provider가 연결되지 않아 API 생성은 계속 fail-closed다. 다만 공식 Codex 데스크톱 Local 예약 실행의 파일 작성 probe는 2026-10-29 검증됐다. Research Package 기반 예약 초안 파일 작성은 기존 JSON 규격과 안전 지침에 따라 허용하되, 실제 원고 envelope·Import가 확인될 때까지 종단 간 생성 성공으로 표시하지 않는다.
 - 수집은 고정 허용 RSS/API에 한정한다. 임의 URL fetch, 리다이렉트, 무단 대량 수집은 금지한다. 1MiB 응답 상한·시각·권리·호출 제한을 적용한다.
 - Fed 공식 Board 본문의 전송 경로/시각/공공영역 사용 조건 확인은 자동 수용할 수 있으나 의미적 사실 검증 완료를 뜻하지 않는다. Wikidata CC0 메타데이터는 주제 후보이며 공식 발표/가격/영업/효능 근거로 자동 승인하지 않는다.
 - 검증되지 않은 모델·언어의 일반 자동 처리는 차단한다. 명시적인 evaluation_only 작업은 품질 검증 선언 없이 시험할 수 있으며 결과는 quality_held로 보존하고 publish_ready=false를 유지한다.

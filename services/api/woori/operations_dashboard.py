@@ -117,7 +117,7 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
         "ai_articles_written_24h": 0,
         "actual_posts_24h": 0,
         "article_lineage_available": False,
-        "generation_block_reason": "ai_generation_provider_not_connected",
+        "generation_block_reason": "in_process_ai_provider_not_connected_codex_local_scheduled_export_supported",
         "publication_block_reason": "research_package_and_quality_approval_required",
         "hold_reasons": [],
     }
@@ -194,6 +194,7 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
         FROM collection_sources ORDER BY name""").fetchall()]
     scheduled_import: dict[str, Any] = {
         "available": False, "scheduled_claims": 0, "verified_gpt_runs": 0,
+        "local_file_probe_runs": 0, "last_local_file_probe_at": None, "scheduled_article_imports": 0,
         "received_total": 0, "received_last_24h": 0, "last_received_at": None,
         "languages": {}, "machine_passed": 0, "quality_held": 0,
         "source_review_held": 0, "duplicate_file_outcomes": 0,
@@ -203,6 +204,14 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
     import_relation = conn.execute(
         "SELECT to_regclass('public.external_content_imports') IS NOT NULL AS available"
     ).fetchone()
+    probe = conn.execute(
+        """SELECT count(*)::int AS count,max(created_at) AS last_at FROM audit_events
+        WHERE event_type='codex.scheduled_local_file_probe.confirmed'"""
+    ).fetchone()
+    scheduled_import.update({
+        "local_file_probe_runs": int(probe["count"] or 0),
+        "last_local_file_probe_at": probe["last_at"],
+    })
     if import_relation and import_relation["available"]:
         scheduled_import["available"] = True
         totals = conn.execute(
@@ -213,6 +222,7 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
         ).fetchone()
         scheduled_import.update({
             "received_total": int(totals["total"] or 0),
+            "scheduled_article_imports": int(totals["total"] or 0),
             "received_last_24h": int(totals["recent"] or 0),
             "last_received_at": totals["last_received"],
         })
@@ -346,9 +356,12 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
     if backup.get("warning"):
         alerts.append({"key": "backup_or_disk_warning", "severity": "warning", "count": 1,
                        "message": "백업이 오래됐거나 백업 상태 또는 여유 디스크 공간을 확인해야 합니다."})
-    if not scheduled_import.get("verified_gpt_runs"):
-        alerts.append({"key": "gpt_schedule_unverified", "severity": "warning", "count": 1,
-                       "message": "GPT 예약 원고의 무인 실행·로컬 전달이 확인되지 않았습니다."})
+    if not scheduled_import.get("local_file_probe_runs"):
+        alerts.append({"key": "scheduled_local_file_probe_unverified", "severity": "warning", "count": 1,
+                       "message": "Codex 예약 로컬 파일 작성 probe가 아직 확인되지 않았습니다."})
+    elif not scheduled_import.get("scheduled_article_imports"):
+        alerts.append({"key": "scheduled_manuscript_import_missing", "severity": "warning", "count": 1,
+                       "message": "로컬 파일 작성 probe는 확인됐지만 예약 원고 JSON과 Import receipt는 없습니다."})
     if blocked_live_jobs:
         alerts.append({"key": "blocked_or_uncertain_publication_jobs", "severity": "warning",
                        "count": blocked_live_jobs, "message": "차단·불확실·실패 게시 작업을 확인해야 합니다."})
@@ -360,7 +373,8 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
         {"key": "trends_11_regions", "status": "partial", "detail": "최근 지역별 관측은 표시하지만 실행 Worker의 코드 버전은 확인되지 않았습니다."},
         {"key": "candidate_deduplication", "status": "partial", "detail": f"최근 24시간 이슈 그룹 {trend_pipeline['unique_issue_groups_24h']}개, 기사 후보 {trend_pipeline['article_candidates']}개."},
         {"key": "official_research", "status": "blocked" if not trend_pipeline["research_packages_24h"] else "partial", "detail": f"Research Package {trend_pipeline['research_packages_24h']}건; 사람 검토·독립 근거 승인과 자동 조사 실행을 구분합니다."},
-        {"key": "gpt_unattended_delivery", "status": "blocked", "detail": "공식 예약 실행의 로컬 자동 전달은 검증되지 않았습니다."},
+        {"key": "gpt_unattended_delivery", "status": "partial" if scheduled_import["local_file_probe_runs"] else "blocked",
+         "detail": f"Codex 예약 로컬 파일 probe {scheduled_import['local_file_probe_runs']}회 확인; 예약 원고 Import {scheduled_import['scheduled_article_imports']}건. 원고 생성·Import 종단 간 검증은 별도입니다."},
         {"key": "content_import", "status": "partial", "detail": f"Import receiver worker 상태 {scheduled_import['worker_status']}; 예약 원고 수신 {scheduled_import['received_total']}건."},
         {"key": "quality_seo_rights", "status": "partial", "detail": f"기계 통과 기록 {quality_counts.get('machine_passed_review_required',0)}건, 사람·권리·독립 출처 승인은 별도입니다."},
         {"key": "version_audit", "status": "ready", "detail": "기존 버전과 감사 이력을 유지하는 저장 경로가 연결되어 있습니다."},
@@ -430,8 +444,9 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
     ).fetchone()
     return {"schema_version":schema_version,"recent_activity":recent_activity,"trends":trends,"trend_pipeline":trend_pipeline,"collection_sources":collection_sources,"scheduled_import":scheduled_import,"jobs":job_counts,
         "readiness":readiness,"monitoring":monitoring,
-        "generation":{"provider_connected":False,"provider_status":"not_configured","counts":generation_counts,
-            "queue_waiting":job_counts.get("content:queued",0),"reason":"운영 원고 생성 Provider가 연결되어 있지 않습니다."},
+        "generation":{"provider_connected":False,"provider_status":"not_configured","codex_scheduled_export_supported":True,
+            "counts":generation_counts,"queue_waiting":job_counts.get("content:queued",0),
+            "reason":"in-process AI Provider는 미연결입니다. Codex Local Scheduled draft export는 probe 확인; 원고 envelope·Import는 미검증입니다."},
         "quality":{"machine_passed":quality_counts.get("machine_passed_review_required",0),"held":quality_counts.get("quality_held",0),
             "failed":quality_counts.get("failed",0),"human_review_required":quality_counts.get("machine_passed_review_required",0)},
         "publishing":{"jobs":publication_counts,"recorded_posts":int(record_count or 0),"last_recorded_at":latest_published,
@@ -447,7 +462,8 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
             {"key":"google_trends","name":"Google Trends 정기 수집","status":"partial" if worker_fresh else "inactive","detail":"Research Worker heartbeat는 확인되지만 실행 코드 버전과 11개 지역 무인 주기 적용 여부는 확인되지 않았습니다." if worker_fresh else "최근 Research Worker heartbeat가 없습니다."},
             {"key":"market_close","name":"국가별 장마감 리포트","status":"not_configured","detail":"시장 데이터·거래일·장마감 원고 생성 경로가 구성되지 않았습니다."},
             {"key":"weekly_finance","name":"금요일 금융자료 분석","status":"not_configured","detail":"후보 자료 수집과 주간 실행 경로가 연결되지 않았습니다."},
-            {"key":"gpt_scheduled_import","name":"GPT 예약 작업 원고 수신","status":"external_status_unknown","detail":"외부 예약 작업의 실행 상태를 이 로컬 서비스에서 확인할 수 없습니다."}],
+            {"key":"gpt_scheduled_import","name":"Codex 예약 원고 파일 수신","status":"partial" if scheduled_import["local_file_probe_runs"] else "external_status_unknown",
+             "detail":f"로컬 파일 probe {scheduled_import['local_file_probe_runs']}회; 예약 원고 Import {scheduled_import['scheduled_article_imports']}건. task 설정·다음 실행 상태는 Scheduled UI에서 확인합니다."}],
         "publication_policy":{"configured_global_mode":global_config.get("configured_mode","manual"),"live_auto_enabled":False,"live_writes_enabled":False,
             "hourly_limit":LANGUAGE_HOURLY_LIMITS,"hourly_limit_status":"configured_internal_cap","daily_limit":GLOBAL_DAILY_PUBLISH_LIMIT,
             "emergency_stopped":bool(global_config.get("emergency_stopped",False))},

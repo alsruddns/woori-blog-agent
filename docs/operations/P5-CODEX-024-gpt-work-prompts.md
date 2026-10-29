@@ -1,18 +1,18 @@
-# P5-CODEX-024 — ChatGPT Work scheduled task setup
+# P5-CODEX-024 — Codex desktop Local Scheduled task setup
 
 ## Supported transfer path
 
-OpenAI's current official documentation describes scheduled tasks in the ChatGPT desktop app working in a local project directory or worktree. For this repository's fixed inbox, select the **local project** `C:\Users\achie\git\woori-blog-agent`, not a cloud-only task or separate worktree. The computer must remain powered on, online, signed in, and the ChatGPT desktop app must remain running while local files are needed. Web-only scheduled tasks cannot directly access a local folder. The documented capability does not verify this account's project permissions or prove a scheduled run wrote a file; task creation and the first unattended run remain operator actions.
+OpenAI's official documentation supports Codex desktop Scheduled tasks in a local project directory or worktree. For this repository's fixed inbox, select the **local project** `C:\Users\achie\git\woori-blog-agent`, not a cloud-only task or separate worktree. Scheduled runs use the configured sandbox and approval behavior. Keep the computer powered on and the desktop app running while local files are needed. Web-only tasks cannot directly access this folder. A local metadata-file probe was successfully written by a Codex desktop Scheduled execution at 2026-10-29 15:51:06 KST; article JSON creation, automatic Import, and downstream review remain unverified.
 
 Official references: [Scheduled tasks](https://learn.chatgpt.com/docs/automations), [ChatGPT desktop app for Windows](https://learn.chatgpt.com/docs/app/windows), and [ChatGPT Work local files](https://learn.chatgpt.com/docs/get-started-with-work).
 
-Verification update (2026-10-29): the existing local-project task wrote `.local/gpt-scheduled-import/probe/scheduled-test.json` at 15:51 KST. Its 268-byte JSON contains only execution metadata; it is not an import envelope. There is still no scheduled manuscript `*.ready.json` or Import receipt. See the targeted Research Package instruction in [P5-CODEX-037](P5-CODEX-037-fed-package-task.md).
+Verification update (2026-10-29): the existing Codex desktop Local Scheduled task wrote `.local/gpt-scheduled-import/probe/scheduled-test.json` at 15:51:06 KST. Its 268-byte JSON contains only execution metadata; it is not an import envelope. There is still no scheduled manuscript `*.ready.json` or Import receipt. See the Research Package prompt in [P5-CODEX-037](P5-CODEX-037-fed-package-task.md) and the new task catalog in [P5-CODEX-038](P5-CODEX-038-scheduled-task-catalog.md).
 
 This task only writes review-held import files. The local Research Worker polls `.local/gpt-scheduled-import/ready/` every 60 seconds and forwards files to the loopback Import API. Imports remain `awaiting_human_review`, `publish_ready=false`, and have no Blogger write path.
 
 ## Common output contract
 
-Paste the relevant task-specific prompt below into a scheduled ChatGPT Work task and select the local project above. For each run:
+Paste the relevant task-specific prompt below into a Codex desktop Scheduled task and select the local project above. For each run:
 
 1. Check the available official material and market calendar. If the prior session is not confirmed, official data is unavailable, material is stale, or source rights/claim support are materially unclear, create no file and report the specific hold reason in the task result.
 2. Write an independent expert column in the target language. Separate sourced facts from analysis. Do not invent prices, returns, forecasts, market moves, quotes, expertise, or source identities. Record actual observation time, publication date, period, units, and source URLs.
@@ -30,7 +30,7 @@ Registered Blogger targets:
 | Japanese (`ja`) | `7562596540375659150` | `https://trend-ja.blogspot.com` |
 | Simplified Chinese (`zh-CN`) | `1931836538202286191` | `https://trend-zh.blogspot.com` |
 
-The inbox validates the existing `woori-content-import/1.0` item. For each claim, include evidence excerpt and source ID; excerpts should be the minimum needed for verification. Do not add undocumented fields. `research_package_id` may be set only to an existing package ID that was actually available to the task; otherwise use `null`.
+The inbox validates the existing `woori-content-import/1.0` item. For each claim, include evidence excerpt and source ID; excerpts should be the minimum needed for verification. Do not add undocumented fields. `research_package_id` may be set only to an existing package ID that was actually available to the task; otherwise use `null`. Scheduled authoring must not make remote requests outside the project's allowlisted source routes; if the required official evidence is not already available in a Research Package or local reviewed source snapshot, create no file.
 
 ## A. Korea market close
 
@@ -76,9 +76,9 @@ Run only after an operator has made the current Google Trends observation or iss
 
 ## Operator setup and verification
 
-1. In ChatGPT desktop, create a new scheduled Work task; do not edit or delete existing tasks. Select this repository as a local project and select the matching task-specific prompt.
+1. In Codex desktop, create a new Scheduled task; do not edit or delete existing tasks. Select this repository as a local project and select the matching task-specific prompt.
 2. Configure the desired recurrence in Asia/Seoul (US task timing may use America/New_York if offered). Review the saved timezone and cadence. Existing task schedules remain untouched.
 3. Confirm the desktop app and computer will remain online/awake for the run. A local-only task cannot write when its computer is unavailable. A cloud-only task cannot access this folder.
 4. Start the repository API on `127.0.0.1:8100` and the existing Research Worker from their owning terminals. The Worker must be running the new develop code. The Worker moves complete ready files to `processing`, imports and assesses them, then retains them under `processed`; invalid JSON is retained in `quarantine`, permanent API rejection in `rejected`, and transient API failures return to `ready`.
-5. In ChatGPT Scheduled, inspect the run result; then check the local JSON filename and SHA-256 in the Dashboard. A file in `ready`/`processed` plus the Worker outcome audit demonstrates local receipt/import, while the task's own ID and self-reported envelope do not cryptographically prove a specific scheduled execution. The current implementation reports verified GPT task-run count as zero unless an independently verifiable execution record becomes available.
+5. In Codex desktop Scheduled, inspect the run result; then check the local JSON filename and SHA-256 in the Dashboard. A file in `ready`/`processed` plus the Worker outcome audit demonstrates local receipt/import. Record task execution, file-writing probe, manuscript-envelope creation, and Import receipt as separate outcomes. A successful probe does not count as an article run.
 6. If opening the local project, granting local folder access, choosing a local run mode, or selecting a schedule is unavailable in this account/workspace, stop at the documented setup step. Do not replace it with a web task, browser automation, manual download, session-cookie extraction, unofficial API, or headless Codex loop.
