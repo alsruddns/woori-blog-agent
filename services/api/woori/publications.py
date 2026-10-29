@@ -216,11 +216,28 @@ def _scheduled_auto_state(conn: Any) -> dict[str, Any]:
         """SELECT EXISTS(SELECT 1 FROM publishing_jobs WHERE publication_lane='scheduled_auto'
           AND status='succeeded') AS any_published"""
     ).fetchone()["any_published"]
+    policy_history = conn.execute(
+        """SELECT id,action,approved_blog_ids,daily_limit,actor_label,reason,created_at
+        FROM scheduled_publication_policy_events ORDER BY id DESC LIMIT 20"""
+    ).fetchall()
+    first_post_history = conn.execute(
+        """SELECT id,action,blog_id,import_id,import_version_id,content_version_id,
+        body_sha256,actor_label,reason,created_at FROM scheduled_first_publication_events
+        ORDER BY id DESC LIMIT 20"""
+    ).fetchall()
+    connection_check = conn.execute(
+        """SELECT payload,created_at FROM audit_events
+        WHERE event_type='publication.scheduled_auto.connection_check'
+        ORDER BY id DESC LIMIT 1"""
+    ).fetchone()
     return {
         "enabled": enabled,
         "policy_event": dict(row) if row else None,
         "first_post_approval": dict(first_post) if first_post else None,
         "first_post_confirmed": bool(published),
+        "policy_history": [dict(item) for item in policy_history],
+        "first_post_history": [dict(item) for item in first_post_history],
+        "latest_connection_check": dict(connection_check) if connection_check else None,
         "effective_for_new_jobs": enabled and (bool(first_post) or bool(published)),
         "trends_lane_affected": False,
     }
