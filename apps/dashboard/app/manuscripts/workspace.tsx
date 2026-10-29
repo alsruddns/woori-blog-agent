@@ -258,7 +258,7 @@ export default function ManuscriptWorkspace() {
         core_question: String(form.get("core_question") ?? "").trim() || null,
         core_answer: String(form.get("core_answer") ?? "").trim() || null,
         category: value(detail, "category_slug") || null, blogger_labels: bloggerLabels,
-        official_sources: [], author: null, fact_verified_at: null, editorial_status: "unknown",
+        sources: [], official_sources: [], author: null, fact_verified_at: null, editorial_status: "unknown",
       },
       target_blog_id: null, publication_mode: "manual", planned_publish_at: null,
     });
@@ -317,7 +317,8 @@ export default function ManuscriptWorkspace() {
           category: value(revisionSeo, "category") || value(detail, "category_slug") || null,
           blogger_labels: labels,
           author: revisionSeo.author ?? null,
-          official_sources: (revisionSeo.official_sources as Row[] | undefined) ?? ((detail.sources as Row[] | undefined) ?? []).map(source => ({ title: value(source, "source_name"), url: value(source, "url"), official_status: "unverified" })),
+          sources: (revisionSeo.sources as Row[] | undefined) ?? ((detail.sources as Row[] | undefined) ?? []).map(source => ({ title: value(source, "source_name"), url: value(source, "url") })),
+          official_sources: (revisionSeo.official_sources as Row[] | undefined) ?? [],
           fact_verified_at: revisionSeo.fact_verified_at ?? null,
           editorial_status: value(detail, "editorial_status") || "unknown",
         },

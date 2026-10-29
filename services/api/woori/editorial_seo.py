@@ -46,6 +46,7 @@ class EditorialSeoMetadata(BaseModel):
     category: str | None = Field(default=None, max_length=120)
     blogger_labels: list[str] = Field(default_factory=list, max_length=20)
     author: str | None = Field(default=None, max_length=160)
+    sources: list[SeoSource] = Field(default_factory=list, max_length=30)
     official_sources: list[SeoSource] = Field(default_factory=list, max_length=30)
     fact_verified_at: datetime | None = None
     editorial_status: str = Field(default="unknown", max_length=80)
@@ -106,8 +107,9 @@ def evaluate_seo_readiness(
     add("heading_structure", "ready" if h2_count and not has_h1 else "review",
         "본문 소제목 구조가 있으며 게시글 제목과 중복 H1이 없습니다." if h2_count and not has_h1 else "본문의 H2 소제목 구조와 게시글 제목 중복 여부를 확인하세요.")
     link_count = len(re.findall(r"<a\s+href=", safe_html, flags=re.IGNORECASE))
-    add("source_links", "ready" if metadata.official_sources and link_count else "review",
-        "출처 정보와 본문 링크가 있습니다. 링크의 내용과 주장은 사람이 대조해야 합니다." if metadata.official_sources and link_count else "확인 가능한 출처 정보와 본문 링크를 연결하세요.")
+    has_source_metadata = bool(metadata.sources or metadata.official_sources)
+    add("source_links", "ready" if has_source_metadata and link_count else "review",
+        "출처 정보와 본문 링크가 있습니다. 링크의 내용과 주장은 사람이 대조해야 합니다." if has_source_metadata and link_count else "확인 가능한 출처 정보와 본문 링크를 연결하세요.")
     add("link_targets", "not_measured", "외부 링크의 실제 응답과 문서 내용은 조회하지 않았습니다.")
     add("claim_source_mapping", "not_measured", "문장별 주장과 근거의 의미 일치는 별도 사실 검토가 필요합니다.")
     official_unverified = any(source.official_status != "verified" for source in metadata.official_sources)

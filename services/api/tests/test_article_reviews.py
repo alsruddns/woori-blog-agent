@@ -454,6 +454,21 @@ def test_editorial_preview_returns_deterministic_seo_checks_without_predictive_s
     assert ".wb-article h2" in preview_css and ".wb-article h3" in preview_css
 
 
+def test_reviewed_alternative_source_satisfies_source_link_check_without_claiming_official() -> None:
+    from woori.editorial_seo import EditorialSeoMetadata, SeoSource, evaluate_seo_readiness
+
+    metadata = EditorialSeoMetadata(
+        language_code="en", seo_title="Reviewed report", search_description="A summary of a reviewed report.",
+        sources=[SeoSource(title="Specialist report", url="https://example.org/report")],
+    )
+    checks = evaluate_seo_readiness(
+        metadata, title="Reviewed report", plain_text="Body", safe_html='<p>Body <a href="https://example.org/report">source</a></p>',
+    )
+    by_key = {check["key"]: check for check in checks}
+    assert by_key["source_links"]["status"] == "ready"
+    assert by_key["official_source_status"]["status"] == "not_measured"
+
+
 def test_publication_package_is_deterministic_non_submitting_and_fails_closed() -> None:
     from datetime import UTC, datetime
 

@@ -113,6 +113,8 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
         "held_issue_groups_24h": 0,
         "research_packages_24h": 0,
         "research_triage": None,
+        "awaiting_source_evidence_issues_24h": 0,
+        # Retained for API compatibility; mirrors the broader source-evidence count.
         "awaiting_official_research_issues_24h": 0,
         "ai_articles_written_24h": 0,
         "actual_posts_24h": 0,
@@ -178,7 +180,7 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
             trend_pipeline["research_triage"] = {
                 **dict(triage["payload"]), "created_at": triage["created_at"]
             }
-        trend_pipeline["awaiting_official_research_issues_24h"] = conn.execute(
+        trend_pipeline["awaiting_source_evidence_issues_24h"] = conn.execute(
             """WITH latest AS (
               SELECT DISTINCT ON (topic_id) topic_id,reasons
               FROM trend_topic_assessments ORDER BY topic_id,created_at DESC,id DESC
@@ -187,8 +189,11 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
               JOIN trend_observations o ON o.id=m.observation_id
               WHERE o.collected_at>=now()-interval '24 hours'
             ) SELECT count(*)::int AS count FROM latest JOIN recent USING(topic_id)
-              WHERE 'awaiting_official_research'=ANY(latest.reasons)"""
+              WHERE 'awaiting_reviewed_source_evidence'=ANY(latest.reasons)"""
         ).fetchone()["count"]
+        trend_pipeline["awaiting_official_research_issues_24h"] = trend_pipeline[
+            "awaiting_source_evidence_issues_24h"
+        ]
     collection_sources = [dict(row) for row in conn.execute("""SELECT adapter,name,active,scheduled,interval_minutes,last_successful_at,
         (last_error IS NOT NULL) AS has_error,next_run_at
         FROM collection_sources ORDER BY name""").fetchall()]
@@ -372,7 +377,7 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
     checks = [
         {"key": "trends_11_regions", "status": "partial", "detail": "최근 지역별 관측은 표시하지만 실행 Worker의 코드 버전은 확인되지 않았습니다."},
         {"key": "candidate_deduplication", "status": "partial", "detail": f"최근 24시간 이슈 그룹 {trend_pipeline['unique_issue_groups_24h']}개, 기사 후보 {trend_pipeline['article_candidates']}개."},
-        {"key": "official_research", "status": "blocked" if not trend_pipeline["research_packages_24h"] else "partial", "detail": f"Research Package {trend_pipeline['research_packages_24h']}건; 사람 검토·독립 근거 승인과 자동 조사 실행을 구분합니다."},
+        {"key": "source_research", "status": "blocked" if not trend_pipeline["research_packages_24h"] else "partial", "detail": f"Research Package {trend_pipeline['research_packages_24h']}건; 공식 출처를 우선하며 검토된 대체 출처도 허용합니다. 사람 검토·독립 근거·권리 확인은 별도 상태입니다."},
         {"key": "gpt_unattended_delivery", "status": "partial" if scheduled_import["local_file_probe_runs"] else "blocked",
          "detail": f"Codex 예약 로컬 파일 probe {scheduled_import['local_file_probe_runs']}회 확인; 예약 원고 Import {scheduled_import['scheduled_article_imports']}건. 원고 생성·Import 종단 간 검증은 별도입니다."},
         {"key": "content_import", "status": "partial", "detail": f"Import receiver worker 상태 {scheduled_import['worker_status']}; 예약 원고 수신 {scheduled_import['received_total']}건."},
@@ -423,7 +428,7 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
         for row in conn.execute(
             """SELECT a.event_type,a.created_at,
             CASE WHEN a.event_type LIKE 'trend.%' THEN '자료 수집'
-              WHEN a.event_type LIKE '%research%' OR a.event_type LIKE '%source%' THEN '공식 자료 조사'
+              WHEN a.event_type LIKE '%research%' OR a.event_type LIKE '%source%' THEN '자료 조사'
               WHEN a.event_type LIKE '%import%' OR a.event_type LIKE '%content.%' THEN '원고 수신·저장'
               WHEN a.event_type LIKE '%quality%' OR a.event_type LIKE '%seo%' THEN '품질 검증'
               WHEN a.event_type LIKE 'publication.%' OR a.event_type LIKE 'blogger.write.%' THEN 'Blogger 발행'

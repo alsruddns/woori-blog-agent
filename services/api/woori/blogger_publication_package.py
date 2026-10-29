@@ -117,10 +117,13 @@ def build_publication_package(
                 "canonical, robots, Open Graph and structured data duplication",
             ],
         },
-        "sources": [
-            {**source, "official_status": "unverified"}
-            for source in seo_metadata.get("official_sources", [])
-        ],
+        "sources": (
+            [{key: value for key, value in source.items() if key != "official_status"}
+             for source in seo_metadata["sources"]]
+            if seo_metadata.get("sources") else
+            [{**source, "official_status": "unverified"}
+             for source in seo_metadata.get("official_sources", [])]
+        ),
         "renderer_version": renderer_version,
         "design_system_version": design_system_version,
         "validation": validation,

@@ -321,7 +321,7 @@ def _assess(row: dict[str, Any] | None) -> dict[str, Any]:
     if not row["machine_passed"]:
         reasons.append("machine_quality_not_passed")
     if not row.get("sources_reviewed", False):
-        reasons.append("official_source_review_missing")
+        reasons.append("reviewed_source_missing")
     if not row.get("evidence_facts_reviewed", False):
         reasons.append("evidence_fact_verification_missing")
     if not row.get("research_package_reviewed", False):

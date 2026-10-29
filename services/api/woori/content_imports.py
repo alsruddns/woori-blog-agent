@@ -24,6 +24,7 @@ from .editorial_taxonomy import (
     language_candidates,
     suggested_labels,
 )
+from .topics import OFFICIAL_SOURCE_HOSTS
 
 router = APIRouter(prefix="/admin/research/content-imports")
 CATEGORY_SLUGS = {item["slug"] for item in EDITORIAL_CATEGORIES}
@@ -759,15 +760,20 @@ def assess_import(import_id: UUID, request: ImportAssessmentRequest) -> dict[str
             seo_title=seo_input.seo_title, search_description=seo_input.search_description,
             core_question=seo_input.core_question, core_answer=seo_input.core_answer,
             category=str(imported["category"]), blogger_labels=list(version["blogger_labels"]),
-            author=None, official_sources=[
+            author=None, sources=[
+                SeoSource(title=str(source["title"]), url=str(source["url"]))
+                for source in source_rows
+            ], official_sources=[
                 SeoSource(
                     title=str(source["title"]), url=str(source["url"]),
                     official_status=("verified" if (
-                        live_by_source.get(str(source["source_id"]), {}).get("url") == str(source["url"])
+                        (urlsplit(str(source["url"])).hostname or "").casefold() in OFFICIAL_SOURCE_HOSTS
+                        and live_by_source.get(str(source["source_id"]), {}).get("url") == str(source["url"])
                         and live_by_source.get(str(source["source_id"]), {}).get("source_host") == urlsplit(str(source["url"])).hostname
                         and live_by_source.get(str(source["source_id"]), {}).get("http_status") == 200
                     ) else "unverified"),
                 ) for source in source_rows
+                if (urlsplit(str(source["url"])).hostname or "").casefold() in OFFICIAL_SOURCE_HOSTS
             ],
             fact_verified_at=None, editorial_status="unknown",
         )

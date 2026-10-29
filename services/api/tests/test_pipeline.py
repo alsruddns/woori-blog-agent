@@ -46,7 +46,8 @@ def lab(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Any, TestClient, dict
 
 
 def topic(
-    lab: Any, *, reviewed: bool = True, source_name: str = "Synthetic fixture"
+    lab: Any, *, reviewed: bool = True, source_name: str = "Synthetic fixture",
+    source_is_primary: bool = True,
 ) -> tuple[Any, list[Any]]:
     conn, api, h = lab
     profiles = conn.execute(
@@ -87,7 +88,7 @@ def topic(
             "rights": "Authored test fixture, no third party text",
             "access_policy": "Manual registration; no network fetch or scraping performed",
             "valid_until": request["expires_at"],
-            "is_primary": True,
+            "is_primary": source_is_primary,
         },
     )
     assert source.status_code == 201, source.text
@@ -618,6 +619,14 @@ def test_evidence_block_and_duplicate_generation(lab: Any) -> None:
         ]
         == "duplicate_content"
     )
+
+
+def test_single_human_reviewed_alternative_source_is_limited_evidence(lab: Any) -> None:
+    keyword, _ = topic(lab, source_is_primary=False)
+    sources = pipeline.evidence(uuid.UUID(keyword))
+    assert len(sources) == 1
+    assert sources[0]["evidence_scope"] == "single_source_limited"
+    assert sources[0]["approved"] is True
 
 
 def test_dynamic_language_and_unsupported_local(lab: Any) -> None:

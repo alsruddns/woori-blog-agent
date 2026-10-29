@@ -27,6 +27,7 @@ from .claim_status import (
 from .db import connection
 from .grounding import inspect, numbers, proper_names
 from .localization import EXTRACTOR_VERSION, fact_ledger
+from .topics import source_review_qualifies
 
 EVALUATION_QUOTA_LIMIT = 10
 SEC_ENGLISH_PRIORITY_RESERVED_SLOTS = 1
@@ -249,15 +250,21 @@ def render_localized_fact_section(
 def evidence(keyword_id: UUID) -> list[dict[str, Any]]:
     with connection() as conn:
         rows = conn.execute(
-            """SELECT s.*,r.id AS review_id,r.approved,r.reason AS review_reason
+            """SELECT s.*,r.id AS review_id,r.approved,r.reviewer,r.reason AS review_reason
             FROM research_sources s JOIN LATERAL
             (SELECT * FROM source_reviews WHERE source_id=s.id ORDER BY review_sequence DESC LIMIT 1) r ON true
             WHERE s.keyword_id=%s AND s.valid_until>now() AND r.approved AND NOT EXISTS(SELECT 1 FROM research_sources newer WHERE newer.keyword_id=s.keyword_id AND newer.url=s.url AND newer.revision>s.revision) ORDER BY s.is_primary DESC,s.id""",
             (keyword_id,),
         ).fetchall()
-    if not rows or (not any(r["is_primary"] for r in rows) and len(rows) < 2):
+    rows = [
+        dict(row) for row in rows
+        if source_review_qualifies(str(row["url"]), bool(row["approved"]), row["reviewer"])
+        and row["rights"] and row["access_policy"]
+    ]
+    if not rows:
         raise EngineFailure("insufficient_reviewed_evidence")
-    return rows
+    scope = "single_source_limited" if len(rows) == 1 else "multiple_reviewed_sources"
+    return [{**row, "evidence_scope": scope} for row in rows]
 
 
 def enqueue(

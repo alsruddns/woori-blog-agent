@@ -20,6 +20,12 @@ def test_normalize_query_uses_unicode_compatibility_and_punctuation() -> None:
 
 def test_research_domains_select_supported_topics_only() -> None:
     assert topics.research_domains("fed meeting") == ["finance"]
+    assert "technology" in topics.research_domains("ai glasses")
+    assert "technology" in topics.research_domains("ai 안경")
+    assert "stocks" in topics.research_domains("google stock")
+    assert topics.risk_review_tier("medicine report") == "strict_corroboration_and_human_review"
+    assert topics.risk_review_tier("court ruling") == "strict_corroboration_and_human_review"
+    assert topics.risk_review_tier("smart glasses") == "human_review_required"
     assert "artificial-intelligence" in topics.research_domains("生成式人工智能")
     assert topics.research_domains("weather") == []
 
@@ -103,6 +109,8 @@ def test_build_candidates_keeps_cross_geo_event_identity_unconfirmed(
     assert package.json()["status"] == "insufficient_evidence"
     assert package.json()["verified_fact_count"] == 0
     assert package.json()["payload"]["publish_ready"] is False
+    assert package.json()["payload"]["source_assessment"]["mode"] == "no_current_reviewed_source"
+    assert package.json()["payload"]["draft_evidence_status"] == "insufficient_verifiable_evidence"
 
     state = api.get("/admin/research/topics", headers=headers)
     assert state.status_code == 200
@@ -169,7 +177,7 @@ def test_broad_candidate_is_held_and_never_auto_selected(
         (topic_id,),
     ).fetchone()
     assert assessment["decision"] == "held"
-    assert "broad_query_requires_specific_event_or_official_data" in assessment["reasons"]
+    assert "broad_query_requires_specific_event_and_verifiable_source" in assessment["reasons"]
     assert conn.execute(
         "SELECT count(*) AS n FROM trend_topic_editorial_decisions WHERE topic_id=%s",
         (topic_id,),
@@ -299,7 +307,7 @@ def test_complete_machine_evidence_stays_pending_human_review(lab: Any, monkeypa
         source_id = conn.execute("""INSERT INTO research_sources(keyword_id,url,source_name,collected_at,evidence,reliability_reason,rights,access_policy,valid_until,is_primary,revision,source_language)
             VALUES (%s,%s,%s,now(),%s,'Allowlisted test fixture','Test rights pending human review','Isolated test fixture only',now()+interval '1 day',true,1,'en') RETURNING id""", (keyword_id, f"https://example.invalid/{uuid4().hex}", f"Source {index}", f"Fact span {index} has verified value {index + 1}.\n")).fetchone()["id"]
         source_ids.append(source_id)
-        conn.execute("INSERT INTO source_reviews(source_id,approved,reason,reviewer,source_language) VALUES (%s,true,'Machine provenance fixture only; human review remains pending.','collector:test-fixture','en')", (source_id,))
+        conn.execute("INSERT INTO source_reviews(source_id,approved,reason,reviewer,source_language) VALUES (%s,true,'Synthetic human source-review fixture; editorial and publication review remain pending.','test source reviewer','en')", (source_id,))
         conn.execute("INSERT INTO trend_topic_sources(topic_id,research_source_id,link_reason,linked_by,idempotency_key) VALUES (%s,%s,'Test evidence link','collector:test-fixture',%s)", (topic_id, source_id, "machine-link-" + uuid4().hex))
         conn.execute("""INSERT INTO evidence_facts(fact_key,source_id,source_language,source_excerpt,entity_ids,numeric_values,date_values,citation_ids,verification_status,extractor_version)
             VALUES (%s,%s,'en',%s,'{}',%s,'[]',%s,'source_span_verified','test-span')""", ("machine-fact-" + uuid4().hex, source_id, f"Fact span {index} has verified value {index + 1}.", Jsonb({str(index + 1): str(index + 1)}), [source_id]))
@@ -312,3 +320,75 @@ def test_complete_machine_evidence_stays_pending_human_review(lab: Any, monkeypa
     assert package["payload"]["human_review_required"] is True
     assert package["payload"]["generation_ready"] is False
     assert package["payload"]["publish_ready"] is False
+
+
+def test_single_reviewed_alternative_source_allows_limited_draft_only(
+    lab: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    conn, _api, _headers = lab
+
+    @contextmanager
+    def shared_connection() -> Any:
+        with conn.transaction():
+            yield conn
+
+    monkeypatch.setattr(topics, "connection", shared_connection)
+    run_id, observation_id = uuid4(), uuid4()
+    digest = (uuid4().hex * 2)[:64]
+    conn.execute(
+        "INSERT INTO trend_collection_runs(id,provider,geo,status,response_sha256,item_count) VALUES (%s,'google_trends_rss','KR','succeeded',%s,1)",
+        (run_id, digest),
+    )
+    conn.execute(
+        """INSERT INTO trend_observations(id,run_id,geo,platform,query,source_rank,source_volume_label,collected_at,source_url,response_sha256)
+        VALUES (%s,%s,'KR','google_trends','Synthetic narrow technology issue',NULL,'500+',now(),'https://trends.google.com/trending/rss?geo=KR',%s)""",
+        (observation_id, run_id, digest),
+    )
+    topics.build_candidates(lookback_hours=1)
+    topic_id = conn.execute(
+        "SELECT topic_id FROM trend_topic_memberships WHERE observation_id=%s", (observation_id,)
+    ).fetchone()["topic_id"]
+    profile = conn.execute("SELECT id FROM language_profiles WHERE language_code='ko' LIMIT 1").fetchone()
+    category = conn.execute("SELECT id FROM categories WHERE slug='technology'").fetchone()
+    keyword_id = conn.execute(
+        """INSERT INTO keyword_candidates(profile_id,category_id,keyword,normalized_keyword,search_intent,collection_source,rationale,expires_at,priority)
+        VALUES (%s,%s,%s,%s,'test source review','test source registry','Synthetic reviewed alternative fixture.',now()+interval '1 day',50) RETURNING id""",
+        (profile["id"], category["id"], "reviewed alternative " + uuid4().hex, "reviewed-alternative-" + uuid4().hex),
+    ).fetchone()["id"]
+    source_id = conn.execute(
+        """INSERT INTO research_sources(keyword_id,url,source_name,published_at,collected_at,evidence,reliability_reason,rights,access_policy,valid_until,is_primary,revision,source_language)
+        VALUES (%s,%s,'Synthetic reviewed alternative',now(),now(),'Three exact source spans.','Fixture record for independent source review.','Rights review remains human-required.','Isolated test fixture; no network access.',now()+interval '1 day',false,1,'ko') RETURNING id""",
+        (keyword_id, f"https://example.org/report/{uuid4().hex}"),
+    ).fetchone()["id"]
+    conn.execute(
+        "INSERT INTO source_reviews(source_id,approved,reason,reviewer,source_language) VALUES (%s,true,'Synthetic human source-review fixture; not editorial or publication approval.','test source reviewer','ko')",
+        (source_id,),
+    )
+    conn.execute(
+        "INSERT INTO trend_topic_sources(topic_id,research_source_id,link_reason,linked_by,idempotency_key) VALUES (%s,%s,'Synthetic reviewed alternative supports topic research only.','collector:test-fixture',%s)",
+        (topic_id, source_id, "single-source-" + uuid4().hex),
+    )
+    for index in range(3):
+        excerpt = f"Exact reviewed alternative source span number {index + 1}."
+        conn.execute(
+            """INSERT INTO evidence_facts(fact_key,source_id,source_language,source_excerpt,entity_ids,numeric_values,date_values,citation_ids,verification_status,extractor_version)
+            VALUES (%s,%s,'ko',%s,'{}','{}','[]',%s,'source_span_verified','test-span')""",
+            ("alternative-fact-" + uuid4().hex, source_id, excerpt, [source_id]),
+        )
+
+    package = topics.build_package(topic_id)
+    assert package["status"] == "evidence_collected_pending_human_review"
+    assert package["payload"]["source_policy"] == "official_sources_preferred_reviewed_alternatives_allowed"
+    assert package["payload"]["source_assessment"]["mode"] == "single_source_limited"
+    assert package["payload"]["source_assessment"]["reviewed_alternative_count"] == 1
+    assert package["payload"]["draft_evidence_status"] == "single_source_limited"
+    assert package["payload"]["draft_authoring_conditions"]
+    assert package["payload"]["generation_ready"] is False
+    assert package["payload"]["publish_ready"] is False
+
+
+def test_alternative_sources_need_non_automated_review_actor() -> None:
+    assert topics.source_review_qualifies("https://example.org/story", True, "source editor")
+    assert not topics.source_review_qualifies("https://example.org/story", True, "collector:rss")
+    assert not topics.source_review_qualifies("https://example.org/story", False, "source editor")
+    assert topics.source_review_qualifies("https://www.federalreserve.gov/newsevents/", True, "collector:allowlisted-fetch")

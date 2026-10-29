@@ -139,7 +139,7 @@ export default function Research({ initial }: { initial: State }) {
         {(["KR", "US", "JP", "TW", "HK", "SG", "GB", "CA", "AU", "IN", "PH"] as const).map(geo => <button key={geo} disabled={busy || !data.trend_collection_configured} onClick={() => void act("trends/collect", { geo })}>{geo} 트렌드 1회 수집</button>)}
         <details><summary>최근 수집 실행 원본 데이터</summary><pre>{JSON.stringify(data.trend_collection_runs ?? [], null, 2)}</pre></details>
         <h4>최근 고유 검색어 관측</h4>
-        <div style={{ overflowX: "auto" }}><table><thead><tr><th>검색어</th><th>국가</th><th>Google 추정 검색량</th><th>첫 관측</th><th>최근 관측</th><th>관측 상태</th><th>검색량 변화</th><th>공식 자료 조사</th></tr></thead>
+        <div style={{ overflowX: "auto" }}><table><thead><tr><th>검색어</th><th>국가</th><th>Google 추정 검색량</th><th>첫 관측</th><th>최근 관측</th><th>관측 상태</th><th>검색량 변화</th><th>자료 조사</th></tr></thead>
           <tbody>{(data.trend_observations ?? []).map(row => {
             const status = str(row, "observation_status");
             const statusLabel = status === "new" ? "신규" : status === "reappeared" ? "재등장" : "지속";
@@ -222,7 +222,7 @@ export default function Research({ initial }: { initial: State }) {
         })}
         <details><summary>Research Package 이력 JSON</summary><pre>{JSON.stringify(data.trend_research_packages ?? [], null, 2)}</pre></details>
       </article>
-      <p>Fed·SEC 공식 자료와 Wikidata CC0 구조화 메타데이터만 허용합니다. Wikidata 후보는 공식 발표·시세·영업·효능 검증 자료가 아니며 승인 대기입니다. 검색량·경쟁도·CPC는 미수집입니다.</p>
+      <p>공식 1차 자료를 우선합니다. 별도 검토를 거친 신뢰 가능한 언론·전문매체·업계 분석·공개 데이터도 근거로 사용할 수 있습니다. Wikidata CC0는 주제 메타데이터이며 공식 발표·시세·영업·효능 근거가 아닙니다. 검색량·경쟁도·CPC는 미수집입니다.</p>
       {data.collection_sources.map(s => <article key={str(s, "id")}><h3>{str(s, "name")}</h3><p>{str(s, "endpoint")}</p><p>{str(s, "rights")} · <a href={str(s, "terms_url")} target="_blank" rel="noreferrer">이용 조건</a></p>
         <p>마지막 시도 {str(s, "last_attempt_at")} · 마지막 성공 {str(s, "last_successful_at") || str(s, "last_collected_at")} · 오류 {str(s, "last_error") || "없음"} · 이용 정책 {JSON.stringify(s.source_policy ?? {})}</p>
         <Editor disabled={busy} label="실제 자료 수집 실행" fields={[profileField]}

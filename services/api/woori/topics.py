@@ -10,6 +10,7 @@ import unicodedata
 from datetime import UTC, datetime
 from difflib import SequenceMatcher
 from typing import Any
+from urllib.parse import urlsplit
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from psycopg.types.json import Jsonb
@@ -32,6 +33,14 @@ DEFAULT_WEIGHTS = {
     "deduplication_risk": 10,
 }
 
+# This is an exact, conservative status registry, not a general URL fetch allowlist.
+# A source outside these hosts may still be used as a reviewed alternative when its
+# current source review, evidence spans, rights, and freshness checks pass.
+OFFICIAL_SOURCE_HOSTS = frozenset({
+    "federalreserve.gov", "www.federalreserve.gov", "sec.gov", "www.sec.gov", "data.sec.gov",
+    "www.ey.gov.tw", "www.ly.gov.tw",
+})
+
 # Deliberately conservative topic signals. These select material for research;
 # they do not establish an event, factual claim, target language, or publication approval.
 RESEARCH_MARKERS = {
@@ -44,6 +53,16 @@ RESEARCH_MARKERS = {
     "artificial-intelligence": ("artificial intelligence", "generative ai", "large language model", "ai model", "인공지능", "생성형 ai", "人工知能", "生成ai", "人工智能", "生成式人工智能"),
     "policy": ("regulation", "government policy", "law passed", "regulatory", "규제", "정부 정책", "법안", "規制", "政策", "监管", "政策"),
 }
+SPECIALIZED_RESEARCH_MARKERS = {
+    "stocks": ("google stock",),
+    "technology": ("ai glasses", "smart glasses", "ai 안경", "스마트 안경"),
+}
+HIGH_RISK_MARKERS = (
+    "health", "medical", "medicine", "drug", "clinical", "efficacy", "legal",
+    "court ruling", "legislation", "healthcare", "건강", "의료", "의약품", "임상",
+    "효능", "법률", "법원 판결", "法律", "裁判", "医療", "臨床", "薬",
+    "医疗", "药品", "法院判决", "临床",
+)
 
 
 def _current_scoring_config(conn: Any) -> dict[str, Any]:
@@ -64,12 +83,45 @@ def normalize_query(value: str) -> str:
     return " ".join(re.sub(r"[^\w]+", " ", folded, flags=re.UNICODE).split())
 
 
+def _source_tier(url: str, reviewed: bool) -> str:
+    """Classify provenance without treating non-official sources as untrusted by default."""
+    host = (urlsplit(url).hostname or "").casefold().rstrip(".")
+    if host in OFFICIAL_SOURCE_HOSTS:
+        return "official_primary" if reviewed else "official_unreviewed"
+    return "reviewed_alternative" if reviewed else "unreviewed_alternative"
+
+
+def source_review_qualifies(url: str, approved: bool, reviewer: str | None) -> bool:
+    """Require an explicit human review for alternatives; official provenance is separately classified."""
+    if not approved:
+        return False
+    if _source_tier(url, True) == "official_primary":
+        return True
+    actor = (reviewer or "").strip().casefold()
+    return bool(actor) and not actor.startswith(("collector:", "provider:", "system:", "automation:"))
+
+
+def _source_review_actor_type(url: str, approved: bool, reviewer: str | None) -> str:
+    if not approved:
+        return "unreviewed"
+    if _source_tier(url, True) == "official_primary":
+        return "official_provenance_review"
+    return "human" if source_review_qualifies(url, approved, reviewer) else "automated_or_unverified"
+
+
 def research_domains(query: str) -> list[str]:
     normalized = normalize_query(query)
     return [
-        domain for domain, markers in RESEARCH_MARKERS.items()
+        domain for domain, markers in (RESEARCH_MARKERS | SPECIALIZED_RESEARCH_MARKERS).items()
         if any(normalize_query(marker) in normalized for marker in markers)
     ]
+
+
+def risk_review_tier(query: str, domains: list[str] | None = None) -> str:
+    normalized = normalize_query(query)
+    high_risk_domain = bool({"finance", "stocks", "crypto", "policy"}.intersection(domains or research_domains(query)))
+    high_risk_subject = any(normalize_query(marker) in normalized for marker in HIGH_RISK_MARKERS)
+    return "strict_corroboration_and_human_review" if high_risk_domain or high_risk_subject else "human_review_required"
 
 
 def _assert_schema(conn: Any) -> None:
@@ -136,7 +188,7 @@ def _assess_topic(conn: Any, topic_id: UUID, run_id: UUID | None = None) -> dict
         raise EngineFailure("trend_topic_not_found")
     newest = observations[0]
     source_rows = conn.execute(
-        """SELECT s.id,s.url,s.source_name,s.valid_until,sr.approved,
+        """SELECT s.id,s.url,s.source_name,s.valid_until,sr.approved,sr.reviewer,
         (SELECT count(*) FROM evidence_facts f WHERE f.source_id=s.id
           AND f.verification_status='source_span_verified') AS verified_fact_count,
             (SELECT decision FROM trend_source_independence_reviews ir
@@ -144,13 +196,17 @@ def _assess_topic(conn: Any, topic_id: UUID, run_id: UUID | None = None) -> dict
         (SELECT comparison_group FROM trend_source_independence_reviews ir
           WHERE ir.topic_source_id=ts.id ORDER BY ir.created_at DESC LIMIT 1) AS comparison_group
         FROM trend_topic_sources ts JOIN research_sources s ON s.id=ts.research_source_id
-        JOIN LATERAL (SELECT approved FROM source_reviews r WHERE r.source_id=s.id
+        JOIN LATERAL (SELECT approved,reviewer FROM source_reviews r WHERE r.source_id=s.id
           ORDER BY review_sequence DESC LIMIT 1) sr ON true
         WHERE ts.topic_id=%s AND sr.approved AND s.valid_until>now()
         AND NOT EXISTS(SELECT 1 FROM research_sources n WHERE n.keyword_id=s.keyword_id
           AND n.url=s.url AND n.revision>s.revision)""",
         (topic_id,),
     ).fetchall()
+    source_rows = [
+        row for row in source_rows
+        if source_review_qualifies(str(row["url"]), bool(row["approved"]), row["reviewer"])
+    ]
     source_count = len(source_rows)
     fact_count = sum(int(row["verified_fact_count"]) for row in source_rows)
     independent_groups = {
@@ -204,13 +260,15 @@ def _assess_topic(conn: Any, topic_id: UUID, run_id: UUID | None = None) -> dict
     score = round(sum(float(weights[name]) * components[name] for name in weights), 2)
     reasons: list[str] = []
     if broad:
-        reasons.append("broad_query_requires_specific_event_or_official_data")
+        reasons.append("broad_query_requires_specific_event_and_verifiable_source")
     if source_count == 0:
-        reasons.append("awaiting_official_research")
-    elif fact_count < 3:
+        reasons.append("awaiting_reviewed_source_evidence")
+    elif source_count == 1:
+        reasons.append("single_source_limits_article_scope")
+    if fact_count < 3:
         reasons.append("fewer_than_three_source_span_verified_facts")
     if independent_count < 2:
-        reasons.append("two_independent_sources_not_human_verified")
+        reasons.append("independent_corroboration_not_established")
     if proposals:
         reasons.append("cross_geography_grouping_requires_human_review")
     if score < float(thresholds.get("minimum_score", 70)):
@@ -218,15 +276,14 @@ def _assess_topic(conn: Any, topic_id: UUID, run_id: UUID | None = None) -> dict
     reasons.append("reader_value_and_analysis_fit_require_human_review")
     decision = "held" if (
         broad
-        or source_count < int(thresholds.get("minimum_sources", 2))
+        or source_count == 0
         or fact_count < int(thresholds.get("minimum_verified_facts", 3))
-        or independent_count < int(thresholds.get("minimum_independent_sources", 2))
         or score < float(thresholds.get("minimum_score", 70))
         or proposals > 0
     ) else "review_required"
     snapshot = {
         "topic_id": str(topic_id),
-        "assessment_policy_version": "research-before-evidence-v1",
+        "assessment_policy_version": "reviewed-source-hierarchy-v2",
         "observation_ids": sorted(str(row["id"]) for row in observations),
         "source_ids": sorted(str(row["id"]) for row in source_rows),
         "verified_fact_count": fact_count,
@@ -404,8 +461,10 @@ def select_research_candidates(max_per_hour: int = 4) -> dict[str, Any]:
             "selected_count": len(selected),
             "selected": selected,
             "excluded_reason_counts": excluded,
-            "stage": "selected_for_official_research",
+            "stage": "selected_for_source_research",
+            "source_hierarchy": "official_preferred_reviewed_alternatives_allowed_v1",
             "official_research_executed": False,
+            "source_research_executed": False,
             "generation_provider_connected": False,
             "publish_ready": False,
             "idempotent_replay": False,
@@ -466,6 +525,7 @@ def state() -> dict[str, Any]:
             """SELECT ts.*,s.url,s.source_name,s.published_at,s.collected_at,s.is_primary,
             s.rights,s.access_policy,
             (SELECT approved FROM source_reviews r WHERE r.source_id=s.id ORDER BY r.review_sequence DESC LIMIT 1) AS latest_approved,
+            (SELECT reviewer FROM source_reviews r WHERE r.source_id=s.id ORDER BY r.review_sequence DESC LIMIT 1) AS latest_reviewer,
             (SELECT count(*) FROM evidence_facts f WHERE f.source_id=s.id AND f.verification_status='source_span_verified') AS verified_fact_count,
             (SELECT decision FROM trend_source_independence_reviews i WHERE i.topic_source_id=ts.id ORDER BY i.created_at DESC LIMIT 1) AS independence_decision,
             (SELECT comparison_group FROM trend_source_independence_reviews i WHERE i.topic_source_id=ts.id ORDER BY i.created_at DESC LIMIT 1) AS comparison_group
@@ -627,13 +687,14 @@ def link_reviewed_source(topic_id: UUID, source_id: UUID, link_reason: str, link
         source = conn.execute(
             """SELECT s.id,s.url,s.valid_until,s.rights,s.access_policy,s.is_primary,
             (SELECT approved FROM source_reviews r WHERE r.source_id=s.id ORDER BY r.review_sequence DESC LIMIT 1) approved,
+            (SELECT reviewer FROM source_reviews r WHERE r.source_id=s.id ORDER BY r.review_sequence DESC LIMIT 1) reviewer,
             (SELECT count(*) FROM evidence_facts f WHERE f.source_id=s.id AND f.verification_status='source_span_verified') facts,
             NOT EXISTS(SELECT 1 FROM research_sources n WHERE n.keyword_id=s.keyword_id AND n.url=s.url AND n.revision>s.revision) current
             FROM research_sources s WHERE s.id=%s""",
             (source_id,),
         ).fetchone()
         now_row = conn.execute("SELECT now() AS now").fetchone()
-        if now_row is None or source is None or not source["approved"] or not source["current"] or source["valid_until"] <= now_row["now"] or not source["facts"] or not source["rights"] or not source["access_policy"]:
+        if now_row is None or source is None or not source_review_qualifies(str(source["url"]), bool(source["approved"]), source["reviewer"]) or not source["current"] or source["valid_until"] <= now_row["now"] or not source["facts"] or not source["rights"] or not source["access_policy"]:
             raise EngineFailure("current_reviewed_source_with_verified_facts_required")
         inserted = conn.execute(
             """INSERT INTO trend_topic_sources(topic_id,research_source_id,link_reason,linked_by,idempotency_key)
@@ -713,13 +774,13 @@ def build_package(topic_id: UUID, run_id: UUID | None = None) -> dict[str, Any]:
                 ).fetchall()
                 observations = sorted([*observations, *extras], key=lambda row: (row["collected_at"], str(row["id"])))
         sources = conn.execute(
-            """SELECT s.*,r.approved AS latest_approved,
+            """SELECT s.*,r.approved AS latest_approved,r.reviewer AS latest_reviewer,
             coalesce(nullif(r.source_language,'und'),s.source_language) AS reviewed_language,
             ts.id AS topic_source_link_id,
             (SELECT decision FROM trend_source_independence_reviews ir WHERE ir.topic_source_id=ts.id ORDER BY ir.created_at DESC LIMIT 1) AS independence_decision,
             (SELECT comparison_group FROM trend_source_independence_reviews ir WHERE ir.topic_source_id=ts.id ORDER BY ir.created_at DESC LIMIT 1) AS comparison_group
             FROM trend_topic_sources ts JOIN research_sources s ON s.id=ts.research_source_id
-            LEFT JOIN LATERAL (SELECT approved,source_language FROM source_reviews sr WHERE sr.source_id=s.id ORDER BY review_sequence DESC LIMIT 1) r ON true
+            LEFT JOIN LATERAL (SELECT approved,reviewer,source_language FROM source_reviews sr WHERE sr.source_id=s.id ORDER BY review_sequence DESC LIMIT 1) r ON true
             WHERE ts.topic_id=%s ORDER BY s.collected_at,s.id""",
             (topic_id,),
         ).fetchall()
@@ -740,9 +801,19 @@ def build_package(topic_id: UUID, run_id: UUID | None = None) -> dict[str, Any]:
                 (source_ids or [UUID(int=0)],),
             ).fetchall()
         }
-        eligible_sources = [row for row in sources if row["latest_approved"] and row["id"] in current_source_ids and row["rights"] and row["access_policy"]]
+        eligible_sources = [
+            row for row in sources
+            if source_review_qualifies(str(row["url"]), bool(row["latest_approved"]), row["latest_reviewer"])
+            and row["id"] in current_source_ids and row["rights"] and row["access_policy"]
+        ]
         independent_groups = {row["comparison_group"] for row in eligible_sources if row["independence_decision"] == "independent" and row["comparison_group"]}
         verified_facts = [row for row in facts if any(s["id"] == row["source_id"] for s in eligible_sources)]
+        eligible_source_ids = {row["id"] for row in eligible_sources}
+        official_source_count = sum(
+            _source_tier(str(row["url"]), True) == "official_primary" for row in eligible_sources
+        )
+        reviewed_alternative_source_count = len(eligible_sources) - official_source_count
+        topic_domains = research_domains(topic["representative_query"])
         key = normalize_query(topic["representative_query"])
         thresholds = scoring_config["thresholds"]
         sufficient = (
@@ -775,7 +846,7 @@ def build_package(topic_id: UUID, run_id: UUID | None = None) -> dict[str, Any]:
                 for row in verified_facts
             ],
             "sources": [
-                {"source_id": str(row["id"]), "source_name": row["source_name"], "url": row["url"], "publisher": row["source_name"], "source_language": row["reviewed_language"], "published_at": row["published_at"].isoformat() if row["published_at"] else None, "collected_at": row["collected_at"].isoformat(), "is_primary": row["is_primary"], "rights": row["rights"], "access_policy": row["access_policy"], "current_review_approved": bool(row["latest_approved"]), "independence_review": row["independence_decision"] or "unreviewed", "comparison_group": row["comparison_group"]}
+                {"source_id": str(row["id"]), "source_name": row["source_name"], "url": row["url"], "publisher": row["source_name"], "source_language": row["reviewed_language"], "published_at": row["published_at"].isoformat() if row["published_at"] else None, "collected_at": row["collected_at"].isoformat(), "is_primary": row["is_primary"], "evidence_tier": _source_tier(str(row["url"]), row["id"] in eligible_source_ids), "rights": row["rights"], "access_policy": row["access_policy"], "current_review_approved": bool(row["latest_approved"]), "review_actor_type": _source_review_actor_type(str(row["url"]), bool(row["latest_approved"]), row["latest_reviewer"]), "independence_review": row["independence_decision"] or "unreviewed", "comparison_group": row["comparison_group"]}
                 for row in sources
             ],
             "background": [{"fact_id": str(row["id"]), "source_id": str(row["source_id"]), "source_excerpt": row["source_excerpt"]} for row in verified_facts],
@@ -787,6 +858,31 @@ def build_package(topic_id: UUID, run_id: UUID | None = None) -> dict[str, Any]:
             "recommended_outline": ["What the observed search signal says (with geography and collection time)", "Verified facts and source-linked context", "What the available evidence does not establish", "Cautious analysis questions for human editorial review", "References"],
             "verified_fact_count": len(verified_facts),
             "eligible_source_count": len(eligible_sources),
+            "source_policy": "official_sources_preferred_reviewed_alternatives_allowed",
+            "source_assessment": {
+                "mode": (
+                    "no_current_reviewed_source" if not eligible_sources else
+                    "single_source_limited" if len(eligible_sources) == 1 else
+                    "multi_source_independence_unconfirmed" if len(independent_groups) < 2 else
+                    "independent_sources_reviewed"
+                ),
+                "official_primary_count": official_source_count,
+                "reviewed_alternative_count": reviewed_alternative_source_count,
+                "independent_source_group_count": len(independent_groups),
+                "source_review_is_not_claim_entailment_or_publication_approval": True,
+            },
+            "draft_evidence_status": (
+                "single_source_limited" if evidence_collected and len(eligible_sources) == 1 else
+                "multi_source_review_pending" if evidence_collected else
+                "insufficient_verifiable_evidence"
+            ),
+            "draft_authoring_conditions": [
+                "A draft is separate from evidence sufficiency and requires source use conditions to be clear.",
+                "A single source permits only narrow, directly attributed claims and explicit limitations.",
+                "Semantic accuracy, naturalness, rights, freshness, and human editorial review remain separate gates.",
+                "No Research Package state grants generation_ready, auto_eligible, publish_ready, or Blogger permission.",
+            ],
+            "risk_review_tier": risk_review_tier(topic["representative_query"], topic_domains),
             "human_verified_independent_source_groups": len(independent_groups),
             "evidence_stage": "complete_source_spans_pending_human_review" if evidence_collected else "evidence_collection_incomplete",
             "generation_ready": False,

@@ -1967,10 +1967,16 @@ def save_article_revision(request: ArticleEditorialRevision) -> dict[str, Any]:
     )
     # Source identity and verification are derived from stored evidence, not client claims.
     seo_values = supplied_seo.model_dump(mode="python")
+    source_metadata = [
+        {"title": str(item.get("source_name") or ""), "url": str(item["url"])}
+        for item in source["sources"] if item.get("url")
+    ]
     seo_values.update({
+        "sources": source_metadata,
         "official_sources": [
             {"title": str(item.get("source_name") or ""), "url": str(item["url"]), "official_status": "unverified"}
             for item in source["sources"] if item.get("url")
+            and (urlsplit(str(item["url"])).hostname or "").casefold() in topics.OFFICIAL_SOURCE_HOSTS
         ],
         "blogger_labels": request.blogger_labels,
         "fact_verified_at": None,
