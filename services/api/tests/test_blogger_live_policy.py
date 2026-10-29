@@ -165,14 +165,16 @@ def test_live_public_publish_gate_blocks_before_transport_request(
     assert called is False
 
 
+@pytest.mark.parametrize(("readback_status", "verified"), [("DRAFT", True), ("LIVE", False)])
 def test_live_draft_is_read_back_before_success_is_recorded(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, readback_status: str, verified: bool,
 ) -> None:
     from woori import blogger_writes
 
     blog_record_id = UUID("00000000-0000-0000-0000-000000000001")
     oauth_id = UUID("00000000-0000-0000-0000-000000000002")
     calls: list[tuple[str, str]] = []
+    finish_calls: list[tuple[object, ...]] = []
 
     class FakeConnection:
         class Result:
@@ -191,6 +193,8 @@ def test_live_draft_is_read_back_before_success_is_recorded(
                 })
             if "INSERT INTO blogger_write_operations" in query:
                 return self.Result({"idempotency_key": params[0]})
+            if "UPDATE blogger_write_operations" in query:
+                finish_calls.append(params)
             return self.Result({})
 
     @contextmanager
@@ -209,14 +213,21 @@ def test_live_draft_is_read_back_before_success_is_recorded(
             return httpx.Response(200, json={"id": "123", "url": "https://trend-ko.blogspot.com/"}, request=request)
         if request.method == "POST":
             return httpx.Response(200, json={"id": "456", "blog": {"id": "123"}, "status": "DRAFT"}, request=request)
-        return httpx.Response(200, json={"id": "456", "blog": {"id": "123"}, "status": "DRAFT"}, request=request)
+        return httpx.Response(200, json={"id": "456", "blog": {"id": "123"}, "status": readback_status}, request=request)
 
-    result = blogger_writes.BloggerLivePublisher(httpx.MockTransport(handler)).create_draft(
-        "draft-once", blog_record_id, "검증 초안", "<p>비공개 검증 초안</p>"
-    )
-    assert result["post_id"] == "456"
-    assert result["live"] is True and result["simulation_only"] is False
-    assert result["post_verified"] is True
+    publisher = blogger_writes.BloggerLivePublisher(httpx.MockTransport(handler))
+    if verified:
+        result = publisher.create_draft(
+            "draft-once", blog_record_id, "검증 초안", "<p>비공개 검증 초안</p>"
+        )
+        assert result["post_id"] == "456"
+        assert result["live"] is True and result["simulation_only"] is False
+        assert result["post_verified"] is True
+        assert finish_calls[-1][0] == "succeeded"
+    else:
+        with pytest.raises(GoogleFailure, match="draft_readback_mismatch"):
+            publisher.create_draft("draft-once", blog_record_id, "검증 초안", "<p>비공개 검증 초안</p>")
+        assert finish_calls[-1][0] == "failed"
     assert [method for method, _ in calls] == ["GET", "POST", "GET"]
     assert calls[-1][1].endswith("/blogs/123/posts/456")
 
