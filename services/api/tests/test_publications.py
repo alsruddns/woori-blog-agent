@@ -121,6 +121,86 @@ def test_disabled_real_publisher_never_falls_back_to_network() -> None:
         DisabledRealBloggerPublisher().publish("123", {"title": "test"})
 
 
+def test_scheduled_first_post_status_exposes_exact_blockers_without_writing(monkeypatch: Any) -> None:
+    import hashlib
+    from contextlib import contextmanager
+
+    from woori import external_policy
+
+    import_id, import_version_id, content_version_id, blog_record_id = (uuid4() for _ in range(4))
+    body = "검증된 예약 원고 본문"
+    digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
+    blog_api_id = "3321654108096579717"
+    class FakeResult:
+        def __init__(self, one: Any = None, many: list[Any] | None = None) -> None:
+            self.one, self.many = one, many or []
+
+        def fetchone(self) -> Any:
+            return self.one
+
+        def fetchall(self) -> list[Any]:
+            return self.many
+
+    class FakeConnection:
+        def execute(self, sql: str, params: Any = None) -> FakeResult:
+            if "FROM external_content_imports i" in sql:
+                return FakeResult({
+                    "id": import_id, "generation_method": "chatgpt_scheduled_export",
+                    "language_code": "ko", "import_title": "테스트 예약 원고",
+                    "import_version_id": import_version_id, "version_number": 1,
+                    "title": "테스트 예약 원고", "body_markdown": body,
+                    "content_sha256": digest, "content_version_id": content_version_id,
+                })
+            if "FROM external_content_import_assessments" in sql:
+                return FakeResult({"id": uuid4(), "machine_passed": True, "publish_ready": False})
+            if "FROM external_content_import_review_events" in sql:
+                return FakeResult({"event_type": "editorial_review_passed", "reviewer_label": "editor",
+                                   "sources_examined": True, "claims_checked": True, "rights_reviewed": True})
+            if "FROM scheduled_publication_policy_events" in sql and "ORDER BY id DESC LIMIT 1" in sql:
+                return FakeResult({"id": 1, "action": "enabled", "approved_blog_ids": [blog_record_id],
+                                   "daily_limit": 1, "actor_label": "owner", "reason": "test"})
+            if "SELECT EXISTS(SELECT 1 FROM publishing_jobs" in sql:
+                return FakeResult({"any_published": False})
+            if "FROM scheduled_first_publication_events e" in sql and "NOT EXISTS" in sql:
+                return FakeResult(None)
+            if "FROM scheduled_publication_policy_events" in sql and "LIMIT 20" in sql:
+                return FakeResult(many=[])
+            if "FROM scheduled_first_publication_events" in sql and "LIMIT 20" in sql:
+                return FakeResult(many=[])
+            if "publication.scheduled_auto.connection_check" in sql:
+                return FakeResult(None)
+            if "scope_type='global'" in sql:
+                return FakeResult({"emergency_stopped": False})
+            if "FROM audit_events" in sql and "publication.scheduled_auto.evidence_assessed" in sql:
+                return FakeResult({"payload": {"status": "passed", "reasons": []}, "created_at": datetime.now(UTC)})
+            if "FROM blogger_blogs b LEFT JOIN google_connections" in sql:
+                from woori.google_http import WRITE_SCOPE
+                return FakeResult(many=[{
+                    "id": blog_record_id, "blog_id": blog_api_id, "language_code": "ko",
+                    "display_name": "한국어 블로그", "url": "https://trend-ko.blogspot.com",
+                    "active": True, "connection_verified_at": None, "oauth_status": "connected",
+                    "scopes": [WRITE_SCOPE],
+                }])
+            if "FROM publishing_jobs j LEFT JOIN publishing_records" in sql:
+                return FakeResult(many=[])
+            raise AssertionError(f"Unexpected query in read-only status test: {sql}")
+
+    @contextmanager
+    def fake_connection():
+        yield FakeConnection()
+
+    monkeypatch.setattr(publications, "connection", fake_connection)
+    monkeypatch.setattr(external_policy, "_blogger_policy_approval", lambda: {"scope": ["test"]})
+    monkeypatch.setattr(external_policy, "_scheduled_publication_approval", lambda _blog_id: {"scope": ["test"]})
+    result = publications.scheduled_first_post_status(import_id)
+
+    assert result["body_sha256"] == digest
+    assert result["scheduled_auto_enabled"] is True
+    assert result["actual_write_performed"] is False
+    assert result["targets"][0]["can_record_first_approval"] is True
+    assert result["targets"][0]["approval_blockers"] == []
+
+
 def test_publication_state_machine_rejects_skipped_review_and_terminal_changes() -> None:
     assert transition_allowed("human_review_pending", "human_review_approved")
     assert not transition_allowed("human_review_pending", "publication_queued")

@@ -6,7 +6,7 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path?: s
   if (!process.env.ADMIN_TOKEN) return NextResponse.json({ error: "API unavailable" }, { status: 503 });
   const path = (await context.params).path ?? [];
   const route = path.join("/");
-  const allowed = request.method === "GET" && (route === "" || route === "scheduled-auto-policy" || route === "post-publication-reviews")
+  const allowed = request.method === "GET" && (route === "" || route === "scheduled-auto-policy" || route === "scheduled-auto-first-post" || route === "post-publication-reviews")
     ? true
     : request.method === "POST" && (route === "requests" || /^jobs\/[a-f0-9-]+\/simulate$/.test(route) || /^blogs\/[a-f0-9-]+\/sync-readonly$/.test(route))
       ? true

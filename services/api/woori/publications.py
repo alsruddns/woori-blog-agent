@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import UTC, datetime, timedelta
-from typing import Any, Literal, cast
+from typing import Annotated, Any, Literal, cast
 from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -424,6 +424,42 @@ def approve_scheduled_first_post(request: ScheduledFirstPostApprovalInput) -> di
         ).fetchone()
         if not assessed or not assessed["machine_passed"]:
             raise HTTPException(409, "The exact imported version requires a passing machine assessment")
+        editorial_review = conn.execute(
+            """SELECT event_type,sources_examined,claims_checked,rights_reviewed
+            FROM external_content_import_review_events
+            WHERE import_id=%s AND version_id=%s ORDER BY created_at DESC,id DESC LIMIT 1""",
+            (request.import_id, request.import_version_id),
+        ).fetchone()
+        if (not editorial_review or editorial_review["event_type"] != "editorial_review_passed"
+                or not editorial_review["sources_examined"] or not editorial_review["claims_checked"]
+                or not editorial_review["rights_reviewed"]):
+            raise HTTPException(409, "The exact imported version requires a completed positive editorial review")
+        evidence = conn.execute(
+            """SELECT payload FROM audit_events
+            WHERE event_type='publication.scheduled_auto.evidence_assessed'
+              AND payload->>'import_id'=%s AND payload->>'import_version_id'=%s
+              AND payload->>'version_sha256'=%s ORDER BY id DESC LIMIT 1""",
+            (str(request.import_id), str(request.import_version_id), str(row["content_sha256"])),
+        ).fetchone()
+        if not evidence or evidence["payload"].get("status") != "passed":
+            raise HTTPException(409, "The exact scheduled version requires a passing evidence assessment")
+        stopped = conn.execute(
+            "SELECT emergency_stopped FROM publication_mode_settings WHERE scope_type='global' AND scope_key=''"
+        ).fetchone()
+        if not stopped or stopped["emergency_stopped"]:
+            raise HTTPException(409, "Publication emergency stop is active or unavailable")
+        blog_connection = conn.execute(
+            """SELECT g.status,g.scopes FROM blogger_blogs b
+            JOIN google_connections g ON g.id=b.oauth_connection_id
+            WHERE b.id=%s AND b.active""",
+            (request.blog_id,),
+        ).fetchone()
+        from .google_http import WRITE_SCOPE
+        if not blog_connection or blog_connection["status"] != "connected" or list(blog_connection["scopes"] or []) != [WRITE_SCOPE]:
+            raise HTTPException(409, "The target Blogger requires an active write-scope OAuth connection")
+        if (not external_policy._blogger_policy_approval()
+                or not external_policy._scheduled_publication_approval(str(request.blog_id))):
+            raise HTTPException(409, "Scheduled Blogger live-write policy is unavailable for this blog")
         existing = conn.execute(
             "SELECT id FROM scheduled_first_publication_events WHERE idempotency_key=%s",
             (request.idempotency_key,),
@@ -452,6 +488,158 @@ def approve_scheduled_first_post(request: ScheduledFirstPostApprovalInput) -> di
         return {"event_id": saved["id"], "created_at": saved["created_at"],
                 "public_write_performed": False, "approved_blog_id": str(request.blog_id),
                 "content_version_id": str(request.content_version_id), "body_sha256": digest}
+
+
+@router.get("/scheduled-auto-first-post")
+def scheduled_first_post_status(import_id: Annotated[UUID, Query()]) -> dict[str, Any]:
+    """Expose the exact scheduled-import publication gates for its detail view."""
+    from .google_http import WRITE_SCOPE
+
+    with connection() as conn:
+        imported = conn.execute(
+            """SELECT i.id,i.generation_method,i.language_code,i.title AS import_title,
+                v.id AS import_version_id,v.version_number,v.title,v.body_markdown,
+                v.content_sha256,link.content_version_id
+            FROM external_content_imports i
+            LEFT JOIN LATERAL (
+              SELECT * FROM external_content_import_versions WHERE import_id=i.id
+              ORDER BY version_number DESC LIMIT 1
+            ) v ON true
+            LEFT JOIN external_content_import_content_links link
+              ON link.import_id=i.id AND link.import_version_id=v.id
+            WHERE i.id=%s""",
+            (import_id,),
+        ).fetchone()
+        if not imported:
+            raise HTTPException(404, "Scheduled manuscript import was not found")
+
+        version_id = imported.get("import_version_id")
+        content_version_id = imported.get("content_version_id")
+        body = str(imported.get("body_markdown") or "")
+        body_sha256 = hashlib.sha256(body.encode("utf-8")).hexdigest()
+        assessment = conn.execute(
+            """SELECT id,machine_passed,publish_ready,assessed_at FROM external_content_import_assessments
+            WHERE import_id=%s AND version_id=%s ORDER BY assessed_at DESC,id DESC LIMIT 1""",
+            (import_id, version_id),
+        ).fetchone() if version_id else None
+        review = conn.execute(
+            """SELECT event_type,reviewer_label,reason,sources_examined,claims_checked,
+                rights_reviewed,created_at FROM external_content_import_review_events
+            WHERE import_id=%s AND version_id=%s ORDER BY created_at DESC,id DESC LIMIT 1""",
+            (import_id, version_id),
+        ).fetchone() if version_id else None
+        policy = _scheduled_auto_state(conn)
+        policy_event = policy.get("policy_event") or {}
+        approved_blog_ids = {str(value) for value in policy_event.get("approved_blog_ids", [])}
+        global_setting = conn.execute(
+            "SELECT emergency_stopped FROM publication_mode_settings WHERE scope_type='global' AND scope_key=''"
+        ).fetchone()
+        emergency_stopped = bool(global_setting and global_setting.get("emergency_stopped"))
+        evidence_assessment = conn.execute(
+            """SELECT payload,created_at FROM audit_events
+            WHERE event_type='publication.scheduled_auto.evidence_assessed'
+              AND payload->>'import_id'=%s AND payload->>'import_version_id'=%s
+            ORDER BY id DESC LIMIT 1""",
+            (str(import_id), str(version_id) if version_id else ""),
+        ).fetchone() if version_id else None
+
+        blogs = conn.execute(
+            """SELECT b.id,b.blog_id,b.language_code,b.display_name,b.url,b.active,
+                b.connection_verified_at,g.status AS oauth_status,g.scopes
+            FROM blogger_blogs b LEFT JOIN google_connections g ON g.id=b.oauth_connection_id
+            WHERE b.language_code=%s ORDER BY b.active DESC,b.display_name,b.url""",
+            (imported["language_code"],),
+        ).fetchall()
+        targets: list[dict[str, Any]] = []
+        for blog in blogs:
+            blog_id = str(blog["id"])
+            in_scope = blog_id in approved_blog_ids
+            active_approval = None
+            if version_id and content_version_id:
+                active_approval = conn.execute(
+                    """SELECT e.id,e.actor_label,e.reason,e.created_at FROM scheduled_first_publication_events e
+                    WHERE e.action='approved' AND e.blog_id=%s AND e.import_id=%s
+                      AND e.import_version_id=%s AND e.content_version_id=%s AND e.body_sha256=%s
+                      AND NOT EXISTS (SELECT 1 FROM scheduled_first_publication_events r
+                        WHERE r.action='revoked' AND r.blog_id=e.blog_id AND r.import_id=e.import_id
+                          AND r.import_version_id=e.import_version_id AND r.content_version_id=e.content_version_id
+                          AND r.body_sha256=e.body_sha256 AND r.id>e.id)
+                    ORDER BY e.id DESC LIMIT 1""",
+                    (blog["id"], import_id, version_id, content_version_id, body_sha256),
+                ).fetchone()
+            jobs = conn.execute(
+                """SELECT j.id,j.status,j.publication_state,j.scheduled_at,j.updated_at,
+                    j.simulation_only,j.adapter_type,r.remote_post_id,r.remote_url,r.remote_status,
+                    r.remote_verified_at,r.published_at
+                FROM publishing_jobs j LEFT JOIN publishing_records r ON r.job_id=j.id
+                WHERE j.content_version_id=%s AND j.blog_id=%s
+                ORDER BY j.updated_at DESC,j.id DESC LIMIT 10""",
+                (content_version_id, blog["id"]),
+            ).fetchall() if content_version_id else []
+            remote_write_policy = bool(
+                external_policy._blogger_policy_approval()
+                and external_policy._scheduled_publication_approval(blog_id)
+            )
+            blog_jobs = [dict(job) for job in jobs]
+            blockers: list[str] = []
+            if imported["generation_method"] != "chatgpt_scheduled_export":
+                blockers.append("not_a_codex_scheduled_export")
+            if not content_version_id:
+                blockers.append("scheduled_version_not_promoted")
+            if not assessment or not assessment["machine_passed"]:
+                blockers.append("latest_version_machine_assessment_not_passed")
+            if (not review or review.get("event_type") != "editorial_review_passed"
+                    or not review.get("sources_examined") or not review.get("claims_checked")
+                    or not review.get("rights_reviewed")):
+                blockers.append("editorial_review_not_passed")
+            if not evidence_assessment or evidence_assessment["payload"].get("status") != "passed":
+                blockers.append("scheduled_evidence_assessment_not_passed")
+            if not policy.get("enabled"):
+                blockers.append("scheduled_auto_policy_inactive")
+            if emergency_stopped:
+                blockers.append("publication_emergency_stop_active")
+            if not blog["active"] or not in_scope:
+                blockers.append("blog_not_in_active_scheduled_scope")
+            if blog["oauth_status"] != "connected" or list(blog["scopes"] or []) != [WRITE_SCOPE]:
+                blockers.append("blogger_write_oauth_not_verified")
+            if not remote_write_policy:
+                blockers.append("scheduled_live_write_policy_not_available")
+            if active_approval:
+                blockers.append("first_publication_already_approved")
+            if any(job.get("remote_post_id") and not job.get("simulation_only") for job in blog_jobs):
+                blockers.append("remote_publication_already_recorded")
+            targets.append({
+                **dict(blog),
+                "in_scheduled_scope": in_scope,
+                "first_approval": dict(active_approval) if active_approval else None,
+                "can_record_first_approval": not blockers,
+                "approval_blockers": blockers,
+                "remote_write_policy_available": remote_write_policy,
+                "jobs": blog_jobs,
+            })
+
+        return {
+            "import_id": str(import_id),
+            "generation_method": imported["generation_method"],
+            "language_code": imported["language_code"],
+            "title": imported["title"] or imported["import_title"],
+            "import_version_id": str(version_id) if version_id else None,
+            "version_number": imported.get("version_number"),
+            "content_version_id": str(content_version_id) if content_version_id else None,
+            "body_sha256": body_sha256,
+            "assessment": dict(assessment) if assessment else None,
+            "editorial_review": dict(review) if review else None,
+            "evidence_assessment": {
+                "status": evidence_assessment["payload"].get("status"),
+                "reasons": evidence_assessment["payload"].get("reasons", []),
+                "created_at": evidence_assessment["created_at"],
+            } if evidence_assessment else None,
+            "scheduled_auto_enabled": bool(policy.get("enabled")),
+            "emergency_stopped": emergency_stopped,
+            "targets": targets,
+            "publish_ready": False,
+            "actual_write_performed": False,
+        }
 
 
 @router.post("/scheduled-auto/verify-connections")
