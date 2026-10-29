@@ -33,6 +33,23 @@ def test_blogger_gate_requires_owner_approval_but_does_not_change_other_provider
     assert blocked["block_reason"] == "manual_zero_cost_review_required"
     assert external_policy.PROVIDERS["federal_reserve"]["zero_cost_reviewed"] is True
 
+
+def test_scheduled_public_approval_is_scoped_and_does_not_enable_manual_lane(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(external_policy, "_blogger_policy_approval", lambda: {"scope": ["blogger_read"]})
+    monkeypatch.setattr(external_policy, "_blogger_public_publish_approval", lambda: None)
+    monkeypatch.setattr(
+        external_policy, "_scheduled_publication_approval",
+        lambda blog_id: {"scope": ["scheduled_publication"]} if blog_id == "blog-record-ko" else None,
+    )
+
+    assert not external_policy._blogger_operation_is_approved("blogger_public_publish")
+    with external_policy.scheduled_publication_context("blog-record-ko"):
+        assert external_policy._blogger_operation_is_approved("blogger_public_publish")
+    with external_policy.scheduled_publication_context("different-blog"):
+        assert not external_policy._blogger_operation_is_approved("blogger_public_publish")
+
     approval = {
         "created_at": datetime.now(UTC),
         "scope": sorted(external_policy.BLOGGER_APPROVAL_SCOPE),

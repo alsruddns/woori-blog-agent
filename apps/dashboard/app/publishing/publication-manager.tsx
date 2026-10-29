@@ -20,7 +20,9 @@ export type PublicationData = {
   mode_policy: { migration_required: boolean; default_mode: string; settings: ModeSetting[];
     languages: { code: string; display_name: string; active: boolean }[];
     blogs: { id: string; language_code: string; url: string; display_name: string; active: boolean }[];
-    emergency_stopped: boolean; operations_auto_approved: false; live_auto_enabled: false; real_writes_enabled: false };
+    emergency_stopped: boolean; operations_auto_approved: false; live_auto_enabled: false; real_writes_enabled: false;
+    scheduled_auto_policy?: { enabled: boolean; policy_event?: { approved_blog_ids?: string[]; daily_limit?: number } | null;
+      first_post_approval?: Record<string, unknown> | null; first_post_confirmed?: boolean; trends_lane_affected: false } };
   auto_candidate_count: number; auto_runtime_status: string;
   operational_limits?: {timezone:string;global_daily:number;language_daily:Record<string,number|null>;language_hourly:Record<string,number>;english_daily_policy:string;blog_minimum_interval_minutes:number;account_minimum_interval_minutes:number};
 };
@@ -39,6 +41,10 @@ export default function PublicationManager({ initial }: { initial: PublicationDa
   const [activeTab, setActiveTab] = useState<string>(view);
   const [emergencyBusy, setEmergencyBusy] = useState(false);
   const [notice,setNotice]=useState("");
+  const [scheduledBlogs,setScheduledBlogs]=useState<string[]>([]);
+  const [scheduledActor,setScheduledActor]=useState("운영자");
+  const [scheduledBusy,setScheduledBusy]=useState(false);
+  const [scheduledConnectionBusy,setScheduledConnectionBusy]=useState(false);
   const [scopeType,setScopeType]=useState<"global"|"language"|"blog">("global");
   const [scopeKey,setScopeKey]=useState("");
   const [selectedMode,setSelectedMode]=useState<"manual"|"auto">((initialGlobalMode?.configured_mode as "manual"|"auto")??"manual");
@@ -62,6 +68,31 @@ export default function PublicationManager({ initial }: { initial: PublicationDa
       if (!r.ok) throw new Error("긴급 정지를 기록하지 못했습니다."); await refresh(); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "정지 요청 실패"); }
     finally { setEmergencyBusy(false); }
+  }
+  async function setScheduledAuto(action:"enable"|"disable"){
+    const confirmation=action==="enable"?"ENABLE SCHEDULED AUTO PUBLICATION":"STOP SCHEDULED AUTO PUBLICATION";
+    const scope=action==="enable"?scheduledBlogs:(data.mode_policy.scheduled_auto_policy?.policy_event?.approved_blog_ids??[]);
+    if(action==="enable"&&scope.length===0){setError("예약 원고 자동 발행 대상 블로그를 선택하세요.");return;}
+    if(!window.confirm(`${action==="enable"?"선택한 블로그의 예약 원고 자동 공개 발행을 승인합니다.":"예약 원고 자동 발행을 중지합니다."}\n\n${confirmation}`))return;
+    setScheduledBusy(true);setError("");setNotice("");
+    try{
+      const response=await fetch("/api/publications/scheduled-auto-policy",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,blog_ids:scope,daily_limit:1,actor_label:scheduledActor,reason:action==="enable"?"Authenticated operator explicitly enabled scheduled-export-only publication.":"Authenticated operator disabled scheduled-export-only publication.",idempotency_key:`scheduled-auto-${action}-${crypto.randomUUID()}`,confirmation})});
+      const result=await response.json();if(!response.ok)throw new Error(String(result.detail??"예약 원고 자동 발행 설정을 저장하지 못했습니다."));
+      setNotice(action==="enable"?"정책 승인 기록을 저장했습니다. 실제 첫 공개 게시 전에는 원고·블로그별 최초 승인이 추가로 필요합니다.":"예약 원고 자동 발행을 중지했습니다.");
+      await refresh();
+    }catch(cause){setError(cause instanceof Error?cause.message:"예약 원고 정책 변경 실패");}
+    finally{setScheduledBusy(false);}
+  }
+  async function verifyScheduledConnections(){
+    if(scheduledBlogs.length===0){setError("먼저 확인할 Blogger 블로그를 선택하세요.");return;}
+    setScheduledConnectionBusy(true);setError("");setNotice("");
+    try{
+      const response=await fetch("/api/publications/scheduled-auto/verify-connections",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({blog_ids:scheduledBlogs})});
+      const result=await response.json();if(!response.ok)throw new Error(String(result.detail??"Blogger 연결을 확인하지 못했습니다."));
+      setNotice(result.all_verified?"선택한 블로그의 Blogger 읽기 연결과 ID를 확인했습니다. 이 확인은 글을 작성하거나 공개하지 않습니다.":"일부 Blogger 연결을 확인하지 못했습니다. 상세 상태를 점검한 뒤 다시 시도하세요.");
+      await refresh();
+    }catch(cause){setError(cause instanceof Error?cause.message:"Blogger 연결 확인 실패");}
+    finally{setScheduledConnectionBusy(false);}
   }
   function chooseScope(type:"global"|"language"|"blog",key=""){
     setScopeType(type);setScopeKey(key);
@@ -125,6 +156,17 @@ export default function PublicationManager({ initial }: { initial: PublicationDa
       <h3>코드상 발행 안전 상한</h3><p>KST · 전체 {data.operational_limits?.global_daily??"—"}건/일 · 영어는 잔여량 우선 · 블로그 간격 {data.operational_limits?.blog_minimum_interval_minutes??"—"}분 · Blogger 계정 간격 {data.operational_limits?.account_minimum_interval_minutes??"—"}분</p>
       <ul>{Object.entries(data.operational_limits?.language_daily??{}).map(([code,limit])=><li key={code}>{languageLabel(code)} 일일 {limit??"전역 잔여량"}건 · 시간당 {data.operational_limits?.language_hourly[code]??"—"}건</li>)}</ul>
       <h3>저장된 범위별 설정</h3><ul>{data.mode_policy.settings.map(item=><li key={`${item.scope_type}-${item.scope_key}`}>{item.scope_type}:{item.scope_key||"global"} · {item.configured_mode} · {item.daily_auto_limit}건/일 · {item.minimum_interval_minutes}분</li>)}</ul>
+      <section className="workspace-panel" aria-labelledby="scheduled-auto-title">
+        <h3 id="scheduled-auto-title">예약 원고 전용 자동 공개 발행</h3>
+        <p>현재 상태: {data.mode_policy.scheduled_auto_policy?.enabled?"활성":"중지"} · Trends 발행 정책과 분리 · 기존 사람 승인 기록은 변경하지 않습니다.</p>
+        <label>운영자 표시 이름<input value={scheduledActor} onChange={event=>setScheduledActor(event.target.value)} maxLength={120}/></label>
+        <fieldset><legend>승인 대상 Blogger 블로그</legend>{data.mode_policy.blogs.filter(item=>item.active).map(item=><label key={item.id}><input type="checkbox" checked={scheduledBlogs.includes(item.id)} onChange={event=>setScheduledBlogs(current=>event.target.checked?[...new Set([...current,item.id])]:current.filter(id=>id!==item.id))}/>{item.display_name} · {item.url}</label>)}</fieldset>
+        <button className="secondary-button" disabled={scheduledConnectionBusy||scheduledBusy} onClick={()=>void verifyScheduledConnections()}>{scheduledConnectionBusy?"연결 확인 중…":"선택 블로그 읽기 연결 확인"}</button>
+        {data.mode_policy.scheduled_auto_policy?.enabled
+          ? <button className="secondary-button" disabled={scheduledBusy} onClick={()=>void setScheduledAuto("disable")}>예약 원고 자동 발행 중지</button>
+          : <button disabled={scheduledBusy} onClick={()=>void setScheduledAuto("enable")}>선택 블로그의 예약 원고 Auto 승인</button>}
+        <p>일일 상한은 시작값 1건입니다. 첫 공개 게시에는 원고 버전·본문 해시·대상 블로그를 묶은 별도 확인이 필요합니다. 실제 게시 호출은 승인·근거·권리·중복 조건을 Worker가 다시 검사합니다.</p>
+      </section>
       {notice&&<p role="status">{notice}</p>}
       <button className="secondary-button" disabled={emergencyBusy || data.mode_policy.emergency_stopped} onClick={() => void emergencyStop()}>{data.mode_policy.emergency_stopped ? "긴급 정지 활성" : "긴급 발행 정지"}</button>
       <p>발행 한도는 상한입니다. 이 화면은 Blogger 실제 게시를 수행하지 않습니다.</p>

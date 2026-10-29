@@ -573,9 +573,10 @@ def test_oauth_denied_expired_scope_and_revocation(
     with pytest.raises(GoogleFailure, match="revoked"):
         oauth.access_token(connection_id, force=True)
     row = sandbox.execute(
-        "SELECT status,refresh_ciphertext FROM google_connections WHERE id=%s", (connection_id,)
+        "SELECT status,access_ciphertext,refresh_ciphertext FROM google_connections WHERE id=%s", (connection_id,)
     ).fetchone()
-    assert row["status"] == "revoked" and row["refresh_ciphertext"] is None
+    assert row["status"] == "revoked" and row["refresh_ciphertext"] is not None
+    assert row["access_ciphertext"] is not None
     assert "do-not-log-this" not in str(
         sandbox.execute("SELECT payload FROM audit_events").fetchall()
     )

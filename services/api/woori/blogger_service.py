@@ -495,6 +495,7 @@ def test_connection(blog_id: UUID) -> dict[str, Any]:
     return {
         "blog_id": remote.get("id"),
         "name": remote.get("name"),
+        "url": remote.get("url"),
         "posts": remote.get("posts"),
         "tested": True,
     }

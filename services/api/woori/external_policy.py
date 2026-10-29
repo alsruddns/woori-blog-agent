@@ -179,6 +179,9 @@ TERMS_REVIEW_DUE = date(2027, 1, 26)
 _lock = threading.Lock()
 _windows: dict[tuple[str, int], deque[float]] = {}
 _external_run_id: ContextVar[str | None] = ContextVar("external_run_id", default=None)
+_scheduled_publication_blog_id: ContextVar[str | None] = ContextVar(
+    "scheduled_publication_blog_id", default=None
+)
 
 
 @contextmanager
@@ -188,6 +191,16 @@ def external_run(run_id: str) -> Iterator[None]:
         yield
     finally:
         _external_run_id.reset(token)
+
+
+@contextmanager
+def scheduled_publication_context(blog_id: str) -> Iterator[None]:
+    """Scope a live-write approval check to the scheduled-only worker and one blog."""
+    token = _scheduled_publication_blog_id.set(blog_id)
+    try:
+        yield
+    finally:
+        _scheduled_publication_blog_id.reset(token)
 
 
 def _dotenv_names() -> dict[str, str]:
@@ -268,6 +281,9 @@ def _blogger_operation_is_approved(operation: str) -> bool:
     if approval is None:
         return False
     if operation == "blogger_public_publish":
+        scoped_blog_id = _scheduled_publication_blog_id.get()
+        if scoped_blog_id is not None:
+            return _scheduled_publication_approval(scoped_blog_id) is not None
         return _blogger_public_publish_approval() is not None
     permitted = {
         "blogger_read": "blogger_read",
@@ -306,6 +322,23 @@ def _blogger_public_publish_approval() -> dict[str, Any] | None:
     ):
         return None
     return {"created_at": row["created_at"], "scope": ["public_post_publish"]}
+
+
+def _scheduled_publication_approval(blog_id: str) -> dict[str, Any] | None:
+    """Scheduled approval is usable only inside its scoped worker context."""
+    try:
+        from .db import connection
+
+        with connection() as conn:
+            row = conn.execute(
+                """SELECT approved_blog_ids,created_at FROM scheduled_publication_policy_events
+                WHERE action='enabled' ORDER BY id DESC LIMIT 1"""
+            ).fetchone()
+    except (psycopg.Error, OSError):
+        return None
+    if not row or str(blog_id) not in {str(value) for value in row["approved_blog_ids"]}:
+        return None
+    return {"created_at": row["created_at"], "scope": ["scheduled_publication"]}
 
 
 def status() -> dict[str, Any]:

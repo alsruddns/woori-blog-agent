@@ -27,6 +27,8 @@ def main() -> None:
     mode.add_argument("--operations-mock-only", action="store_true")
     mode.add_argument("--operations-confirmed-private-drafts", action="store_true")
     mode.add_argument("--operations-approved-live-publications", action="store_true")
+    mode.add_argument("--operations-scheduled-auto", action="store_true",
+                      help="Process only scheduled-export jobs after the separate scoped DB approval")
     parser.add_argument("--backoff-seconds", type=int, default=30)
     parser.add_argument("--continuous", action="store_true", help="Poll continuously with a DB singleton lock")
     parser.add_argument("--poll-seconds", type=int, default=15)
@@ -68,6 +70,7 @@ def main() -> None:
             args.backoff_seconds,
             allow_private_drafts=args.operations_confirmed_private_drafts,
             allow_live_publications=args.operations_approved_live_publications,
+            allow_scheduled_auto_publications=args.operations_scheduled_auto,
         )
         return
     print(json.dumps(
@@ -75,6 +78,7 @@ def main() -> None:
             args.backoff_seconds,
             allow_private_drafts=args.operations_confirmed_private_drafts,
             allow_live_publications=args.operations_approved_live_publications,
+            allow_scheduled_auto_publications=args.operations_scheduled_auto,
         ),
         ensure_ascii=True,
         default=str,

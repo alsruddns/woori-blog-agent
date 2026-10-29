@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, cast
+from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -92,6 +93,42 @@ class EmergencyStopInput(BaseModel):
     enabled: Literal[True]
 
 
+class ScheduledAutoPolicyInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    action: Literal["enable", "disable"]
+    blog_ids: list[UUID] = Field(default_factory=list, min_length=0, max_length=4)
+    daily_limit: int = Field(default=1, ge=1, le=3)
+    actor_label: str = Field(min_length=2, max_length=120)
+    reason: str = Field(min_length=10, max_length=2000)
+    idempotency_key: str = Field(min_length=16, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+    confirmation: str
+
+    @model_validator(mode="after")
+    def explicit_confirmation(self) -> ScheduledAutoPolicyInput:
+        expected = "ENABLE SCHEDULED AUTO PUBLICATION" if self.action == "enable" else "STOP SCHEDULED AUTO PUBLICATION"
+        if self.confirmation != expected:
+            raise ValueError("explicit_scheduled_publication_confirmation_required")
+        return self
+
+
+class ScheduledFirstPostApprovalInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    blog_id: UUID
+    import_id: UUID
+    import_version_id: UUID
+    content_version_id: UUID
+    body_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    actor_label: str = Field(min_length=2, max_length=120)
+    reason: str = Field(min_length=10, max_length=2000)
+    idempotency_key: str = Field(min_length=16, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+    confirmation: Literal["APPROVE THIS SCHEDULED MANUSCRIPT FOR FIRST PUBLICATION"]
+
+
+class ScheduledConnectionCheckInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    blog_ids: list[UUID] = Field(min_length=1, max_length=4)
+
+
 def _mode_settings(conn: Any) -> dict[str, Any]:
     relation = conn.execute(
         "SELECT to_regclass('public.publication_mode_settings') AS table_name"
@@ -107,6 +144,8 @@ def _mode_settings(conn: Any) -> dict[str, Any]:
             "operations_auto_approved": False,
             "live_auto_enabled": False,
             "real_writes_enabled": False,
+            "scheduled_auto_policy": {"enabled": False, "migration_required": True,
+                                      "trends_lane_affected": False},
         }
     rows = conn.execute(
         """SELECT scope_type,scope_key,configured_mode,daily_auto_limit,
@@ -116,6 +155,9 @@ def _mode_settings(conn: Any) -> dict[str, Any]:
         FROM publication_mode_settings ORDER BY CASE scope_type WHEN 'global' THEN 0
             WHEN 'language' THEN 1 ELSE 2 END,scope_key"""
     ).fetchall()
+    scheduled_table = conn.execute(
+        "SELECT to_regclass('public.scheduled_publication_policy_events') AS table_name"
+    ).fetchone()
     items = [dict(row) for row in rows]
     languages = [dict(row) for row in conn.execute(
         "SELECT code,display_name,active FROM languages ORDER BY code"
@@ -134,6 +176,8 @@ def _mode_settings(conn: Any) -> dict[str, Any]:
         "operations_auto_approved": False,
         "live_auto_enabled": False,
         "real_writes_enabled": False,
+        "scheduled_auto_policy": _scheduled_auto_state(conn) if scheduled_table and scheduled_table["table_name"]
+            else {"enabled": False, "migration_required": True, "trends_lane_affected": False},
     }
 
 
@@ -150,6 +194,281 @@ def _blog_settings(conn: Any, blog_id: str) -> tuple[dict[str, Any] | None, str 
 def get_mode_settings() -> dict[str, Any]:
     with connection() as conn:
         return _mode_settings(conn)
+
+
+def _scheduled_auto_state(conn: Any) -> dict[str, Any]:
+    row = conn.execute(
+        """SELECT id,action,approved_blog_ids,daily_limit,actor_label,reason,created_at
+        FROM scheduled_publication_policy_events ORDER BY id DESC LIMIT 1"""
+    ).fetchone()
+    enabled = bool(row and row["action"] == "enabled")
+    first_post = conn.execute(
+        """SELECT e.id,e.blog_id,e.import_id,e.import_version_id,e.content_version_id,
+        e.body_sha256,e.actor_label,e.created_at FROM scheduled_first_publication_events e
+        WHERE e.action='approved' AND NOT EXISTS (
+          SELECT 1 FROM scheduled_first_publication_events r
+          WHERE r.action='revoked' AND r.blog_id=e.blog_id AND r.import_id=e.import_id
+            AND r.import_version_id=e.import_version_id AND r.content_version_id=e.content_version_id
+            AND r.body_sha256=e.body_sha256 AND r.id>e.id)
+        ORDER BY e.id DESC LIMIT 1"""
+    ).fetchone()
+    published = conn.execute(
+        """SELECT EXISTS(SELECT 1 FROM publishing_jobs WHERE publication_lane='scheduled_auto'
+          AND status='succeeded') AS any_published"""
+    ).fetchone()["any_published"]
+    return {
+        "enabled": enabled,
+        "policy_event": dict(row) if row else None,
+        "first_post_approval": dict(first_post) if first_post else None,
+        "first_post_confirmed": bool(published),
+        "effective_for_new_jobs": enabled and (bool(first_post) or bool(published)),
+        "trends_lane_affected": False,
+    }
+
+
+@router.get("/scheduled-auto-policy")
+def get_scheduled_auto_policy() -> dict[str, Any]:
+    with connection() as conn:
+        return _scheduled_auto_state(conn)
+
+
+@router.post("/scheduled-auto-policy", status_code=201)
+def record_scheduled_auto_policy(request: ScheduledAutoPolicyInput) -> dict[str, Any]:
+    """Record explicit admin approval for scheduled exports only; defaults stay OFF."""
+    expected = (
+        "ENABLE SCHEDULED AUTO PUBLICATION" if request.action == "enable"
+        else "STOP SCHEDULED AUTO PUBLICATION"
+    )
+    if request.confirmation != expected:
+        raise HTTPException(422, "Explicit scheduled publication confirmation is required")
+    with connection() as conn:
+        conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('scheduled-auto-policy',0))")
+        prior = conn.execute(
+            "SELECT id,action,approved_blog_ids,daily_limit FROM scheduled_publication_policy_events WHERE idempotency_key=%s",
+            (request.idempotency_key,),
+        ).fetchone()
+        blog_ids = sorted({str(value) for value in request.blog_ids})
+        if request.action == "enable":
+            if not blog_ids:
+                raise HTTPException(422, "At least one active Blogger blog must be explicitly selected")
+            blogs = conn.execute(
+                """SELECT b.id,b.language_code,b.blog_id,b.oauth_connection_id,g.status,g.scopes
+                FROM blogger_blogs b LEFT JOIN google_connections g ON g.id=b.oauth_connection_id
+                WHERE b.id=ANY(%s::uuid[]) AND b.active ORDER BY b.id""",
+                (blog_ids,),
+            ).fetchall()
+            if len(blogs) != len(blog_ids):
+                raise HTTPException(422, "Every selected blog must be registered and active")
+            from .google_http import WRITE_SCOPE
+            if any(not row["blog_id"] or row["status"] != "connected"
+                   or list(row["scopes"] or []) != [WRITE_SCOPE] for row in blogs):
+                raise HTTPException(409, "Selected blogs require a connected Blogger write-scope mapping")
+            verification = conn.execute(
+                """SELECT payload,created_at FROM audit_events
+                WHERE event_type='publication.scheduled_auto.connection_check'
+                ORDER BY id DESC LIMIT 1"""
+            ).fetchone()
+            verified_results = {
+                str(item.get("blog_record_id")): item
+                for item in (verification["payload"].get("results", []) if verification else [])
+                if isinstance(item, dict)
+            }
+            now = datetime.now(UTC)
+            if not verification or verification["created_at"] < now - timedelta(hours=24):
+                raise HTTPException(409, "Run a fresh Blogger read-only connection verification first")
+            for blog in blogs:
+                check = verified_results.get(str(blog["id"]))
+                if (not check or not check.get("verified")
+                        or str(check.get("remote_blog_id")) != str(blog["blog_id"])):
+                    raise HTTPException(409, "Every selected blog must pass the latest Blogger read-only identity check")
+        if prior:
+            if (prior["action"] != ("enabled" if request.action == "enable" else "disabled")
+                    or sorted(str(value) for value in prior["approved_blog_ids"]) != blog_ids):
+                raise HTTPException(409, "Idempotency key conflicts with a prior policy event")
+            return {"event_id": prior["id"], "duplicate": True,
+                    "scheduled_auto_enabled": request.action == "enable"}
+        current = _scheduled_auto_state(conn)
+        if request.action == "disable":
+            # Retain scope from the last enable event as immutable history.
+            blog_ids = list((current.get("policy_event") or {}).get("approved_blog_ids") or [])
+        previous_event = current.get("policy_event") or {}
+        saved = conn.execute(
+            """INSERT INTO scheduled_publication_policy_events
+            (action,approved_blog_ids,daily_limit,actor_label,reason,idempotency_key)
+            VALUES (%s,%s,%s,%s,%s,%s) RETURNING id,created_at""",
+            ("enabled" if request.action == "enable" else "disabled", Jsonb(blog_ids),
+             request.daily_limit, request.actor_label, request.reason, request.idempotency_key),
+        ).fetchone()
+        payload = {
+            "event_id": saved["id"], "action": request.action,
+            "approved_blog_ids": blog_ids, "daily_limit": request.daily_limit,
+            "actor_label": request.actor_label, "reason": request.reason,
+            "authenticated_by": "admin_bearer", "previous_enabled": current["enabled"],
+            "previous_blog_ids": list(previous_event.get("approved_blog_ids") or []),
+            "previous_daily_limit": previous_event.get("daily_limit"),
+            "new_enabled": request.action == "enable", "trends_lane_affected": False,
+            "new_blog_ids": blog_ids, "new_daily_limit": request.daily_limit,
+            "live_writes_enabled": request.action == "enable",
+        }
+        conn.execute(
+            "INSERT INTO audit_events(event_type,payload) VALUES (%s,%s)",
+            ("publication.scheduled_auto." + request.action, Jsonb(payload)),
+        )
+        revoked_first_approvals: list[str] = []
+        if request.action == "disable" and blog_ids:
+            active_approvals = conn.execute(
+                """SELECT e.id,e.blog_id,e.import_id,e.import_version_id,e.content_version_id,
+                e.body_sha256,e.actor_label FROM scheduled_first_publication_events e
+                WHERE e.action='approved' AND e.blog_id=ANY(%s::uuid[]) AND NOT EXISTS (
+                  SELECT 1 FROM scheduled_first_publication_events r WHERE r.action='revoked'
+                    AND r.blog_id=e.blog_id AND r.import_id=e.import_id
+                    AND r.import_version_id=e.import_version_id
+                    AND r.content_version_id=e.content_version_id AND r.body_sha256=e.body_sha256
+                    AND r.id>e.id)""",
+                (blog_ids,),
+            ).fetchall()
+            for approval in active_approvals:
+                revoke_key = "revoke-" + hashlib.sha256(
+                    f"{request.idempotency_key}:{approval['id']}".encode()
+                ).hexdigest()
+                conn.execute(
+                    """INSERT INTO scheduled_first_publication_events
+                    (action,blog_id,import_id,import_version_id,content_version_id,body_sha256,
+                     actor_label,reason,idempotency_key)
+                    VALUES ('revoked',%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(idempotency_key) DO NOTHING""",
+                    (approval["blog_id"], approval["import_id"], approval["import_version_id"],
+                     approval["content_version_id"], approval["body_sha256"], request.actor_label,
+                     "Scheduled Auto disabled; exact first-publication approval revoked.", revoke_key),
+                )
+                revoked_first_approvals.append(str(approval["id"]))
+            if revoked_first_approvals:
+                conn.execute(
+                    "INSERT INTO audit_events(event_type,payload) VALUES ('publication.scheduled_first_post.revoked_by_policy_stop',%s)",
+                    (Jsonb({"approval_event_ids": revoked_first_approvals,
+                            "policy_event_id": saved["id"], "actor_label": request.actor_label,
+                            "public_write_performed": False}),),
+                )
+        return {"event_id": saved["id"], "created_at": saved["created_at"],
+                "scheduled_auto_enabled": request.action == "enable",
+                "approved_blog_ids": blog_ids, "first_post_approval_required": not current["first_post_confirmed"],
+                "revoked_first_post_approval_ids": revoked_first_approvals,
+                "trends_lane_affected": False}
+
+
+@router.post("/scheduled-auto-first-post", status_code=201)
+def approve_scheduled_first_post(request: ScheduledFirstPostApprovalInput) -> dict[str, Any]:
+    """Bind the initial public publication authorization to one exact version/hash/blog."""
+    with connection() as conn:
+        conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('scheduled-auto-policy',0))")
+        policy = _scheduled_auto_state(conn)
+        if not policy["enabled"]:
+            raise HTTPException(409, "Scheduled Auto policy is not enabled")
+        allowed = {str(value) for value in policy["policy_event"]["approved_blog_ids"]}
+        if str(request.blog_id) not in allowed:
+            raise HTTPException(409, "First publication blog is outside the approved policy scope")
+        row = conn.execute(
+            """SELECT i.generation_method,i.language_code,v.content_sha256,v.title,v.body_markdown,
+              link.content_version_id,blog.language_code AS blog_language
+            FROM external_content_imports i
+            JOIN external_content_import_versions v ON v.import_id=i.id AND v.id=%s
+              AND v.version_number=(SELECT max(v2.version_number) FROM external_content_import_versions v2 WHERE v2.import_id=i.id)
+            JOIN external_content_import_content_links link ON link.import_id=i.id AND link.import_version_id=v.id
+            JOIN content_versions cv ON cv.id=link.content_version_id
+            JOIN blogger_blogs blog ON blog.id=%s AND blog.active
+            WHERE i.id=%s AND link.content_version_id=%s""",
+            (request.import_version_id, request.blog_id, request.import_id,
+             request.content_version_id),
+        ).fetchone()
+        if not row or row["generation_method"] != "chatgpt_scheduled_export":
+            raise HTTPException(404, "Scheduled manuscript version or target was not found")
+        if row["language_code"] != row["blog_language"]:
+            raise HTTPException(409, "Manuscript language does not match the selected blog")
+        digest = hashlib.sha256(str(row["body_markdown"]).encode("utf-8")).hexdigest()
+        if digest != request.body_sha256:
+            raise HTTPException(409, "Manuscript body hash changed; reload and review the latest version")
+        assessed = conn.execute(
+            """SELECT machine_passed FROM external_content_import_assessments
+            WHERE import_id=%s AND version_id=%s ORDER BY assessed_at DESC,id DESC LIMIT 1""",
+            (request.import_id, request.import_version_id),
+        ).fetchone()
+        if not assessed or not assessed["machine_passed"]:
+            raise HTTPException(409, "The exact imported version requires a passing machine assessment")
+        existing = conn.execute(
+            "SELECT id FROM scheduled_first_publication_events WHERE idempotency_key=%s",
+            (request.idempotency_key,),
+        ).fetchone()
+        if existing:
+            return {"event_id": existing["id"], "duplicate": True,
+                    "public_write_performed": False}
+        saved = conn.execute(
+            """INSERT INTO scheduled_first_publication_events
+            (action,blog_id,import_id,import_version_id,content_version_id,body_sha256,
+             actor_label,reason,idempotency_key)
+            VALUES ('approved',%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id,created_at""",
+            (request.blog_id, request.import_id, request.import_version_id,
+             request.content_version_id, digest, request.actor_label, request.reason,
+             request.idempotency_key),
+        ).fetchone()
+        conn.execute(
+            "INSERT INTO audit_events(event_type,blog_id,language_code,payload) VALUES (%s,%s,%s,%s)",
+            ("publication.scheduled_first_post.approved", request.blog_id, row["language_code"],
+             Jsonb({"event_id": saved["id"], "import_id": str(request.import_id),
+                    "import_version_id": str(request.import_version_id),
+                    "content_version_id": str(request.content_version_id),
+                    "body_sha256": digest, "actor_label": request.actor_label,
+                    "reason": request.reason, "public_write_performed": False})),
+        )
+        return {"event_id": saved["id"], "created_at": saved["created_at"],
+                "public_write_performed": False, "approved_blog_id": str(request.blog_id),
+                "content_version_id": str(request.content_version_id), "body_sha256": digest}
+
+
+@router.post("/scheduled-auto/verify-connections")
+def verify_scheduled_auto_connections(request: ScheduledConnectionCheckInput) -> dict[str, Any]:
+    """Refresh expired tokens through standard OAuth and read-check selected blog identities."""
+    from . import blogger_service
+    from .google_http import WRITE_SCOPE
+
+    results: list[dict[str, Any]] = []
+    with connection() as conn:
+        rows = conn.execute(
+            """SELECT b.id,b.blog_id,b.url,b.language_code,b.oauth_connection_id,g.status,g.scopes
+            FROM blogger_blogs b LEFT JOIN google_connections g ON g.id=b.oauth_connection_id
+            WHERE b.id=ANY(%s::uuid[]) AND b.active ORDER BY b.id""",
+            ([str(value) for value in request.blog_ids],),
+        ).fetchall()
+    if len(rows) != len(set(request.blog_ids)):
+        raise HTTPException(404, "One or more selected active blogs were not found")
+    for row in rows:
+        if row["status"] != "connected" or list(row["scopes"] or []) != [WRITE_SCOPE]:
+            results.append({"blog_record_id": str(row["id"]), "blog_id": row["blog_id"],
+                            "language_code": row["language_code"], "verified": False,
+                            "reason": "connected_blogger_write_scope_required"})
+            continue
+        try:
+            remote = blogger_service.test_connection(UUID(str(row["id"])))
+            registered_host = (urlsplit(str(row["url"])).hostname or "").casefold()
+            remote_host = (urlsplit(str(remote.get("url") or "")).hostname or "").casefold()
+            verified = (str(remote.get("blog_id")) == str(row["blog_id"])
+                        and bool(registered_host) and remote_host == registered_host)
+            results.append({"blog_record_id": str(row["id"]), "blog_id": str(row["blog_id"]),
+                            "url": row["url"], "language_code": row["language_code"],
+                            "verified": verified,
+                            "remote_blog_id": str(remote.get("blog_id") or ""),
+                            "remote_url": remote.get("url"),
+                            "last_checked_at": datetime.now(UTC).isoformat()})
+        except GoogleFailure as exc:
+            results.append({"blog_record_id": str(row["id"]), "blog_id": row["blog_id"],
+                            "language_code": row["language_code"], "verified": False,
+                            "reason": exc.category, "http_status": exc.status})
+    with connection() as conn:
+        conn.execute(
+            "INSERT INTO audit_events(event_type,payload) VALUES ('publication.scheduled_auto.connection_check',%s)",
+            (Jsonb({"results": results, "write_scope_required": True,
+                    "blogger_write_performed": False, "token_values_logged": False}),),
+        )
+    return {"results": results, "all_verified": all(item["verified"] for item in results),
+            "blogger_write_performed": False}
 
 
 @router.put("/mode-settings")
@@ -1207,6 +1526,11 @@ def publication_worker_status() -> dict[str, Any]:
                 AND scheduled_at<=now() AND available_at<=now())::int AS live_due,
               count(*) FILTER (WHERE NOT simulation_only AND adapter_type='blogger_live' AND status='blocked')::int AS live_blocked,
               count(*) FILTER (WHERE NOT simulation_only AND adapter_type='blogger_live' AND status='uncertain')::int AS live_uncertain
+              ,count(*) FILTER (WHERE NOT simulation_only AND adapter_type='blogger_live'
+                AND publication_lane='scheduled_auto' AND status='queued')::int AS scheduled_auto_queued
+              ,count(*) FILTER (WHERE NOT simulation_only AND adapter_type='blogger_live'
+                AND publication_lane='scheduled_auto' AND status='queued'
+                AND scheduled_at<=now() AND available_at<=now())::int AS scheduled_auto_due
             FROM publishing_jobs"""
         ).fetchone()
         queued_drafts = conn.execute(
@@ -1246,6 +1570,9 @@ def publication_worker_status() -> dict[str, Any]:
             "idle_reason_if_processed_false": idle_reason,
             "global_mode": dict(mode),
             "auto_policy_active": False,
+            "scheduled_auto_policy": _scheduled_auto_state(conn),
+            "scheduled_auto_queued": queue["scheduled_auto_queued"],
+            "scheduled_auto_due": queue["scheduled_auto_due"],
             "queued_mock_jobs": queue["mock_queued"],
             "queued_confirmed_private_drafts": queued_drafts["n"],
             "private_draft_worker_available": True,

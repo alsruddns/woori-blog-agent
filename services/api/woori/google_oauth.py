@@ -183,6 +183,19 @@ def fail_connection(connection_id: UUID, category: str) -> None:
         audit(conn, "oauth.failed", connection_id, category)
 
 
+def mark_refresh_failed(connection_id: UUID, category: str) -> None:
+    """Preserve encrypted credentials after a failed refresh for operator recovery."""
+    with connection() as conn:
+        conn.execute(
+            """UPDATE google_connections SET status=%s,error_category=%s,updated_at=now()
+            WHERE id=%s AND status!='disconnected'""",
+            ("revoked" if category == "revoked" else "error", category, connection_id),
+        )
+        conn.execute(
+            """UPDATE blogger_blogs SET connection_verified_at=NULL,test_publish_verified_at=NULL,
+            connection_error=%s WHERE oauth_connection_id=%s""",
+            (category, connection_id),
+        )
 def callback(state: str, binding: str, code: str, denied: bool = False) -> UUID:
     with connection() as conn:
         row = conn.execute(
@@ -279,7 +292,7 @@ def access_token(connection_id: UUID, force: bool = False) -> str:
             "token_decryption_failed",
             "insufficient_or_excess_scope",
         ):
-            fail_connection(connection_id, failure.category)
+            mark_refresh_failed(connection_id, failure.category)
         raise failure
     return token
 

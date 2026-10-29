@@ -7,8 +7,10 @@ publishable manuscript and never call a generator, network source, or Blogger.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from datetime import UTC, date, datetime
+from pathlib import Path
 from typing import Any, Literal, cast
 from urllib.parse import urlsplit
 from uuid import UUID
@@ -248,6 +250,144 @@ class ScheduledImportEnvelope(BaseModel):
         if required_language and self.item.language_code != required_language:
             raise ValueError("market_task_language_mismatch")
         return self
+
+
+class DuplicateCheckRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    language_code: Literal["ko", "en", "ja", "zh-CN"]
+    target_country: str = Field(min_length=2, max_length=3, pattern=r"^(?:[A-Z]{2,3}|[0-9]{3})$")
+    target_blog_id: str = Field(min_length=5, max_length=32, pattern=r"^[0-9]+$")
+    trade_date: date | None = None
+    event_group_id: str = Field(min_length=3, max_length=128)
+    topic: str = Field(min_length=3, max_length=300)
+    content_id: str | None = Field(default=None, min_length=8, max_length=128)
+
+
+@router.post("/duplicate-check")
+def scheduled_duplicate_check(request: DuplicateCheckRequest) -> dict[str, Any]:
+    """Read-only idempotency preflight for Scheduled tasks; uncertainty never means absent."""
+    def finish(result: dict[str, Any]) -> dict[str, Any]:
+        with connection() as audit_conn:
+            audit_conn.execute(
+                """INSERT INTO audit_events(event_type,language_code,payload)
+                VALUES ('content_import.scheduled_duplicate_check',%s,%s)""",
+                (request.language_code, Jsonb({
+                    "event_group_id": request.event_group_id,
+                    "content_id": request.content_id,
+                    "target_country": request.target_country,
+                    "target_blog_id": request.target_blog_id,
+                    "trade_date": request.trade_date.isoformat() if request.trade_date else None,
+                    "status": result.get("status"), "reason": result.get("reason"),
+                    "db_import_match": result.get("db_import_match"),
+                    "blogger_read_complete": result.get("blogger_read_complete"),
+                    "read_only_preflight": True,
+                })),
+            )
+        return result
+
+    with connection() as conn:
+        blog = conn.execute(
+            """SELECT id,blog_id,language_code,url,active,connection_verified_at,
+            oauth_connection_id FROM blogger_blogs WHERE blog_id=%s AND language_code=%s""",
+            (request.target_blog_id, request.language_code),
+        ).fetchone()
+        if not blog:
+            return finish({"status": "unknown", "reason": "target_blog_not_registered",
+                           "db_import_match": False, "blogger_read_complete": False})
+        imported = conn.execute(
+            """SELECT i.id,i.external_content_id,i.event_group_id,i.source_region,i.language_code,
+            i.title,i.state,i.received_at,v.id AS import_version_id,link.content_version_id,
+            r.remote_post_id,r.remote_url,r.remote_status,r.remote_verified_at
+            FROM external_content_imports i
+            LEFT JOIN external_content_import_versions v ON v.import_id=i.id
+            LEFT JOIN external_content_import_content_links link ON link.import_id=i.id
+              AND link.import_version_id=v.id
+            LEFT JOIN publishing_records r ON r.blog_id=%s AND r.content_version_id=link.content_version_id
+            WHERE i.language_code=%s AND i.source_region=%s AND
+              (i.event_group_id=%s OR lower(i.title)=lower(%s) OR i.external_content_id=%s
+               OR (%s::date IS NOT NULL AND EXISTS (SELECT 1 FROM audit_events a
+                 WHERE a.event_type='content.import.scheduled_origin_recorded'
+                   AND a.payload->>'import_id'=i.id::text AND a.payload->>'market_date'=%s)))
+            ORDER BY i.received_at DESC,i.id DESC LIMIT 20""",
+            (blog["id"], request.language_code, request.target_country,
+             request.event_group_id, request.topic, request.content_id or "",
+             request.trade_date, request.trade_date.isoformat() if request.trade_date else ""),
+        ).fetchall()
+        if imported:
+            published = next((row for row in imported if row["remote_status"] == "LIVE"
+                              and row["remote_verified_at"]), None)
+            if published:
+                return finish({"status": "already_published", "reason": "verified_database_publication_record",
+                        "import_id": str(published["id"]), "content_version_id": str(published["content_version_id"]),
+                        "post_id": published["remote_post_id"], "url": published["remote_url"],
+                        "blogger_read_complete": False})
+            from .scheduled_duplicates import find_remote_duplicate
+            remote = find_remote_duplicate(UUID(str(blog["id"])), request.topic)
+            if remote["status"] == "found":
+                return finish({"status": "already_published", "reason": "remote_live_title_match",
+                        "import_id": str(imported[0]["id"]), "post_id": remote.get("post_id"),
+                        "url": remote.get("url"), "blogger_read_complete": True})
+            return finish({"status": "already_imported", "reason": "matching_import_exists_without_verified_publication",
+                    "import_id": str(imported[0]["id"]),
+                    "content_version_id": str(imported[0]["content_version_id"]) if imported[0]["content_version_id"] else None,
+                    "blogger_read_complete": remote["status"] != "unknown",
+                    "blogger_read_status": remote["status"],
+                    "remote_read_reason": remote.get("reason")})
+        failed_ids: list[str] = []
+        pending_ids: list[str] = []
+        local_root = Path(__file__).resolve().parents[3] / ".local" / "gpt-scheduled-import"
+        if local_root.exists():
+            try:
+                if local_root.is_symlink() or local_root.resolve(strict=True).parent != local_root.parent.resolve(strict=True):
+                    raise OSError("unsafe_inbox_root")
+                for folder in ("incoming", "ready", "processing", "completed", "quarantine", "rejected"):
+                    directory = local_root / folder
+                    if not directory.exists():
+                        continue
+                    if directory.is_symlink() or directory.resolve(strict=True).parent != local_root.resolve(strict=True):
+                        raise OSError("unsafe_inbox_state_directory")
+                    for path in directory.glob("*.json"):
+                        if path.is_symlink() or path.stat().st_size > 1_048_576:
+                            continue
+                        try:
+                            envelope = json.loads(path.read_text(encoding="utf-8"))
+                        except (OSError, UnicodeError, json.JSONDecodeError):
+                            continue
+                        item = envelope.get("item", envelope) if isinstance(envelope, dict) else {}
+                        if not isinstance(item, dict):
+                            continue
+                        if (item.get("event_group_id") == request.event_group_id
+                                or (request.content_id and item.get("content_id") == request.content_id)):
+                            file_id = str(item.get("content_id") or "unknown")
+                            if folder in {"quarantine", "rejected"}:
+                                failed_ids.append(file_id)
+                            else:
+                                pending_ids.append(file_id)
+            except OSError:
+                return finish({"status": "unknown", "reason": "local_failure_history_unavailable",
+                               "db_import_match": False, "blogger_read_complete": False})
+        if not blog["active"] or not blog["connection_verified_at"] or not blog["oauth_connection_id"]:
+            return finish({"status": "unknown", "reason": "blogger_read_connection_unverified",
+                           "db_import_match": False, "blogger_read_complete": False})
+    from .scheduled_duplicates import find_remote_duplicate
+    remote = find_remote_duplicate(UUID(str(blog["id"])), request.topic)
+    if remote["status"] == "found":
+        return finish({"status": "already_published", "reason": remote["reason"],
+                "post_id": remote.get("post_id"), "url": remote.get("url"),
+                "blogger_read_complete": True})
+    if remote["status"] == "unknown":
+        return finish({"status": "unknown", "reason": remote["reason"],
+                       "db_import_match": False, "blogger_read_complete": False})
+    if pending_ids:
+        return finish({"status": "unknown", "reason": "matching_file_pending_or_completed_without_database_import",
+                "pending_content_ids": sorted(set(pending_ids)),
+                "db_import_match": False, "blogger_read_complete": True})
+    if failed_ids:
+        return finish({"status": "failed_only", "reason": "matching_quarantined_or_rejected_file_without_database_import_or_remote_post",
+                "failed_content_ids": sorted(set(failed_ids)), "safe_to_create_new_original_id": True,
+                "preserve_failed_files": True, "blogger_read_complete": True})
+    return finish({"status": "not_found", "reason": "database_and_complete_blogger_read_contain_no_match",
+                   "db_import_match": False, "blogger_read_complete": True})
 
 
 class ImportVersionRequest(BaseModel):

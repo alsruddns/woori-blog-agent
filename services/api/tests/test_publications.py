@@ -213,6 +213,7 @@ def test_mock_and_private_draft_modes_never_dispatch_publication_jobs(
         yield FakeConnection()
 
     monkeypatch.setattr(publication_worker, "connection", fake_connection)
+    monkeypatch.setattr(publication_worker, "enqueue_scheduled_auto_jobs", lambda: {"created": 0})
 
     assert publication_worker.tick(allow_private_drafts=False) is None
     assert publication_worker.tick(allow_private_drafts=True) is None
@@ -361,7 +362,9 @@ def test_publication_worker_continuous_loop_has_singleton_and_graceful_idle_stop
     monkeypatch.setattr(publication_worker, "tick", idle_tick)
     publication_worker.run_forever(poll_seconds=1, cycle_limit=1)
 
-    assert ticks == [{"args": (30,), "allow_private_drafts": False, "allow_live_publications": False}]
+    assert ticks == [{"args": (30,), "allow_private_drafts": False,
+                      "allow_live_publications": False,
+                      "allow_scheduled_auto_publications": False}]
     assert events[0] == "lock"
     assert "running" in events
     assert events[-2:] == ["stopped", "unlock"]
@@ -453,6 +456,7 @@ def test_emergency_stop_blocks_live_job_before_any_blogger_request(monkeypatch: 
         "attempts": 0, "retry_count": 0, "max_retries": 0,
         "publication_state": "publication_queued", "live_stage": "draft_needed",
         "remote_post_id": None, "oauth_connection_id": oauth_id,
+        "publication_lane": "manual",
     }
 
     class Result:
