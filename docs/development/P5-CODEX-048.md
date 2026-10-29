@@ -34,7 +34,8 @@
 - The current Japanese import `9bd1706b-5e0a-4cb4-a7fd-d4949b9ecad7` recorded a held assessment for version `45d52e29-b6d7-40be-b79b-97d91f339069`, content version `b6abf4f0-4bf8-4ddc-b01e-fdc183f2a9f6`, hash `8a47ebcea8e6472b4f528abb0bfc66c8cfc680d1e12115fa1c907eaccb05f2fa`.
 - Hold reasons: `source_rights_not_cleared`, `source_live_verification_missing`, `claim_span_not_found_in_live_source_evidence`, and `source_rights_not_machine_verified`.
 - Scheduled publishing jobs for this import remain 0. No Blogger write or publication request was made. First exact-post approval remains absent; global mode is manual and live-write flags remain disabled.
-- Worker process was not restarted. Current heartbeat was fresh at 21:48 KST; the process will need a normal controlled restart to load this code before it can continuously apply the new assessment path.
+- A normal restart was attempted with `scripts/stop.ps1 -Service publication_worker -TimeoutSeconds 60 -Confirm:$false`, but the safety check refused to stop it because heartbeat PID 26768 did not match the script's exact-path process identity. No process was stopped or force-terminated. PID 26768 remains a fresh scheduled-auto heartbeat (21:53 KST), but the running process has not loaded this commit.
+- Process inspection showed PID 26768 is a child of repo-venv launcher PID 42560, itself a child of interactive VS Code PowerShell PID 47600. Both command lines contain the relative `.\scripts\publication-worker.py` path, and `.runtime/server-processes.json` is absent. The stop script's exact absolute-script check therefore remains unverified; the current Worker was left running.
 
 ## Changed files
 
@@ -51,4 +52,5 @@
 - The source proof producer for this Japanese source set is not connected. No article version, source audit, or rights status was fabricated.
 - First public post requires the existing approval event for one exact manuscript version/body hash/blog. No approval was created.
 - Actual Blogger public URL: none; published count remains 0.
+- Applying the committed Worker code still requires a safe normal stop/restart from its owning VS Code terminal or a later process-ownership verification fix. Do not start a duplicate Worker while PID 26768 remains active.
 - Commit hash: recorded in the follow-up commit entry in `git log`.
