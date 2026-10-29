@@ -485,7 +485,7 @@ def list_publications() -> dict[str, Any]:
             ORDER BY v.created_at DESC LIMIT 100"""
         ).fetchall()
         jobs = conn.execute(
-            """SELECT j.id,j.content_version_id,j.blog_id,b.language_code,b.url,
+            """SELECT j.id,j.content_version_id,j.blog_id,b.language_code,b.url,v.title AS content_title,
                 j.status,j.publication_state,j.scheduled_at,j.schedule_timezone,j.block_reasons,
                 j.attempts,j.retry_count,j.last_error_category,j.updated_at,
                 j.adapter_type,j.simulation_only,j.live_stage,j.remote_post_id,
@@ -497,6 +497,7 @@ def list_publications() -> dict[str, Any]:
                 (SELECT count(*) FROM publication_attempts a WHERE a.job_id=j.id) AS simulation_count
                 ,(SELECT count(*) FROM live_publication_attempts la WHERE la.job_id=j.id) AS live_attempt_count
             FROM publishing_jobs j JOIN blogger_blogs b ON b.id=j.blog_id
+            LEFT JOIN content_versions v ON v.id=j.content_version_id
             LEFT JOIN LATERAL (SELECT remote_url,remote_status,remote_verified_at,published_at
               FROM publishing_records r WHERE r.job_id=j.id ORDER BY r.published_at DESC LIMIT 1) live_record ON true
             ORDER BY j.scheduled_at DESC,j.id DESC LIMIT 100"""
@@ -526,6 +527,10 @@ def list_publications() -> dict[str, Any]:
         ).fetchone()
         assert queued is not None
         assert queued_drafts is not None
+        published_total = conn.execute(
+            """SELECT count(*)::int AS n FROM publishing_records
+              WHERE remote_status='LIVE' AND remote_verified_at IS NOT NULL"""
+        ).fetchone()
         for candidate in candidates:
             candidate["mode_policy"] = resolve_mode(
                 mode_data["settings"], str(candidate["language_code"]), str(candidate["blog_id"])
@@ -551,6 +556,7 @@ def list_publications() -> dict[str, Any]:
             "worker": dict(worker) if worker else None,
             "queued_mock_jobs": queued["n"],
             "queued_confirmed_private_drafts": queued_drafts["n"],
+            "actual_published_count": int(published_total["n"]),
             "real_writes_enabled": False,
             "publish_ready_enabled": False,
             "adapter_available": "fake_and_guarded_blogger_live_queue",
