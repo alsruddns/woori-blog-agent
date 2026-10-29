@@ -132,7 +132,9 @@ function Test-ExactCheckoutServiceProcess($ProcessInfo, [string]$ServiceName) {
     }
     'publication_worker' {
       $workerScript = [IO.Path]::GetFullPath((Join-Path $script:ProjectRoot 'scripts\publication-worker.py'))
-      return $path -ieq $python -and $command.IndexOf($workerScript,[StringComparison]::OrdinalIgnoreCase) -ge 0
+      $usesProjectVenv = $command.IndexOf('"' + $python + '"',[StringComparison]::OrdinalIgnoreCase) -ge 0
+      return [IO.Path]::GetFileName($path) -ieq 'python.exe' -and $usesProjectVenv -and
+        $command.IndexOf($workerScript,[StringComparison]::OrdinalIgnoreCase) -ge 0
     }
     default { return $false }
   }

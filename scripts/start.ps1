@@ -1,5 +1,9 @@
-param([ValidateSet('api','dashboard','all')][string]$Service='all')
+param([ValidateSet('api','dashboard','publication_worker','all')][string]$Service='all')
 . (Join-Path $PSScriptRoot 'server-common.ps1')
+if ($Service -eq 'publication_worker') {
+  & (Join-Path $PSScriptRoot 'start-publication-worker.ps1')
+  exit $LASTEXITCODE
+}
 $manifest = Read-ServerManifest
 $table = Get-ProcessTable
 $targets = if ($Service -eq 'all') { @('api','dashboard') } else { @($Service) }

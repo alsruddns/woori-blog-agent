@@ -19,7 +19,11 @@ from .db import connection
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SCHEDULED_IMPORT_POLL_SECONDS = 60
-WORKER_LOCK_KEYS = {"research_worker": (20261027, 26027), "evaluation_worker": (20261027, 26028)}
+WORKER_LOCK_KEYS = {
+    "research_worker": (20261027, 26027),
+    "evaluation_worker": (20261027, 26028),
+    "publication_worker": (20261027, 26029),
+}
 WORKER_STOP_PREFIX = "worker-stop-"
 
 

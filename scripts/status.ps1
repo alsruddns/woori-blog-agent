@@ -40,3 +40,31 @@ foreach ($name in @('dashboard','api','worker','evaluation_worker','publication_
     }
   }
 }
+
+try {
+  $workerOutput = & (Join-Path $script:ProjectRoot '.venv\Scripts\python.exe') `
+    (Join-Path $script:ProjectRoot 'scripts\publication-worker.py') --status
+  if ($LASTEXITCODE -eq 0 -and $workerOutput) {
+    $workerStatus = ($workerOutput -join "`n") | ConvertFrom-Json
+    [pscustomobject]@{
+      Service='publication_worker_heartbeat'
+      State=if ($workerStatus.heartbeat_fresh) { 'running' } elseif ($workerStatus.heartbeat) { $workerStatus.heartbeat.status } else { 'not_started' }
+      PID=$workerStatus.heartbeat.process_id
+      LastSeenUtc=$workerStatus.heartbeat.last_seen_at
+      MockQueued=$workerStatus.queue.mock_queued
+      MockDue=$workerStatus.queue.mock_due
+      LiveQueued=$workerStatus.queue.live_queued
+      LiveDue=$workerStatus.queue.live_due
+      LastJobId=$workerStatus.last_job.id
+      LastJobState=$workerStatus.last_job.publication_state
+      LastJobError=$workerStatus.last_job.last_error_category
+      IdleReason=$workerStatus.idle_reason_if_processed_false
+      AutoMode=$workerStatus.global_mode.configured_mode
+      AutoPolicyActive=$workerStatus.auto_policy_active
+    }
+  } else {
+    Write-Warning 'Publication Worker heartbeat and queue status could not be read; inspect local DB availability.'
+  }
+} catch {
+  Write-Warning 'Publication Worker heartbeat and queue status could not be read; no process was changed.'
+}

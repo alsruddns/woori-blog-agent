@@ -334,6 +334,74 @@ def test_emergency_stop_input_cannot_be_cleared_through_api_model() -> None:
         EmergencyStopInput.model_validate({"enabled": False})
 
 
+def test_publication_worker_continuous_loop_has_singleton_and_graceful_idle_stop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    ticks: list[dict[str, Any]] = []
+    monkeypatch.setattr(publication_worker, "acquire_process_lock", lambda _name: events.append("lock") or object())
+    monkeypatch.setattr(publication_worker, "release_process_lock", lambda _guard, _name: events.append("unlock"))
+    monkeypatch.setattr(
+        publication_worker, "heartbeat",
+        lambda status, *_args, **_kwargs: events.append(status),
+    )
+    monkeypatch.setattr(publication_worker, "consume_worker_stop_request", lambda **_kwargs: False)
+
+    def idle_tick(*args: Any, **kwargs: Any) -> None:
+        ticks.append({"args": args, **kwargs})
+
+    monkeypatch.setattr(publication_worker, "tick", idle_tick)
+    publication_worker.run_forever(poll_seconds=1, cycle_limit=1)
+
+    assert ticks == [{"args": (30,), "allow_private_drafts": False, "allow_live_publications": False}]
+    assert events[0] == "lock"
+    assert "running" in events
+    assert events[-2:] == ["stopped", "unlock"]
+
+
+def test_publication_worker_honors_stop_marker_between_cycles(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    monkeypatch.setattr(publication_worker, "acquire_process_lock", lambda _name: object())
+    monkeypatch.setattr(publication_worker, "release_process_lock", lambda _guard, _name: events.append("unlock"))
+    monkeypatch.setattr(
+        publication_worker, "heartbeat",
+        lambda status, *_args, **_kwargs: events.append(status),
+    )
+    monkeypatch.setattr(publication_worker, "consume_worker_stop_request", lambda **_kwargs: True)
+    monkeypatch.setattr(
+        publication_worker, "tick",
+        lambda *_args, **_kwargs: pytest.fail("stop marker must prevent another queue cycle"),
+    )
+
+    publication_worker.run_forever(poll_seconds=1)
+
+    assert events[-2:] == ["stopped", "unlock"]
+
+
+def test_publication_worker_status_distinguishes_empty_enabled_lane(
+    lab: Any, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from contextlib import contextmanager
+
+    conn, _api, _headers = lab
+
+    @contextmanager
+    def shared_connection():
+        with conn.transaction():
+            yield conn
+
+    monkeypatch.setattr(publications, "connection", shared_connection)
+    result = publications.publication_worker_status()
+
+    assert result["queue"]["mock_queued"] == 0
+    assert result["queue"]["live_queued"] == 0
+    assert result["idle_reason_if_processed_false"] == "no_queued_job_in_enabled_lane"
+    assert result["live_publication_dispatch_enabled"] is False
+    assert result["real_writes_enabled"] is False
+
+
 def test_emergency_stop_is_persisted_and_audited_in_isolated_database(
     lab: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

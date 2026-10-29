@@ -1,6 +1,6 @@
 [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
-  [ValidateSet('api','dashboard','worker','all')][string]$Service = 'all',
+  [ValidateSet('api','dashboard','worker','publication_worker','all')][string]$Service = 'all',
   [ValidateRange(5,3600)][int]$TimeoutSeconds = 60,
   [switch]$Force
 )
@@ -19,12 +19,67 @@ function Get-ServiceStopKinds([string]$Name) {
   switch ($Name) {
     'api' { return @('api') }
     'dashboard' { return @('dashboard') }
-    'worker' { return @('worker','evaluation_worker','publication_worker') }
+    'worker' { return @('worker','evaluation_worker') }
+    'publication_worker' { return @('publication_worker') }
     default { throw "Unsupported service: $Name" }
   }
 }
 
 function Get-StopCandidates([string]$Name, $ProcessTable) {
+  if ($Name -eq 'publication_worker') {
+    $matched = @(Get-CheckoutServiceProcesses $ProcessTable 'publication_worker')
+    if (-not $matched.Count) { return @() }
+    $statusRaw = & (Join-Path $script:ProjectRoot '.venv\Scripts\python.exe') `
+      (Join-Path $script:ProjectRoot 'scripts\publication-worker.py') --status
+    if ($LASTEXITCODE -ne 0 -or -not $statusRaw) {
+      throw 'Could not verify Publication Worker heartbeat identity; no process was stopped.'
+    }
+    try { $status = ($statusRaw -join "`n") | ConvertFrom-Json }
+    catch { throw 'Publication Worker status response was invalid; no process was stopped.' }
+    $workerPid = [int]$status.heartbeat.process_id
+    $worker = $matched | Where-Object Id -eq $workerPid | Select-Object -First 1
+    if (-not $worker -and -not $status.heartbeat_fresh) {
+      $venvPython = [IO.Path]::GetFullPath((Join-Path $script:ProjectRoot '.venv\Scripts\python.exe'))
+      $launcherOnly = $matched | Where-Object {
+        [IO.Path]::GetFullPath([string]$_.Path) -ieq $venvPython
+      } | Select-Object -First 1
+      if ($launcherOnly) {
+        return @([pscustomobject]@{
+          Id=[int]$launcherOnly.Id; ParentId=[int]$launcherOnly.ParentId; Path=[string]$launcherOnly.Path
+          CommandLine=[string]$launcherOnly.CommandLine; StartedUtc=(Get-ProcessStarted ([int]$launcherOnly.Id))
+          Kind='publication_worker_stale_launcher'; WorkerService='publication_worker'
+          ProcessInfo=$launcherOnly; RelatedLaunchers=@()
+        })
+      }
+    }
+    if (-not $worker -or -not (Test-ExactCheckoutServiceProcess $worker 'publication_worker')) {
+      throw 'Heartbeat PID does not match an exact Publication Worker process; no process was stopped.'
+    }
+    $venvPython = [IO.Path]::GetFullPath((Join-Path $script:ProjectRoot '.venv\Scripts\python.exe'))
+    if ([IO.Path]::GetFullPath([string]$worker.Path) -ieq $venvPython) {
+      $launcher = $null
+      $related = @()
+    } else {
+      $launcher = $matched | Where-Object {
+        $_.Id -eq [int]$worker.ParentId -and
+        [IO.Path]::GetFullPath([string]$_.Path) -ieq $venvPython
+      } | Select-Object -First 1
+      if (-not $launcher -or -not (Test-DescendantOf $ProcessTable $worker.Id $launcher.Id)) {
+        throw 'Publication Worker interpreter parent could not be verified; no process was stopped.'
+      }
+      $related = @([pscustomobject]@{
+        Id=[int]$launcher.Id; ParentId=[int]$launcher.ParentId; Path=[string]$launcher.Path
+        CommandLine=[string]$launcher.CommandLine; StartedUtc=(Get-ProcessStarted ([int]$launcher.Id))
+        Kind='publication_worker_launcher'; ProcessInfo=$launcher
+      })
+    }
+    return @([pscustomobject]@{
+      Id=[int]$worker.Id; ParentId=[int]$worker.ParentId; Path=[string]$worker.Path
+      CommandLine=[string]$worker.CommandLine; StartedUtc=(Get-ProcessStarted ([int]$worker.Id))
+      Kind='publication_worker'; WorkerService='publication_worker'; ProcessInfo=$worker
+      RelatedLaunchers=$related
+    })
+  }
   $items = @()
   foreach ($kind in (Get-ServiceStopKinds $Name)) {
     foreach ($candidate in (Get-CheckoutServiceProcesses $ProcessTable $kind)) {
@@ -327,7 +382,7 @@ function Invoke-ProjectStop {
   foreach ($candidate in $candidates) {
     $targetText = "PID $($candidate.Id) [$($candidate.Kind)] parent PID $($candidate.ParentId) executable '$($candidate.Path)' command '$($candidate.CommandLine)'"
     if (-not $PSCmdlet.ShouldProcess($targetText,"Request safe stop of $($candidate.Kind)")) { $complete=$false; continue }
-    if ($candidate.Kind -in @('worker','evaluation_worker')) {
+    if ($candidate.Kind -in @('worker','evaluation_worker','publication_worker')) {
       $requestPath = Write-WorkerStopRequest $candidate
       Write-Host "Graceful stop requested for Worker PID $($candidate.Id); it will finish its current synchronous work cycle first. Request: $requestPath"
       $remaining = @(Wait-ForSnapshotsExit @($candidate) $TimeoutSeconds)
@@ -336,7 +391,14 @@ function Invoke-ProjectStop {
         $complete=$false
       } else {
         Remove-WorkerStopRequestIfOwned $candidate
-        Write-Host "Worker PID $($candidate.Id) exited after its current work cycle."
+        $related = @($candidate.RelatedLaunchers | Where-Object { $_ })
+        $relatedRemaining = if ($related.Count) { @(Wait-ForSnapshotsExit $related 5) } else { @() }
+        if ($relatedRemaining.Count) {
+          Write-Warning "Publication Worker process PID $($candidate.Id) stopped, but its verified Python launcher PID(s) $($relatedRemaining.Id -join ', ') remain. They were left untouched."
+          $complete=$false
+        } else {
+          Write-Host "Worker PID $($candidate.Id) exited after its current work cycle."
+        }
       }
     } else {
       # The publication worker is a single-run external-effect dispatcher. It
@@ -356,7 +418,7 @@ function Invoke-ProjectStop {
 
 function Invoke-StopCommand([string]$SelectedService, [int]$Timeout, [bool]$AllowForce) {
   $preview = [bool]$WhatIfPreference
-  $targets = if ($SelectedService -eq 'all') { @('dashboard','api','worker') } else { @($SelectedService) }
+  $targets = if ($SelectedService -eq 'all') { @('dashboard','api','worker','publication_worker') } else { @($SelectedService) }
   $result = $true
   foreach ($name in $targets) {
     try { if (-not (Invoke-ProjectStop $name $Timeout $AllowForce)) { $result=$false } }

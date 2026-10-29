@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, cast
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -1005,22 +1005,59 @@ def publication_worker_status() -> dict[str, Any]:
             """SELECT service_name,process_id,status,last_error_category,last_seen_at,updated_at
             FROM worker_heartbeats WHERE service_name='publication_worker'"""
         ).fetchone()
-        queued = conn.execute(
-            """SELECT count(*) AS n FROM publishing_jobs
-            WHERE status='queued' AND simulation_only AND adapter_type='fake'"""
+        queue = conn.execute(
+            """SELECT
+              count(*) FILTER (WHERE simulation_only AND adapter_type='fake' AND status='queued')::int AS mock_queued,
+              count(*) FILTER (WHERE simulation_only AND adapter_type='fake' AND status='queued'
+                AND scheduled_at<=now() AND available_at<=now())::int AS mock_due,
+              count(*) FILTER (WHERE NOT simulation_only AND adapter_type='blogger_live' AND status='queued')::int AS live_queued,
+              count(*) FILTER (WHERE NOT simulation_only AND adapter_type='blogger_live' AND status='queued'
+                AND scheduled_at<=now() AND available_at<=now())::int AS live_due,
+              count(*) FILTER (WHERE NOT simulation_only AND adapter_type='blogger_live' AND status='blocked')::int AS live_blocked,
+              count(*) FILTER (WHERE NOT simulation_only AND adapter_type='blogger_live' AND status='uncertain')::int AS live_uncertain
+            FROM publishing_jobs"""
         ).fetchone()
         queued_drafts = conn.execute(
             """SELECT count(*) AS n FROM blogger_write_operations
             WHERE operation='create_draft' AND status='pending'
               AND result->>'confirmation_recorded'='true'"""
         ).fetchone()
-        assert queued is not None
+        mode = conn.execute(
+            """SELECT configured_mode,daily_auto_limit,minimum_interval_minutes,emergency_stopped,
+                operations_auto_approved FROM publication_mode_settings
+              WHERE scope_type='global' AND scope_key=''"""
+        ).fetchone()
+        last_job = conn.execute(
+            """SELECT id,status,publication_state,last_error_category,updated_at
+              FROM publishing_jobs ORDER BY updated_at DESC,id DESC LIMIT 1"""
+        ).fetchone()
+        assert queue is not None
         assert queued_drafts is not None
+        assert mode is not None
+        heartbeat = dict(row) if row else None
+        if int(queue["mock_due"]) > 0:
+            idle_reason = None
+        elif int(queue["live_due"]) > 0:
+            idle_reason = "live_dispatch_flag_disabled_or_live_policy_blocked"
+        elif int(queue["mock_queued"]) > 0 or int(queue["live_queued"]) > 0:
+            idle_reason = "queued_jobs_not_yet_due"
+        else:
+            idle_reason = "no_queued_job_in_enabled_lane"
         return {
-            "heartbeat": dict(row) if row else None,
-            "queued_mock_jobs": queued["n"],
+            "heartbeat": heartbeat,
+            "heartbeat_fresh": bool(
+                heartbeat and heartbeat.get("status") == "running" and heartbeat.get("last_seen_at")
+                and datetime.now(UTC) - heartbeat["last_seen_at"] <= timedelta(seconds=45)
+            ),
+            "queue": dict(queue),
+            "last_job": dict(last_job) if last_job else None,
+            "idle_reason_if_processed_false": idle_reason,
+            "global_mode": dict(mode),
+            "auto_policy_active": False,
+            "queued_mock_jobs": queue["mock_queued"],
             "queued_confirmed_private_drafts": queued_drafts["n"],
             "private_draft_worker_available": True,
+            "live_publication_dispatch_enabled": False,
             "public_publication_enabled": False,
             "real_writes_enabled": False,
         }

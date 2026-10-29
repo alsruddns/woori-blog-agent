@@ -14,21 +14,29 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services" / "api"))
 
 from woori.db import connection
-from woori.publication_worker import run_once
+from woori.publication_worker import run_forever, run_once
+from woori.publications import publication_worker_status
 from woori.worker import _evaluation_database_isolated
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run one publication queue job")
     mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--status", action="store_true", help="Read-only queue and heartbeat diagnostics")
     mode.add_argument("--evaluation", action="store_true")
     mode.add_argument("--operations-mock-only", action="store_true")
     mode.add_argument("--operations-confirmed-private-drafts", action="store_true")
     mode.add_argument("--operations-approved-live-publications", action="store_true")
     parser.add_argument("--backoff-seconds", type=int, default=30)
+    parser.add_argument("--continuous", action="store_true", help="Poll continuously with a DB singleton lock")
+    parser.add_argument("--poll-seconds", type=int, default=15)
     args = parser.parse_args()
     if not 0 <= args.backoff_seconds <= 3600:
         raise SystemExit("Backoff must be between 0 and 3600 seconds")
+    if not 1 <= args.poll_seconds <= 3600:
+        raise SystemExit("Poll interval must be between 1 and 3600 seconds")
+    if args.continuous and (args.status or args.evaluation):
+        raise SystemExit("Continuous mode is supported only for an operations queue mode")
     if args.evaluation:
         load_dotenv(ROOT / ".env", override=False)
         operations_url = dotenv_values(ROOT / ".env").get("DATABASE_URL", "")
@@ -51,6 +59,17 @@ def main() -> None:
                 raise SystemExit(
                     "Refusing any database other than the dedicated project operations DB"
                 )
+    if args.status:
+        print(json.dumps(publication_worker_status(), ensure_ascii=True, default=str))
+        return
+    if args.continuous:
+        run_forever(
+            args.poll_seconds,
+            args.backoff_seconds,
+            allow_private_drafts=args.operations_confirmed_private_drafts,
+            allow_live_publications=args.operations_approved_live_publications,
+        )
+        return
     print(json.dumps(
         run_once(
             args.backoff_seconds,

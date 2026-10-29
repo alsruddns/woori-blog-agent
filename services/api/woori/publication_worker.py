@@ -1,11 +1,15 @@
-"""Lease-based worker for offline-only scheduled publication simulations."""
+"""Lease-based Blogger publication worker with an explicit continuous service loop."""
 
 from __future__ import annotations
 
+import json
+import signal
+import threading
 from typing import Any
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
+import psycopg
 from psycopg.types.json import Jsonb
 
 from . import blogger_drafts, external_policy, publications
@@ -19,7 +23,12 @@ from .publication_daily import (
     kst_day_bounds,
 )
 from .publications import FakeBloggerPublisher
-from .worker import heartbeat
+from .worker import (
+    acquire_process_lock,
+    consume_worker_stop_request,
+    heartbeat,
+    release_process_lock,
+)
 
 
 def retryable(outcome: str, scenario: str, retry_count: int, max_retries: int) -> bool:
@@ -486,3 +495,101 @@ def run_once(
         raise
     finally:
         heartbeat("stopped", service_name="publication_worker")
+
+
+def run_forever(
+    poll_seconds: int = 15,
+    backoff_seconds: int = 30,
+    *,
+    allow_private_drafts: bool = False,
+    allow_live_publications: bool = False,
+    cycle_limit: int | None = None,
+) -> None:
+    """Run queue polling under a PostgreSQL singleton lock and live heartbeat.
+
+    External writes remain controlled by the explicit flags and the existing
+    Publisher policy gates. The default invocation is a mock-only worker.
+    `cycle_limit` exists only to make lifecycle behavior deterministic in tests.
+    """
+    if not 1 <= poll_seconds <= 3600 or not 0 <= backoff_seconds <= 3600:
+        raise ValueError("invalid_worker_poll_policy")
+    if cycle_limit is not None and cycle_limit < 1:
+        raise ValueError("invalid_cycle_limit")
+    guard = acquire_process_lock("publication_worker")
+    stop = threading.Event()
+    degraded = threading.Event()
+    old_handlers: dict[int, Any] = {}
+
+    def request_stop(_signum: int, _frame: object) -> None:
+        stop.set()
+
+    for signum in (signal.SIGINT, signal.SIGTERM):
+        try:
+            old_handlers[signum] = signal.signal(signum, request_stop)
+        except ValueError:
+            # Non-main-thread invocation is used only by a few test harnesses;
+            # the database stop marker remains available there.
+            pass
+
+    def beat() -> None:
+        while not stop.is_set():
+            try:
+                heartbeat(
+                    "degraded" if degraded.is_set() else "running",
+                    "publication_worker_cycle_failed" if degraded.is_set() else None,
+                    "publication_worker",
+                )
+            except psycopg.Error:
+                degraded.set()
+            stop.wait(15)
+
+    heartbeat_thread = threading.Thread(
+        target=beat, name="publication-worker-heartbeat", daemon=True
+    )
+    cycles = 0
+    failures = 0
+    heartbeat_thread.start()
+    try:
+        while not stop.is_set():
+            if consume_worker_stop_request(service_name="publication_worker"):
+                print("Graceful stop requested between publication cycles.", flush=True)
+                break
+            try:
+                result = tick(
+                    backoff_seconds,
+                    allow_private_drafts=allow_private_drafts,
+                    allow_live_publications=allow_live_publications,
+                )
+                failures = 0
+                degraded.clear()
+                if result is not None:
+                    print(json.dumps(result, ensure_ascii=True, default=str), flush=True)
+            except Exception as exc:  # noqa: BLE001 - keep service alive with bounded backoff and sanitized diagnostics
+                failures += 1
+                degraded.set()
+                print(
+                    json.dumps({
+                        "status": "degraded",
+                        "error_category": "publication_worker_cycle_failed",
+                        "error_type": type(exc).__name__,
+                        "retry_number": failures,
+                    }),
+                    flush=True,
+                )
+            cycles += 1
+            if cycle_limit is not None and cycles >= cycle_limit:
+                break
+            delay = (
+                min(300, max(poll_seconds, backoff_seconds) * (2 ** min(failures - 1, 4)))
+                if failures else poll_seconds
+            )
+            stop.wait(delay)
+    finally:
+        stop.set()
+        heartbeat_thread.join(timeout=3)
+        try:
+            heartbeat("stopped", service_name="publication_worker")
+        finally:
+            release_process_lock(guard, "publication_worker")
+        for signum, handler in old_handlers.items():
+            signal.signal(signum, handler)
