@@ -55,12 +55,42 @@
 - 예약 Auto 첫 공개 승인 이벤트가 존재하지 않는다. 따라서 실제 게시 호출은 하지 않았다.
 - 기존 평가를 반복 생성하지 않았으며, 첫/수정 일본어 실패 파일은 보존했다.
 
+## 후속 검증 기록 (2026-10-29 KST)
+
+앞 절의 평가는 초기 단계 결과다. ONS 금액·기간 표현을 보완한 불변 version 2를 생성하고, 최신 API에서 한 번 재평가했다.
+
+- 원고: `영국 공공부문 순부채 3조 파운드 첫 돌파…9월 재정통계 읽는 법`
+- 운영 Import ID: `c3e35c4f-4d79-4772-879f-0232d8bf400a`
+- Import version 2 ID: `d8b780a2-1be8-4355-b7c3-a908af8ba0e6`
+- Content version ID: `56a64419-c9c2-43fd-8217-747d89b64bb7`
+- 본문 SHA-256: `a66b913af38c796c35c36f15d421f642a7e0aa69bd82efd834ed92e9eb36d891`
+- 최신 평가 ID: `2c63b692-e392-4534-b338-827ffab516e9`
+- 최신 기계 평가: `machine_passed=true`; 숫자·날짜·고유명사·문단 출처표시·URL의 결정적 검사가 통과했다. SEO 일부, 사이트 맥락 및 의미적 주장 검토는 미측정/사람 검토다. `publish_ready=false`는 유지한다.
+- 기존 일본어 Import `9bd1706b-5e0a-4cb4-a7fd-d4949b9ecad7`은 보류 상태 그대로이며 재평가하지 않았다.
+
+### 실제 발행 및 운영 차단 상태
+
+- 이 원고의 생성 주체는 예약 실행이 아니라 `manual_codex_import`다. 예약 Auto 첫 게시 API는 `chatgpt_scheduled_export` 원고만 대상으로 하므로 이 수동 Import는 그 승인 경로에 적합하지 않다.
+- 예약 원고 자동 적격 건수: 0. 예약 Publishing Job: 0. Blogger POST/초안: 0. 공개 게시: 0. postId/URL: 없음.
+- 승인 UI에는 예약 Auto 상태·이력은 있으나, 현재 확인한 화면에는 첫 게시의 버전·본문 hash·blogId에 결속된 승인 제출 폼이 없다. 사람 편집 검토도 기록되지 않았다. 승인 기록을 만들거나 기존 범위를 넓히지 않았다.
+- 최신 런타임 확인: `http://127.0.0.1:8100/health` → `{"status":"ok"}`. Dashboard 3100 listening. Publication Worker PID `41992` heartbeat 정상, idle reason `no_queued_job_in_enabled_lane`; `AutoMode=manual`, `AutoPolicyActive=False`, LiveQueued/LiveDue=0. Research Worker 프로세스는 PID `23860`, `34236`; Publication Worker 관련 프로세스는 PID `13296`, `41992`로 감지되었다. 이번 마무리에서는 어떤 Worker도 종료·재시작하지 않았다.
+- API 상태 확인에서 현재 checkout의 API listener PID `46536` 및 checkout 프로세스 PID `17964`가 각각 표시됐다. 상태 확인만 했으며 프로세스를 변경하지 않았다.
+- 예약 JSON 자동 파일 전달 또는 GPT/Codex 무인 원고 생성은 이번 작업에서 실행·증명하지 않았다. Import는 기존 API로 수동 Codex 원고를 등록한 것이며 자동 파일 수신 성공으로 계산하지 않는다.
+
+### 최종 검증 및 Git
+
+- 최신 집중 검증: 관련 4개 pytest 파일 37 passed; `test_live_research.py` 선택 테스트 8 passed, 56 deselected; Ruff 통과.
+- 넓은 `test_live_research.py` 실행은 86 passed, 1 failed. 실패는 `test_fact_ledger_and_localization_separate_source_language_and_expression`의 기존 glossary/entity localization assertion으로, 이 변경 코드와 무관한 실패로 남긴다.
+- `/health` 정상. Mock/실제 Blogger 쓰기는 호출하지 않았다.
+- `.playwright-mcp/`는 사용자 데이터로 미추적 상태이며 커밋에서 제외했다.
+- 미완료: 예약 Export 원고의 실제 무인 생성·수신, 사람의 사실/편집/권리 검토, 이 수동 Import에 해당하는 일반 게시 승인 경로의 UI 사용 가능성, 첫 공개 게시 승인, 실제 Blogger 게시 및 URL 검증.
+- 앞서 원격 반영된 구현 커밋: `5704eba427a497b781f2e68bd6564dc14c0c75b7`, `7a6639e238d6d531d46f995ae8af3403bd6d1d8f`, `1b4e9f6c51bbb1fcf7d3e5960b60dc20a24a7d66`. 이번 후속 기록은 별도 커밋으로 남긴다.
+
 ## 미완료 및 다음 조치
 
-1. API를 프로젝트의 안전한 정상 재시작 절차로 최신 develop 코드에 반영한다.
-2. 저장된 Import 내용을 검토해 인용 marker와 OBR 정식 영문 기관명을 보완할 새 immutable version을 만든 뒤 새 버전만 평가한다.
-3. 사람의 사실·편집·권리 검토와 첫 공개 게시 승인을 실제 승인 경로에서 기록한다. 자동화 코드가 이를 대체하지 않는다.
-4. 승인이 기록되어도 실제 Blogger 쓰기는 별도 승인 정책과 게시 한도 확인 후 실행한다.
+1. 예약 Auto 대상 게시를 원한다면 실제 `chatgpt_scheduled_export` 원고를 생성·Import하고, 첫 게시 승인 절차가 해당 version/hash/blog에 결속되어 사용 가능한지 확인한다.
+2. 이 수동 원고를 게시하려면 `/imports`에서 사람이 실제 원고·출처·권리를 검토해 편집 검토를 기록해야 하며, 별도 첫 공개 게시 승인은 기존 승인 경로에서 완료해야 한다. 현재 이 원고는 예약 Auto 범위에 포함되지 않는다.
+3. 승인/Auto 정책과 실제 쓰기 인터록을 별도로 충족한 뒤에만 제한된 실 게시를 시도한다. 현재 게시 가능하다고 간주하지 않는다.
 
-커밋 해시: 후속 `git log`에 기록 (작업 중)
-원격 푸시: 작업 중
+커밋 해시: 개발 기록 보완 커밋의 `git log` 참조
+원격 푸시: 개발 기록 보완 커밋을 `origin/develop`에 푸시
