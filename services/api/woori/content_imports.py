@@ -966,6 +966,19 @@ def assess_import(import_id: UUID, request: ImportAssessmentRequest) -> dict[str
             "generation_ready": False, "publish_ready": False}
 
 
+@router.post("/{import_id}/live-source-evidence", status_code=201)
+def capture_scheduled_live_source_evidence(import_id: UUID) -> dict[str, Any]:
+    """Capture provenance only for exact URLs in the reviewed scheduled catalog."""
+    from .scheduled_source_evidence import capture_import_sources
+
+    try:
+        return capture_import_sources(import_id)
+    except ValueError as exc:
+        if str(exc) == "scheduled_import_not_found":
+            raise HTTPException(404, "Scheduled import not found") from exc
+        raise HTTPException(409, "Scheduled source capture was not accepted") from exc
+
+
 @router.post("/{import_id}/versions", status_code=201)
 def create_import_version(import_id: UUID, request: ImportVersionRequest) -> dict[str, Any]:
     with connection() as conn:

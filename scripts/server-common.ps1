@@ -125,7 +125,20 @@ function Test-ExactCheckoutServiceProcess($ProcessInfo, [string]$ServiceName) {
         $command -match '(?i)(?:^|\s)(dev|start)(?:\s|$)'
     }
     'worker' {
-      return $path -ieq $python -and $command -match '(?i)(^|\s)-m\s+woori\.worker(?:\s|$)'
+      $basePython = $null
+      $venvConfig = Join-Path $script:ProjectRoot '.venv\pyvenv.cfg'
+      if (Test-Path -LiteralPath $venvConfig -PathType Leaf) {
+        $executableLine = Get-Content -LiteralPath $venvConfig -Encoding utf8 |
+          Where-Object { $_ -match '^\s*executable\s*=\s*(.+?)\s*$' } | Select-Object -First 1
+        if ($executableLine -match '^\s*executable\s*=\s*(.+?)\s*$') {
+          try { $basePython = [IO.Path]::GetFullPath($Matches[1]) } catch { $basePython = $null }
+        }
+      }
+      $pathIsProjectInterpreter = $path -ieq $python -or ($basePython -and $path -ieq $basePython)
+      $quotedVenv = [regex]::Escape('"' + $python + '"')
+      $workerOptions = '(?:\s+--(?:evaluation|once|diagnostic-only)|\s+--run-seconds\s+\d+)'
+      return $pathIsProjectInterpreter -and
+        $command -match ('^\s*' + $quotedVenv + '\s+-m\s+woori\.worker' + $workerOptions + '*\s*$')
     }
     'evaluation_worker' {
       $evaluationScript = [IO.Path]::GetFullPath((Join-Path $script:ProjectRoot 'scripts\run_evaluation_worker.py'))
@@ -133,9 +146,23 @@ function Test-ExactCheckoutServiceProcess($ProcessInfo, [string]$ServiceName) {
     }
     'publication_worker' {
       $workerScript = [IO.Path]::GetFullPath((Join-Path $script:ProjectRoot 'scripts\publication-worker.py'))
-      $usesProjectVenv = $command.IndexOf('"' + $python + '"',[StringComparison]::OrdinalIgnoreCase) -ge 0
-      return [IO.Path]::GetFileName($path) -ieq 'python.exe' -and $usesProjectVenv -and
-        $command.IndexOf($workerScript,[StringComparison]::OrdinalIgnoreCase) -ge 0
+      $basePython = $null
+      $venvConfig = Join-Path $script:ProjectRoot '.venv\pyvenv.cfg'
+      if (Test-Path -LiteralPath $venvConfig -PathType Leaf) {
+        $executableLine = Get-Content -LiteralPath $venvConfig -Encoding utf8 |
+          Where-Object { $_ -match '^\s*executable\s*=\s*(.+?)\s*$' } | Select-Object -First 1
+        if ($executableLine -match '^\s*executable\s*=\s*(.+?)\s*$') {
+          try { $basePython = [IO.Path]::GetFullPath($Matches[1]) } catch { $basePython = $null }
+        }
+      }
+      $pathIsProjectInterpreter = $path -ieq $python -or ($basePython -and $path -ieq $basePython)
+      $quotedVenv = [regex]::Escape('"' + $python + '"')
+      $absoluteScript = [regex]::Escape('"' + $workerScript + '"')
+      $relativeScript = '(?:\.\\scripts\\publication-worker\.py|scripts\\publication-worker\.py)'
+      $knownOption = '(?:--operations-(?:mock-only|confirmed-private-drafts|approved-live-publications|scheduled-auto)|--continuous|--poll-seconds\s+\d+|--backoff-seconds\s+\d+)'
+      $expectedInvocation = '^\s*' + $quotedVenv + '\s+(?:' + $absoluteScript + '|' + $relativeScript + ')(?:\s+' + $knownOption + ')*\s*$'
+      return [IO.Path]::GetFileName($path) -ieq 'python.exe' -and $pathIsProjectInterpreter -and
+        $command -match $expectedInvocation
     }
     default { return $false }
   }

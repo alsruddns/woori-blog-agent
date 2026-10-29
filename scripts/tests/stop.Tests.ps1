@@ -89,13 +89,50 @@ Describe 'Safe stop process discovery' {
 
 Describe 'Worker stop behavior' {
   BeforeEach { Initialize-StopTestContext }
+  It 'targets the verified Python heartbeat child and tracks only its checkout launcher' {
+    $venv = [IO.Path]::GetFullPath($script:Python)
+    $config = Get-Content -LiteralPath (Join-Path $script:Root '.venv\pyvenv.cfg') -Encoding utf8 |
+      Where-Object { $_ -match '^\s*executable\s*=\s*(.+?)\s*$' } | Select-Object -First 1
+    $config -match '^\s*executable\s*=\s*(.+?)\s*$' | Should Be $true
+    $basePython = [IO.Path]::GetFullPath($Matches[1])
+    $launcher = [pscustomobject]@{ Id=501; ParentId=1; Path=$venv; CommandLine="`"$venv`" -m woori.worker" }
+    $heartbeat = [pscustomobject]@{ Id=502; ParentId=501; Path=$basePython; CommandLine="`"$venv`" -m woori.worker" }
+    Mock Get-CheckoutServiceProcesses { @($launcher,$heartbeat) }
+    Mock Get-ProcessStarted { $script:Started }
+    Mock Test-DescendantOf { $true }
+
+    $found = @(Get-StopCandidates worker @($launcher,$heartbeat))
+
+    @($found.Id).Count | Should Be 1
+    $found[0].Id | Should Be 502
+    $found[0].RelatedLaunchers[0].Id | Should Be 501
+    $found[0].WorkerService | Should Be 'research_worker'
+  }
+
   It 'requests cooperative stop and never force terminates an active worker' {
-    $worker = [pscustomobject]@{
-      Id=301; ParentId=1; Path=$script:Python
-      CommandLine="`"$script:Python`" -m woori.worker"; StartedUtc=$script:Started
-      Kind='worker'; ProcessInfo=[pscustomobject]@{ Id=301; ParentId=1; Path=$script:Python; CommandLine="`"$script:Python`" -m woori.worker" }
+    $venv = [IO.Path]::GetFullPath($script:Python)
+    $config = Get-Content -LiteralPath (Join-Path $script:Root '.venv\pyvenv.cfg') -Encoding utf8 |
+      Where-Object { $_ -match '^\s*executable\s*=\s*(.+?)\s*$' } | Select-Object -First 1
+    $config -match '^\s*executable\s*=\s*(.+?)\s*$' | Should Be $true
+    $basePython = [IO.Path]::GetFullPath($Matches[1])
+    $launcher = [pscustomobject]@{
+      Id=300; ParentId=1; Path=$venv; CommandLine="`"$venv`" -m woori.worker"
     }
-    Mock Get-ProcessTable { @($worker.ProcessInfo) }
+    $heartbeat = [pscustomobject]@{
+      Id=301; ParentId=300; Path=$basePython; CommandLine="`"$venv`" -m woori.worker"
+    }
+    $worker = [pscustomobject]@{
+      Id=301; ParentId=300; Path=$basePython
+      CommandLine="`"$venv`" -m woori.worker"; StartedUtc=$script:Started
+      Kind='worker'; WorkerService='research_worker'; ProcessInfo=$heartbeat
+      RelatedLaunchers=@([pscustomobject]@{
+        Id=300; ParentId=1; Path=$venv; CommandLine="`"$venv`" -m woori.worker"
+        StartedUtc=$script:Started; Kind='worker_launcher'; ProcessInfo=$launcher
+      })
+    }
+    Mock Get-CheckoutServiceProcesses { @($launcher,$heartbeat) }
+    Mock Test-DescendantOf { $true }
+    Mock Get-ProcessTable { @($launcher,$heartbeat) }
     Mock Get-ProcessStarted { $script:Started }
     Mock Read-ServerManifest { @{ services=@{} } }
     Mock Write-WorkerStopRequest { Join-Path $TestDrive 'worker-stop-301.json' }

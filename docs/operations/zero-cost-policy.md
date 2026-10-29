@@ -25,6 +25,10 @@ The gate caps requests per provider per minute and per hour in-process. Taiwan d
 
 No paid AI inference, Google Ads/Trends API, Search Console paid data product, paid research feed, paid proxy, cloud host, cloud database, or external model endpoint is allowlisted. Search Console remains a post-publication performance source only if separately reviewed and enabled; it is not a general search-volume source.
 
+### Scheduled-source evidence capture (2026-10-29)
+
+The `japan_energy_subsidy_site` provider is limited to one exact public government HTML page at `https://www.nenryo-teigakuhikisage.go.jp/`. The bounded GET uses the shared external-policy gate, a 1 MiB / 20-second response ceiling, 2 requests/minute and 12 requests/hour; redirects are disabled and HTTP 429 stops immediately. No key, account, paywall, or per-request API fee was identified for this page. The campaign page did not expose a reuse notice in the captured content, and no page-bound rights terms were confirmed. Retrieval provenance can therefore be recorded while reuse remains `unknown`; automatic publication remains held.
+
 ## Billing credentials and review
 
 Before every remote request the gate checks process environment variables and project `.env*` files for known paid AI, cloud, payment, and proxy credential/configuration names. If any nonempty match appears, remote calls stop and the authenticated research state lists the variable names only. The user must remove the setting or explicitly revise the policy after a cost review; the application never reads or prints the value for this report. Existing `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` for Blogger OAuth and database URLs are not classified as billing credentials. A Google API key, Cloud credential, billing setting, API key for a paid AI provider, or proxy setting is classified as a blocker.

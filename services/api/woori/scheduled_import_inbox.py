@@ -268,6 +268,16 @@ def process_inbox_once(
                                     "http_status": origin.status_code, "api_error": _safe_api_error(origin)})
                     continue
                 receipt = origin.json()
+                source_capture: dict[str, Any] = {"status": "not_run"}
+                try:
+                    captured = client.post(f"{IMPORT_PATH}/{import_id}/live-source-evidence")
+                    if captured.status_code in (200, 201):
+                        source_capture = {"status": "recorded", **captured.json()}
+                    else:
+                        source_capture = {"status": "unavailable", "http_status": captured.status_code,
+                                          "api_error": _safe_api_error(captured)}
+                except (httpx.HTTPError, json.JSONDecodeError) as exc:
+                    source_capture = {"status": "unavailable", "reason": _safe_error_text(exc)}
                 detail = client.get(f"{IMPORT_PATH}/{import_id}")
                 if detail.status_code != 200:
                     retry_target = "ready" if detail.status_code >= 500 else "rejected"
@@ -313,6 +323,7 @@ def process_inbox_once(
                     "duplicate": bool(import_result.get("duplicate")),
                     "machine_assessment_passed": bool(assessment.get("machine_passed")),
                     "independent_source_verification": bool(assessment.get("independent_source_verification")),
+                    "source_evidence_capture": source_capture,
                     "provenance_verified": False,
                     "generation_ready": False,
                     "publish_ready": False,

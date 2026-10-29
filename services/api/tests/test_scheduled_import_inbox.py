@@ -163,6 +163,9 @@ def test_inbox_posts_review_held_item_and_idempotent_origin_then_moves_file(tmp_
             assert len(origin["inbox_file_sha256"]) == 64
             return httpx.Response(201, json={"audit_event_id": 77, "duplicate": False,
                                              "provenance_verified": False, "auto_publication_enabled": False})
+        if request.url.path.endswith("/live-source-evidence"):
+            return httpx.Response(201, json={"outcomes": [{"status": "not_in_reviewed_catalog"}],
+                                             "blogger_write_performed": False, "auto_eligible": False})
         if request.method == "GET":
             return httpx.Response(200, json={"latest_version": {"id": "version-1"}, "assessments": []})
         if request.url.path.endswith("/assessment"):
@@ -184,8 +187,9 @@ def test_inbox_posts_review_held_item_and_idempotent_origin_then_moves_file(tmp_
     assert result["results"][0]["machine_assessment_passed"] is False
     assert result["results"][0]["independent_source_verification"] is False
     assert result["results"][0]["publish_ready"] is False
+    assert result["results"][0]["source_evidence_capture"]["status"] == "recorded"
     assert result["blogger_writes"] == 0 and result["external_ai_calls"] == 0
-    assert [call.method for call in calls] == ["POST", "POST", "GET", "POST"]
+    assert [call.method for call in calls] == ["POST", "POST", "POST", "GET", "POST"]
     assert not source.exists()
     assert list((tmp_path / "processed").glob("*.processing.json"))
     assert (tmp_path / "incoming").is_dir() and (tmp_path / "rejected").is_dir()

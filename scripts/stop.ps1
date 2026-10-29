@@ -80,6 +80,41 @@ function Get-StopCandidates([string]$Name, $ProcessTable) {
       RelatedLaunchers=$related
     })
   }
+  if ($Name -eq 'worker') {
+    $venvPython = [IO.Path]::GetFullPath((Join-Path $script:ProjectRoot '.venv\Scripts\python.exe'))
+    $matched = @(
+      Get-CheckoutServiceProcesses $ProcessTable 'worker' |
+        Where-Object { Test-ExactCheckoutServiceProcess $_ 'worker' }
+    )
+    $candidates = @()
+    foreach ($process in $matched | Where-Object { [IO.Path]::GetFullPath([string]$_.Path) -ine $venvPython }) {
+      $launcher = $matched | Where-Object {
+        $_.Id -eq [int]$process.ParentId -and
+          [IO.Path]::GetFullPath([string]$_.Path) -ieq $venvPython
+      } | Select-Object -First 1
+      if (-not $launcher -or -not (Test-DescendantOf $ProcessTable $process.Id $launcher.Id)) {
+        throw 'Research Worker interpreter parent could not be verified; no process was stopped.'
+      }
+      $service = if ([string]$process.CommandLine -match '(?i)(^|\s)--evaluation(?:\s|$)') {
+        'evaluation_worker'
+      } else { 'research_worker' }
+      $candidates += [pscustomobject]@{
+        Id=[int]$process.Id; ParentId=[int]$process.ParentId; Path=[string]$process.Path
+        CommandLine=[string]$process.CommandLine; StartedUtc=(Get-ProcessStarted ([int]$process.Id))
+        Kind=if ($service -eq 'evaluation_worker') { 'evaluation_worker' } else { 'worker' }
+        WorkerService=$service; ProcessInfo=$process
+        RelatedLaunchers=@([pscustomobject]@{
+          Id=[int]$launcher.Id; ParentId=[int]$launcher.ParentId; Path=[string]$launcher.Path
+          CommandLine=[string]$launcher.CommandLine; StartedUtc=(Get-ProcessStarted ([int]$launcher.Id))
+          Kind='worker_launcher'; ProcessInfo=$launcher
+        })
+      }
+    }
+    if ($matched.Count -and -not $candidates.Count) {
+      throw 'Research Worker heartbeat process could not be distinguished from its launcher; no process was stopped.'
+    }
+    return @($candidates | Sort-Object Id,Kind -Unique)
+  }
   $items = @()
   foreach ($kind in (Get-ServiceStopKinds $Name)) {
     foreach ($candidate in (Get-CheckoutServiceProcesses $ProcessTable $kind)) {

@@ -124,6 +124,17 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "commercial_use": "EY and LY reuse notices permit attributed reuse subject to stated exceptions; rights and semantic review remain required",
         "zero_cost_reviewed": True,
     },
+    "japan_energy_subsidy_site": {
+        "hosts": {"www.nenryo-teigakuhikisage.go.jp"},
+        "methods": {"GET"},
+        "rpm": 2,
+        "rph": 12,
+        "operations": {"source_collection"},
+        "paths_by_host": {"www.nenryo-teigakuhikisage.go.jp": ("/",)},
+        "cost": "One public government campaign page; no key, account, paywall, or per-request API fee identified; bounded local limits",
+        "commercial_use": "Campaign page has no visible reuse notice in the checked content; rights stay unknown unless a governing reuse notice is confirmed",
+        "zero_cost_reviewed": True,
+    },
 }
 
 _BILLING_PREFIXES = (
@@ -437,6 +448,47 @@ def _reserve_taiwan_official_call(host: str, method: str, hourly_limit: int) -> 
         )
 
 
+def _reserve_japan_energy_call(host: str, method: str, hourly_limit: int) -> None:
+    """Persist the public microsite cap so restarts cannot reset this allowance."""
+    from psycopg.types.json import Jsonb
+
+    from .db import connection
+
+    with connection() as conn:
+        conn.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+            ("external-provider:japan_energy_subsidy_site:rolling-hour",),
+        )
+        row = conn.execute(
+            """SELECT count(*) FILTER (WHERE created_at>=now()-interval '1 hour') AS hour_count,
+            max(created_at) AS last_call FROM audit_events
+            WHERE event_type='external.call.started'
+              AND payload->>'provider'='japan_energy_subsidy_site'"""
+        ).fetchone()
+        if row is None:
+            raise ExternalCallBlocked("durable_provider_quota_state_unavailable")
+        if int(row["hour_count"]) >= hourly_limit:
+            raise FreeQuotaExceeded("durable_free_hourly_call_limit_reached")
+        if row["last_call"] is not None:
+            elapsed = conn.execute(
+                "SELECT now()-%s AS age", (row["last_call"],)
+            ).fetchone()
+            if elapsed is None or elapsed["age"] < timedelta(seconds=30):
+                raise ExternalCallBlocked("provider_minimum_spacing")
+        payload: dict[str, Any] = {
+            "provider": "japan_energy_subsidy_site",
+            "operation": "source_collection",
+            "host": host,
+            "method": method,
+        }
+        if _external_run_id.get():
+            payload["run_id"] = _external_run_id.get()
+        conn.execute(
+            "INSERT INTO audit_events(event_type,payload) VALUES ('external.call.started',%s)",
+            (Jsonb(payload),),
+        )
+
+
 def _reserve_google_trends_call(host: str, method: str, operation: str) -> str | None:
     """Durably share RSS spacing and rolling-hour caps across every caller/process."""
     from psycopg.types.json import Jsonb
@@ -519,6 +571,8 @@ def _authorize(provider: str, operation: str, request: httpx.Request) -> None:
     path_prefixes = rule.get("paths_by_host", {}).get(parsed.host, rule.get("paths", ()))
     method_allowed = request.method in rule["methods"]
     operation_path_allowed = any(parsed.path.startswith(prefix) for prefix in path_prefixes)
+    if provider == "japan_energy_subsidy_site":
+        operation_path_allowed = parsed.host == "www.nenryo-teigakuhikisage.go.jp" and parsed.path == "/" and not parsed.query
     if provider == "google_blogger_read":
         blog_id = r"[0-9]{1,40}"
         post_id = r"[0-9]{1,40}"
@@ -588,6 +642,8 @@ def _authorize(provider: str, operation: str, request: httpx.Request) -> None:
     try:
         if provider == "taiwan_official_documents":
             _reserve_taiwan_official_call(parsed.host, request.method, rule["rph"])
+        elif provider == "japan_energy_subsidy_site":
+            _reserve_japan_energy_call(parsed.host, request.method, rule["rph"])
         elif provider == "google_trends_rss":
             block_reason = _reserve_google_trends_call(parsed.host, request.method, operation)
             if block_reason:
