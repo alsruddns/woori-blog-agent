@@ -9,7 +9,7 @@ type Candidate = {
   editorial_review_approved?: boolean; publication_approval_approved?: boolean;
   effective_mode?: string; auto_eligibility?: { eligible: boolean; reasons: string[]; simulation_only: boolean };
 };
-type Job = { id: string; evaluation_id: string | null; content_version_id: string; language_code: string; url: string; status: string; publication_state: string; block_reasons: string[]; simulation_count: number };
+type Job = { id: string; evaluation_id: string | null; content_version_id: string; language_code: string; url: string; status: string; publication_state: string; block_reasons: string[]; simulation_count: number; adapter_type?: string; simulation_only?: boolean; remote_post_id?: string | null; remote_url?: string | null; remote_status?: string | null; remote_verified_at?: string | null; published_at?: string | null; live_attempt_count?: number; last_error_category?: string | null };
 type ModeSetting = { scope_type: "global" | "language" | "blog"; scope_key: string; configured_mode: "manual" | "auto"; daily_auto_limit: number; minimum_interval_minutes: number; allowed_start_hour: number; allowed_end_hour: number; timezone: string; allowed_categories: string[]; excluded_topics: string[]; max_source_age_hours: number; retry_limit: number; emergency_stopped: boolean; operations_auto_approved: boolean; updated_at?: string };
 type SyncPost = { id: string | null; url: string | null; title: string | null; status: string | null; published: string | null; updated: string | null; internal_record: boolean; content_version_id: string | null };
 type SyncResult = { language_code: string; blog_uuid: string; posts: SyncPost[]; next_page_token: string; read_only: true; internal_state_changed: false };
@@ -45,7 +45,7 @@ export default function PublicationManager({ initial }: { initial: PublicationDa
   const [excludedTopics, setExcludedTopics] = useState(globalMode?.excluded_topics.join(", ") ?? "");
   const [activeTab, setActiveTab] = useState<"pending" | "history" | "settings">("pending");
   const pendingCount = data.candidates.filter(candidate => !candidate.editorial_review_approved || !candidate.publication_approval_approved).length;
-  const publishedCount = data.jobs.filter(job => job.publication_state === "published" || job.status === "published").length;
+  const publishedCount = data.jobs.filter(job => job.adapter_type === "blogger_live" && job.remote_status === "LIVE" && job.remote_post_id && job.remote_verified_at).length;
   const blockedCount = data.jobs.filter(job => job.publication_state === "blocked" || job.status === "failed").length;
   function chooseScope(type: "global" | "language" | "blog", key = "") {
     setScopeType(type); setScopeKey(key);
@@ -155,7 +155,7 @@ export default function PublicationManager({ initial }: { initial: PublicationDa
   }
   return <div className="publication-manager">
     <section className="publishing-summary" aria-label="발행 현황">
-      <article><span>실제 Blogger 게시</span><strong>차단</strong></article>
+      <article><span>실제 Blogger 게시 (원격 확인)</span><strong>{publishedCount.toLocaleString("ko-KR")}건</strong></article>
       <article><span>자동 게시 실행</span><strong>비활성</strong></article>
       <article><span>승인 대기 후보</span><strong>{pendingCount.toLocaleString("ko-KR")}건</strong></article>
       <article><span>게시 기록</span><strong>{publishedCount.toLocaleString("ko-KR")}건 · 보류 {blockedCount.toLocaleString("ko-KR")}건</strong></article>
@@ -221,12 +221,12 @@ export default function PublicationManager({ initial }: { initial: PublicationDa
       </tbody></table></div> : <p className="empty-state">승인 대기 원고가 없습니다.</p>}
     </section>}
     {activeTab === "history" && <section className="workspace-panel publication-section"><div className="section-heading"><div><h2>발행 요청 및 처리 이력</h2><p>실제 게시와 모의 테스트 결과를 구분해 표시합니다.</p></div></div>{data.jobs.length === 0 ? <p className="empty-state">발행 요청 기록이 없습니다.</p> : <div className="publication-table-scroll"><table><thead><tr><th>요청</th><th>언어·블로그</th><th>상태</th><th>차단 사유</th><th>모의 작업</th></tr></thead><tbody>
-      {data.jobs.map((job) => <tr key={job.id}><td>{job.id}<small>{stateNames[job.status] ?? "상태 확인 필요"} · 모의 작업</small></td><td>{languageLabel(job.language_code)} · {job.url}</td>
-        <td>{stateNames[job.publication_state] ?? stateNames[job.status] ?? "상태 확인 필요"}</td><td>{job.block_reasons.length ? "게시 조건 미충족 · 상세 사유는 운영 진단에서 확인" : "차단 사유 없음"}</td>
-        <td><button disabled={!!busy} onClick={() => void simulate(job)}>{busy === job.id ? "실행 중…" : "모의 게시 시험"}</button>{" "}
+      {data.jobs.map((job) => <tr key={job.id}><td>{job.id}<small>{stateNames[job.status] ?? "상태 확인 필요"} · {job.adapter_type === "blogger_live" ? "실제 Blogger 작업" : "모의 작업"}</small>{job.remote_post_id && <small>Blogger postId {job.remote_post_id}</small>}{job.remote_url && <a href={job.remote_url} target="_blank" rel="noreferrer">공개 게시물 열기</a>}{job.remote_verified_at && <small>원격 GET 확인 {new Date(job.remote_verified_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })} KST · {job.remote_status}</small>}</td><td>{languageLabel(job.language_code)} · {job.url}<small>콘텐츠 버전 {job.content_version_id}</small></td>
+        <td>{stateNames[job.publication_state] ?? stateNames[job.status] ?? "상태 확인 필요"}{job.published_at && <small>{new Date(job.published_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })} KST</small>}</td><td>{job.block_reasons.length ? job.block_reasons.join(", ") : "차단 사유 없음"}{job.last_error_category && <small>오류: {job.last_error_category}</small>}</td>
+        <td>{job.adapter_type === "blogger_live" ? <span>실제 쓰기 시도 {job.live_attempt_count ?? 0}회</span> : <><button disabled={!!busy} onClick={() => void simulate(job)}>{busy === job.id ? "실행 중…" : "모의 게시 시험"}</button>{" "}
           <label>모의 예약 일시 (한국 표준시) <input id={`schedule-${job.id}`} type="datetime-local" /></label>{" "}
           <button className="secondary-button" disabled={!!busy} onClick={() => void schedule(job)}>모의 예약 기록</button>{" "}
-          {job.status === "queued" && <button className="secondary-button" disabled={!!busy} onClick={() => void cancelSchedule(job)}>모의 예약 취소</button>}{job.evaluation_id && <a href={`/manuscripts?open_evaluation_id=${encodeURIComponent(job.evaluation_id)}&open_content_version_id=${encodeURIComponent(job.content_version_id)}`}>다른 언어로 발행</a>}</td></tr>)}
+          {job.status === "queued" && <button className="secondary-button" disabled={!!busy} onClick={() => void cancelSchedule(job)}>모의 예약 취소</button>}</>}{job.evaluation_id && <a href={`/manuscripts?open_evaluation_id=${encodeURIComponent(job.evaluation_id)}&open_content_version_id=${encodeURIComponent(job.content_version_id)}`}>원고 상세</a>}</td></tr>)}
     </tbody></table></div>}</section>}
     {activeTab === "settings" && <aside>게시 작업자 상태: {data.worker?.status === "running" ? "실행 중" : data.worker ? "중지됨" : "실행 기록 없음"} · 모의 작업 {data.queued_mock_jobs}건 · 명시 확인된 비공개 초안 대기 {data.queued_confirmed_private_drafts ?? 0}건. 운영 CLI의 `--operations-confirmed-private-drafts` 모드만 비공개 초안 큐를 처리하며 공개 발행은 계속 차단됩니다.</aside>}
   </div>;

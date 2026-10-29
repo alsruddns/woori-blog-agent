@@ -85,3 +85,7 @@ An absent price entry is not evidence of free use. Re-review needs explicit offi
 ## P5-CODEX-019 Blogger draft worker gate (2026-10-29)
 
 The confirmed private-draft operation queue is now callable by the operations-only publication worker, but this does not change the zero-cost decision above. Before executing `scripts/publication-worker.py --operations-confirmed-private-drafts`, an operator must verify the project's Blogger API quota/usage and Cloud Billing association in Google Cloud Console. The app's append-only owner attestation is not a live Cloud Console check. A quota cap alone is not a spending cap. Until both the zero-cost condition and quota headroom are verified, do not enqueue/execute a live test draft. No Blogger POST was performed during P5-CODEX-019.
+
+## P5-CODEX-025 public-publish gate (2026-10-29)
+
+Migration 049 and the guarded live queue now support a separate public-publish authorization event, but no such event is present and no public request was executed. The existing Blogger cost attestation and `blogger` scope do not constitute approval to publish publicly. The queue also requires exact-version human editorial and publication approval, source/right/SEO/HTML checks, and `publish_ready=true`. Verify the Google Cloud project quota and billing association before any write. A timeout or expired worker lease is held for remote reconciliation and is never blindly re-POSTed. This change does not enable Auto, alter API pricing/quota claims, or modify existing Blogger posts.

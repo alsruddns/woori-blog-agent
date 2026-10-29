@@ -226,6 +226,8 @@ def billing_credential_names() -> list[str]:
 
 BLOGGER_APPROVAL_EVENT = "external.blogger.cost_policy.approved"
 BLOGGER_REVOCATION_EVENT = "external.blogger.cost_policy.revoked"
+BLOGGER_PUBLIC_APPROVAL_EVENT = "external.blogger.public_publish.approved"
+BLOGGER_PUBLIC_REVOCATION_EVENT = "external.blogger.public_publish.revoked"
 BLOGGER_APPROVAL_SCOPE = {
     "blogger_read",
     "private_draft_create",
@@ -265,6 +267,8 @@ def _blogger_operation_is_approved(operation: str) -> bool:
     approval = _blogger_policy_approval()
     if approval is None:
         return False
+    if operation == "blogger_public_publish":
+        return _blogger_public_publish_approval() is not None
     permitted = {
         "blogger_read": "blogger_read",
         "blogger_draft_create": "private_draft_create",
@@ -274,6 +278,34 @@ def _blogger_operation_is_approved(operation: str) -> bool:
         "blogger_public_publish": "public_post_publish",
     }
     return permitted.get(operation) in approval["scope"]
+
+
+def _blogger_public_publish_approval() -> dict[str, Any] | None:
+    """Require a separate append-only owner approval before public Blogger writes."""
+    if _blogger_policy_approval() is None:
+        return None
+    try:
+        from .db import connection
+
+        with connection() as conn:
+            row = conn.execute(
+                """SELECT event_type,payload,created_at FROM audit_events
+                WHERE event_type IN (%s,%s) AND payload->>'provider'='google_blogger_read'
+                ORDER BY id DESC LIMIT 1""",
+                (BLOGGER_PUBLIC_APPROVAL_EVENT, BLOGGER_PUBLIC_REVOCATION_EVENT),
+            ).fetchone()
+    except (psycopg.Error, OSError):
+        return None
+    if (
+        row is None
+        or row["event_type"] != BLOGGER_PUBLIC_APPROVAL_EVENT
+        or row["payload"].get("policy_version") != 1
+        or row["payload"].get("actor") != "project_owner_explicit_public_publish_approval"
+        or row["payload"].get("evidence") != "I_APPROVE_BLOGGER_PUBLIC_PUBLISH"
+        or row["payload"].get("approved_scope") != ["public_post_publish"]
+    ):
+        return None
+    return {"created_at": row["created_at"], "scope": ["public_post_publish"]}
 
 
 def status() -> dict[str, Any]:
@@ -310,6 +342,8 @@ def status() -> dict[str, Any]:
                 "zero_cost_reviewed": bool(rule["zero_cost_reviewed"] or blogger_reviewed),
                 "approval_scope": approval_scope if blogger_reviewed else [],
                 "approval_at": approval_at if blogger_reviewed else None,
+                "public_publish_approved": _blogger_public_publish_approval() is not None
+                if name == "google_blogger_read" and blogger_reviewed else False,
             }
         )
         if not allowed:

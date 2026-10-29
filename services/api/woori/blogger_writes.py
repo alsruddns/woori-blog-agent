@@ -8,7 +8,9 @@ the requested operation. No caller should treat a mock result as a live post.
 
 import hashlib
 import json
-from datetime import UTC, datetime
+from collections.abc import Iterator
+from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlsplit
 from uuid import UUID
@@ -20,6 +22,7 @@ from . import external_policy, google_oauth
 from .db import connection
 from .external_policy import ExternalCallBlocked, FreeQuotaExceeded
 from .google_http import BASE, WRITE_SCOPE, GoogleFailure, classify, numeric_id
+from .publication_daily import LANGUAGE_HOURLY_LIMITS
 
 
 def _live_response(
@@ -125,7 +128,10 @@ class BloggerLivePublisher:
         ).hexdigest()
 
     @staticmethod
-    def _claim(key: str, operation: str, fingerprint: str) -> dict[str, Any] | None:
+    def _claim(
+        key: str, operation: str, fingerprint: str, *,
+        blog_id: str, connection_id: UUID,
+    ) -> dict[str, Any] | None:
         if not key or len(key) > 128:
             raise GoogleFailure("invalid_idempotency_key")
         durable_key = "live:" + key
@@ -152,9 +158,67 @@ class BloggerLivePublisher:
                 raise GoogleFailure("previous_write_pending_or_uncertain")
             conn.execute(
                 "INSERT INTO audit_events(event_type,payload) VALUES ('blogger.write.requested',%s)",
-                (Jsonb({"operation": operation, "mode": "live", "idempotency_key_hash": hashlib.sha256(durable_key.encode()).hexdigest()}),),
+                (Jsonb({"operation": operation, "mode": "live", "blog_id": blog_id,
+                        "connection_id": str(connection_id),
+                        "idempotency_key_hash": hashlib.sha256(durable_key.encode()).hexdigest()}),),
             )
         return None
+
+    @staticmethod
+    def _existing(key: str, operation: str, fingerprint: str) -> dict[str, Any] | None:
+        durable_key = "live:" + key
+        with connection() as conn:
+            existing = conn.execute(
+                "SELECT request_fingerprint,status,result FROM blogger_write_operations WHERE idempotency_key=%s",
+                (durable_key,),
+            ).fetchone()
+        if not existing:
+            return None
+        if existing.get("request_fingerprint") != fingerprint:
+            raise GoogleFailure("idempotency_key_payload_conflict")
+        if existing["status"] == "succeeded":
+            return dict(existing["result"] or {})
+        raise GoogleFailure("previous_write_pending_or_uncertain")
+
+    @staticmethod
+    @contextmanager
+    def _account_write_guard(target: dict[str, Any]) -> Iterator[None]:
+        """Serialize all writes for the selected OAuth grant and enforce durable spacing."""
+        connection_id = str(target["oauth_connection_id"])
+        blog_id = str(target["blog_id"])
+        language = str(target["language_code"])
+        with connection() as conn:
+            locked = conn.execute(
+                "SELECT pg_try_advisory_lock(hashtextextended(%s,0)) AS acquired",
+                ("blogger-live-account:" + connection_id,),
+            ).fetchone()
+            if not locked or not locked["acquired"]:
+                raise GoogleFailure("account_write_in_progress")
+            try:
+                limits = conn.execute(
+                    """SELECT max(a.created_at) FILTER (WHERE COALESCE(a.payload->>'connection_id',b.oauth_connection_id::text)=%s) AS account_last,
+                    max(a.created_at) FILTER (WHERE a.payload->>'blog_id'=%s) AS blog_last,
+                    count(*) FILTER (WHERE a.payload->>'blog_id'=%s
+                      AND a.created_at>=now()-interval '1 hour')::int AS blog_hourly
+                    FROM audit_events a LEFT JOIN blogger_blogs b
+                      ON b.blog_id=a.payload->>'blog_id'
+                    WHERE a.event_type='blogger.write.requested'
+                      AND a.payload->>'mode'='live'""",
+                    (connection_id, blog_id, blog_id),
+                ).fetchone()
+                if limits["account_last"] and limits["account_last"] > datetime.now(UTC) - timedelta(minutes=2):
+                    raise GoogleFailure("account_minimum_interval_not_elapsed")
+                if limits["blog_last"] and limits["blog_last"] > datetime.now(UTC) - timedelta(minutes=5):
+                    raise GoogleFailure("blog_minimum_interval_not_elapsed")
+                hourly_limit = LANGUAGE_HOURLY_LIMITS.get(language, 0)
+                if not hourly_limit or int(limits["blog_hourly"] or 0) >= hourly_limit:
+                    raise GoogleFailure("blog_hourly_limit_reached")
+                yield
+            finally:
+                conn.execute(
+                    "SELECT pg_advisory_unlock(hashtextextended(%s,0))",
+                    ("blogger-live-account:" + connection_id,),
+                )
 
     @staticmethod
     def _finish(
@@ -202,9 +266,22 @@ class BloggerLivePublisher:
                 raise GoogleFailure("invalid_labels")
             payload["labels"] = labels
         fingerprint = self._fingerprint("create_draft", target["blog_id"], payload)
-        previous = self._claim(key, "create_draft", fingerprint)
+        previous = self._existing(key, "create_draft", fingerprint)
         if previous is not None:
             return previous
+        with self._account_write_guard(target):
+            previous = self._claim(
+                key, "create_draft", fingerprint, blog_id=target["blog_id"],
+                connection_id=target["oauth_connection_id"],
+            )
+            if previous is not None:
+                return previous
+            return self._create_draft_claimed(key, target, title, html, payload)
+
+    def _create_draft_claimed(
+        self, key: str, target: dict[str, Any], title: str, html: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
         try:
             self._verify_target(target)
             data, status = _live_response(
@@ -220,7 +297,8 @@ class BloggerLivePublisher:
             result = {"post_id": post_id, "blog_id": target["blog_id"],
                       "url": None, "status": "DRAFT", "created_at": data.get("published"),
                       "http_status": status, "live": True, "simulation_only": False,
-                      "post_verified": False}
+                      "post_verified": False,
+                      "connection_id": str(target["oauth_connection_id"])}
             verified, verify_status = _live_response(
                 connection_id=target["oauth_connection_id"], operation="blogger_read",
                 method="GET", path=f"/blogs/{target['blog_id']}/posts/{post_id}",
@@ -258,27 +336,76 @@ class BloggerLivePublisher:
         if prior is None:
             raise GoogleFailure("verified_local_draft_required")
         fingerprint = self._fingerprint("publish_draft", target["blog_id"], {"post_id": post_id})
-        previous = self._claim(key, "publish_draft", fingerprint)
+        previous = self._existing(key, "publish_draft", fingerprint)
         if previous is not None:
             return previous
+        with self._account_write_guard(target):
+            previous = self._claim(
+                key, "publish_draft", fingerprint, blog_id=target["blog_id"],
+                connection_id=target["oauth_connection_id"],
+            )
+            if previous is not None:
+                return previous
+            return self._publish_draft_claimed(key, target, post_id)
+
+    def _publish_draft_claimed(
+        self, key: str, target: dict[str, Any], post_id: str,
+    ) -> dict[str, Any]:
         try:
             self._verify_target(target)
-            data, status = _live_response(
-                connection_id=target["oauth_connection_id"], operation="blogger_public_publish",
-                method="POST", path=f"/blogs/{target['blog_id']}/posts/{post_id}/publish",
-                transport=self._transport,
+            draft, draft_status = _live_response(
+                connection_id=target["oauth_connection_id"], operation="blogger_read",
+                method="GET", path=f"/blogs/{target['blog_id']}/posts/{post_id}",
+                params={"view": "AUTHOR"}, transport=self._transport,
             )
-            if str((data.get("blog") or {}).get("id", "")) != target["blog_id"]:
-                raise GoogleFailure("blogger_response_blog_mismatch", status)
-            url = str(data.get("url", ""))
-            if (urlsplit(url).scheme != "https"
-                    or (urlsplit(url).hostname or "").casefold()
-                    != (urlsplit(str(target["url"])).hostname or "").casefold()):
-                raise GoogleFailure("published_url_invalid", status)
+            if (numeric_id(str(draft.get("id", ""))) != post_id
+                    or str((draft.get("blog") or {}).get("id", "")) != target["blog_id"]
+                    or draft.get("status") != "DRAFT"):
+                raise GoogleFailure("verified_draft_not_found", draft_status)
+            draft_fingerprint = self._fingerprint(
+                "publish_draft_source", target["blog_id"],
+                {"post_id": post_id, "title": draft.get("title"), "content": draft.get("content")},
+            )
+            try:
+                _, status = _live_response(
+                    connection_id=target["oauth_connection_id"], operation="blogger_public_publish",
+                    method="POST", path=f"/blogs/{target['blog_id']}/posts/{post_id}/publish",
+                    transport=self._transport,
+                )
+            except GoogleFailure as exc:
+                if exc.category not in {"uncertain_write", "unavailable", "network"}:
+                    raise
+                # A timed-out publish must be reconciled by remote read before any retry.
+                status = exc.status
+            verified, verify_status = _live_response(
+                connection_id=target["oauth_connection_id"], operation="blogger_read",
+                method="GET", path=f"/blogs/{target['blog_id']}/posts/{post_id}",
+                params={"view": "AUTHOR"}, transport=self._transport,
+            )
+            if (numeric_id(str(verified.get("id", ""))) != post_id
+                    or str((verified.get("blog") or {}).get("id", "")) != target["blog_id"]
+                    or verified.get("status") != "LIVE"
+                    or verified.get("title") != draft.get("title")
+                    or verified.get("content") != draft.get("content")):
+                raise GoogleFailure("published_readback_mismatch", verify_status)
+            url = str(verified.get("url", ""))
+            expected_host = (urlsplit(str(target["url"])).hostname or "").casefold()
+            parsed_url = urlsplit(url)
+            if parsed_url.scheme != "https" or (parsed_url.hostname or "").casefold() != expected_host:
+                raise GoogleFailure("published_url_invalid", verify_status)
+            published_at = verified.get("published")
+            if not isinstance(published_at, str) or not published_at:
+                raise GoogleFailure("published_timestamp_missing", verify_status)
+            try:
+                datetime.fromisoformat(published_at)
+            except ValueError:
+                raise GoogleFailure("published_timestamp_invalid", verify_status) from None
             result = {"post_id": post_id, "blog_id": target["blog_id"], "url": url,
-                      "status": str(data.get("status") or "LIVE"),
-                      "published_at": data.get("published"), "http_status": status,
-                      "live": True, "simulation_only": False}
+                      "status": "LIVE", "published_at": published_at,
+                      "http_status": status, "readback_http_status": verify_status,
+                      "readback_verified": True, "draft_fingerprint": draft_fingerprint,
+                      "live": True, "simulation_only": False,
+                      "connection_id": str(target["oauth_connection_id"])}
             self._finish(key, "publish_draft", "succeeded", result, None, status)
             return result
         except GoogleFailure as exc:

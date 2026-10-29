@@ -11,8 +11,10 @@ from fastapi import APIRouter, HTTPException, Query
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from . import blogger_service
+from . import blogger_service, external_policy
+from .blogger_writes import BloggerLivePublisher
 from .db import connection
+from .google_http import GoogleFailure
 from .publication_modes import (
     ModeSettingsInput,
     assess_auto_candidate,
@@ -325,16 +327,26 @@ def _assess(row: dict[str, Any] | None) -> dict[str, Any]:
         reasons.append("unexpected_auto_publish_enabled")
     if not row["machine_passed"]:
         reasons.append("machine_quality_not_passed")
+    if not row.get("sources_reviewed", False):
+        reasons.append("official_source_review_missing")
+    if not row.get("evidence_facts_reviewed", False):
+        reasons.append("evidence_fact_verification_missing")
+    if not row.get("research_package_reviewed", False):
+        reasons.append("research_package_not_reviewed")
+    if not row.get("rights_reviewed", False):
+        reasons.append("source_rights_review_missing")
+    if not row.get("seo_passed", False):
+        reasons.append("seo_check_not_passed")
+    if not row.get("html_ready", False):
+        reasons.append("sanitized_blogger_html_missing")
     if row["human_review_required"] or not row["human_review_approved"]:
         reasons.append("human_review_pending")
     if not row.get("publication_approval_approved", False):
         reasons.append("publication_approval_missing_or_stale")
-    if row["publish_ready"]:
-        # Phase policy and schema deliberately prohibit this state today.
-        reasons.append("unexpected_publish_ready_state")
-    else:
+    if not external_policy._blogger_operation_is_approved("blogger_public_publish"):
+        reasons.append("production_writes_disabled")
+    if not row["publish_ready"]:
         reasons.append("publish_ready_disabled")
-    reasons.append("production_writes_disabled")
     if "machine_quality_not_passed" in reasons:
         state = "quality_held"
     elif "human_review_pending" in reasons:
@@ -351,7 +363,7 @@ def _candidate(conn: Any, version_id: UUID, blog_id: UUID) -> dict[str, Any] | N
             """SELECT v.id AS content_version_id,v.title,v.body,v.localization_id,
             l.language_code AS version_language,l.target_country,b.id AS blog_uuid,
             b.language_code AS blog_language,b.url,b.active AS blog_active,
-            b.blog_id AS blog_id_value,b.connection_verified_at,b.test_publish_verified_at,
+            b.blog_id AS blog_id_value,b.oauth_connection_id,b.connection_verified_at,b.test_publish_verified_at,
             lang.active AS language_active,g.status AS oauth_status,
             p.id AS policy_id,p.active AS policy_active,p.auto_publish_allowed,
             COALESCE(q.machine_passed,false) AS machine_passed,
@@ -362,7 +374,39 @@ def _candidate(conn: Any, version_id: UUID, blog_id: UUID) -> dict[str, Any] | N
               AS publication_approval_approved,
             COALESCE(q.publish_ready,false) AS publish_ready,
             q.id AS quality_evaluation_id,q.id AS evaluation_id,q.status AS quality_status,
-            editorial.id AS editorial_version_id
+            editorial.id AS editorial_version_id,editorial.html_body,
+            editorial.title AS editorial_title,editorial.seo_description,
+            (cardinality(COALESCE(q.source_ids,'{}'::uuid[]))>0 AND NOT EXISTS (
+              SELECT 1 FROM unnest(q.source_ids) sid
+              WHERE NOT EXISTS (SELECT 1 FROM research_sources s
+                JOIN LATERAL (SELECT approved FROM source_reviews WHERE source_id=s.id
+                  ORDER BY review_sequence DESC LIMIT 1) review ON review.approved
+                WHERE s.id=sid AND s.valid_until>now()
+                  AND NOT EXISTS (SELECT 1 FROM research_sources newer
+                    WHERE newer.keyword_id=s.keyword_id AND newer.url=s.url AND newer.revision>s.revision))
+            )) AS sources_reviewed,
+            (cardinality(COALESCE(q.fact_ids,'{}'::uuid[]))>0 AND NOT EXISTS (
+              SELECT 1 FROM unnest(q.fact_ids) fid LEFT JOIN evidence_facts fact ON fact.id=fid
+              WHERE fact.id IS NULL OR fact.verification_status<>'source_span_verified'
+            )) AS evidence_facts_reviewed,
+            EXISTS (SELECT 1 FROM external_content_import_content_links link
+              JOIN external_content_imports imported ON imported.id=link.import_id
+              JOIN LATERAL (SELECT package.status,package.independent_source_count,package.source_ids
+                FROM trend_research_packages package WHERE package.id::text=imported.research_package_id
+                ORDER BY package.package_version DESC LIMIT 1) package ON true
+              WHERE link.content_version_id=v.id
+                AND package.status='evidence_ready_for_human_review'
+                AND package.independent_source_count>0
+                AND package.source_ids && COALESCE(q.source_ids,'{}'::uuid[])) AS research_package_reviewed,
+            EXISTS (SELECT 1 FROM external_content_import_content_links link
+              JOIN LATERAL (SELECT rights_reviewed FROM external_content_import_review_events event
+                WHERE event.import_id=link.import_id AND event.version_id=link.import_version_id
+                ORDER BY event.created_at DESC,event.id DESC LIMIT 1) rights
+              WHERE link.content_version_id=v.id AND rights.rights_reviewed) AS rights_reviewed,
+            EXISTS (SELECT 1 FROM seo_audits seo WHERE seo.content_version_id=v.id
+              AND seo.passed AND seo.profile_id=(SELECT profile_id FROM language_profiles
+                WHERE language_code=l.language_code AND target_country=l.target_country LIMIT 1)) AS seo_passed,
+            (editorial.html_body IS NOT NULL AND editorial.html_body_sha256 IS NOT NULL) AS html_ready
         FROM content_versions v
         JOIN content_localizations l ON l.id=v.localization_id
         JOIN blogger_blogs b ON b.id=%s
@@ -377,7 +421,7 @@ def _candidate(conn: Any, version_id: UUID, blog_id: UUID) -> dict[str, Any] | N
           ORDER BY created_at DESC,id DESC LIMIT 1
         ) q ON true
         LEFT JOIN LATERAL (
-          SELECT id,body_sha256 FROM article_editorial_versions
+          SELECT id,body_sha256,html_body,html_body_sha256,title,seo_description FROM article_editorial_versions
           WHERE evaluation_id=q.evaluation_id AND base_content_version_id=v.id
           ORDER BY revision_number DESC,created_at DESC,id DESC LIMIT 1
         ) editorial ON true
@@ -444,16 +488,29 @@ def list_publications() -> dict[str, Any]:
             """SELECT j.id,j.content_version_id,j.blog_id,b.language_code,b.url,
                 j.status,j.publication_state,j.scheduled_at,j.schedule_timezone,j.block_reasons,
                 j.attempts,j.retry_count,j.last_error_category,j.updated_at,
-                (SELECT q.evaluation_id FROM article_quality_evaluations q
+                j.adapter_type,j.simulation_only,j.live_stage,j.remote_post_id,
+                live_record.remote_url,live_record.remote_status,live_record.remote_verified_at,
+                live_record.published_at,
+                (SELECT q.id FROM article_quality_evaluations q
                  WHERE q.content_version_id=j.content_version_id
                  ORDER BY q.created_at DESC,q.id DESC LIMIT 1) AS evaluation_id,
                 (SELECT count(*) FROM publication_attempts a WHERE a.job_id=j.id) AS simulation_count
+                ,(SELECT count(*) FROM live_publication_attempts la WHERE la.job_id=j.id) AS live_attempt_count
             FROM publishing_jobs j JOIN blogger_blogs b ON b.id=j.blog_id
+            LEFT JOIN LATERAL (SELECT remote_url,remote_status,remote_verified_at,published_at
+              FROM publishing_records r WHERE r.job_id=j.id ORDER BY r.published_at DESC LIMIT 1) live_record ON true
             ORDER BY j.scheduled_at DESC,j.id DESC LIMIT 100"""
         ).fetchall()
         attempts = conn.execute(
             "SELECT id,job_id,scenario,outcome,fake_post_id,result,created_at FROM publication_attempts ORDER BY created_at DESC LIMIT 50"
         ).fetchall()
+        live_attempt_relation = conn.execute(
+            "SELECT to_regclass('public.live_publication_attempts') AS name"
+        ).fetchone()["name"]
+        live_attempts = conn.execute(
+            """SELECT id,job_id,attempt_no,operation,outcome,remote_post_id,http_status,error_category,created_at
+              FROM live_publication_attempts ORDER BY created_at DESC LIMIT 100"""
+        ).fetchall() if live_attempt_relation else []
         worker = conn.execute(
             """SELECT process_id,status,last_error_category,last_seen_at,updated_at
             FROM worker_heartbeats WHERE service_name='publication_worker'"""
@@ -490,12 +547,13 @@ def list_publications() -> dict[str, Any]:
             "candidates": [dict(row) for row in candidates],
             "jobs": [dict(row) for row in jobs],
             "simulations": [dict(row) for row in attempts],
+            "live_attempts": [dict(row) for row in live_attempts],
             "worker": dict(worker) if worker else None,
             "queued_mock_jobs": queued["n"],
             "queued_confirmed_private_drafts": queued_drafts["n"],
             "real_writes_enabled": False,
             "publish_ready_enabled": False,
-            "adapter_available": "fake_and_confirmed_private_draft_worker",
+            "adapter_available": "fake_and_guarded_blogger_live_queue",
             "mode_policy": mode_data,
             "auto_candidate_count": sum(
                 1 for candidate in candidates if candidate["auto_eligibility"]["eligible"]
@@ -602,6 +660,93 @@ def create_request(request: RequestInput) -> dict[str, Any]:
             ),
         )
         return {**dict(inserted), "duplicate": False, "real_writes_enabled": False}
+
+
+@router.post("/live-requests", status_code=201)
+def create_live_request(request: RequestInput) -> dict[str, Any]:
+    """Queue a real Blogger workflow only after exact content and operations gates pass."""
+    with connection() as conn:
+        if not conn.execute(
+            "SELECT to_regclass('public.live_publication_attempts') AS ready"
+        ).fetchone()["ready"]:
+            raise HTTPException(503, "Blogger live publication migration 049 is required")
+        existing = conn.execute(
+            "SELECT id,blog_id,content_version_id,status,publication_state,adapter_type,simulation_only FROM publishing_jobs WHERE idempotency_key=%s",
+            (request.idempotency_key,),
+        ).fetchone()
+        if existing:
+            if (str(existing["blog_id"]) != str(request.blog_id)
+                    or str(existing["content_version_id"]) != str(request.content_version_id)):
+                raise HTTPException(409, "Idempotency key conflict")
+            if existing["adapter_type"] != "blogger_live" or existing["simulation_only"]:
+                raise HTTPException(409, "Idempotency key belongs to a mock publication job")
+            return {**dict(existing), "duplicate": True, "adapter_type": "blogger_live",
+                    "simulation_only": False, "real_writes_enabled": False}
+        row = _candidate(conn, request.content_version_id, request.blog_id)
+        if row is None:
+            raise HTTPException(404, "Content version or registered blog not found")
+        reasons = list(_assess(dict(row))["reasons"])
+        modes = _mode_settings(conn)
+        if modes["migration_required"]:
+            reasons.append("publication_modes_unavailable")
+        else:
+            blog, error = _blog_settings(conn, str(request.blog_id))
+            if error or not blog:
+                reasons.append(error or "registered_blog_unavailable")
+            else:
+                selected = resolve_mode(modes["settings"], str(blog["language_code"]), str(request.blog_id))
+                if selected["configured_mode"] != "manual":
+                    reasons.append("auto_publication_requires_separate_operations_approval")
+            if modes["emergency_stopped"]:
+                reasons.append("global_emergency_stop_active")
+        if not external_policy._blogger_operation_is_approved("blogger_public_publish"):
+            reasons.append("separate_public_publish_operations_approval_required")
+        try:
+            target = BloggerLivePublisher._target(request.blog_id)
+        except GoogleFailure as exc:
+            reasons.append(exc.category)
+            target = None
+        if reasons or target is None:
+            conn.execute(
+                "INSERT INTO audit_events(event_type,blog_id,language_code,payload) VALUES ('publication.live_request.blocked',%s,%s,%s)",
+                (request.blog_id, row["blog_language"], Jsonb({
+                    "content_version_id": str(request.content_version_id),
+                    "reasons": sorted(set(reasons)), "live_write_performed": False,
+                    "publish_ready": bool(row["publish_ready"]),
+                })),
+            )
+            return {"recorded": False, "state": "publication_blocked",
+                    "reasons": sorted(set(reasons)), "live_write_performed": False,
+                    "real_writes_enabled": False}
+        inserted = conn.execute(
+            """INSERT INTO publishing_jobs(policy_id,blog_id,content_version_id,idempotency_key,
+                scheduled_at,status,publication_state,adapter_type,simulation_only,block_reasons,
+                oauth_connection_id,live_stage)
+            VALUES (%s,%s,%s,%s,now(),'queued','publication_queued','blogger_live',false,'[]',%s,'draft_needed')
+            ON CONFLICT(idempotency_key) DO NOTHING
+            RETURNING id,status,publication_state,adapter_type,simulation_only""",
+            (row["policy_id"], request.blog_id, request.content_version_id,
+             request.idempotency_key, target["oauth_connection_id"]),
+        ).fetchone()
+        if inserted is None:
+            raise HTTPException(409, "Live publication request was concurrently registered")
+        conn.execute(
+            "INSERT INTO publication_state_events(job_id,from_state,to_state,reason,details) VALUES (%s,'human_review_approved','publication_queued','live_eligibility_passed',%s)",
+            (inserted["id"], Jsonb({"content_version_id": str(request.content_version_id),
+                                    "oauth_connection_id": str(target["oauth_connection_id"]),
+                                    "adapter_type": "blogger_live", "simulation_only": False})),
+        )
+        conn.execute(
+            "INSERT INTO audit_events(event_type,blog_id,language_code,payload) VALUES ('publication.live_request.queued',%s,%s,%s)",
+            (request.blog_id, row["blog_language"], Jsonb({
+                "job_id": str(inserted["id"]), "content_version_id": str(request.content_version_id),
+                "oauth_connection_id": str(target["oauth_connection_id"]),
+                "adapter_type": "blogger_live", "simulation_only": False,
+                "public_write_performed": False, "auto_enabled": False,
+            })),
+        )
+        return {**dict(inserted), "duplicate": False, "public_write_performed": False,
+                "auto_enabled": False}
 
 
 @router.post("/{job_id}/simulate")

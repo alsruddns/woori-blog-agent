@@ -1,5 +1,5 @@
 import json
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import UTC, datetime
 from typing import Self
 from uuid import UUID
@@ -208,6 +208,8 @@ def test_live_draft_is_read_back_before_success_is_recorded(
     monkeypatch.setattr(blogger_writes.external_policy, "billing_credential_names", list)
     monkeypatch.setattr(blogger_writes.external_policy, "_audit", lambda *args, **kwargs: None)
     monkeypatch.setattr(blogger_writes.external_policy, "_blogger_operation_is_approved", lambda _op: True)
+    monkeypatch.setattr(blogger_writes.BloggerLivePublisher, "_account_write_guard",
+                        staticmethod(lambda _target: nullcontext()))
 
     def handler(request: httpx.Request) -> httpx.Response:
         calls.append((request.method, request.url.path))
@@ -233,6 +235,68 @@ def test_live_draft_is_read_back_before_success_is_recorded(
         assert finish_calls[-1][0] == "failed"
     assert [method for method, _ in calls] == ["GET", "POST", "GET"]
     assert calls[-1][1].endswith("/blogs/123/posts/456")
+
+
+def test_live_publish_requires_remote_live_readback_and_uses_same_post(monkeypatch: pytest.MonkeyPatch) -> None:
+    from contextlib import nullcontext
+
+    from woori import blogger_writes
+
+    blog_record_id = UUID("00000000-0000-0000-0000-000000000001")
+    oauth_id = UUID("00000000-0000-0000-0000-000000000002")
+    calls: list[tuple[str, str]] = []
+
+    class Result:
+        def __init__(self, value: dict[str, object] | None) -> None:
+            self.value = value
+        def fetchone(self) -> dict[str, object] | None:
+            return self.value
+
+    class FakeConnection:
+        def execute(self, query: str, params: tuple[object, ...] = ()) -> Result:
+            if "SELECT b.id,b.language_code" in query:
+                return Result({"id": blog_record_id, "language_code": "ko", "url": "https://trend-ko.blogspot.com/",
+                    "blog_id": "123", "active": True, "oauth_connection_id": oauth_id,
+                    "oauth_status": "connected", "scopes": [blogger_writes.WRITE_SCOPE]})
+            if "SELECT 1 FROM blogger_write_operations" in query:
+                return Result({"verified": True})
+            if "SELECT request_fingerprint,status,result" in query:
+                return Result(None)
+            if "INSERT INTO blogger_write_operations" in query:
+                return Result({"idempotency_key": params[0]})
+            return Result(None)
+
+    @contextmanager
+    def fake_connection():
+        yield FakeConnection()
+
+    monkeypatch.setattr(blogger_writes, "connection", fake_connection)
+    monkeypatch.setattr(blogger_writes.google_oauth, "access_token", lambda _id: "test-token")
+    monkeypatch.setattr(blogger_writes.external_policy, "billing_credential_names", list)
+    monkeypatch.setattr(blogger_writes.external_policy, "_audit", lambda *args, **kwargs: None)
+    monkeypatch.setattr(blogger_writes.external_policy, "_blogger_operation_is_approved", lambda _op: True)
+    monkeypatch.setattr(blogger_writes.BloggerLivePublisher, "_account_write_guard",
+                        staticmethod(lambda _target: nullcontext()))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.method, request.url.path))
+        if request.url.path.endswith("/blogs/123"):
+            return httpx.Response(200, json={"id": "123", "url": "https://trend-ko.blogspot.com"}, request=request)
+        if request.url.path.endswith("/posts/456/publish"):
+            return httpx.Response(200, json={"status": "LIVE"}, request=request)
+        if request.url.path.endswith("/posts/456") and len([c for c in calls if c[0] == "GET" and c[1].endswith("/posts/456")]) == 1:
+            return httpx.Response(200, json={"id": "456", "blog": {"id": "123"}, "status": "DRAFT",
+                "title": "검증 초안", "content": "<p>본문</p>"}, request=request)
+        return httpx.Response(200, json={"id": "456", "blog": {"id": "123"}, "status": "LIVE",
+            "title": "검증 초안", "content": "<p>본문</p>", "url": "https://trend-ko.blogspot.com/2026/10/test.html",
+            "published": "2026-10-29T02:00:00Z"}, request=request)
+
+    publisher = blogger_writes.BloggerLivePublisher(httpx.MockTransport(handler))
+    result = publisher.publish_draft("publish-once", blog_record_id, "456", source_draft_key="draft-once")
+    assert result["status"] == "LIVE" and result["readback_verified"] is True
+    assert result["post_id"] == "456" and result["url"].endswith("test.html")
+    assert [path for method, path in calls if method == "POST"] == ["/blogger/v3/blogs/123/posts/456/publish"]
+    assert sum(method == "GET" and path.endswith("/posts/456") for method, path in calls) == 2
 
 
 def test_policy_approval_requires_exact_scoped_append_only_record(
