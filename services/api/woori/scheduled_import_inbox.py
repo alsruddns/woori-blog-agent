@@ -7,6 +7,7 @@ import ipaddress
 import json
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -40,12 +41,18 @@ def _loopback_api_url(value: str) -> str:
 
 
 def _safe_directories(root: Path) -> dict[str, Path]:
+    expected_root = PROJECT_ROOT / ".local" / "gpt-scheduled-import"
+    if root.absolute() == expected_root.absolute():
+        local_root = root.parent
+        local_root.mkdir(parents=True, exist_ok=True)
+        if _is_reparse_point(local_root) or local_root.resolve(strict=True).parent != PROJECT_ROOT.resolve(strict=True):
+            raise ValueError("inbox_local_parent_must_not_be_a_symlink_or_junction")
     root.mkdir(parents=True, exist_ok=True)
     if _is_reparse_point(root):
         raise ValueError("inbox_root_must_not_be_a_symlink")
     resolved_root = root.resolve(strict=True)
     directories: dict[str, Path] = {}
-    for name in ("ready", "processing", "processed", "failed", "quarantine"):
+    for name in ("incoming", "ready", "processing", "processed", "rejected", "failed", "quarantine"):
         path = root / name
         path.mkdir(exist_ok=True)
         if _is_reparse_point(path) or path.resolve(strict=True).parent != resolved_root:
@@ -69,10 +76,16 @@ def _move(source: Path, target: Path) -> None:
     source.replace(target)
 
 
-def _recover_interrupted(directories: dict[str, Path]) -> int:
+def _recover_interrupted(directories: dict[str, Path], *, stale_after_seconds: int = 300) -> int:
     recovered = 0
+    now = time.time()
     for entry in sorted(directories["processing"].glob("*.processing.json")):
         if _is_reparse_point(entry) or not entry.is_file():
+            continue
+        try:
+            if now - entry.stat().st_mtime < stale_after_seconds:
+                continue
+        except OSError:
             continue
         ready_name = entry.name.removesuffix(".processing.json") + ".ready.json"
         target = directories["ready"] / ready_name
@@ -109,6 +122,7 @@ def process_inbox_once(
     recovered = _recover_interrupted(directories)
     headers = {"Authorization": f"Bearer {admin_token}"}
     results: list[dict[str, Any]] = []
+    file_hashes: dict[str, str] = {}
 
     with httpx.Client(
         base_url=base_url,
@@ -139,6 +153,8 @@ def process_inbox_once(
                     results.append({"file_key": file_key, "status": "quarantined", "reason": "invalid_file_size"})
                     continue
                 raw = processing.read_bytes()
+                file_sha256 = hashlib.sha256(raw).hexdigest()
+                file_hashes[file_key] = file_sha256
                 envelope = ScheduledImportEnvelope.model_validate_json(raw)
             except (OSError, ValueError, ValidationError, json.JSONDecodeError):
                 try:
@@ -156,13 +172,14 @@ def process_inbox_once(
                 imported = client.post(IMPORT_PATH, json=submission)
                 if imported.status_code not in (200, 201):
                     category = "api_rejected" if imported.status_code < 500 else "api_unavailable"
-                    target = "failed" if imported.status_code < 500 else "ready"
+                    target = "rejected" if imported.status_code < 500 else "ready"
                     destination = directories[target] / (
                         source.name if target == "ready" else processing.name
                     )
                     _move(processing, destination)
                     results.append({"file_key": file_key, "status": target, "reason": category,
-                                    "http_status": imported.status_code})
+                                    "http_status": imported.status_code,
+                                    "file_sha256": file_sha256})
                     continue
                 import_result = imported.json()
                 import_id = str(import_result.get("import_id", ""))
@@ -172,10 +189,13 @@ def process_inbox_once(
                     continue
                 origin = client.post(
                     f"{IMPORT_PATH}/{import_id}/scheduled-origin",
-                    json=envelope.scheduled_origin.model_dump(mode="json", exclude_none=False),
+                    json=envelope.scheduled_origin.model_copy(update={
+                        "inbox_file_name": source.name,
+                        "inbox_file_sha256": hashlib.sha256(raw).hexdigest(),
+                    }).model_dump(mode="json", exclude_none=False),
                 )
                 if origin.status_code not in (200, 201):
-                    retry_target = "ready" if origin.status_code >= 500 else "failed"
+                    retry_target = "ready" if origin.status_code >= 500 else "rejected"
                     retry_name = source.name if retry_target == "ready" else processing.name
                     _move(processing, directories[retry_target] / retry_name)
                     results.append({"file_key": file_key, "status": retry_target, "reason": "origin_audit_pending",
@@ -184,7 +204,7 @@ def process_inbox_once(
                 receipt = origin.json()
                 detail = client.get(f"{IMPORT_PATH}/{import_id}")
                 if detail.status_code != 200:
-                    retry_target = "ready" if detail.status_code >= 500 else "failed"
+                    retry_target = "ready" if detail.status_code >= 500 else "rejected"
                     retry_name = source.name if retry_target == "ready" else processing.name
                     _move(processing, directories[retry_target] / retry_name)
                     results.append({"file_key": file_key, "status": retry_target,
@@ -201,15 +221,15 @@ def process_inbox_once(
                 )
                 if not assessment:
                     if not version_id:
-                        _move(processing, directories["failed"] / processing.name)
-                        results.append({"file_key": file_key, "status": "failed",
+                        _move(processing, directories["rejected"] / processing.name)
+                        results.append({"file_key": file_key, "status": "rejected",
                                         "reason": "import_version_missing"})
                         continue
                     assessed = client.post(
                         f"{IMPORT_PATH}/{import_id}/assessment", json={"version_id": version_id}
                     )
                     if assessed.status_code not in (200, 201):
-                        retry_target = "ready" if assessed.status_code >= 500 else "failed"
+                        retry_target = "ready" if assessed.status_code >= 500 else "rejected"
                         retry_name = source.name if retry_target == "ready" else processing.name
                         _move(processing, directories[retry_target] / retry_name)
                         results.append({"file_key": file_key, "status": retry_target,
@@ -220,6 +240,7 @@ def process_inbox_once(
                 _move(processing, directories["processed"] / processing.name)
                 results.append({
                     "file_key": file_key,
+                    "file_sha256": file_sha256,
                     "status": "imported",
                     "import_id": import_id,
                     "audit_event_id": receipt.get("audit_event_id"),
@@ -243,6 +264,8 @@ def process_inbox_once(
                 # it, and both API operations are idempotent.
                 results.append({"file_key": file_key, "status": "processing", "reason": "filesystem_transition_failed"})
 
+    for result in results:
+        result.setdefault("file_sha256", file_hashes.get(str(result.get("file_key", ""))))
     return {"recovered_processing_files": recovered, "processed_count": len(results), "results": results,
             "external_ai_calls": 0, "blogger_writes": 0, "auto_publication_enabled": False}
 

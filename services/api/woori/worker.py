@@ -4,14 +4,19 @@ import os
 import signal
 import threading
 import time
+from collections import Counter
+from pathlib import Path
 from urllib.parse import urlparse
 
 import psycopg
 from psycopg.types.json import Jsonb
 
-from . import collection, pipeline, topics, trends
+from . import collection, pipeline, scheduled_import_inbox, topics, trends
 from .config import settings
 from .db import connection
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+SCHEDULED_IMPORT_POLL_SECONDS = 60
 
 
 def heartbeat(
@@ -99,6 +104,48 @@ def collect_trends_and_build_topics() -> dict[str, object]:
     return result
 
 
+def scheduled_import_intake_tick() -> dict[str, object]:
+    """Poll the fixed local inbox, import review-held files, and audit file outcomes."""
+    with connection() as lock_conn:
+        claim = lock_conn.execute(
+            "SELECT pg_try_advisory_lock(20261029,24024) AS acquired"
+        ).fetchone()
+        if not claim or not claim["acquired"]:
+            return {"processed_count": 0, "results": [], "skipped": "another_worker_holds_inbox_lock"}
+        try:
+            result = scheduled_import_inbox.process_inbox_once(
+                PROJECT_ROOT / ".local" / "gpt-scheduled-import",
+                "http://127.0.0.1:8100",
+                settings().admin_token,
+                operations_target_confirmed=True,
+            )
+        finally:
+            lock_conn.execute("SELECT pg_advisory_unlock(20261029,24024)")
+    if result["results"]:
+        with connection() as conn:
+            for item in result["results"]:
+                payload = {
+                    key: item.get(key)
+                    for key in (
+                        "file_key", "file_sha256", "status", "reason", "http_status",
+                        "import_id", "audit_event_id", "duplicate",
+                        "machine_assessment_passed", "independent_source_verification",
+                    )
+                    if item.get(key) is not None
+                }
+                payload.update({
+                    "api_origin": "127.0.0.1:8100",
+                    "content_review_required": True,
+                    "publish_ready": False,
+                    "blogger_writes": 0,
+                })
+                conn.execute(
+                    "INSERT INTO audit_events(event_type,payload) VALUES ('scheduled_import.file_outcome',%s)",
+                    (Jsonb(payload),),
+                )
+    return result
+
+
 def _evaluation_database_isolated() -> None:
     operations_url = os.environ.get("WOORI_OPERATION_DATABASE_URL", "")
     if not operations_url:
@@ -144,6 +191,7 @@ def main() -> None:
         _evaluation_database_isolated()
     service_name = "evaluation_worker" if evaluation_mode else "research_worker"
     started_at = time.monotonic()
+    next_scheduled_import_poll = started_at
     stop = threading.Event()
     degraded = threading.Event()
     def request_stop(_signum: int, _frame: object) -> None:
@@ -181,6 +229,16 @@ def main() -> None:
                     pipeline.schedule_tick()
                     pipeline.tick(evaluation_only=False)
                     tick()
+                    if time.monotonic() >= next_scheduled_import_poll:
+                        next_scheduled_import_poll = time.monotonic() + SCHEDULED_IMPORT_POLL_SECONDS
+                        intake = scheduled_import_intake_tick()
+                        if intake["processed_count"]:
+                            counts = Counter(result["status"] for result in intake["results"])
+                            print(
+                                "Scheduled import intake completed: "
+                                + ",".join(f"{status}={count}" for status, count in sorted(counts.items())),
+                                flush=True,
+                            )
             except psycopg.Error:
                 degraded.set()
                 print("Database unavailable; reconnecting without logging credentials", flush=True)

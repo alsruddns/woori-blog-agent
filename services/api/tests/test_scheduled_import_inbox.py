@@ -1,13 +1,21 @@
 from __future__ import annotations
 
 import json
+import os
+from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
 
 import httpx
 import pytest
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
+from woori import content_imports, worker
+from woori.config import settings
 from woori.content_imports import ScheduledImportEnvelope, ScheduledImportOrigin
+from woori.db import connection
+from woori.main import app
 from woori.scheduled_import_inbox import process_inbox_once
 
 
@@ -78,7 +86,7 @@ def test_scheduled_envelope_requires_self_reported_task_and_consistent_target() 
     assert contract["required"] == ["schema_version", "submitted_by", "item", "scheduled_origin"]
     assert contract["properties"]["item"]["$ref"].endswith("woori-content-import-1.0.schema.json#/properties/item")
     assert contract["properties"]["scheduled_origin"]["properties"]["task_type"]["enum"] == [
-        "market_close_kr", "market_close_jp", "market_close_cn", "market_close_us", "weekly_finance",
+        "market_close_kr", "market_close_jp", "market_close_cn", "market_close_us", "weekly_finance", "trends_major_issue",
     ]
     no_market_date = json.loads(json.dumps(payload))
     no_market_date["scheduled_origin"]["market_date"] = None
@@ -127,7 +135,10 @@ def test_inbox_posts_review_held_item_and_idempotent_origin_then_moves_file(tmp_
         calls.append(request)
         assert request.headers["Authorization"] == "Bearer " + ("x" * 32)
         if request.url.path.endswith("/scheduled-origin"):
-            assert json.loads(request.content)["task_id"] == "woori-market-close-kr"
+            origin = json.loads(request.content)
+            assert origin["task_id"] == "woori-market-close-kr"
+            assert origin["inbox_file_name"] == source.name
+            assert len(origin["inbox_file_sha256"]) == 64
             return httpx.Response(201, json={"audit_event_id": 77, "duplicate": False,
                                              "provenance_verified": False, "auto_publication_enabled": False})
         if request.method == "GET":
@@ -147,6 +158,7 @@ def test_inbox_posts_review_held_item_and_idempotent_origin_then_moves_file(tmp_
     assert result["results"][0]["status"] == "imported"
     assert result["results"][0]["import_id"] == import_id
     assert result["results"][0]["audit_event_id"] == 77
+    assert result["results"][0]["file_sha256"]
     assert result["results"][0]["machine_assessment_passed"] is False
     assert result["results"][0]["independent_source_verification"] is False
     assert result["results"][0]["publish_ready"] is False
@@ -154,6 +166,7 @@ def test_inbox_posts_review_held_item_and_idempotent_origin_then_moves_file(tmp_
     assert [call.method for call in calls] == ["POST", "POST", "GET", "POST"]
     assert not source.exists()
     assert list((tmp_path / "processed").glob("*.processing.json"))
+    assert (tmp_path / "incoming").is_dir() and (tmp_path / "rejected").is_dir()
 
 
 def test_inbox_quarantines_invalid_and_ignores_incomplete_files(tmp_path: Path) -> None:
@@ -184,9 +197,13 @@ def test_inbox_requeues_transient_failure_and_recovers_interrupted_processing(tm
     processing = tmp_path / "processing"
     ready.mkdir()
     processing.mkdir()
-    (processing / "interrupted.processing.json").write_text(
+    interrupted = processing / "interrupted.processing.json"
+    interrupted.write_text(
         json.dumps(scheduled_payload()), encoding="utf-8"
     )
+    os.utime(interrupted, (0, 0))
+    active = processing / "active.processing.json"
+    active.write_text(json.dumps(scheduled_payload()), encoding="utf-8")
     source = ready / "offline.ready.json"
     source.write_text(json.dumps(scheduled_payload()), encoding="utf-8")
 
@@ -200,6 +217,7 @@ def test_inbox_requeues_transient_failure_and_recovers_interrupted_processing(tm
     assert "secret response" not in json.dumps(result)
     assert source.exists()
     assert (ready / "interrupted.ready.json").exists()
+    assert active.exists()
 
 
 def test_inbox_refuses_operations_port_without_explicit_opt_in(tmp_path: Path) -> None:
@@ -212,3 +230,148 @@ def test_inbox_limits_files_and_rejects_non_loopback_api(tmp_path: Path) -> None
         process_inbox_once(tmp_path, "http://127.0.0.1:18100", "x" * 32, max_files=5)
     with pytest.raises(ValueError, match="loopback"):
         process_inbox_once(tmp_path, "http://example.com:18100", "x" * 32)
+
+
+def test_local_inbox_import_and_duplicate_use_isolated_database(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    with connection() as conn, conn.transaction(force_rollback=True):
+        @contextmanager
+        def shared():
+            with conn.transaction():
+                yield conn
+
+        monkeypatch.setattr(content_imports, "connection", shared)
+        blog = conn.execute(
+            """INSERT INTO blogger_blogs(language_code,url,display_name,blog_id)
+            VALUES ('ko','https://scheduled-import-test.blogspot.com','Scheduled import test blog','9991230000000000001')
+            RETURNING blog_id,url"""
+        ).fetchone()
+        assert blog
+        api_responses: list[tuple[int, bytes]] = []
+
+        def app_transport(request: httpx.Request) -> httpx.Response:
+            response = client.request(
+                request.method,
+                request.url.path + ("?" + request.url.query.decode() if request.url.query else ""),
+                headers={key: request.headers[key] for key in ("authorization", "content-type") if key in request.headers},
+                content=request.content,
+            )
+            api_responses.append((response.status_code, response.content))
+            return httpx.Response(response.status_code, headers=response.headers, content=response.content)
+
+        with TestClient(app) as client:
+            root = tmp_path / ".local" / "gpt-scheduled-import"
+            payload = scheduled_payload()
+            origin = payload["scheduled_origin"]
+            assert isinstance(origin, dict)
+            origin["target_blog_id"] = blog["blog_id"]
+            origin["target_blog_url"] = blog["url"]
+            for index, occurrence in enumerate(("woori-market-close-kr-20261028-01", "woori-market-close-kr-20261028-02")):
+                origin["occurrence_id"] = occurrence
+                source = root / "incoming" / f"integration-ko-{index}.part"
+                source.parent.mkdir(parents=True, exist_ok=True)
+                staging = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+                source.write_bytes(staging)
+                ready = root / "ready" / f"integration-ko-{index}.ready.json"
+                ready.parent.mkdir(parents=True, exist_ok=True)
+                source.replace(ready)
+                result = process_inbox_once(
+                    root,
+                    "http://127.0.0.1:18100",
+                    settings().admin_token,
+                    transport=httpx.MockTransport(app_transport),
+                )
+                error_details = json.loads(api_responses[-1][1]).get("detail", [])
+                safe_errors = [(entry.get("loc"), entry.get("msg")) for entry in error_details]
+                assert result["results"][0]["status"] == "imported", (result["results"][0], safe_errors)
+                assert result["results"][0]["publish_ready"] is False
+                assert result["blogger_writes"] == 0
+                assert result["results"][0]["duplicate"] is (index == 1)
+            imports = conn.execute(
+                "SELECT count(*)::int AS count FROM external_content_imports WHERE external_content_id=%s",
+                (payload["item"]["content_id"],),
+            ).fetchone()
+            origins = conn.execute(
+                """SELECT count(*)::int AS count FROM audit_events
+                WHERE event_type='content.import.scheduled_origin_recorded'
+                  AND payload->>'inbox_file_sha256' IS NOT NULL"""
+            ).fetchone()
+            assert imports["count"] == 1
+            assert origins["count"] == 2
+
+
+def test_worker_inbox_tick_records_sanitized_file_outcome(monkeypatch: pytest.MonkeyPatch) -> None:
+    statements: list[tuple[str, object]] = []
+
+    class FakeResult:
+        def __init__(self, row: dict[str, bool]) -> None:
+            self.row = row
+
+        def fetchone(self) -> dict[str, bool]:
+            return self.row
+
+    class FakeConnection:
+        def execute(self, query: str, params: object = None) -> FakeResult:
+            statements.append((query, params))
+            row = {"acquired": True} if "pg_try_advisory_lock" in query else {"unlocked": True}
+            return FakeResult(row)
+
+    @contextmanager
+    def fake_connection():
+        yield FakeConnection()
+
+    monkeypatch.setattr(worker, "connection", fake_connection)
+    monkeypatch.setattr(worker, "settings", lambda: SimpleNamespace(admin_token="x" * 32))
+    monkeypatch.setattr(
+        worker.scheduled_import_inbox,
+        "process_inbox_once",
+        lambda *args, **kwargs: {
+            "processed_count": 1,
+            "results": [{
+                "file_key": "abc123", "file_sha256": "a" * 64, "status": "imported",
+                "import_id": "import-1", "audit_event_id": 77, "duplicate": False,
+                "machine_assessment_passed": False,
+                "independent_source_verification": False, "publish_ready": False,
+            }],
+            "blogger_writes": 0,
+        },
+    )
+
+    result = worker.scheduled_import_intake_tick()
+
+    assert result["processed_count"] == 1
+    assert len(statements) == 3
+    query, params = statements[-1]
+    assert "scheduled_import.file_outcome" in query
+    payload = params[0].obj
+    assert payload["file_sha256"] == "a" * 64
+    assert payload["publish_ready"] is False
+    assert payload["blogger_writes"] == 0
+    assert "title" not in payload and "body" not in payload
+    assert any("pg_try_advisory_lock" in query for query, _ in statements)
+    assert any("pg_advisory_unlock" in query for query, _ in statements)
+
+
+def test_worker_inbox_tick_skips_when_another_worker_owns_database_lock(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeResult:
+        def fetchone(self) -> dict[str, bool]:
+            return {"acquired": False}
+
+    class FakeConnection:
+        def execute(self, query: str, _params: object = None) -> FakeResult:
+            assert "pg_try_advisory_lock" in query
+            return FakeResult()
+
+    @contextmanager
+    def fake_connection():
+        yield FakeConnection()
+
+    def must_not_process(*_args: object, **_kwargs: object) -> dict[str, object]:
+        raise AssertionError("the inbox must not be processed without the database claim")
+
+    monkeypatch.setattr(worker, "connection", fake_connection)
+    monkeypatch.setattr(worker, "settings", lambda: SimpleNamespace(admin_token="x" * 32))
+    monkeypatch.setattr(worker.scheduled_import_inbox, "process_inbox_once", must_not_process)
+
+    result = worker.scheduled_import_intake_tick()
+
+    assert result["skipped"] == "another_worker_holds_inbox_lock"

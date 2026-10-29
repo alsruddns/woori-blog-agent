@@ -183,7 +183,7 @@ class ScheduledImportOrigin(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     task_type: Literal[
         "market_close_kr", "market_close_jp", "market_close_cn", "market_close_us",
-        "weekly_finance",
+        "weekly_finance", "trends_major_issue",
     ]
     task_id: str = Field(min_length=3, max_length=128, pattern=r"^[A-Za-z0-9_.:-]+$")
     occurrence_id: str = Field(min_length=8, max_length=160, pattern=r"^[A-Za-z0-9_.:-]+$")
@@ -193,6 +193,8 @@ class ScheduledImportOrigin(BaseModel):
     target_blog_id: str = Field(min_length=5, max_length=32, pattern=r"^[0-9]+$")
     target_blog_url: HttpUrl
     source_as_of: datetime
+    inbox_file_name: str | None = Field(default=None, min_length=1, max_length=180, pattern=r"^[A-Za-z0-9_.-]+$")
+    inbox_file_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
     @field_validator("executed_at", "source_as_of")
     @classmethod
@@ -641,6 +643,8 @@ def record_scheduled_import_origin(
             "target_blog_id": request.target_blog_id,
             "target_blog_url": target_url,
             "source_as_of": request.source_as_of.isoformat(),
+            "inbox_file_name": request.inbox_file_name,
+            "inbox_file_sha256": request.inbox_file_sha256,
             "origin_sha256": origin_sha256,
             "provenance_self_reported": True,
             "external_task_identity_verified": False,

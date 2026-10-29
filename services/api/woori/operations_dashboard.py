@@ -173,6 +173,87 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
     collection_sources = [dict(row) for row in conn.execute("""SELECT adapter,name,active,scheduled,interval_minutes,last_successful_at,
         (last_error IS NOT NULL) AS has_error,next_run_at
         FROM collection_sources ORDER BY name""").fetchall()]
+    scheduled_import: dict[str, Any] = {
+        "available": False, "scheduled_claims": 0, "verified_gpt_runs": 0,
+        "received_total": 0, "received_last_24h": 0, "last_received_at": None,
+        "languages": {}, "machine_passed": 0, "quality_held": 0,
+        "source_review_held": 0, "duplicate_file_outcomes": 0,
+        "outcomes": {}, "recent": [], "worker_poll_seconds": 60,
+        "worker_status": "running" if worker_fresh else "inactive",
+    }
+    import_relation = conn.execute(
+        "SELECT to_regclass('public.external_content_imports') IS NOT NULL AS available"
+    ).fetchone()
+    if import_relation and import_relation["available"]:
+        scheduled_import["available"] = True
+        totals = conn.execute(
+            """SELECT count(*)::int AS total,
+            count(*) FILTER (WHERE received_at >= now()-interval '24 hours')::int AS recent,
+            max(received_at) AS last_received
+            FROM external_content_imports WHERE generation_method='chatgpt_scheduled_export'"""
+        ).fetchone()
+        scheduled_import.update({
+            "received_total": int(totals["total"] or 0),
+            "received_last_24h": int(totals["recent"] or 0),
+            "last_received_at": totals["last_received"],
+        })
+        scheduled_import["languages"] = {
+            str(row["language_code"]): int(row["count"])
+            for row in conn.execute(
+                """SELECT language_code,count(*)::int AS count FROM external_content_imports
+                WHERE generation_method='chatgpt_scheduled_export' GROUP BY language_code"""
+            ).fetchall()
+        }
+        if conn.execute(
+            "SELECT to_regclass('public.external_content_import_assessments') IS NOT NULL AS available"
+        ).fetchone()["available"]:
+            assessment_counts = conn.execute(
+                """WITH latest AS (SELECT DISTINCT ON (import_id) import_id,machine_passed,independent_source_verification
+                FROM external_content_import_assessments ORDER BY import_id,assessed_at DESC,id DESC)
+                SELECT count(*) FILTER (WHERE latest.machine_passed)::int AS passed,
+                count(*) FILTER (WHERE NOT latest.machine_passed)::int AS held,
+                count(*) FILTER (WHERE NOT latest.independent_source_verification)::int AS source_held
+                FROM latest JOIN external_content_imports i ON i.id=latest.import_id
+                WHERE i.generation_method='chatgpt_scheduled_export'"""
+            ).fetchone()
+            scheduled_import.update({
+                "machine_passed": int(assessment_counts["passed"] or 0),
+                "quality_held": int(assessment_counts["held"] or 0),
+                "source_review_held": int(assessment_counts["source_held"] or 0),
+            })
+        scheduled_import["outcomes"] = _grouped_counts(
+            conn,
+            """SELECT payload->>'status' AS key,count(*)::int AS count FROM audit_events
+            WHERE event_type='scheduled_import.file_outcome' AND payload ? 'status'
+            GROUP BY payload->>'status'""",
+        )
+        scheduled_import["scheduled_claims"] = conn.execute(
+            """SELECT count(*)::int AS count FROM audit_events
+            WHERE event_type='content.import.scheduled_origin_recorded'"""
+        ).fetchone()["count"]
+        scheduled_import["duplicate_file_outcomes"] = conn.execute(
+            """SELECT count(*)::int AS count FROM audit_events
+            WHERE event_type='scheduled_import.file_outcome' AND payload->>'duplicate'='true'"""
+        ).fetchone()["count"]
+        scheduled_import["recent"] = [dict(row) for row in conn.execute(
+            """SELECT i.id AS import_id,i.language_code,i.title,i.state,i.received_at,
+            i.research_package_id,i.generation_method,v.id AS import_version_id,
+            l.content_version_id,origin.payload->>'inbox_file_name' AS inbox_file_name,
+            origin.payload->>'inbox_file_sha256' AS inbox_file_sha256,
+            origin.id AS audit_event_id,a.machine_passed,a.independent_source_verification
+            FROM external_content_imports i
+            LEFT JOIN LATERAL (SELECT id FROM external_content_import_versions
+              WHERE import_id=i.id ORDER BY version_number DESC LIMIT 1) v ON true
+            LEFT JOIN external_content_import_content_links l ON l.import_id=i.id AND l.import_version_id=v.id
+            LEFT JOIN LATERAL (SELECT id,payload FROM audit_events
+              WHERE event_type='content.import.scheduled_origin_recorded'
+                AND payload->>'import_id'=i.id::text ORDER BY id DESC LIMIT 1) origin ON true
+            LEFT JOIN LATERAL (SELECT machine_passed,independent_source_verification
+              FROM external_content_import_assessments WHERE import_id=i.id AND version_id=v.id
+              ORDER BY assessed_at DESC,id DESC LIMIT 1) a ON true
+            WHERE i.generation_method='chatgpt_scheduled_export'
+            ORDER BY i.received_at DESC,i.id DESC LIMIT 20"""
+        ).fetchall()]
     config_rows = [dict(row) for row in conn.execute("""SELECT scope_type,scope_key,configured_mode,daily_auto_limit,minimum_interval_minutes,emergency_stopped
         FROM publication_mode_settings""").fetchall()]
     global_config = next((row for row in config_rows if row["scope_type"]=="global"),
@@ -201,7 +282,7 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
             "last_mock_failure_at":mock_state.get("last_failure"),"last_mock_failure_reason":mock_state.get("failure_reason"),
             "recent_public_url":None,"public_url_note":"게시 URL이 실제 게시 기록에 저장되지 않아 표시할 수 없습니다."})
     schema_version = int(schema["version"] or 0) if schema else 0
-    return {"schema_version":schema_version,"trends":trends,"trend_pipeline":trend_pipeline,"collection_sources":collection_sources,"jobs":job_counts,
+    return {"schema_version":schema_version,"trends":trends,"trend_pipeline":trend_pipeline,"collection_sources":collection_sources,"scheduled_import":scheduled_import,"jobs":job_counts,
         "generation":{"provider_connected":False,"provider_status":"not_configured","counts":generation_counts,
             "queue_waiting":job_counts.get("content:queued",0),"reason":"운영 원고 생성 Provider가 연결되어 있지 않습니다."},
         "quality":{"machine_passed":quality_counts.get("machine_passed_review_required",0),"held":quality_counts.get("quality_held",0),

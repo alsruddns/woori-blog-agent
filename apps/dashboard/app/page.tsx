@@ -52,6 +52,7 @@ type Dashboard = {
     publication_block_reason: string;
     hold_reasons: { reason: string; count: number }[];
   };
+  scheduled_import: { available: boolean; scheduled_claims: number; verified_gpt_runs: number; received_total: number; received_last_24h: number; last_received_at: string | null; languages: Record<string, number>; machine_passed: number; quality_held: number; source_review_held: number; duplicate_file_outcomes: number; outcomes: Record<string, number>; worker_poll_seconds: number; worker_status: string; recent: { import_id: string; language_code: string; title: string; state: string; received_at: string; research_package_id: string | null; content_version_id: string | null; inbox_file_name: string | null; inbox_file_sha256: string | null; audit_event_id: number | null; machine_passed: boolean | null; independent_source_verification: boolean | null }[] };
   jobs: Record<string, number>;
   generation: { provider_connected: boolean; provider_status: string; counts: Record<string, number>; queue_waiting: number; reason: string };
   quality: { machine_passed: number; held: number; failed: number; human_review_required: number };
@@ -158,6 +159,16 @@ export default async function Page() {
             {dashboard.schedules.map((task) => <article key={task.key} className="ops-schedule-card"><div><h3>{task.name}</h3><Status tone={task.status === "inactive" || task.status === "not_configured" ? "blocked" : "neutral"}>{statusLabels[task.status] ?? "상태 확인 필요"}</Status></div><p>{task.detail}</p></article>)}
           </div>
           <p className="ops-note">설정된 일정은 Worker가 실제로 실행 중이라는 증거가 아닙니다. 이 PC가 꺼져 있거나 Worker가 중지되면 로컬 예약 작업도 실행되지 않습니다.</p>
+        </section>
+
+        <section className="workspace-panel" aria-labelledby="scheduled-import-title">
+          <div className="section-heading"><div><p className="eyebrow">로컬 파일 수신</p><h2 id="scheduled-import-title">예약 원고 Import</h2></div><Link href="/imports">가져온 원고 검토</Link></div>
+          <p>수신 {dashboard.scheduled_import.received_total}건 · 최근 24시간 {dashboard.scheduled_import.received_last_24h}건 · 마지막 수신 {dateLabel(dashboard.scheduled_import.last_received_at)} · Import 감시 Worker {dashboard.scheduled_import.worker_status} (주기 {dashboard.scheduled_import.worker_poll_seconds}초)</p>
+          <p>언어별 수신: {Object.entries(dashboard.scheduled_import.languages).map(([language, count]) => `${language} ${count}`).join(" · ") || "기록 없음"}. 기계 통과 {dashboard.scheduled_import.machine_passed} · 품질 보류 {dashboard.scheduled_import.quality_held} · 독립 출처 검토 대기 {dashboard.scheduled_import.source_review_held} · 중복 차단 {dashboard.scheduled_import.duplicate_file_outcomes}.</p>
+          <div className="ops-inline-counts">{Object.entries(dashboard.scheduled_import.outcomes).map(([status, count]) => <span key={status}>{status}: {count}</span>)}</div>
+          <p className="ops-note">예약 작업에서 주장한 수신 {dashboard.scheduled_import.scheduled_claims}건 · 확인된 GPT 예약 실행 {dashboard.scheduled_import.verified_gpt_runs}건. 파일의 task/실행 식별은 자기 보고이므로 예약 실행 자체를 증명하지 않습니다. 원고는 모두 사람 검토 대기이며 자동 게시되지 않습니다.</p>
+          {dashboard.scheduled_import.recent.length ? <div className="ops-published-table-wrap"><table><thead><tr><th>수신 시각 (KST)</th><th>언어</th><th>원고</th><th>검토 상태</th><th>Research Package</th><th>원본 파일 / 해시</th><th>감사</th></tr></thead><tbody>{dashboard.scheduled_import.recent.map((item) => <tr key={item.import_id}><td>{dateLabel(item.received_at)}</td><td>{item.language_code}</td><td><Link href={`/imports?open_import_id=${encodeURIComponent(item.import_id)}`}>{item.title}</Link></td><td>{item.state}<br />품질 {item.machine_passed === null ? "미검사" : item.machine_passed ? "기계 통과" : "보류"}<br />독립 출처 {item.independent_source_verification ? "확인" : "미확인"}</td><td>{item.research_package_id ?? "연결 없음"}</td><td>{item.inbox_file_name ?? "수동/외부 수신"}{item.inbox_file_sha256 ? <><br /><small>SHA-256 {item.inbox_file_sha256}</small></> : null}</td><td>{item.audit_event_id ?? "origin 기록 없음"}<br /><small>버전 {item.content_version_id ?? "연결 없음"}</small></td></tr>)}</tbody></table></div> : <p className="empty-state">예약 형식으로 Import된 원고가 없습니다.</p>}
+          <p className="ops-note">원본 JSON은 로컬 `.local/gpt-scheduled-import/processed/`에 보관합니다. Dashboard에는 원문 JSON이나 기사 본문을 노출하지 않습니다.</p>
         </section>
 
         <section className="workspace-panel">
