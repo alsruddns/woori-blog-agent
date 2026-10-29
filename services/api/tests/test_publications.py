@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
 import pytest
 from pydantic import ValidationError
+from test_pipeline import lab as shared_lab
+from woori import publication_worker, publications
 from woori.publication_modes import ModeSettingsInput
 from woori.publications import (
     DisabledRealBloggerPublisher,
@@ -17,6 +20,8 @@ from woori.publications import (
     sync_readonly,
     transition_allowed,
 )
+
+lab = shared_lab
 
 
 def test_publication_eligibility_fails_closed_even_for_machine_pass() -> None:
@@ -292,6 +297,94 @@ def test_emergency_stop_input_cannot_be_cleared_through_api_model() -> None:
     assert EmergencyStopInput(enabled=True).enabled is True
     with pytest.raises(ValidationError):
         EmergencyStopInput.model_validate({"enabled": False})
+
+
+def test_emergency_stop_is_persisted_and_audited_in_isolated_database(
+    lab: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from contextlib import contextmanager
+
+    conn, api, headers = lab
+
+    @contextmanager
+    def shared_connection():
+        with conn.transaction():
+            yield conn
+
+    monkeypatch.setattr(publications, "connection", shared_connection)
+    response = api.post(
+        "/admin/publications/emergency-stop",
+        headers=headers,
+        json={"enabled": True},
+    )
+    assert response.status_code == 200
+    assert response.json()["emergency_stopped"] is True
+    setting = conn.execute(
+        "SELECT emergency_stopped,configured_mode,operations_auto_approved FROM publication_mode_settings WHERE scope_type='global' AND scope_key=''"
+    ).fetchone()
+    assert setting["emergency_stopped"] is True
+    assert setting["configured_mode"] == "manual"
+    assert setting["operations_auto_approved"] is False
+    event = conn.execute(
+        "SELECT payload FROM audit_events WHERE event_type='publication.emergency_stop.engaged' ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    assert event["payload"]["emergency_stopped"] is True
+
+
+def test_emergency_stop_blocks_live_job_before_any_blogger_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    from contextlib import contextmanager
+    from uuid import uuid4
+
+    job_id, policy_id, blog_id, content_version_id, oauth_id = (uuid4() for _ in range(5))
+    job = {
+        "id": job_id, "policy_id": policy_id, "blog_id": blog_id,
+        "content_version_id": content_version_id, "idempotency_key": "safe-stop-live-job-0001",
+        "attempts": 0, "retry_count": 0, "max_retries": 0,
+        "publication_state": "publication_queued", "live_stage": "draft_needed",
+        "remote_post_id": None, "oauth_connection_id": oauth_id,
+    }
+
+    class Result:
+        def __init__(self, row: object | None = None, rows: list[object] | None = None) -> None:
+            self.row, self.rows = row, rows or []
+
+        def fetchone(self) -> object | None:
+            return self.row
+
+        def fetchall(self) -> list[object]:
+            return self.rows
+
+    class FakeConnection:
+        def execute(self, query: str, _params: object = None) -> Result:
+            if "to_regclass('public.live_publication_attempts')" in query:
+                return Result({"ready": "live_publication_attempts"})
+            if "SELECT id,live_stage,publication_state FROM publishing_jobs" in query:
+                return Result(rows=[])
+            if "SELECT id,policy_id,blog_id,content_version_id" in query:
+                return Result(job)
+            if "SELECT oauth_connection_id,blog_id FROM blogger_blogs" in query:
+                return Result({"oauth_connection_id": oauth_id, "blog_id": "blog-verified"})
+            if "SELECT emergency_stopped FROM publication_mode_settings" in query:
+                return Result({"emergency_stopped": True})
+            return Result({"id": job_id})
+
+    @contextmanager
+    def fake_connection():
+        yield FakeConnection()
+
+    monkeypatch.setattr(publication_worker, "connection", fake_connection)
+    monkeypatch.setattr(publications, "_candidate", lambda *_: {"id": content_version_id})
+    monkeypatch.setattr(publications, "_assess", lambda *_: {"reasons": []})
+    monkeypatch.setattr(publication_worker.external_policy, "_blogger_operation_is_approved", lambda _: True)
+    monkeypatch.setattr(
+        publication_worker, "BloggerLivePublisher",
+        lambda: pytest.fail("emergency stop must block before publisher construction"),
+    )
+
+    result = publication_worker.process_next_live_job()
+    assert result["status"] == "blocked"
+    assert "global_emergency_stop_or_policy_missing" in result["reasons"]
+    assert result["live_write_performed"] is False
 
 
 def test_readonly_sync_returns_metadata_without_mutating_internal_state(

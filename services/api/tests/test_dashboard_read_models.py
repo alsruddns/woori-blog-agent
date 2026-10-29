@@ -234,6 +234,8 @@ def test_operations_snapshot_reads_migration_marker_without_schema_table_privile
                 return _Cursor([])
             if "count(*)::int AS count FROM publishing_records" in query:
                 return _Cursor([{"count": 0}])
+            if "FROM article_quality_evaluations WHERE publish_ready=true" in query:
+                return _Cursor([{"count": 0}])
             if "max(published_at)" in query:
                 return _Cursor([{"at": None}])
             if "scope_type='global'" in query:
@@ -243,6 +245,10 @@ def test_operations_snapshot_reads_migration_marker_without_schema_table_privile
 
     result = dashboard_snapshot(SnapshotConnection())
     assert result["schema_version"] == 48
+    assert result["readiness"]["decision"] == "READY FOR OBSERVATION ONLY"
+    assert result["readiness"]["limits"]["global_daily"] == 50
+    assert result["readiness"]["modes"][-1]["status"] == "blocked"
+    assert result["monitoring"]["alert_delivery_configured"] is False
 
 
 def test_legacy_manuscript_detail_is_read_only_and_sanitized(monkeypatch: Any) -> None:

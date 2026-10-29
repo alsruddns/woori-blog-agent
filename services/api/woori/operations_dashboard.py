@@ -3,7 +3,14 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from .publication_daily import kst_day_bounds, summarize_daily_usage
+from .operations import health as operations_health
+from .publication_daily import (
+    GLOBAL_DAILY_PUBLISH_LIMIT,
+    LANGUAGE_DAILY_LIMITS,
+    LANGUAGE_HOURLY_LIMITS,
+    kst_day_bounds,
+    summarize_daily_usage,
+)
 
 
 def _grouped_counts(conn: Any, query: str) -> dict[str, int]:
@@ -66,7 +73,10 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
     ).fetchall()}
     trend_available = bool(conn.execute("SELECT to_regclass('public.trend_collection_runs') IS NOT NULL AS available").fetchone()["available"])
     research_worker = conn.execute(
-        "SELECT status,last_seen_at,last_error_category FROM worker_heartbeats WHERE service_name='research_worker'"
+        "SELECT process_id,status,last_seen_at,last_error_category FROM worker_heartbeats WHERE service_name='research_worker'"
+    ).fetchone()
+    publication_worker = conn.execute(
+        "SELECT process_id,status,last_seen_at,last_error_category FROM worker_heartbeats WHERE service_name='publication_worker'"
     ).fetchone()
     worker_fresh = bool(
         research_worker
@@ -281,8 +291,103 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
             "recent_success_at":None,"recent_failure_reason":None,"last_mock_success_at":mock_state.get("last_success"),
             "last_mock_failure_at":mock_state.get("last_failure"),"last_mock_failure_reason":mock_state.get("failure_reason"),
             "recent_public_url":None,"public_url_note":"게시 URL이 실제 게시 기록에 저장되지 않아 표시할 수 없습니다."})
+    backup = operations_health()
+    publication_worker_fresh = bool(
+        publication_worker
+        and publication_worker.get("status") == "running"
+        and publication_worker.get("last_seen_at")
+        and datetime.now(UTC) - publication_worker["last_seen_at"] <= timedelta(seconds=45)
+    )
+    worker_health = [
+        {
+            "service": "research_worker",
+            "status": "running" if worker_fresh else "stale" if research_worker else "not_started",
+            "process_id": research_worker.get("process_id") if research_worker else None,
+            "last_seen_at": research_worker.get("last_seen_at") if research_worker else None,
+            "last_error_category": research_worker.get("last_error_category") if research_worker else None,
+        },
+        {
+            "service": "publication_worker",
+            "status": "running" if publication_worker_fresh else "stale" if publication_worker else "not_started",
+            "process_id": publication_worker.get("process_id") if publication_worker else None,
+            "last_seen_at": publication_worker.get("last_seen_at") if publication_worker else None,
+            "last_error_category": publication_worker.get("last_error_category") if publication_worker else None,
+        },
+    ]
+    live_ready_count = conn.execute(
+        "SELECT count(*)::int AS count FROM article_quality_evaluations WHERE publish_ready=true"
+    ).fetchone()["count"]
+    blocked_live_jobs = sum(
+        count for key, count in publication_counts.items()
+        if key.startswith(("blocked:", "uncertain:", "failed:"))
+    )
+    alerts: list[dict[str, Any]] = []
+    if not worker_fresh:
+        alerts.append({"key": "research_worker_heartbeat", "severity": "critical", "count": 1,
+                       "message": "Research Worker heartbeat가 없거나 45초보다 오래됐습니다."})
+    if backup.get("warning"):
+        alerts.append({"key": "backup_or_disk_warning", "severity": "warning", "count": 1,
+                       "message": "백업이 오래됐거나 백업 상태 또는 여유 디스크 공간을 확인해야 합니다."})
+    if not scheduled_import.get("verified_gpt_runs"):
+        alerts.append({"key": "gpt_schedule_unverified", "severity": "warning", "count": 1,
+                       "message": "GPT 예약 원고의 무인 실행·로컬 전달이 확인되지 않았습니다."})
+    if blocked_live_jobs:
+        alerts.append({"key": "blocked_or_uncertain_publication_jobs", "severity": "warning",
+                       "count": blocked_live_jobs, "message": "차단·불확실·실패 게시 작업을 확인해야 합니다."})
+    if trend_pipeline["article_candidates"] == 0:
+        alerts.append({"key": "no_publish_candidate", "severity": "notice", "count": 1,
+                       "message": "현재 검증 단계를 통과한 게시 후보가 없습니다."})
+    alerts.sort(key=lambda item: ("critical", "warning", "notice").index(item["severity"]))
+    checks = [
+        {"key": "trends_11_regions", "status": "partial", "detail": "최근 지역별 관측은 표시하지만 실행 Worker의 코드 버전은 확인되지 않았습니다."},
+        {"key": "candidate_deduplication", "status": "partial", "detail": f"최근 24시간 이슈 그룹 {trend_pipeline['unique_issue_groups_24h']}개, 기사 후보 {trend_pipeline['article_candidates']}개."},
+        {"key": "official_research", "status": "blocked" if not trend_pipeline["research_packages_24h"] else "partial", "detail": f"Research Package {trend_pipeline['research_packages_24h']}건; 사람 검토·독립 근거 승인과 자동 조사 실행을 구분합니다."},
+        {"key": "gpt_unattended_delivery", "status": "blocked", "detail": "공식 예약 실행의 로컬 자동 전달은 검증되지 않았습니다."},
+        {"key": "content_import", "status": "partial", "detail": f"Import receiver worker 상태 {scheduled_import['worker_status']}; 예약 원고 수신 {scheduled_import['received_total']}건."},
+        {"key": "quality_seo_rights", "status": "partial", "detail": f"기계 통과 기록 {quality_counts.get('machine_passed_review_required',0)}건, 사람·권리·독립 출처 승인은 별도입니다."},
+        {"key": "version_audit", "status": "ready", "detail": "기존 버전과 감사 이력을 유지하는 저장 경로가 연결되어 있습니다."},
+        {"key": "publish_eligibility", "status": "blocked" if not live_ready_count else "partial", "detail": f"게시 적격 평가 {live_ready_count}건; 사람 검토와 별도 게시 승인은 계속 필요합니다."},
+        {"key": "blogger_live_publisher", "status": "blocked", "detail": "실제 Blogger 쓰기와 공개 게시는 현재 비활성화되어 있습니다."},
+        {"key": "kst_daily_limits", "status": "partial", "detail": "KST 내부 안전 상한은 코드에 구성됐으나 원격 수동 게시 동기화는 미확인입니다."},
+        {"key": "rate_limit_and_serialization", "status": "partial", "detail": "내부 큐·정책을 유지하며 실 Blogger 요청에 대한 제한/복구 검증은 수행하지 않았습니다."},
+        {"key": "remote_post_revalidation", "status": "not_tested", "detail": "실제 게시 레코드가 없어 Blogger 원격 GET 재검증 이력이 없습니다."},
+        {"key": "emergency_stop", "status": "partial", "detail": "긴급 중지 UI/API는 있으나 운영 상태 변경 없이 이번 리허설을 생략했습니다."},
+        {"key": "windows_recovery", "status": "partial", "detail": "정상 종료·상태 스크립트와 Worker 단일 실행 보호를 사용하지만 실제 재부팅은 시험하지 않았습니다."},
+    ]
+    modes = [
+        {"key": "observation", "label": "Mode A · Observation", "status": "partial", "detail": "읽기·수집 현황을 관찰할 수 있지만 정기 코드 적용과 원고 공급은 미확인입니다."},
+        {"key": "draft", "label": "Mode B · Draft", "status": "blocked", "detail": "이번 리허설에서 실 Blogger 초안 생성/GET 재검증을 하지 않았습니다."},
+        {"key": "controlled_publish", "label": "Mode C · Controlled Publish", "status": "blocked", "detail": "특정 원고 공개 승인과 게시 적격 원고가 없습니다."},
+        {"key": "auto", "label": "Mode D · Auto", "status": "blocked", "detail": "자동 생성 공급·운영 승인·실 게시 경로가 모두 준비되지 않았으며 Auto는 OFF입니다."},
+    ]
+    readiness = {
+        "decision": "READY FOR OBSERVATION ONLY",
+        "current_mode": "observation",
+        "modes": modes,
+        "checks": checks,
+        "limits": {
+            "timezone": "Asia/Seoul",
+            "global_daily": GLOBAL_DAILY_PUBLISH_LIMIT,
+            "language_daily": {**LANGUAGE_DAILY_LIMITS, "en": None},
+            "language_hourly": LANGUAGE_HOURLY_LIMITS,
+            "english_daily_policy": "remaining_global_capacity",
+            "configured_auto_daily": int(global_config.get("daily_auto_limit", 1)),
+            "configured_auto_minimum_interval_minutes": int(global_config.get("minimum_interval_minutes", 1440)),
+        },
+    }
+    monitoring = {
+        "overall": "warning" if alerts else "normal",
+        "workers": worker_health,
+        "api_database_request": "healthy",
+        "backup": backup,
+        "alerts": alerts,
+        "alert_delivery_configured": False,
+        "alert_policy": "grouped_by_condition; dashboard_only",
+        "emergency_stopped": bool(global_config.get("emergency_stopped", False)),
+    }
     schema_version = int(schema["version"] or 0) if schema else 0
     return {"schema_version":schema_version,"trends":trends,"trend_pipeline":trend_pipeline,"collection_sources":collection_sources,"scheduled_import":scheduled_import,"jobs":job_counts,
+        "readiness":readiness,"monitoring":monitoring,
         "generation":{"provider_connected":False,"provider_status":"not_configured","counts":generation_counts,
             "queue_waiting":job_counts.get("content:queued",0),"reason":"운영 원고 생성 Provider가 연결되어 있지 않습니다."},
         "quality":{"machine_passed":quality_counts.get("machine_passed_review_required",0),"held":quality_counts.get("quality_held",0),
@@ -294,12 +399,12 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
             "configured_global_mode":global_config.get("configured_mode","manual"),"daily":daily_publication},
         "blogs":blogs,
         "schedules":[
-            {"key":"google_trends","name":"Google Trends 정기 수집","status":"inactive","detail":"수집 API는 있지만 주기 실행 Worker가 확인되지 않았습니다."},
+            {"key":"google_trends","name":"Google Trends 정기 수집","status":"partial" if worker_fresh else "inactive","detail":"Research Worker heartbeat는 확인되지만 실행 코드 버전과 11개 지역 무인 주기 적용 여부는 확인되지 않았습니다." if worker_fresh else "최근 Research Worker heartbeat가 없습니다."},
             {"key":"market_close","name":"국가별 장마감 리포트","status":"not_configured","detail":"시장 데이터·거래일·장마감 원고 생성 경로가 구성되지 않았습니다."},
             {"key":"weekly_finance","name":"금요일 금융자료 분석","status":"not_configured","detail":"후보 자료 수집과 주간 실행 경로가 연결되지 않았습니다."},
             {"key":"gpt_scheduled_import","name":"GPT 예약 작업 원고 수신","status":"external_status_unknown","detail":"외부 예약 작업의 실행 상태를 이 로컬 서비스에서 확인할 수 없습니다."}],
         "publication_policy":{"configured_global_mode":global_config.get("configured_mode","manual"),"live_auto_enabled":False,"live_writes_enabled":False,
-            "hourly_limit":None,"hourly_limit_status":"not_configured","daily_limit":global_config.get("daily_auto_limit",1),
+            "hourly_limit":LANGUAGE_HOURLY_LIMITS,"hourly_limit_status":"configured_internal_cap","daily_limit":GLOBAL_DAILY_PUBLISH_LIMIT,
             "emergency_stopped":bool(global_config.get("emergency_stopped",False))},
         "recent_public_url":None,"search_console_connected":False,"search_performance":"미연결: 검색 실적을 표시하지 않습니다.",
         "limitations":["실제 Blogger 게시와 Auto 게시는 비활성화되어 있습니다.","설정 값만으로 실제 Worker 실행을 증명하지 않습니다.",

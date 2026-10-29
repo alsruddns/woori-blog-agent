@@ -17,6 +17,35 @@ from .db import connection
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SCHEDULED_IMPORT_POLL_SECONDS = 60
+WORKER_LOCK_KEYS = {"research_worker": (20261027, 26027), "evaluation_worker": (20261027, 26028)}
+
+
+def acquire_process_lock(service_name: str) -> psycopg.Connection:
+    """Hold a DB session lock for this worker lifetime so a second process exits safely."""
+    key = WORKER_LOCK_KEYS.get(service_name)
+    if key is None:
+        raise ValueError("invalid_worker_service")
+    guard = psycopg.connect(settings().database_url, autocommit=True)
+    acquired = guard.execute(
+        "SELECT pg_try_advisory_lock(%s,%s)", key
+    ).fetchone()
+    if not acquired or not acquired[0]:
+        guard.close()
+        raise SystemExit("another_worker_holds_singleton_lock")
+    return guard
+
+
+def release_process_lock(guard: psycopg.Connection, service_name: str) -> None:
+    key = WORKER_LOCK_KEYS[service_name]
+    try:
+        try:
+            guard.execute("SELECT pg_advisory_unlock(%s,%s)", key)
+        except psycopg.Error:
+            # A lost session releases its PostgreSQL advisory locks automatically.
+            # Do not mask the original worker shutdown error while closing it.
+            pass
+    finally:
+        guard.close()
 
 
 def heartbeat(
@@ -190,6 +219,7 @@ def main() -> None:
     if evaluation_mode:
         _evaluation_database_isolated()
     service_name = "evaluation_worker" if evaluation_mode else "research_worker"
+    process_guard = acquire_process_lock(service_name)
     started_at = time.monotonic()
     next_scheduled_import_poll = started_at
     stop = threading.Event()
@@ -254,6 +284,7 @@ def main() -> None:
             heartbeat("stopped", service_name=service_name)
         except psycopg.Error:
             pass
+        release_process_lock(process_guard, service_name)
 
 
 if __name__ == "__main__":

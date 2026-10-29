@@ -16,3 +16,27 @@ foreach ($name in @('dashboard', 'api')) {
     [pscustomobject]@{ Service=$name; Port=$service.Port; State='listening'; PID=[int]$pidValue; Executable=$proc.Path; StartedUtc=(Get-ProcessStarted ([int]$pidValue)); ProjectOwned=$owned }
   }
 }
+
+$table = Get-ProcessTable
+foreach ($name in @('dashboard','api','worker','publication_worker')) {
+  $knownPort = if ($script:Services.ContainsKey($name)) { [int]$script:Services[$name].Port } else { $null }
+  $matched = @(Get-CheckoutServiceProcesses $table $name)
+  foreach ($proc in $matched) {
+    $ports = @()
+    try {
+      $ports = @(Get-NetTCPConnection -OwningProcess ([int]$proc.Id) -State Listen -ErrorAction Stop |
+        Select-Object -ExpandProperty LocalPort -Unique | Sort-Object)
+    } catch {
+      if ($_.FullyQualifiedErrorId -notlike 'CmdletizationQuery_NotFound,*') {
+        Write-Warning "Could not inspect listener ports for checkout PID $($proc.Id)."
+      }
+    }
+    $state = if ($null -ne $knownPort -and $ports -contains $knownPort) { 'listening' }
+      elseif ($ports.Count) { 'listening-on-alternate-port' }
+      else { 'checkout-process-detected' }
+    [pscustomobject]@{
+      Service=$name; Port=($ports -join ','); State=$state; PID=[int]$proc.Id
+      Executable=$proc.Path; StartedUtc=(Get-ProcessStarted ([int]$proc.Id)); ProjectOwned=$true
+    }
+  }
+}

@@ -82,3 +82,21 @@ function Test-RecordedRunner($ProcessInfo, $Record, [string]$ServiceName) {
     return [Math]::Abs(($actual - $expected).TotalSeconds) -le 2
   } catch { return $false }
 }
+
+function Get-CheckoutServiceProcesses($ProcessTable, [string]$ServiceName) {
+  $rootMarker = $script:ProjectRoot.TrimEnd('\') + '\'
+  foreach ($processInfo in $ProcessTable) {
+    if (-not $processInfo.CommandLine) { continue }
+    $command = [string]$processInfo.CommandLine
+    $checkoutMatch = $command.IndexOf($rootMarker,[StringComparison]::OrdinalIgnoreCase) -ge 0
+    if (-not $checkoutMatch) { continue }
+    $matchesService = switch ($ServiceName) {
+      'api' { $command -match 'uvicorn\s+woori\.main:app' -and $command -match '\.venv[\\/]Scripts[\\/]python\.exe' }
+      'dashboard' { $command -match 'apps[\\/]dashboard[\\/]node_modules[\\/]next|--prefix\s+apps[\\/]dashboard' }
+      'worker' { $command -match '\.venv[\\/]Scripts[\\/]python\.exe.*-m\s+woori\.worker' }
+      'publication_worker' { $command -match 'scripts[\\/]publication-worker\.py' }
+      default { $false }
+    }
+    if ($matchesService) { $processInfo }
+  }
+}

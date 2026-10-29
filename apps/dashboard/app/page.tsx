@@ -64,6 +64,8 @@ type Dashboard = {
   search_console_connected: boolean;
   search_performance: string;
   limitations: string[];
+  readiness?: { decision: string; current_mode: string; modes: { key: string; label: string; status: string; detail: string }[]; checks: { key: string; status: string; detail: string }[]; limits: { timezone: string; global_daily: number; language_daily: Record<string, number | null>; language_hourly: Record<string, number>; english_daily_policy: string; configured_auto_daily: number; configured_auto_minimum_interval_minutes: number } };
+  monitoring?: { overall: string; workers: { service: string; status: string; process_id: number | null; last_seen_at: string | null; last_error_category: string | null }[]; api_database_request: string; backup: { free_disk_percent: number; backup_ok: boolean; backup_age_hours: number | null; backup_stale: boolean; warning: boolean }; alerts: { key: string; severity: string; count: number; message: string }[]; alert_delivery_configured: boolean; alert_policy: string; emergency_stopped: boolean };
 };
 
 type LoadState = { dashboard: Dashboard | null; error: "api" | "auth" | "database" | "unknown" | null };
@@ -106,6 +108,16 @@ const statusLabels: Record<string, string> = {
   error: "연결 오류",
   revoked: "권한 취소됨",
   disconnected: "연결 해제됨",
+  ready: "준비됨",
+  partial: "일부 준비",
+  blocked: "차단됨",
+  not_tested: "미검증",
+  running: "실행 중",
+  stale: "heartbeat 지연",
+  not_started: "미실행",
+  critical: "위험",
+  warning: "주의",
+  notice: "안내",
 };
 
 function Status({ children, tone = "neutral" }: { children: React.ReactNode; tone?: "neutral" | "good" | "blocked" }) {
@@ -136,6 +148,25 @@ export default async function Page() {
           <article className="ops-stat-card"><p className="eyebrow">원고 생성</p><strong>{dashboard.generation.queue_waiting.toLocaleString("ko-KR")}</strong><p>대기 작업 · 생성 Provider 연결 안 됨</p><Status tone="blocked">자동 생성 차단</Status></article>
           <article className="ops-stat-card"><p className="eyebrow">품질 검토</p><strong>{dashboard.quality.human_review_required.toLocaleString("ko-KR")}</strong><p>기계 검사 후 사람 검토 대기</p><p className="ops-inline-counts">보류 {dashboard.quality.held} · 실패 {dashboard.quality.failed}</p></article>
           <article className="ops-stat-card"><p className="eyebrow">게시 대기</p><strong>{dashboard.publishing.queued_mock_jobs.toLocaleString("ko-KR")}</strong><p>모의 작업 대기 · 실제 Blogger 기록 {dashboard.publishing.recorded_posts}</p><Status tone="blocked">실제 쓰기 잠금</Status></article>
+        </section>
+
+        <section className="workspace-panel" aria-labelledby="readiness-title">
+          <div className="section-heading"><div><p className="eyebrow">Auto 전환 전 점검</p><h2 id="readiness-title">운영 준비 상태</h2></div><Status tone="blocked">Auto OFF · {dashboard.readiness?.decision ?? "운영 진단 미지원 API"}</Status></div>
+          {dashboard.readiness ? <>
+            <p>현재 운영 단계: Mode A · Observation. Mode B~D 전환은 계정·작업 상태와 별도 승인 확인 전까지 차단됩니다. KST 기준 전역 내부 상한 {dashboard.readiness.limits.global_daily}건, ko {dashboard.readiness.limits.language_daily.ko} · ja {dashboard.readiness.limits.language_daily.ja} · zh-CN {dashboard.readiness.limits.language_daily["zh-CN"]} · en 전역 잔여량 우선입니다. 전역 운영 설정의 Auto별 자체 상한은 {dashboard.readiness.limits.configured_auto_daily}건/일, 최소 간격 {dashboard.readiness.limits.configured_auto_minimum_interval_minutes}분으로 별도 관리됩니다.</p>
+            <div className="ops-schedule-grid">{dashboard.readiness.modes.map(mode => <article className="ops-schedule-card" key={mode.key}><div><h3>{mode.label}</h3><Status tone={mode.status === "ready" ? "good" : mode.status === "partial" ? "neutral" : "blocked"}>{statusLabels[mode.status] ?? mode.status}</Status></div><p>{mode.detail}</p></article>)}</div>
+            <h3>자동화 단계</h3>
+            <ul className="ops-readiness-list">{dashboard.readiness.checks.map(check => <li key={check.key}><Status tone={check.status === "ready" ? "good" : check.status === "partial" ? "neutral" : "blocked"}>{statusLabels[check.status] ?? check.status}</Status><span><strong>{check.key}</strong> · {check.detail}</span></li>)}</ul>
+          </> : <p>현재 API 응답에 준비 진단이 없습니다. API를 안전하게 재시작한 뒤 최신 운영 상태를 확인하세요.</p>}
+        </section>
+
+        <section className="workspace-panel" aria-labelledby="monitoring-title">
+          <div className="section-heading"><div><p className="eyebrow">로컬 운영 감시</p><h2 id="monitoring-title">Worker·백업·주의 항목</h2></div><Status tone={dashboard.monitoring?.overall === "normal" ? "good" : "neutral"}>{dashboard.monitoring?.overall === "normal" ? "정상" : dashboard.monitoring ? "확인 필요" : "상태 확인 필요"}</Status></div>
+          {dashboard.monitoring ? <>
+            <div className="ops-inline-counts"><span>API/DB 요청 {statusLabels[dashboard.monitoring.api_database_request] ?? dashboard.monitoring.api_database_request}</span><span>디스크 여유 {dashboard.monitoring.backup.free_disk_percent}%</span><span>백업 {dashboard.monitoring.backup.backup_ok && !dashboard.monitoring.backup.backup_stale ? `최근 ${dashboard.monitoring.backup.backup_age_hours ?? "?"}시간` : "확인 필요"}</span><span>알림 전달 채널 {dashboard.monitoring.alert_delivery_configured ? "설정됨" : "미설정 · Dashboard만 표시"}</span><span>긴급 정지 {dashboard.monitoring.emergency_stopped ? "ON" : "OFF"}</span></div>
+            <ul className="ops-readiness-list">{dashboard.monitoring.workers.map(worker => <li key={worker.service}><Status tone={worker.status === "running" ? "good" : worker.status === "stale" ? "blocked" : "neutral"}>{statusLabels[worker.status] ?? worker.status}</Status><span><strong>{worker.service}</strong> · PID {worker.process_id ?? "없음"} · 마지막 heartbeat {dateLabel(worker.last_seen_at)}{worker.last_error_category ? ` · ${worker.last_error_category}` : ""}</span></li>)}</ul>
+            {dashboard.monitoring.alerts.length ? <ul className="ops-readiness-list">{dashboard.monitoring.alerts.map(alert => <li key={alert.key}><Status tone={alert.severity === "critical" ? "blocked" : "neutral"}>{statusLabels[alert.severity] ?? alert.severity} · {alert.count}</Status><span>{alert.message}</span></li>)}</ul> : <p>현재 기록된 운영 알림이 없습니다.</p>}
+          </> : <p>현재 API 응답에 모니터링 상태가 없습니다. API를 안전하게 재시작한 뒤 최신 운영 상태를 확인하세요.</p>}
         </section>
 
         <section className="workspace-panel">

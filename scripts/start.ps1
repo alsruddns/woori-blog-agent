@@ -4,6 +4,11 @@ $manifest = Read-ServerManifest
 $table = Get-ProcessTable
 $targets = if ($Service -eq 'all') { @('api','dashboard') } else { @($Service) }
 foreach ($name in $targets) {
+  $existingProjectProcesses = @(Get-CheckoutServiceProcesses (Get-ProcessTable) $name)
+  if ($existingProjectProcesses.Count) {
+    $pids = ($existingProjectProcesses | ForEach-Object { $_.Id } | Sort-Object -Unique) -join ', '
+    throw "$name process(es) from this checkout already exist (PID $pids), possibly on alternate ports. Run scripts/status.ps1 and use the original terminal; no duplicate was started."
+  }
   $port = $script:Services[$name].Port
   $listeners = Get-Listeners $port
   if ($listeners.Count) { throw "Port $port is already occupied. Run scripts/status.ps1 and stop only its verified project-owned process." }
