@@ -76,5 +76,6 @@
 
 ## Git 기록
 
-- 구현 커밋 해시: 커밋 후 이 문서의 `git log -- docs/development/P5-CODEX-039.md` 이력 및 최종 보고에 기록.
+- 구현 커밋 해시: `10e956123f13a3a5b318f45ea997158219300a53`.
+- 이 커밋 해시를 기록한 후속 문서 커밋은 `git log -- docs/development/P5-CODEX-039.md`에서 확인할 수 있다.
 - 관련 문서: `docs/operations/research-sources.md`, `docs/operations/P5-CODEX-024-gpt-work-prompts.md`, `docs/operations/P5-CODEX-038-scheduled-task-catalog.md`.
