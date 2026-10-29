@@ -18,13 +18,9 @@ export default async function Blogger({
   } catch {}
   const query = await searchParams;
   return (
-    <main>
-      <header>
-        <Link href="/">WOORI / OPERATIONS</Link>
-        <Link href="/config">언어·정책 설정</Link>
-      </header>
-      <h1>Blogger 연결 관리</h1>
-      <aside>
+    <main className="workspace-main blogger-page">
+      <div className="page-heading"><div><p className="eyebrow">계정 및 대상 블로그</p><h1>Blogger 연결 관리</h1><p>등록된 블로그, OAuth 권한과 읽기 연결 상태를 확인합니다.</p></div><Link className="secondary-button" href="/config">언어·정책 설정</Link></div>
+      <aside className="blogger-policy-note">
         Blogger 전용 프로젝트 소유자 비용 승인이 기록된 경우에만 블로그 조회와 사용자가 확인한 비공개 테스트 초안 1건 생성을 허용합니다. 공개 게시·예약 게시·수정·삭제·자동 발행 및 다른 유료 API는 계속 차단됩니다.
       </aside>
       {query.oauth && (

@@ -420,7 +420,7 @@ export default function Manager({ initial }: { initial: State }) {
         신원은 확인·추정하지 않습니다. 사용자가 매 요청을 확인한 비공개 초안 테스트 외의 게시·예약·수정·삭제와 자동 발행은 계속 차단됩니다.
         {initial.common_connection.write_oauth_start_blocked && " 사용 가능한 쓰기 연결 또는 진행 중인 동의가 있어 새 연결 생성은 비활성화했습니다."}
       </p>
-      <ul>
+      <ul className="blogger-connection-list">
         {initial.connections.map((c) => (
           <li key={c.id}>
             {c.label} · {c.status}
