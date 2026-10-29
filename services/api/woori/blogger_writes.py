@@ -219,7 +219,19 @@ class BloggerLivePublisher:
                 raise GoogleFailure("draft_status_mismatch", status)
             result = {"post_id": post_id, "blog_id": target["blog_id"],
                       "url": None, "status": "DRAFT", "created_at": data.get("published"),
-                      "http_status": status, "live": True, "simulation_only": False}
+                      "http_status": status, "live": True, "simulation_only": False,
+                      "post_verified": False}
+            verified, verify_status = _live_response(
+                connection_id=target["oauth_connection_id"], operation="blogger_read",
+                method="GET", path=f"/blogs/{target['blog_id']}/posts/{post_id}",
+                transport=self._transport,
+            )
+            if (numeric_id(str(verified.get("id", ""))) != post_id
+                    or str((verified.get("blog") or {}).get("id", "")) != target["blog_id"]
+                    or verified.get("status") != "DRAFT"):
+                raise GoogleFailure("draft_readback_mismatch", verify_status)
+            result["post_verified"] = True
+            result["readback_http_status"] = verify_status
             self._finish(key, "create_draft", "succeeded", result, None, status)
             return result
         except GoogleFailure as exc:

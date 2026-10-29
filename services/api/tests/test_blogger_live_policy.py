@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from typing import Self
 from uuid import UUID
@@ -162,6 +163,62 @@ def test_live_public_publish_gate_blocks_before_transport_request(
             transport=httpx.MockTransport(handler),
         )
     assert called is False
+
+
+def test_live_draft_is_read_back_before_success_is_recorded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from woori import blogger_writes
+
+    blog_record_id = UUID("00000000-0000-0000-0000-000000000001")
+    oauth_id = UUID("00000000-0000-0000-0000-000000000002")
+    calls: list[tuple[str, str]] = []
+
+    class FakeConnection:
+        class Result:
+            def __init__(self, row: dict[str, object]) -> None:
+                self.row = row
+
+            def fetchone(self) -> dict[str, object]:
+                return self.row
+
+        def execute(self, query: str, params: tuple[object, ...] = ()) -> Result:
+            if "SELECT b.id,b.language_code" in query:
+                return self.Result({
+                    "id": blog_record_id, "language_code": "ko", "url": "https://trend-ko.blogspot.com/",
+                    "blog_id": "123", "active": True, "oauth_connection_id": oauth_id,
+                    "oauth_status": "connected", "scopes": [blogger_writes.WRITE_SCOPE],
+                })
+            if "INSERT INTO blogger_write_operations" in query:
+                return self.Result({"idempotency_key": params[0]})
+            return self.Result({})
+
+    @contextmanager
+    def fake_connection():
+        yield FakeConnection()
+
+    monkeypatch.setattr(blogger_writes, "connection", fake_connection)
+    monkeypatch.setattr(blogger_writes.google_oauth, "access_token", lambda _id: "test-token")
+    monkeypatch.setattr(blogger_writes.external_policy, "billing_credential_names", list)
+    monkeypatch.setattr(blogger_writes.external_policy, "_audit", lambda *args, **kwargs: None)
+    monkeypatch.setattr(blogger_writes.external_policy, "_blogger_operation_is_approved", lambda _op: True)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.method, request.url.path))
+        if request.method == "GET" and request.url.path.endswith("/blogs/123"):
+            return httpx.Response(200, json={"id": "123", "url": "https://trend-ko.blogspot.com/"}, request=request)
+        if request.method == "POST":
+            return httpx.Response(200, json={"id": "456", "blog": {"id": "123"}, "status": "DRAFT"}, request=request)
+        return httpx.Response(200, json={"id": "456", "blog": {"id": "123"}, "status": "DRAFT"}, request=request)
+
+    result = blogger_writes.BloggerLivePublisher(httpx.MockTransport(handler)).create_draft(
+        "draft-once", blog_record_id, "검증 초안", "<p>비공개 검증 초안</p>"
+    )
+    assert result["post_id"] == "456"
+    assert result["live"] is True and result["simulation_only"] is False
+    assert result["post_verified"] is True
+    assert [method for method, _ in calls] == ["GET", "POST", "GET"]
+    assert calls[-1][1].endswith("/blogs/123/posts/456")
 
 
 def test_policy_approval_requires_exact_scoped_append_only_record(
