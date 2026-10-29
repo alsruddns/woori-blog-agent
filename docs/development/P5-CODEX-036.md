@@ -3,7 +3,7 @@
 ## Work record
 
 - Work ID: `P5-CODEX-036`
-- Work time: 2026-10-29 15:25–16:02 KST
+- Work time: 2026-10-29 15:25–15:54 KST
 - Branch: `develop`
 - Reason: RSS traffic labels were stored only as strings, the scheduler was not anchored to KST hour boundaries, and the Trends view exposed raw observations instead of lifecycle and research status.
 - Previous state: schema 50; `source_volume_label` existed, but no parsed lower-bound or period column; collection was due per-region at an hour interval rather than a durable top-of-hour sweep. RSS sequence was already not stored as rank.
@@ -65,6 +65,6 @@
 ## Commit, related policy, and remaining work
 
 - Related policy: `docs/operations/zero-cost-policy.md`.
-- Commit SHA: to be recorded in the immediate follow-up development record after commit.
-- Remote push: pending.
+- Commit SHA: `f384645b98bdf71004a686a05c3b7cfc0b642aa7`.
+- Remote push: `origin/develop` succeeded.
 - Remaining: restart the project Research Worker and API/Dashboard through their owning terminals to load the new revision; confirm a real scheduled sweep and updated Dashboard read model. `hours=1` remains undocumented and unsupported. Existing research candidates require official-source work; this task does not create an automatic writer. No unattended AI generation provider is attached.

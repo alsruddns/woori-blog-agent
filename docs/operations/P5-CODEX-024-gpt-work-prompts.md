@@ -6,6 +6,8 @@ OpenAI's current official documentation describes scheduled tasks in the ChatGPT
 
 Official references: [Scheduled tasks](https://learn.chatgpt.com/docs/automations), [ChatGPT desktop app for Windows](https://learn.chatgpt.com/docs/app/windows), and [ChatGPT Work local files](https://learn.chatgpt.com/docs/get-started-with-work).
 
+Verification update (2026-10-29): the existing local-project task wrote `.local/gpt-scheduled-import/probe/scheduled-test.json` at 15:51 KST. Its 268-byte JSON contains only execution metadata; it is not an import envelope. There is still no scheduled manuscript `*.ready.json` or Import receipt. See the targeted Research Package instruction in [P5-CODEX-037](P5-CODEX-037-fed-package-task.md).
+
 This task only writes review-held import files. The local Research Worker polls `.local/gpt-scheduled-import/ready/` every 60 seconds and forwards files to the loopback Import API. Imports remain `awaiting_human_review`, `publish_ready=false`, and have no Blogger write path.
 
 ## Common output contract
