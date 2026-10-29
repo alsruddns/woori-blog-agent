@@ -41,7 +41,7 @@ def numbers(text: str) -> set[str]:
     month_pattern = r"\b(" + "|".join(months) + r")\s+(\d{1,2})(?:,\s*(\d{4}))?\b"
     # Written dates, including Taiwan Minguo years, are compared by date value.
     localized_pattern = (
-        r"(?<!\d)(?:(\d{1,4})\s*(?:\u5e74|\ub144)\s*)?(\d{1,2})\s*(?:\u6708|\uc6d4)\s*(\d{1,2})\s*(?:\u65e5|\u53f7|\u865f|\uc77c)?"
+        r"(?<!\d)(?:(\d{1,4})\s*(?:\u5e74|\ub144)\s*)?(\d{1,2})\s*(?:\u6708|\uc6d4)\s*(\d{1,2})\s*(?:\u65e5|\u53f7|\u865f|\uc77c)?(?!\d)"
     )
 
     def date_lists(sentence: str, pattern: str, kind: str) -> str:
@@ -125,9 +125,29 @@ def numbers(text: str) -> set[str]:
     # reviewed separately, and aliases remain unit-bound to preserve other numbers.
     # They remain unit-bound so unrelated factual numbers stay exact.
     normalized_values: set[str] = set(dates)
-    for kind, value in _quantity_facts(text):
-        if kind == "GBP":
+    typed_quantities = _quantity_facts(text)
+    for kind, value in typed_quantities:
+        if kind in {"GBP", "year_month", "year_month_range", "ordinal", "year_offset"}:
             normalized_values.add(f"FACT:{kind}:{value}")
+
+    # Normalize month periods and relative-year phrases as typed facts. Remove
+    # their numeric surfaces before collecting untyped numbers so 4~9 months,
+    # 10th, and "one year earlier" compare with their source wording.
+    text = re.sub(
+        r"(?:(?:20\d{2})\s*(?:\u5e74|\ub144)\s*)?\d{1,2}\s*(?:\u6708|\uc6d4)?\s*(?:~|\uc5d0\uc11c|\ubd80\ud130)\s*\d{1,2}\s*(?:\u6708|\uc6d4)(?:\uae4c\uc9c0)?",
+        " ", text,
+    )
+    text = re.sub(
+        r"\b(?:january|february|march|april|may|june|july|august|september|october|november|december)\s*(?:-to-|\s+to\s+)\s*(?:january|february|march|april|may|june|july|august|september|october|november|december)\b",
+        " ", text, flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"\b(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+(20\d{2})\b",
+        " ", text, flags=re.IGNORECASE,
+    )
+    text = re.sub(r"\b\d+(?:st|nd|rd|th)\b", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"\b(?:a|one)\s+year\s+(?:ago|earlier)\b", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"(?<!\d)1\s*\ub144\s*(?:\uc804|\uc55e\uc11c)", " ", text)
 
     def gbp_amount(match: re.Match[str], multiplier: Decimal) -> str:
         amount = Decimal(match.group(1).replace(",", "")) * multiplier

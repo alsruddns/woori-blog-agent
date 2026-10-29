@@ -32,6 +32,9 @@ _PERCENT_POINTS = re.compile(
 _PERCENT = re.compile(rf"({_NUMBER_VALUE})\s*(?:%|percent\b)", re.IGNORECASE)
 _KO_MONTH_RANGE = re.compile(r"(20\d{2})년\s*(1[0-2]|0?[1-9])\s*~\s*(1[0-2]|0?[1-9])월")
 _KO_YEAR_MONTH = re.compile(r"(20\d{2})년\s*(1[0-2]|0?[1-9])월")
+_KO_BARE_MONTH_RANGE = re.compile(r"(?<!\d)(1[0-2]|0?[1-9])\s*월?\s*(?:~|부터)\s*(1[0-2]|0?[1-9])\s*월(?:까지)?")
+_YEAR_OFFSET_EN = re.compile(r"\b(?:a|one)\s+year\s+(?:ago|earlier)\b", re.IGNORECASE)
+_YEAR_OFFSET_KO = re.compile(r"(?<!\d)1\s*년\s*(?:전|앞서)")
 _EN_MONTH_RANGE = re.compile(
     r"\b(january|february|march|april|may|june|july|august|september|october|november|december)"
     r"\s*-\s*to\s*-\s*(january|february|march|april|may|june|july|august|september|october|november|december)\b",
@@ -116,6 +119,14 @@ def _quantity_facts(text: str) -> set[tuple[str, str]]:
         month = _EN_MONTHS[match.group(1).casefold()]
         facts.add(("year_month", f"{int(match.group(2)):04d}-{month:02d}"))
         consumed.append(match.span())
+    for match in _KO_BARE_MONTH_RANGE.finditer(text):
+        facts.add(("year_month_range", f"{int(match.group(1)):02d}-{int(match.group(2)):02d}"))
+        consumed.append(match.span())
+
+    for pattern in (_YEAR_OFFSET_EN, _YEAR_OFFSET_KO):
+        for match in pattern.finditer(text):
+            facts.add(("year_offset", "1"))
+            consumed.append(match.span())
 
     for match in re.finditer(r"\b(\d+)(?:st|nd|rd|th)\b", text, re.IGNORECASE):
         facts.add(("ordinal", str(int(match.group(1)))))

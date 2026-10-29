@@ -137,6 +137,15 @@ def test_korean_fiscal_month_range_matches_english_source_period() -> None:
     assert result["status"] == "passed"
 
 
+def test_bare_korean_month_range_and_relative_year_match_source_phrases() -> None:
+    from woori.scheduled_auto_verification import _quantity_facts
+
+    assert ("year_month_range", "04-09") in _quantity_facts("2026년 4~9월 기간")
+    assert ("year_month_range", "04-09") in _quantity_facts("April-to-September figure")
+    assert ("year_offset", "1") in _quantity_facts("1년 전보다 낮았다")
+    assert ("year_offset", "1") in _quantity_facts("lower than a year earlier")
+
+
 def test_corroborated_claim_requires_distinct_organizations() -> None:
     imported, proofs = _case()
     imported["claims"][0]["verification_status"] = "corroborated"
