@@ -552,6 +552,7 @@ def list_content_imports(limit: int = Query(default=50, ge=1, le=100)) -> dict[s
         rows = conn.execute(
             """SELECT i.id,i.external_content_id,i.event_group_id,i.language_code,i.source_region,i.category,
                 i.title,i.content_sha256,i.state,i.received_at,i.generation_method,i.model_name,
+                i.google_trends_based,
                 mapped.content_version_id
             FROM external_content_imports i LEFT JOIN LATERAL (
               SELECT l.content_version_id FROM external_content_import_versions v

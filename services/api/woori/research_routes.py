@@ -500,6 +500,7 @@ def manuscript_list(
     language: str = Query(default="", max_length=35),
     category: str = Query(default="", max_length=40),
     status: str = Query(default="", max_length=40),
+    include_retired_models: bool = Query(default=False),
     sort: Literal["newest", "oldest"] = "newest",
 ) -> dict[str, Any]:
     """Return a bounded list projection; full bodies and quality JSON are detail-only."""
@@ -514,6 +515,8 @@ def manuscript_list(
             "languages": [], "categories": []}
     clauses = ["content_version_id IS NOT NULL"]
     params: list[Any] = []
+    if not include_retired_models:
+        clauses.append("lower(COALESCE(model,'')) NOT LIKE '%qwen%' AND lower(COALESCE(model,'')) NOT LIKE '%llama%'")
     if q.strip():
         clauses.append("(strpos(lower(title),lower(%s))>0 OR strpos(lower(topic),lower(%s))>0)")
         term = q.strip()

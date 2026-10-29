@@ -75,12 +75,13 @@ def _scheduled_eligibility(conn: Any, imported: Any, version: Any, blog: Any) ->
     if imported["generation_method"] != "chatgpt_scheduled_export":
         reasons.append("not_a_scheduled_export")
     assessment = conn.execute(
-        """SELECT machine_passed,safe_html,html_sha256,seo_checks FROM external_content_import_assessments
+        """SELECT machine_passed,safe_html,html_sha256,seo_checks,generation_ready,publish_ready
+        FROM external_content_import_assessments
         WHERE import_id=%s AND version_id=%s ORDER BY assessed_at DESC,id DESC LIMIT 1""",
         (imported["id"], version["id"]),
     ).fetchone()
-    if not assessment or not assessment["machine_passed"] or not assessment["safe_html"]:
-        reasons.append("scheduled_machine_or_html_gate_not_passed")
+    machine_reasons, machine_followups = scheduled_publish_first_assessment(assessment)
+    reasons.extend(machine_reasons)
     sources = imported["sources"] or []
     verified = conn.execute(
         """SELECT DISTINCT ON (payload->>'source_id') payload FROM audit_events
@@ -136,6 +137,7 @@ def _scheduled_eligibility(conn: Any, imported: Any, version: Any, blog: Any) ->
         scheduled_publish_first=True,
         article_body=body,
     )
+    evidence_result["followups"].extend(machine_followups)
     reasons.extend(evidence_result["reasons"])
     origin = conn.execute(
         """SELECT payload FROM audit_events WHERE event_type='content.import.scheduled_origin_recorded'
@@ -163,6 +165,26 @@ def _scheduled_eligibility(conn: Any, imported: Any, version: Any, blog: Any) ->
     unique_reasons = list(dict.fromkeys(reasons))
     return {"reasons": unique_reasons, "evidence": evidence_result,
             "sanitizer": sanitizer, "body": body, "assessment": assessment}
+
+
+def scheduled_publish_first_assessment(assessment: Any) -> tuple[list[str], list[dict[str, str]]]:
+    """For scheduled originals, route non-critical evaluation flags to follow-up.
+
+    A usable sanitized HTML document is still mandatory. This never changes the
+    stored machine_passed/generation_ready/publish_ready values.
+    """
+    if not assessment or not assessment.get("safe_html"):
+        return ["scheduled_publishable_html_missing"], []
+    followups: list[dict[str, str]] = []
+    flags = (
+        ("machine_passed", "기계 품질 검사 미통과", "medium"),
+        ("generation_ready", "원고 생성 준비 평가 미통과", "medium"),
+        ("publish_ready", "일반 publish_ready 평가 미통과", "medium"),
+    )
+    for field, description, severity in flags:
+        if assessment.get(field) is not True:
+            followups.append({"issue_type": "other", "severity": severity, "description": description})
+    return [], followups
 
 
 def enqueue_scheduled_auto_jobs() -> dict[str, Any]:

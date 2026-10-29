@@ -63,6 +63,7 @@ export default function ManuscriptWorkspace() {
   const query = useSearchParams();
   const [filters, setFilters] = useState(() => ({ q: query.get("q") ?? "", language: query.get("language") ?? "", category: query.get("category") ?? "", status: query.get("status") ?? "", sort: query.get("sort") ?? "newest", page: Math.max(1, Number(query.get("page") ?? 1) || 1) }));
   const [pageSize, setPageSize] = useState(() => Math.min(100, Math.max(1, Number(query.get("page_size") ?? 25) || 25)));
+  const [showRetiredModels, setShowRetiredModels] = useState(() => query.get("include_retired_models") === "true");
   const [searchText, setSearchText] = useState(() => query.get("q") ?? "");
   const [data, setData] = useState<ListResult | null>(null);
   const [loading, setLoading] = useState(true);
@@ -97,9 +98,10 @@ export default function ManuscriptWorkspace() {
       const item = filters[key];
       if (item) params.set(key, item); else params.delete(key);
     }
+    if (showRetiredModels) params.set("include_retired_models", "true"); else params.delete("include_retired_models");
     params.set("sort", filters.sort); params.set("page", String(filters.page)); params.set("page_size", String(pageSize));
     window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}${window.location.hash}`);
-  }, [filters, pageSize]);
+  }, [filters, pageSize, showRetiredModels]);
   useEffect(() => {
     const controller = new AbortController();
     const id = ++requestSequence.current;
@@ -108,13 +110,14 @@ export default function ManuscriptWorkspace() {
     if (filters.language) params.set("language", filters.language);
     if (filters.category) params.set("category", filters.category);
     if (filters.status) params.set("status", filters.status);
+    if (showRetiredModels) params.set("include_retired_models", "true");
     fetch(`/api/research/manuscripts?${params}`, { cache: "no-store", signal: controller.signal })
       .then(async response => { if (!response.ok) throw new Error("원고 목록을 불러오지 못했습니다."); return await response.json() as ListResult; })
       .then(result => { if (requestSequence.current === id) setData(result); })
       .catch(() => { if (!controller.signal.aborted && requestSequence.current === id) setError("원고 목록을 불러오지 못했습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요."); })
       .finally(() => { if (requestSequence.current === id) setLoading(false); });
     return () => controller.abort();
-  }, [filters, pageSize]);
+  }, [filters, pageSize, showRetiredModels]);
 
   const openDetail = useCallback(async (row: Row, trigger: HTMLElement) => {
     const requestId = ++detailSequence.current;
@@ -141,16 +144,27 @@ export default function ManuscriptWorkspace() {
     const params = new URLSearchParams(window.location.search);
     const evaluationId = params.get("open_evaluation_id");
     const versionId = params.get("open_content_version_id");
-    if (!evaluationId || !versionId) return;
-    deepLinkOpened.current = true;
+    if (!versionId) return;
     const row = data.items.find(item => value(item, "evaluation_id") === evaluationId && value(item, "content_version_id") === versionId)
-      ?? { evaluation_id: evaluationId, content_version_id: versionId, title: "원고 상세" };
+      ?? data.items.find(item => value(item, "content_version_id") === versionId);
+    if (!row || !evaluationId || value(row, "evaluation_id") !== evaluationId) return;
+    deepLinkOpened.current = true;
     const frame = window.requestAnimationFrame(() => void openDetail(row, document.body));
     return () => window.cancelAnimationFrame(frame);
   }, [data, openDetail]);
   const closeDetail = useCallback(() => {
     detailSequence.current += 1;
     setSelected(null); setDetail(null); document.body.classList.remove("sheet-open");
+    const params = new URLSearchParams(window.location.search);
+    const returnTo = params.get("return_to");
+    if (returnTo && returnTo.startsWith("/") && !returnTo.startsWith("//") && !returnTo.includes("\\")) {
+      window.location.assign(returnTo);
+      return;
+    }
+    if (params.has("open_content_version_id")) {
+      params.delete("open_content_version_id"); params.delete("open_evaluation_id"); params.delete("return_to");
+      window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}${window.location.hash}`);
+    }
     requestAnimationFrame(() => previousFocus.current?.focus());
   }, []);
   const loadLocalizedPlan = async () => {
@@ -351,6 +365,7 @@ export default function ManuscriptWorkspace() {
         <label>언어<select value={filters.language} onChange={event => { setLoading(true); setError(""); setFilters(current => ({ ...current, language: event.target.value, page: 1 })); }}><option value="">전체</option>{languages.map(item => <option key={item} value={item}>{koreanLanguage(item)}</option>)}</select></label>
         <label>품질 상태<select value={filters.status} onChange={event => { setLoading(true); setError(""); setFilters(current => ({ ...current, status: event.target.value, page: 1 })); }}><option value="">전체</option><option value="quality_held">품질 검토 필요</option><option value="machine_checked">기계 검사 통과</option><option value="failed">처리 실패</option></select></label>
         <label>작성일<select value={filters.sort} onChange={event => { setLoading(true); setError(""); setFilters(current => ({ ...current, sort: event.target.value, page: 1 })); }}><option value="newest">최신순</option><option value="oldest">오래된 순</option></select></label>
+        <label className="inline-checkbox"><input type="checkbox" checked={showRetiredModels} onChange={event => { setLoading(true); setError(""); setShowRetiredModels(event.target.checked); setFilters(current => ({ ...current, page: 1 })); }} />보관된 Qwen·llama 원고 포함</label>
         <label>페이지당 표시<select value={pageSize} onChange={event => { setLoading(true); setError(""); setPageSize(Number(event.target.value)); setFilters(current => ({ ...current, page: 1 })); }}><option value={10}>10개</option><option value={25}>25개</option><option value={50}>50개</option></select></label>
       </div>
       <div className="grid-meta"><span>{data ? `${data.total.toLocaleString("ko-KR")}개 원고` : "원고 불러오는 중"}</span>{loading && <span aria-live="polite">목록 갱신 중…</span>}</div>

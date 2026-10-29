@@ -1,3 +1,4 @@
+from woori.publication_worker import scheduled_publish_first_assessment
 from woori.scheduled_auto_verification import (
     evaluate_scheduled_evidence,
     sanitize_scheduled_body,
@@ -41,6 +42,28 @@ def test_scheduled_publish_first_allows_minor_review_followups_only():
     assert result["status"] == "passed"
     assert "semantic_claim_review_required" not in result["reasons"]
     assert any(item["issue_type"] == "copyright" for item in result["followups"])
+
+
+def test_scheduled_publish_first_routes_failed_quality_flags_to_followups_without_mutating_them():
+    reasons, followups = scheduled_publish_first_assessment({
+        "machine_passed": False,
+        "generation_ready": False,
+        "publish_ready": False,
+        "safe_html": "<p>Evidence-backed original summary.</p>",
+    })
+    assert reasons == []
+    assert {item["description"] for item in followups} == {
+        "기계 품질 검사 미통과", "원고 생성 준비 평가 미통과", "일반 publish_ready 평가 미통과",
+    }
+
+
+def test_scheduled_publish_first_still_blocks_when_no_sanitized_html_exists():
+    reasons, followups = scheduled_publish_first_assessment({
+        "machine_passed": True, "generation_ready": True, "publish_ready": True,
+        "safe_html": None,
+    })
+    assert reasons == ["scheduled_publishable_html_missing"]
+    assert followups == []
 
 
 def test_scheduled_publish_first_still_blocks_restricted_rights_and_unverified_facts():

@@ -581,6 +581,16 @@ def scheduled_first_post_status(import_id: Annotated[UUID, Query()]) -> dict[str
                 and external_policy._scheduled_publication_approval(blog_id)
             )
             blog_jobs = [dict(job) for job in jobs]
+            manual_publication: dict[str, Any] = {}
+            if (imported["generation_method"] == "manual_codex_import"
+                    and content_version_id):
+                manual_candidate = _candidate(conn, UUID(str(content_version_id)), UUID(blog_id))
+                manual_assessment = _assess(manual_candidate)
+                manual_publication = {
+                    "eligible": not manual_assessment["reasons"],
+                    "blockers": manual_assessment["reasons"],
+                    "body_sha256": _body_digest(str(manual_candidate["body"])) if manual_candidate else None,
+                }
             blockers: list[str] = []
             if imported["generation_method"] != "chatgpt_scheduled_export":
                 blockers.append("not_a_codex_scheduled_export")
@@ -615,6 +625,7 @@ def scheduled_first_post_status(import_id: Annotated[UUID, Query()]) -> dict[str
                 "can_record_first_approval": not blockers,
                 "approval_blockers": blockers,
                 "remote_write_policy_available": remote_write_policy,
+                "manual_publication": manual_publication,
                 "jobs": blog_jobs,
             })
 
@@ -1026,7 +1037,8 @@ def list_publications(
               p.id AS policy_id,p.active AS policy_active,p.auto_publish_allowed,
               COALESCE(q.machine_passed,false) AS machine_passed,
               COALESCE(q.human_review_required,true) AS human_review_required,
-              COALESCE(q.publish_ready,false) AS publish_ready,q.status AS quality_status,q.id AS evaluation_id,
+              COALESCE(q.publish_ready,false) AS publish_ready,q.status AS quality_status,q.id AS evaluation_id,q.model AS model_name,
+              imported.import_id,imported.generation_method,imported.google_trends_based,
               imported.research_package_id,imported.event_group_id,
               COALESCE(imported.title,imported.category) AS topic,
               publication.published_at AS remote_published_at,publication.remote_post_id,
@@ -1039,10 +1051,12 @@ def list_publications(
             LEFT JOIN google_connections g ON g.id=latest.oauth_connection_id
             LEFT JOIN language_profiles lp ON lp.language_code=latest.language_code AND lp.target_country=latest.target_country
             LEFT JOIN publishing_policies p ON p.blog_id=latest.blog_uuid AND p.profile_id=lp.id
-            LEFT JOIN LATERAL (SELECT machine_passed,human_review_required,publish_ready,status,id
+            LEFT JOIN LATERAL (SELECT machine_passed,human_review_required,publish_ready,status,id,model
               FROM article_quality_evaluations WHERE content_version_id=latest.content_version_id
               ORDER BY created_at DESC,id DESC LIMIT 1) q ON true
-            LEFT JOIN LATERAL (SELECT imported.research_package_id,imported.event_group_id,imported.title,imported.category
+            LEFT JOIN LATERAL (SELECT imported.id AS import_id,imported.generation_method,
+                imported.google_trends_based,imported.research_package_id,imported.event_group_id,
+                imported.title,imported.category
               FROM external_content_import_content_links link
               JOIN external_content_imports imported ON imported.id=link.import_id
               WHERE link.content_version_id=latest.content_version_id
@@ -1118,6 +1132,8 @@ def list_publications(
         duplicate_suppressed = 0
         for raw_candidate in rows:
             candidate = dict(raw_candidate)
+            if any(marker in str(candidate.get("model_name") or "").casefold() for marker in ("qwen", "llama")):
+                continue
             candidate["id"] = str(candidate["content_version_id"])
             candidate["group_id"] = str(candidate["group_id"])
             candidate["content_version_id"] = str(candidate["content_version_id"])
@@ -1165,9 +1181,19 @@ def list_publications(
         publication_records = [dict(row) for row in conn.execute(
             """SELECT r.id AS record_id,r.job_id,r.blog_id,b.language_code,b.display_name AS blog_name,
             b.url AS blog_url,b.blog_id AS blogger_blog_id,r.content_version_id,v.group_id,v.title,
-            r.remote_post_id,r.remote_url,r.remote_status,r.remote_verified_at,r.published_at
+            r.remote_post_id,r.remote_url,r.remote_status,r.remote_verified_at,r.published_at,
+            imported.import_id,imported.generation_method,imported.google_trends_based,
+            evaluation.evaluation_id,evaluation.model
             FROM publishing_records r JOIN blogger_blogs b ON b.id=r.blog_id
             JOIN content_versions v ON v.id=r.content_version_id
+            LEFT JOIN LATERAL (SELECT imported.id AS import_id,imported.generation_method,
+                imported.google_trends_based FROM external_content_import_content_links link
+                JOIN external_content_imports imported ON imported.id=link.import_id
+                WHERE link.content_version_id=v.id ORDER BY imported.received_at DESC,imported.id DESC LIMIT 1
+            ) imported ON true
+            LEFT JOIN LATERAL (SELECT q.id AS evaluation_id,q.model FROM article_quality_evaluations q
+                WHERE q.content_version_id=v.id ORDER BY q.created_at DESC,q.id DESC LIMIT 1
+            ) evaluation ON true
             WHERE r.remote_status='LIVE' AND r.remote_verified_at IS NOT NULL
             ORDER BY r.published_at DESC,r.id DESC"""
         ).fetchall()]
@@ -1202,6 +1228,11 @@ def list_publications(
             "remote_post_id": row["remote_post_id"], "remote_url": row["remote_url"],
             "remote_status": row["remote_status"], "remote_verified_at": row["remote_verified_at"],
             "published_at": row["published_at"], "eligibility_reasons": [],
+            "import_id": str(row["import_id"]) if row.get("import_id") else None,
+            "generation_method": row.get("generation_method"),
+            "google_trends_based": row.get("google_trends_based"),
+            "evaluation_id": str(row["evaluation_id"]) if row.get("evaluation_id") else None,
+            "model_name": row.get("model"),
             "research_package_id": None, "source_names": None,
         } for row in publication_records]
         held_items = [{

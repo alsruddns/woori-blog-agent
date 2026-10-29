@@ -41,7 +41,7 @@ class _EvaluationConnection:
         if "current_database()" in query:
             return _Cursor([{"db": "woori_blog_agent_eval", "role": "woori_eval_reader"}])
         if "count(*)::int AS total" in query:
-            return _Cursor([{"total": 1}])
+            return _Cursor([{"total": 0 if "lower(COALESCE(model" in query else 1}])
         if "FROM research_experiment_evaluations e" in query:
             return _Cursor([{
                 "id": self.evaluation_id,
@@ -62,6 +62,8 @@ class _EvaluationConnection:
         if "DISTINCT category_slug" in query:
             return _Cursor([{"category_slug": "finance"}])
         if "SELECT * FROM (" in query:
+            if "lower(COALESCE(model" in query:
+                return _Cursor([])
             return _Cursor([{
                 "evaluation_id": self.evaluation_id,
                 "content_version_id": self.version_id,
@@ -128,12 +130,18 @@ def test_manuscript_list_is_paginated_and_excludes_body_and_json(
             "/admin/research/manuscripts?page=1&page_size=10&language=en&category=finance",
             headers=headers,
         )
+        archived = client.get(
+            "/admin/research/manuscripts?page=1&page_size=10&language=en&category=finance&include_retired_models=true",
+            headers=headers,
+        )
     assert response.status_code == 200
     payload = response.json()
-    assert payload["total"] == 1 and payload["page_size"] == 10
-    assert payload["items"][0]["title"] == "Read model fixture"
-    assert payload["items"][0]["publish_ready"] is False
-    assert not {"body", "saved_body", "metrics", "checks"}.intersection(payload["items"][0])
+    assert payload["total"] == 0 and payload["page_size"] == 10
+    assert archived.status_code == 200
+    assert archived.json()["total"] == 1
+    assert archived.json()["items"][0]["title"] == "Read model fixture"
+    assert archived.json()["items"][0]["publish_ready"] is False
+    assert not {"body", "saved_body", "metrics", "checks"}.intersection(archived.json()["items"][0])
     assert any("LIMIT %s OFFSET %s" in query for query in evaluation.statements)
     assert all("v.body" not in query for query in evaluation.statements)
 
@@ -226,6 +234,10 @@ def test_operations_snapshot_reads_migration_marker_without_schema_table_privile
         def execute(self, query: str, _params: Any = None) -> _Cursor:
             if "payload->>'version'" in query:
                 return _Cursor([{"version": 48}])
+            if "codex.scheduled_local_file_probe.confirmed" in query:
+                return _Cursor([{"count": 0, "last_at": None}])
+            if "SELECT a.event_type,a.created_at" in query:
+                return _Cursor([])
             if "to_regclass('public.trend_collection_runs')" in query:
                 return _Cursor([{"available": False}])
             if "GROUP BY b.language_code" in query:

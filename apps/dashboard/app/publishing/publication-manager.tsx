@@ -10,6 +10,7 @@ type Item = {
   next_publish_at?: string | null; created_at?: string | null; remote_url?: string | null;
   remote_post_id?: string | null; remote_status?: string | null; remote_verified_at?: string | null;
   simulation_only?: boolean; adapter_type?: string; evaluation_id?: string | null;
+  import_id?: string | null; generation_method?: string | null; google_trends_based?: boolean;
 };
 type ModeSetting = { scope_type: string; scope_key: string; configured_mode: string; daily_auto_limit: number; minimum_interval_minutes: number; allowed_start_hour?:number; allowed_end_hour?:number; timezone?:string; allowed_categories?:string[]; excluded_topics?:string[]; max_source_age_hours?:number; retry_limit?:number };
 export type PublicationData = {
@@ -205,7 +206,12 @@ export default function PublicationManager({ initial }: { initial: PublicationDa
       </form>
       {loading ? <p className="empty-state">불러오는 중…</p> : items.length ? <div className="publication-table-scroll"><table><thead><tr><th>원고</th><th>언어</th><th>대상 블로그</th><th>주제·출처</th><th>상태</th><th>시각</th>{view==="published"&&<th>게시 URL</th>}</tr></thead><tbody>
         {items.map(item=><tr key={`${item.id}-${item.blog_id}`}>
-          <td><a href={`/manuscripts?open_content_version_id=${encodeURIComponent(item.content_version_id)}`}>{item.title || "제목 없음"}</a><small>버전 {item.content_version_id.slice(0,8)}</small></td>
+          <td>{item.import_id
+            ? <a href={`/imports?open_import_id=${encodeURIComponent(item.import_id)}&return_to=${encodeURIComponent(`/publishing?view=${view}&page=${page}&q=${query}&language_code=${language}&blog_id=${blog}`)}`}>{item.title || "제목 없음"}</a>
+            : item.evaluation_id
+              ? <a href={`/manuscripts?open_evaluation_id=${encodeURIComponent(item.evaluation_id)}&open_content_version_id=${encodeURIComponent(item.content_version_id)}&return_to=${encodeURIComponent(`/publishing?view=${view}&page=${page}&q=${query}&language_code=${language}&blog_id=${blog}`)}`}>{item.title || "제목 없음"}</a>
+              : <span>{item.title || "제목 없음"}</span>}
+            <small>버전 {item.content_version_id.slice(0,8)} · {item.google_trends_based ? "Google Trends" : item.generation_method === "chatgpt_scheduled_export" ? "Codex 예약" : item.generation_method === "manual_codex_import" ? "수동 Import" : "내부 원고"}</small></td>
           <td>{languageLabel(item.language_code)}</td><td>{item.blog_name || item.url}</td>
           <td>{item.topic || item.source_names || "주제·출처 정보 없음"}</td>
           <td>{statusLabel(item.status)}{item.eligibility_reasons?.length ? <small>{item.eligibility_reasons.slice(0,2).map(reasonLabel).join(" · ")}</small> : null}{item.simulation_only && <small>모의 작업</small>}</td>
