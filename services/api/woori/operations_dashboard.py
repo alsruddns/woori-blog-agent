@@ -1,6 +1,9 @@
 """Compact, read-only operational dashboard projection."""
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
+
+from .publication_daily import kst_day_bounds, summarize_daily_usage
 
 
 def _grouped_counts(conn: Any, query: str) -> dict[str, int]:
@@ -21,6 +24,40 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
     publication_counts = _grouped_counts(conn, """SELECT status || ':' || publication_state AS key,count(*)::int AS count FROM publishing_jobs GROUP BY status,publication_state""")
     record_count = conn.execute("SELECT count(*)::int AS count FROM publishing_records").fetchone()["count"]
     latest_published = conn.execute("SELECT max(published_at) AS at FROM publishing_records").fetchone()["at"]
+    # Use an explicit KST date; never rely on the host or PostgreSQL session timezone.
+    today_kst = datetime.now(UTC).astimezone(ZoneInfo("Asia/Seoul")).date()
+    day_start, day_end = kst_day_bounds(today_kst)
+    daily_rows = conn.execute(
+        """SELECT b.language_code,count(*)::int AS count FROM publishing_records r
+        JOIN blogger_blogs b ON b.id=r.blog_id
+        WHERE r.published_at >= %s AND r.published_at < %s GROUP BY b.language_code""",
+        (day_start, day_end),
+    ).fetchall()
+    daily_published = {str(row["language_code"]): int(row["count"]) for row in daily_rows}
+    reservation_rows = conn.execute(
+        """SELECT b.language_code,count(*)::int AS count FROM publishing_jobs j
+        JOIN blogger_blogs b ON b.id=j.blog_id
+        WHERE j.status IN ('queued','running') AND j.scheduled_at >= %s AND j.scheduled_at < %s
+          AND NOT EXISTS (SELECT 1 FROM publishing_records r WHERE r.job_id=j.id)
+        GROUP BY b.language_code""",
+        (day_start, day_end),
+    ).fetchall()
+    daily_reserved = {str(row["language_code"]): int(row["count"]) for row in reservation_rows}
+    daily_publication = summarize_daily_usage(daily_published, daily_reserved)
+    daily_publication["date_kst"] = today_kst.isoformat()
+    daily_publication["items"] = [dict(row) for row in conn.execute(
+        """SELECT r.published_at,b.language_code,b.display_name AS blog_name,b.url AS blog_url,
+        r.remote_post_id,r.content_version_id,r.job_id,v.title,j.adapter_type,j.simulation_only,
+        j.status AS job_status,CASE WHEN j.simulation_only THEN 'simulation' ELSE 'agent' END AS origin
+        FROM publishing_records r JOIN blogger_blogs b ON b.id=r.blog_id
+        JOIN content_versions v ON v.id=r.content_version_id
+        JOIN publishing_jobs j ON j.id=r.job_id
+        WHERE r.published_at >= %s AND r.published_at < %s
+        ORDER BY r.published_at DESC,r.id DESC LIMIT 100""",
+        (day_start, day_end),
+    ).fetchall()]
+    daily_publication["remote_posts_synchronized"] = False
+    daily_publication["remote_sync_note"] = "Blogger 원격 수동 게시물은 아직 동기화되지 않아 이 집계에 포함되지 않습니다."
     mock_job_state = {str(row["blog_id"]):dict(row) for row in conn.execute(
         """SELECT blog_id,max(updated_at) FILTER (WHERE status='succeeded') AS last_success,
         max(updated_at) FILTER (WHERE status='failed') AS last_failure,
@@ -173,7 +210,7 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
             "url_note":"게시 기록에 공개 URL 필드가 없어 링크를 추정하지 않습니다.",
             "queued_mock_jobs":sum(v for k,v in publication_counts.items() if k.startswith("queued:")),
             "live_writes_enabled":False,"auto_enabled":False,"emergency_stopped":bool(global_config.get("emergency_stopped",False)),
-            "configured_global_mode":global_config.get("configured_mode","manual")},
+            "configured_global_mode":global_config.get("configured_mode","manual"),"daily":daily_publication},
         "blogs":blogs,
         "schedules":[
             {"key":"google_trends","name":"Google Trends 정기 수집","status":"inactive","detail":"수집 API는 있지만 주기 실행 Worker가 확인되지 않았습니다."},

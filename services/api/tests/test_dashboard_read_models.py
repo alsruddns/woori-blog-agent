@@ -228,6 +228,10 @@ def test_operations_snapshot_reads_migration_marker_without_schema_table_privile
                 return _Cursor([{"version": 48}])
             if "to_regclass('public.trend_collection_runs')" in query:
                 return _Cursor([{"available": False}])
+            if "GROUP BY b.language_code" in query:
+                return _Cursor([])
+            if "FROM publishing_records r JOIN blogger_blogs b" in query:
+                return _Cursor([])
             if "count(*)::int AS count FROM publishing_records" in query:
                 return _Cursor([{"count": 0}])
             if "max(published_at)" in query:
