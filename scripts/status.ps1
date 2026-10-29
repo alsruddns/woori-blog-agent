@@ -47,7 +47,9 @@ try {
   if ($LASTEXITCODE -eq 0 -and $workerOutput) {
     $workerStatus = ($workerOutput -join "`n") | ConvertFrom-Json
     $workerProcess = $table | Where-Object Id -eq ([int]$workerStatus.heartbeat.process_id) | Select-Object -First 1
-    $executionMode = if ($workerProcess.CommandLine -match '--operations-scheduled-auto') { 'scheduled-auto' }
+    $executionMode = if ($workerProcess.CommandLine -match '--operations-scheduled-auto-and-manual') { 'scheduled-auto-manual' }
+      elseif ($workerProcess.CommandLine -match '--operations-manual-confirmed') { 'manual-confirmed' }
+      elseif ($workerProcess.CommandLine -match '--operations-scheduled-auto') { 'scheduled-auto' }
       elseif ($workerProcess.CommandLine -match '--operations-mock-only') { 'mock-only' }
       else { 'unknown' }
     [pscustomobject]@{

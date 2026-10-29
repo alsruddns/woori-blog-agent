@@ -417,7 +417,9 @@ def enqueue_scheduled_auto_jobs() -> dict[str, Any]:
                 "first_post_confirmed": bool(prior_success)}
 
 
-def process_next_live_job(*, scheduled_auto_only: bool = False) -> dict[str, Any] | None:
+def process_next_live_job(
+    *, scheduled_auto_only: bool = False, manual_confirmed_only: bool = False,
+) -> dict[str, Any] | None:
     """Process one fully approved Blogger job; all absent approvals fail closed."""
     enqueue_scheduled_auto_jobs()
     with connection() as conn:
@@ -452,10 +454,13 @@ def process_next_live_job(*, scheduled_auto_only: bool = False) -> dict[str, Any
             publication_lane
             FROM publishing_jobs j WHERE NOT j.simulation_only AND j.adapter_type='blogger_live'
               AND (%s=false OR j.publication_lane='scheduled_auto')
+              AND (%s=false OR (j.publication_lane='manual' AND EXISTS (
+                SELECT 1 FROM manual_publication_approval_events a WHERE a.job_id=j.id
+              )))
               AND j.status='queued' AND j.scheduled_at<=now() AND j.available_at<=now()
             ORDER BY CASE WHEN (SELECT language_code FROM blogger_blogs bb WHERE bb.id=j.blog_id)='en'
             THEN 0 ELSE 1 END,j.scheduled_at,j.id FOR UPDATE OF j SKIP LOCKED LIMIT 1""",
-            (scheduled_auto_only,),
+            (scheduled_auto_only, manual_confirmed_only),
         ).fetchone()
         if job is None:
             return None
@@ -515,6 +520,34 @@ def process_next_live_job(*, scheduled_auto_only: bool = False) -> dict[str, Any
                     candidate.update({"title": link["title"], "editorial_title": link["title"],
                                       "html_body": assessment["safe_html"],
                                       "blogger_labels": link["blogger_labels"]})
+        elif lane == "manual":
+            manual_approval = conn.execute(
+                """SELECT * FROM manual_publication_approval_events
+                WHERE job_id=%s AND blog_id=%s AND content_version_id=%s""",
+                (job_id, blog_id, version_id),
+            ).fetchone()
+            candidate = dict(candidate) if candidate else None
+            snapshot = publications._manual_publication_snapshot(conn, candidate)
+            reasons = publications._manual_publication_blockers(
+                conn, candidate, snapshot, blog_id, ignore_job_id=job_id,
+            )
+            if not manual_approval:
+                reasons.append("exact_manual_publication_confirmation_missing")
+            elif any((
+                manual_approval["title_sha256"] != snapshot.get("title_sha256"),
+                manual_approval["body_sha256"] != snapshot.get("body_sha256"),
+                manual_approval["html_sha256"] != snapshot.get("html_sha256"),
+                not manual_approval["reviewed_exact_content"],
+                not manual_approval["assertions_safe_to_publish"],
+                not manual_approval["rights_privacy_harm_checked"],
+            )):
+                reasons.append("manual_publication_confirmation_payload_mismatch")
+            if candidate:
+                candidate.update({
+                    "editorial_title": snapshot.get("title"),
+                    "html_body": snapshot.get("safe_html"),
+                    "blogger_labels": snapshot.get("blogger_labels", []),
+                })
         else:
             reasons = list(publications._assess(dict(candidate) if candidate else None)["reasons"])
         current = conn.execute(
@@ -528,6 +561,17 @@ def process_next_live_job(*, scheduled_auto_only: bool = False) -> dict[str, Any
                 publish_operation_approved = external_policy._blogger_operation_is_approved(
                     "blogger_public_publish"
                 )
+        elif lane == "manual":
+            publish_operation_approved = bool(
+                manual_approval
+                and manual_approval["job_id"] == job_id
+                and manual_approval["blog_id"] == blog_id
+                and manual_approval["content_version_id"] == version_id
+                and manual_approval["title_sha256"] == snapshot.get("title_sha256")
+                and manual_approval["body_sha256"] == snapshot.get("body_sha256")
+                and manual_approval["html_sha256"] == snapshot.get("html_sha256")
+                and external_policy._blogger_policy_approval() is not None
+            )
         else:
             publish_operation_approved = external_policy._blogger_operation_is_approved(
                 "blogger_public_publish"
@@ -620,7 +664,7 @@ def process_next_live_job(*, scheduled_auto_only: bool = False) -> dict[str, Any
 
     publisher = BloggerLivePublisher()
     stage = str(claimed["live_stage"])
-    if lane == "scheduled_auto":
+    if lane in {"scheduled_auto", "manual"}:
         remote_check = find_remote_duplicate(
             blog_id, str(candidate.get("editorial_title") or candidate["title"]),
         )
@@ -632,7 +676,7 @@ def process_next_live_job(*, scheduled_auto_only: bool = False) -> dict[str, Any
                     last_error_category=%s,lease_until=NULL,updated_at=now() WHERE id=%s AND status='running'""",
                     (category, job_id),
                 )
-                _append_audit(conn, "publication.scheduled_auto.remote_duplicate_blocked", {
+                _append_audit(conn, "publication." + lane + ".remote_duplicate_blocked", {
                     "job_id": str(job_id), "content_version_id": str(version_id),
                     "status": remote_check["status"], "reason": remote_check["reason"],
                     "post_id": remote_check.get("post_id"), "blogger_write_performed": False,
@@ -700,6 +744,18 @@ def process_next_live_job(*, scheduled_auto_only: bool = False) -> dict[str, Any
                     write_key, blog_id, str(claimed["remote_post_id"]),
                     source_draft_key=source_draft_key,
                 )
+        elif lane == "manual":
+            assert manual_approval is not None
+            with external_policy.manual_publication_context(
+                str(job_id), str(blog_id), str(version_id),
+                str(manual_approval["title_sha256"]),
+                str(manual_approval["body_sha256"]),
+                str(manual_approval["html_sha256"]),
+            ):
+                result = publisher.publish_draft(
+                    write_key, blog_id, str(claimed["remote_post_id"]),
+                    source_draft_key=source_draft_key,
+                )
         else:
             result = publisher.publish_draft(
                 write_key, blog_id, str(claimed["remote_post_id"]),
@@ -742,13 +798,21 @@ def process_next_live_job(*, scheduled_auto_only: bool = False) -> dict[str, Any
                 "url": result["url"], "published_at": result["published_at"],
                 "remote_readback_verified": True,
             })
-            if lane == "scheduled_auto":
+            if lane in {"scheduled_auto", "manual"}:
                 review = conn.execute(
                     """UPDATE post_publication_reviews SET publishing_record_id=%s,post_id=%s,updated_at=now()
                     WHERE publishing_job_id=%s AND publishing_record_id IS NULL RETURNING id""",
                     (record["id"], result["post_id"], job_id),
                 ).fetchone()
                 linked_existing = bool(review)
+                review_import_id = str(link["id"]) if lane == "scheduled_auto" and link else (
+                    snapshot.get("import_id") if lane == "manual" and snapshot else None
+                )
+                review_content_id = (
+                    str(link.get("external_content_id")) if lane == "scheduled_auto" and link
+                    and link.get("external_content_id") else
+                    snapshot.get("external_content_id") if lane == "manual" and snapshot else None
+                )
                 if not review:
                     review = conn.execute(
                     """INSERT INTO post_publication_reviews(publishing_record_id,blog_id,content_version_id,
@@ -756,8 +820,7 @@ def process_next_live_job(*, scheduled_auto_only: bool = False) -> dict[str, Any
                     ON CONFLICT(publishing_record_id) DO NOTHING
                     RETURNING id""",
                     (record["id"], blog_id, version_id, result["post_id"],
-                     str(link["id"]) if link else None,
-                     str(link.get("external_content_id")) if link and link.get("external_content_id") else None),
+                     review_import_id, review_content_id),
                     ).fetchone()
                 review = review or conn.execute(
                     "SELECT id FROM post_publication_reviews WHERE publishing_record_id=%s",
@@ -770,7 +833,7 @@ def process_next_live_job(*, scheduled_auto_only: bool = False) -> dict[str, Any
                 ).fetchone()):
                     _append_audit(conn, "publication.post_review.published_linked" if linked_existing else "publication.post_review.created", {
                         "review_id": str(review["id"]), "publishing_record_id": str(record["id"]),
-                        "job_id": str(job_id), "import_id": str(link["id"]) if link else None,
+                        "job_id": str(job_id), "import_id": review_import_id if lane == "manual" else (str(link["id"]) if link else None),
                         "content_version_id": str(version_id), "post_id": str(result["post_id"]),
                         "remote_readback_verified": True,
                     })
@@ -832,6 +895,7 @@ def process_next_live_job(*, scheduled_auto_only: bool = False) -> dict[str, Any
 def tick(
     backoff_seconds: int = 30, *, allow_private_drafts: bool = False,
     allow_live_publications: bool = False, allow_scheduled_auto_publications: bool = False,
+    allow_manual_confirmed_publications: bool = False,
 ) -> dict[str, Any] | None:
     """Process one explicitly approved private draft or one due fake job."""
     if not 0 <= backoff_seconds <= 3600:
@@ -841,6 +905,11 @@ def tick(
         if live is not None:
             return {"job_type": "scheduled_auto_blogger_live", **live,
                     "simulation_only": False, "auto_enabled": True}
+    if allow_manual_confirmed_publications:
+        live = process_next_live_job(manual_confirmed_only=True)
+        if live is not None:
+            return {"job_type": "manual_confirmed_blogger_live", **live,
+                    "simulation_only": False, "auto_enabled": False}
     if allow_live_publications:
         live = process_next_live_job()
         if live is not None:
@@ -1001,12 +1070,14 @@ def tick(
 def run_once(
     backoff_seconds: int = 30, *, allow_private_drafts: bool = False,
     allow_live_publications: bool = False, allow_scheduled_auto_publications: bool = False,
+    allow_manual_confirmed_publications: bool = False,
 ) -> dict[str, Any]:
     heartbeat("running", service_name="publication_worker")
     try:
         result = tick(backoff_seconds, allow_private_drafts=allow_private_drafts,
                       allow_live_publications=allow_live_publications,
-                      allow_scheduled_auto_publications=allow_scheduled_auto_publications)
+                      allow_scheduled_auto_publications=allow_scheduled_auto_publications,
+                      allow_manual_confirmed_publications=allow_manual_confirmed_publications)
         return {
             "processed": result is not None,
             "result": result,
@@ -1014,6 +1085,7 @@ def run_once(
             "public_publication_enabled": False,
             "live_publication_dispatch_enabled": allow_live_publications,
             "scheduled_auto_publication_dispatch_enabled": allow_scheduled_auto_publications,
+            "manual_confirmed_publication_dispatch_enabled": allow_manual_confirmed_publications,
         }
     except Exception:
         heartbeat("degraded", "publication_worker_failed", "publication_worker")
@@ -1029,6 +1101,7 @@ def run_forever(
     allow_private_drafts: bool = False,
     allow_live_publications: bool = False,
     allow_scheduled_auto_publications: bool = False,
+    allow_manual_confirmed_publications: bool = False,
     cycle_limit: int | None = None,
 ) -> None:
     """Run queue polling under a PostgreSQL singleton lock and live heartbeat.
@@ -1086,6 +1159,7 @@ def run_forever(
                     allow_private_drafts=allow_private_drafts,
                     allow_live_publications=allow_live_publications,
                     allow_scheduled_auto_publications=allow_scheduled_auto_publications,
+                    allow_manual_confirmed_publications=allow_manual_confirmed_publications,
                 )
                 failures = 0
                 degraded.clear()

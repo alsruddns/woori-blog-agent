@@ -149,6 +149,29 @@ def test_public_publish_requires_separate_scope_not_in_existing_owner_attestatio
     assert not external_policy._blogger_operation_is_approved("blogger_public_publish")
 
 
+def test_manual_public_publish_is_scoped_to_explicit_job_context_and_cost_attestation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        external_policy,
+        "_blogger_policy_approval",
+        lambda: {"created_at": datetime.now(UTC), "scope": sorted(external_policy.BLOGGER_APPROVAL_SCOPE)},
+    )
+    monkeypatch.setattr(external_policy, "_blogger_public_publish_approval", lambda: None)
+    assert not external_policy._blogger_operation_is_approved("blogger_public_publish")
+    with external_policy.manual_publication_context(
+        "job-1", "blog-1", "version-1", "a" * 64, "b" * 64, "c" * 64,
+    ):
+        assert external_policy._blogger_operation_is_approved("blogger_public_publish")
+    assert not external_policy._blogger_operation_is_approved("blogger_public_publish")
+
+    monkeypatch.setattr(external_policy, "_blogger_policy_approval", lambda: None)
+    with external_policy.manual_publication_context(
+        "job-1", "blog-1", "version-1", "a" * 64, "b" * 64, "c" * 64,
+    ):
+        assert not external_policy._blogger_operation_is_approved("blogger_public_publish")
+
+
 def test_live_public_publish_gate_blocks_before_transport_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

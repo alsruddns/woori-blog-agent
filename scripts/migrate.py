@@ -5,7 +5,7 @@ import psycopg
 from dotenv import dotenv_values
 
 root = Path(__file__).resolve().parents[1]
-MAX_SUPPORTED_SCHEMA_VERSION = 55
+MAX_SUPPORTED_SCHEMA_VERSION = 56
 url = (
     os.environ.get("MIGRATION_DATABASE_URL")
     or dotenv_values(root / ".env.migration")["MIGRATION_DATABASE_URL"]
@@ -278,4 +278,9 @@ with psycopg.connect(url) as conn:
             (root / "scripts/055_scheduled_prepublication_reviews.sql").read_text(encoding="utf-8"),
             prepare=False,
         )
-print("Project migrations through 055 verified")
+    if current < 56:
+        conn.execute(
+            (root / "scripts/056_manual_publication_approval.sql").read_text(encoding="utf-8"),
+            prepare=False,
+        )
+print("Project migrations through 056 verified")

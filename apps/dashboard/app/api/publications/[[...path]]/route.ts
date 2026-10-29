@@ -8,7 +8,7 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path?: s
   const route = path.join("/");
   const allowed = request.method === "GET" && (route === "" || route === "scheduled-auto-policy" || route === "scheduled-auto-first-post" || route === "post-publication-reviews")
     ? true
-    : request.method === "POST" && (route === "requests" || route === "live-requests" || /^jobs\/[a-f0-9-]+\/simulate$/.test(route) || /^blogs\/[a-f0-9-]+\/sync-readonly$/.test(route))
+    : request.method === "POST" && (route === "requests" || route === "live-requests" || route === "manual-live-requests" || /^jobs\/[a-f0-9-]+\/simulate$/.test(route) || /^blogs\/[a-f0-9-]+\/sync-readonly$/.test(route))
       ? true
         : request.method === "POST" && (route === "emergency-stop" || route === "scheduled-auto-policy"
           || route === "scheduled-auto-first-post" || route === "scheduled-auto/verify-connections")

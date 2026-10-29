@@ -211,6 +211,9 @@ _external_run_id: ContextVar[str | None] = ContextVar("external_run_id", default
 _scheduled_publication_blog_id: ContextVar[str | None] = ContextVar(
     "scheduled_publication_blog_id", default=None
 )
+_manual_publication_approval: ContextVar[tuple[str, str, str, str, str, str] | None] = ContextVar(
+    "manual_publication_approval", default=None
+)
 
 
 @contextmanager
@@ -230,6 +233,21 @@ def scheduled_publication_context(blog_id: str) -> Iterator[None]:
         yield
     finally:
         _scheduled_publication_blog_id.reset(token)
+
+
+@contextmanager
+def manual_publication_context(
+    job_id: str, blog_id: str, version_id: str,
+    title_sha256: str, body_sha256: str, html_sha256: str,
+) -> Iterator[None]:
+    """Scope public-write permission to a previously validated manual approval."""
+    token = _manual_publication_approval.set(
+        (job_id, blog_id, version_id, title_sha256, body_sha256, html_sha256)
+    )
+    try:
+        yield
+    finally:
+        _manual_publication_approval.reset(token)
 
 
 def _dotenv_names() -> dict[str, str]:
@@ -313,6 +331,14 @@ def _blogger_operation_is_approved(operation: str) -> bool:
         scoped_blog_id = _scheduled_publication_blog_id.get()
         if scoped_blog_id is not None:
             return _scheduled_publication_approval(scoped_blog_id) is not None
+        manual_approval = _manual_publication_approval.get()
+        if manual_approval is not None:
+            # The manual worker sets this context only after checking the
+            # append-only approval event against this exact job/version/hash.
+            return bool(
+                manual_approval[0] and manual_approval[1] and manual_approval[2]
+                and all(re.fullmatch(r"[0-9a-f]{64}", digest) for digest in manual_approval[3:])
+            )
         return _blogger_public_publish_approval() is not None
     permitted = {
         "blogger_read": "blogger_read",

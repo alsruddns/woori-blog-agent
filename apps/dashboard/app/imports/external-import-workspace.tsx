@@ -43,6 +43,31 @@ const publicationBlockerNames: Record<string, string> = {
   first_publication_already_approved: "현재 버전·블로그의 첫 공개 승인이 이미 기록됐습니다.",
   remote_publication_already_recorded: "이 콘텐츠 버전의 원격 게시 기록이 있어 중복 발행을 차단했습니다.",
 };
+const manualBlockerNames: Record<string, string> = {
+  manual_codex_import_origin_required: "출처가 manual_codex_import인 수동 원고만 이 경로를 사용할 수 있습니다.",
+  stale_import_version: "최신 Import 버전이 아닙니다. 원고 상세를 새로고침하세요.",
+  publication_title_missing: "게시 제목이 없습니다.", publication_body_missing: "게시 본문이 없습니다.",
+  sanitized_blogger_html_unavailable: "안전하게 정제된 Blogger HTML을 만들 수 없습니다.",
+  blogger_labels_invalid: "Blogger 라벨을 확인해야 합니다.",
+  language_inactive: "원고 언어가 비활성 상태입니다.", blog_inactive: "대상 Blogger가 비활성 상태입니다.",
+  blog_language_mismatch: "원고 언어와 Blogger 언어가 일치하지 않습니다.",
+  blog_connection_unverified: "대상 블로그 ID와 연결 확인이 필요합니다.",
+  blogger_write_oauth_not_verified: "대상 블로그에 Blogger 쓰기 OAuth 연결이 필요합니다.",
+  publication_policy_missing: "대상 블로그의 발행 정책 기록이 없습니다.",
+  blogger_zero_cost_policy_required: "Blogger 비용·권한 운영 확인 기록이 없습니다. 기존 운영 확인을 완료해야 합니다.",
+  publication_modes_unavailable: "발행 설정을 확인할 수 없습니다.",
+  registered_blog_unavailable: "등록된 대상 Blogger를 확인할 수 없습니다.",
+  target_uses_auto_mode: "이 Blogger는 일반 Auto 모드입니다. 수동 발행 경로를 사용할 수 없습니다.",
+  publication_emergency_stop_active: "긴급 발행 정지가 활성 상태입니다.",
+  separate_public_blogger_write_policy_required: "Blogger 공개 쓰기 운영 정책 승인이 필요합니다.",
+  write_scope_required: "OAuth 쓰기 권한이 없습니다. Blogger 연결 관리에서 쓰기 권한을 연결하세요.",
+  oauth_not_connected: "Blogger 쓰기 OAuth 연결이 끊겼습니다.",
+  write_oauth_not_mapped_to_blog: "쓰기 OAuth가 대상 블로그에 연결되지 않았습니다.",
+  blog_not_active: "대상 Blogger가 비활성 상태입니다.",
+  stale_content_version: "최신 콘텐츠 버전이 아닙니다. 최신 원고를 다시 여세요.",
+  manual_live_job_already_exists: "이 원고·블로그의 공개 발행 Job이 이미 있습니다.",
+  remote_publication_already_recorded: "이 원고는 이미 원격 게시 기록이 있습니다.",
+};
 const fmt = (value: unknown) => {
   const date = new Date(String(value ?? ""));
   return Number.isNaN(date.valueOf()) ? "—" : new Intl.DateTimeFormat("ko-KR", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Seoul" }).format(date);
@@ -95,6 +120,7 @@ export default function ExternalImportWorkspace() {
   const [publicationTargetId, setPublicationTargetId] = useState("");
   const [approvalActor, setApprovalActor] = useState("");
   const [approvalReason, setApprovalReason] = useState("");
+  const [manualAttest, setManualAttest] = useState({ content: false, facts: false, rights: false });
   const [targetLanguage, setTargetLanguage] = useState<(typeof languages)[number]>("ko");
   const [detailTab, setDetailTab] = useState<DetailTab>("editor");
   const [preview, setPreview] = useState<Row | null>(null);
@@ -122,6 +148,7 @@ export default function ExternalImportWorkspace() {
     const defaultTarget = publicationTargets.find(target => target.in_scheduled_scope === true)
       ?? publicationTargets[0];
     setPublicationTargetId(String(defaultTarget?.id ?? ""));
+    setManualAttest({ content: false, facts: false, rights: false });
     const current = data.latest_version ?? data.item;
     setTitle(String(current.title ?? "")); setBody(String(current.body_markdown ?? ""));
     setSeo(current.seo_metadata ?? data.item.seo_metadata ?? {});
@@ -295,18 +322,25 @@ export default function ExternalImportWorkspace() {
   const submitManualPublication = async () => {
     if (!detail || !latestVersion?.content_version_id || !publicationTargetId) return;
     const target = ((detail.publication?.targets as Row[] | undefined) ?? []).find(item => String(item.id) === publicationTargetId);
-    const digest = String((target?.manual_publication as Row | undefined)?.body_sha256 ?? "");
-    const titleText = String(latestVersion.title ?? detail.item.title ?? "제목 없음");
-    if (!target || !window.confirm(`이 수동 원고의 Blogger 공개 발행을 요청합니다.\n\n제목: ${titleText}\nContent Version: ${String(latestVersion.content_version_id)}\n본문 SHA-256: ${digest || "확인 불가"}\n대상: ${String(target.display_name)} · ${String(target.url)}\n\n서버의 승인·품질·권리·중복·실제 쓰기 게이트가 하나라도 미충족이면 작업은 차단됩니다.`)) return;
+    const manual = target?.manual_publication as Row | undefined;
+    const titleText = String(manual?.title ?? latestVersion.title ?? detail.item.title ?? "제목 없음");
+    const bodyText = String(manual?.body ?? latestVersion.body_markdown ?? "");
+    if (!target || manual?.eligible !== true || !manualAttest.content || !manualAttest.facts || !manualAttest.rights) return;
+    if (!window.confirm(`다음 원고를 Blogger에 공개 게시하도록 승인합니다.\n\n제목: ${titleText}\nContent Version: ${String(latestVersion.content_version_id)}\n본문 SHA-256: ${String(manual.body_sha256)}\n정제 HTML SHA-256: ${String(manual.html_sha256)}\n대상 Blogger: ${String(target.display_name)} · ${String(target.url)}\n\n게시용 본문을 화면에서 확인했고, 미확인 주장을 사실로 단정하지 않았으며, 알고 있는 권리·개인정보·중대한 위해 문제가 없음을 확인합니다. 이 확인은 정확한 본문 해시와 블로그에만 기록됩니다.`)) return;
     setBusy(true); setError(""); setNotice("");
     try {
-      const response = await fetch("/api/publications/live-requests", { method: "POST", headers: { "Content-Type": "application/json" },
+      const versionKey = String(latestVersion.content_version_id).replaceAll("-", "");
+      const response = await fetch("/api/publications/manual-live-requests", { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content_version_id: latestVersion.content_version_id, blog_id: publicationTargetId,
-          idempotency_key: `manual-live-${String(latestVersion.content_version_id)}-${publicationTargetId}` }) });
+          expected_title_sha256: manual.title_sha256, expected_body_sha256: manual.body_sha256,
+          expected_html_sha256: manual.html_sha256, actor_label: approvalActor.trim(),
+          reason: approvalReason.trim(), reviewed_exact_content: true, assertions_safe_to_publish: true,
+          rights_privacy_harm_checked: true, confirmation: "PUBLISH THIS EXACT MANUSCRIPT PUBLICLY",
+          idempotency_key: `manual-publish-${versionKey}-${String(manual.body_sha256).slice(0,24)}` }) });
       const result = await response.json() as Row;
       if (!response.ok) throw new Error(String(result.detail ?? "공개 발행 요청을 처리하지 못했습니다."));
-      if (result.recorded === false) throw new Error(`발행이 차단되었습니다: ${Array.isArray(result.reasons) ? result.reasons.join(", ") : "필수 조건 미충족"}`);
-      setNotice(`공개 발행 Job ${String(result.id ?? "")}을 등록했습니다. 실제 Blogger 게시 결과는 Worker 처리 후 표시됩니다.`);
+      if (result.recorded === false) throw new Error(`발행이 차단되었습니다: ${Array.isArray(result.reasons) ? result.reasons.map(reason => manualBlockerNames[String(reason)] ?? String(reason)).join(" · ") : "필수 조건 미충족"}`);
+      setNotice(`공개 발행 Job ${String(result.id ?? "")}을 등록했습니다. 게시 후 보완 ${String(result.followup_count ?? 0)}건을 준비했습니다. 실제 Blogger 결과는 Worker 처리 후 표시됩니다.`);
       await openDetail(selectedId); await refreshListOnly();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "공개 발행 요청 실패"); }
     finally { setBusy(false); }
@@ -372,17 +406,39 @@ export default function ExternalImportWorkspace() {
         {detailTab === "distribution" && <>
           <section className="workspace-panel" id="import-localization"><h3>다국어 확장</h3><p>생성 Provider가 연결되지 않아 요청은 대기하며 원고를 생성한 것으로 표시하지 않습니다.</p><label>대상 언어<select value={targetLanguage} onChange={event => setTargetLanguage(event.target.value as typeof targetLanguage)}>{languages.filter(language => language !== detail.item.language_code).map(language => <option key={language} value={language}>{languageNames[language]}</option>)}</select></label><button type="button" className="secondary-button" disabled={busy} onClick={() => void run(() => api("localizations", "POST", { target_language: targetLanguage, requester_label: reviewer, reason: "요청한 언어로 외부 원고를 준비하고 사람 검토 대기" }), "다국어 원고 요청을 외부 공급자 대기로 저장했습니다.")}>현지화 원고 요청</button>{detail.localization_requests.map(request => <article className="history-card" key={String(request.target_language)}><p>{languageNames[String(request.target_language)]} · {statusNames[String(request.event_type)] ?? String(request.event_type)} · {fmt(request.created_at)}</p>{request.event_type === "requested" && <button type="button" className="secondary-button" disabled={busy} onClick={() => void run(() => api(`localizations/${encodeURIComponent(String(request.target_language))}/cancel`, "POST", { requester_label: reviewer, reason: "사용자가 다국어 확장 요청을 취소" }), "현지화 요청을 취소 기록으로 저장했습니다.")}>요청 취소</button>}</article>)}</section>
           <section className="workspace-panel" id="import-review"><h3>사람 편집 검토</h3><label>검토자 표시 이름<input value={reviewer} onChange={event => setReviewer(event.target.value)} /></label><label>검토 메모<input value={reason} onChange={event => setReason(event.target.value)} /></label><div className="review-attestations"><label><input type="checkbox" checked={attest.sources} onChange={event => setAttest({ ...attest, sources: event.target.checked })} />원문 문서를 직접 확인했습니다</label><label><input type="checkbox" checked={attest.claims} onChange={event => setAttest({ ...attest, claims: event.target.checked })} />주장과 근거를 대조했습니다</label><label><input type="checkbox" checked={attest.rights} onChange={event => setAttest({ ...attest, rights: event.target.checked })} />저작권·인용 권리를 검토했습니다</label></div><div className="import-actions"><button type="button" className="secondary-button" disabled={busy} onClick={() => void recordReview("review_started")}>검토 시작</button><button type="button" className="secondary-button" disabled={busy} onClick={() => void recordReview("changes_requested")}>수정 요청</button><button type="button" disabled={busy || !latestAssessment?.machine_passed || !attest.sources || !attest.claims || !attest.rights} onClick={() => void recordReview("editorial_review_passed")}>편집 검토 통과 기록</button></div><p>편집 검토 기록은 유지됩니다. Blogger 첫 공개 승인은 아래의 별도 승인 영역에서 정확한 원고 버전에 대해 처리합니다.</p></section>
-          <ScheduledBloggerPublication detail={detail} selectedTargetId={publicationTargetId} setSelectedTargetId={setPublicationTargetId}
+          {detail.item.generation_method !== "manual_codex_import" && <ScheduledBloggerPublication detail={detail} selectedTargetId={publicationTargetId} setSelectedTargetId={setPublicationTargetId}
             actor={approvalActor} setActor={setApprovalActor} reason={approvalReason} setReason={setApprovalReason}
-            busy={busy} onApprove={() => void approveFirstPublication()} onRefresh={() => void refreshScheduledPublication()} />
+            busy={busy} onApprove={() => void approveFirstPublication()} onRefresh={() => void refreshScheduledPublication()} />}
           {detail.item.generation_method === "manual_codex_import" && <section className="workspace-panel" id="manual-blogger-publication"><h3>수동 원고 Blogger 발행</h3>
-            <p>예약 Auto와 분리된 수동 경로입니다. 요청은 현재 불변 버전과 대상 블로그에 고정되며, 서버의 사람 검토·게시 승인·권리·중복·운영 쓰기 게이트를 모두 통과해야 큐에 등록됩니다.</p>
-            <p>Content Version: {String(latestVersion.content_version_id ?? "연결 없음")} · 원고 버전 {String(latestVersion.version_number ?? "—")} · 본문 SHA-256 {String((((detail.publication?.targets as Row[] | undefined) ?? []).find(target => String(target.id) === publicationTargetId)?.manual_publication as Row | undefined)?.body_sha256 ?? "계산·확인 불가")}</p>
+            <p>예약 Auto와 별도인 사용자 직접 공개 게시입니다. 일반 품질·SEO·편집 검토 미완료는 게시 후 보완으로 기록하며, 최신 버전·정제 HTML·대상 블로그·쓰기 권한·중복·긴급 정지 조건은 유지합니다.</p>
             <label>수동 발행 대상 Blogger<select aria-label="수동 발행 대상 Blogger" value={publicationTargetId} onChange={event => setPublicationTargetId(event.target.value)}>
               <option value="">대상 선택</option>{((detail.publication?.targets as Row[] | undefined) ?? []).filter(target => target.active === true).map(target => <option key={String(target.id)} value={String(target.id)}>{String(target.display_name)} · {String(target.url)}</option>)}
             </select></label>
-            {(() => { const selected = ((detail.publication?.targets as Row[] | undefined) ?? []).find(target => String(target.id) === publicationTargetId); const manual = selected?.manual_publication as Row | undefined; const blockers = (manual?.blockers as string[] | undefined) ?? []; return manual?.eligible === true ? <p className="quality-ok" role="status">현재 버전의 일반 수동 발행 게이트가 통과했습니다. 요청 전 대상과 해시를 다시 확인하세요.</p> : <div className="quality-held" role="status"><strong>현재 게시 불가 · 남은 조건</strong><ul>{blockers.length ? blockers.map(reason => <li key={reason}>{reason}</li>) : <li>수동 발행 상태를 확인할 수 없습니다.</li>}</ul></div>; })()}
-            <button type="button" disabled={busy || !latestVersion.content_version_id || !publicationTargetId || (((detail.publication?.targets as Row[] | undefined) ?? []).find(target => String(target.id) === publicationTargetId)?.manual_publication as Row | undefined)?.eligible !== true} onClick={() => void submitManualPublication()}>현재 버전 공개 발행 요청</button>
+            {(() => {
+              const selected = ((detail.publication?.targets as Row[] | undefined) ?? []).find(target => String(target.id) === publicationTargetId);
+              const manual = selected?.manual_publication as Row | undefined;
+              const blockers = (manual?.blockers as string[] | undefined) ?? [];
+              const jobs = (manual?.jobs as Row[] | undefined) ?? [];
+              return <>
+                <div className="history-card"><h4>실제 게시 내용 확인</h4><p>제목: <strong>{String(manual?.title ?? latestVersion.title ?? detail.item.title)}</strong></p>
+                  <p>Content Version: {String(manual?.content_version_id ?? latestVersion.content_version_id ?? "연결 없음")}</p>
+                  <p>본문 SHA-256: <code>{String(manual?.body_sha256 ?? "확인 불가")}</code></p>
+                  <p>정제 Blogger HTML SHA-256: <code>{String(manual?.html_sha256 ?? "확인 불가")}</code></p>
+                  <p>OAuth: {selected?.oauth_status === "connected" && manual?.oauth_write_scope === true ? "연결됨 · Blogger 쓰기 scope 확인" : "쓰기 scope 확인 안 됨"} · 공개 쓰기 정책: {manual?.remote_write_policy_available === true ? "허용" : "차단 또는 미승인"}</p>
+                  <details><summary>공개될 본문 전체 보기</summary><pre className="manual-publication-body">{String(manual?.body ?? latestVersion.body_markdown ?? "본문을 읽을 수 없습니다.")}</pre></details>
+                  {Array.isArray(manual?.followups) && manual.followups.length > 0 && <div><strong>게시 후 보완 예정 {manual.followups.length}건</strong><ul>{(manual.followups as Row[]).map((item, index) => <li key={`${String(item.issue_type)}-${index}`}>{String(item.description)}</li>)}</ul></div>}
+                </div>
+                {manual?.eligible === true ? <p className="quality-ok" role="status">게시 가능 · 품질·출처·SEO 등 미완료 항목은 게시 후 보완 목록에 연결됩니다.</p>
+                  : <div className="quality-held" role="status"><strong>현재 게시 요청 불가 · 다음 조건</strong><ul>{blockers.length ? blockers.map(reason => <li key={reason}>{manualBlockerNames[reason] ?? reason}</li>) : <li>수동 발행 상태를 확인할 수 없습니다.</li>}</ul></div>}
+                {jobs.map(job => <article className="history-card" key={String(job.id)}><strong>{String(job.status)} · {String(job.publication_state)}</strong><p>Job {String(job.id)} · {job.simulation_only ? "Mock" : "실제 Blogger 경로"} · 오류 {String(job.last_error_category ?? "없음")}</p>{job.remote_post_id != null && <p>Blogger postId: {String(job.remote_post_id)}</p>}{job.remote_url != null && job.remote_verified_at != null && <p><a href={String(job.remote_url)} target="_blank" rel="noopener noreferrer">실제 Blogger 공개 URL 열기</a></p>}</article>)}
+              </>;
+            })()}
+            <label>게시 승인자 표시 이름<input value={approvalActor} onChange={event => setApprovalActor(event.target.value)} minLength={2} maxLength={120} /></label>
+            <label>게시 사유<input value={approvalReason} onChange={event => setApprovalReason(event.target.value)} minLength={10} maxLength={2000} placeholder="이 원고를 지금 공개 게시하는 이유" /></label>
+            <div className="review-attestations"><label><input type="checkbox" checked={manualAttest.content} onChange={event => setManualAttest({ ...manualAttest, content: event.target.checked })} />위에 표시된 최신 제목·본문·HTML을 확인했습니다.</label><label><input type="checkbox" checked={manualAttest.facts} onChange={event => setManualAttest({ ...manualAttest, facts: event.target.checked })} />미확인 주장을 확인된 사실처럼 단정하지 않았습니다.</label><label><input type="checkbox" checked={manualAttest.rights} onChange={event => setManualAttest({ ...manualAttest, rights: event.target.checked })} />알고 있는 저작권 침해·개인정보 노출·중대한 위해 문제가 없습니다.</label></div>
+            <button type="button" disabled={busy || !latestVersion.content_version_id || !publicationTargetId || approvalActor.trim().length < 2 || approvalReason.trim().length < 10 || !manualAttest.content || !manualAttest.facts || !manualAttest.rights || (((detail.publication?.targets as Row[] | undefined) ?? []).find(target => String(target.id) === publicationTargetId)?.manual_publication as Row | undefined)?.eligible !== true} onClick={() => void submitManualPublication()}>{busy ? "발행 Job 등록 중…" : "Blogger에 공개 게시"}</button>
+            <p>클릭 시 정확한 원고 해시·대상 블로그·승인자와 함께 Job이 등록됩니다. Publication Worker가 실제 게시 단계, Blogger 응답, 원격 재확인 결과를 저장하며, 이 화면의 확인만으로 게시 완료라고 표시하지 않습니다.</p>
+            {Boolean(detail.publication?.status_error) && <p role="alert" className="quality-held">{String(detail.publication?.status_error)}</p>}
           </section>}
           <section className="workspace-panel" id="import-publication"><h3>모의 게시</h3><p>실제 Blogger 요청이 아닌 테스트 시뮬레이션입니다. publish_ready=false는 유지됩니다.</p><button type="button" className="secondary-button" data-testid="mock-publish" disabled={busy || !publicationAllowed} onClick={() => void run(() => api("mock-publications", "POST", { version_id: latestVersion.id, idempotency_key: `import-${selectedId}-${String(latestVersion.content_sha256).slice(0,64)}`, scenario: "success", requested_by: reviewer }), "테스트 어댑터 결과를 기록했습니다. 실제 Blogger에는 변경이 없습니다.")}>모의 게시 시뮬레이션</button>{!publicationAllowed && <p role="status">현재 버전에 통과한 검사와 명시적 편집 검토 기록이 모두 있어야 모의 게시를 실행할 수 있습니다.</p>}{detail.mock_publications.map(attempt => <p key={String(attempt.id)}>모의 결과: {String(attempt.outcome)} · 모의 전용 · 외부 요청 0건</p>)}</section>
         </>}

@@ -53,6 +53,23 @@ class RequestInput(BaseModel):
     idempotency_key: str = Field(min_length=16, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
 
 
+class ManualLiveRequestInput(BaseModel):
+    """Explicit user authorization for one immutable manual manuscript payload."""
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    content_version_id: UUID
+    blog_id: UUID
+    expected_title_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_body_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_html_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    actor_label: str = Field(min_length=2, max_length=120)
+    reason: str = Field(min_length=10, max_length=2000)
+    reviewed_exact_content: Literal[True]
+    assertions_safe_to_publish: Literal[True]
+    rights_privacy_harm_checked: Literal[True]
+    confirmation: Literal["PUBLISH THIS EXACT MANUSCRIPT PUBLICLY"]
+    idempotency_key: str = Field(min_length=16, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+
+
 class SimulationInput(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     idempotency_key: str = Field(min_length=16, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
@@ -585,11 +602,27 @@ def scheduled_first_post_status(import_id: Annotated[UUID, Query()]) -> dict[str
             if (imported["generation_method"] == "manual_codex_import"
                     and content_version_id):
                 manual_candidate = _candidate(conn, UUID(str(content_version_id)), UUID(blog_id))
-                manual_assessment = _assess(manual_candidate)
+                manual_row = dict(manual_candidate) if manual_candidate else None
+                manual_snapshot = _manual_publication_snapshot(conn, manual_row)
+                manual_blockers = _manual_publication_blockers(
+                    conn, manual_row, manual_snapshot, UUID(blog_id),
+                )
                 manual_publication = {
-                    "eligible": not manual_assessment["reasons"],
-                    "blockers": manual_assessment["reasons"],
-                    "body_sha256": _body_digest(str(manual_candidate["body"])) if manual_candidate else None,
+                    "eligible": not manual_blockers,
+                    "blockers": manual_blockers,
+                    "title": manual_snapshot.get("title"),
+                    "body": manual_snapshot.get("body"),
+                    "title_sha256": manual_snapshot.get("title_sha256"),
+                    "body_sha256": manual_snapshot.get("body_sha256"),
+                    "html_sha256": manual_snapshot.get("html_sha256"),
+                    "generation_method": manual_snapshot.get("generation_method"),
+                    "content_version_id": str(content_version_id),
+                    "followups": manual_snapshot.get("followups", []),
+                    "oauth_write_scope": list(blog["scopes"] or []) == [WRITE_SCOPE],
+                    # Manual public-write scope is created only by the user's
+                    # exact-version confirmation; no global Auto setting is implied.
+                    "remote_write_policy_available": external_policy._blogger_policy_approval() is not None,
+                    "jobs": blog_jobs,
                 }
             blockers: list[str] = []
             if imported["generation_method"] != "chatgpt_scheduled_export":
@@ -651,6 +684,140 @@ def scheduled_first_post_status(import_id: Annotated[UUID, Query()]) -> dict[str
             "publish_ready": False,
             "actual_write_performed": False,
         }
+
+
+@router.post("/manual-live-requests", status_code=201)
+def create_manual_live_request(request: ManualLiveRequestInput) -> dict[str, Any]:
+    """Record a user's exact-version public-publish confirmation and queue a manual job."""
+    with connection() as conn:
+        if not conn.execute(
+            "SELECT to_regclass('public.manual_publication_approval_events') AS ready"
+        ).fetchone()["ready"]:
+            raise HTTPException(503, "Manual Blogger publication migration 056 is required")
+        conn.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
+            (f"manual-blogger-publish:{request.blog_id}:{request.content_version_id}",),
+        )
+        prior = conn.execute(
+            """SELECT j.id,j.status,j.publication_state,j.adapter_type,j.simulation_only,
+                a.id AS approval_event_id FROM publishing_jobs j
+            LEFT JOIN manual_publication_approval_events a ON a.job_id=j.id
+            WHERE j.blog_id=%s AND j.content_version_id=%s AND j.publication_lane='manual'
+              AND NOT j.simulation_only AND j.adapter_type='blogger_live'
+            ORDER BY j.updated_at DESC,j.id DESC LIMIT 1""",
+            (request.blog_id, request.content_version_id),
+        ).fetchone()
+        row = _candidate(conn, request.content_version_id, request.blog_id)
+        if row is None:
+            raise HTTPException(404, "Content version or registered blog not found")
+        row = dict(row)
+        snapshot = _manual_publication_snapshot(conn, row)
+        expected = (
+            (request.expected_title_sha256, snapshot.get("title_sha256")),
+            (request.expected_body_sha256, snapshot.get("body_sha256")),
+            (request.expected_html_sha256, snapshot.get("html_sha256")),
+        )
+        if any(not actual or supplied != actual for supplied, actual in expected):
+            raise HTTPException(409, "Manuscript changed after confirmation; reload the latest title, body, and Blogger preview")
+        if prior:
+            return {
+                **dict(prior), "duplicate": True,
+                "approval_recorded": bool(prior.get("approval_event_id")),
+                "public_write_performed": False,
+            }
+        blockers = _manual_publication_blockers(conn, row, snapshot, request.blog_id)
+        if blockers:
+            conn.execute(
+                "INSERT INTO audit_events(event_type,blog_id,language_code,payload) VALUES ('publication.manual_request.blocked',%s,%s,%s)",
+                (request.blog_id, row["blog_language"], Jsonb({
+                    "content_version_id": str(request.content_version_id),
+                    "title_sha256": snapshot["title_sha256"],
+                    "body_sha256": snapshot["body_sha256"],
+                    "html_sha256": snapshot["html_sha256"],
+                    "actor_label": request.actor_label,
+                    "reasons": blockers,
+                    "public_write_performed": False,
+                })),
+            )
+            return {"recorded": False, "state": "publication_blocked", "reasons": blockers,
+                    "title_sha256": snapshot["title_sha256"], "body_sha256": snapshot["body_sha256"],
+                    "html_sha256": snapshot["html_sha256"], "public_write_performed": False}
+        inserted = conn.execute(
+            """INSERT INTO publishing_jobs(policy_id,blog_id,content_version_id,idempotency_key,
+                scheduled_at,status,publication_state,adapter_type,simulation_only,block_reasons,
+                oauth_connection_id,live_stage,publication_lane)
+            VALUES (%s,%s,%s,%s,now(),'queued','publication_queued','blogger_live',false,'[]',%s,'draft_needed','manual')
+            ON CONFLICT(idempotency_key) DO NOTHING
+            RETURNING id,status,publication_state,adapter_type,simulation_only""",
+            (row["policy_id"], request.blog_id, request.content_version_id,
+             request.idempotency_key, row["oauth_connection_id"]),
+        ).fetchone()
+        if not inserted:
+            raise HTTPException(409, "Idempotency key is already bound to another publication request")
+        approval = conn.execute(
+            """INSERT INTO manual_publication_approval_events
+            (job_id,blog_id,content_version_id,import_id,title_sha256,body_sha256,html_sha256,
+             actor_label,reason,reviewed_exact_content,assertions_safe_to_publish,
+             rights_privacy_harm_checked,idempotency_key)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,true,true,true,%s)
+            RETURNING id,created_at""",
+            (inserted["id"], request.blog_id, request.content_version_id,
+             snapshot["import_id"], snapshot["title_sha256"], snapshot["body_sha256"],
+             snapshot["html_sha256"], request.actor_label, request.reason,
+             request.idempotency_key),
+        ).fetchone()
+        review = conn.execute(
+            """INSERT INTO post_publication_reviews
+            (publishing_job_id,blog_id,content_version_id,import_id,content_id,review_status,review_notes)
+            VALUES (%s,%s,%s,%s,%s,'pending','Items below are follow-ups from the user-approved manual publication request; no verification status was changed.')
+            ON CONFLICT(publishing_job_id) DO NOTHING RETURNING id""",
+            (inserted["id"], request.blog_id, request.content_version_id,
+             snapshot["import_id"], snapshot.get("external_content_id")),
+        ).fetchone()
+        review_id = review["id"] if review else None
+        for index, item in enumerate(snapshot["followups"]):
+            item_key = "manual-review-" + hashlib.sha256(
+                f"{inserted['id']}:{index}:{item['issue_type']}:{item['description']}".encode()
+            ).hexdigest()[:48]
+            item_row = conn.execute(
+                """INSERT INTO post_publication_review_items
+                (review_id,issue_type,severity,description,idempotency_key)
+                VALUES (%s,%s,%s,%s,%s) ON CONFLICT(idempotency_key) DO NOTHING RETURNING id""",
+                (review_id, item["issue_type"], item["severity"], item["description"], item_key),
+            ).fetchone() if review_id else None
+            if item_row:
+                conn.execute(
+                    "INSERT INTO audit_events(event_type,blog_id,payload) VALUES ('publication.post_review_item.prepublication_created',%s,%s)",
+                    (request.blog_id, Jsonb({"review_id": str(review_id),
+                     "item_id": str(item_row["id"]), "job_id": str(inserted["id"]),
+                     "issue_type": item["issue_type"], "severity": item["severity"],
+                     "source": "manual_publication_assessment"})),
+                )
+        conn.execute(
+            """INSERT INTO publication_state_events(job_id,from_state,to_state,reason,details)
+            VALUES (%s,'manual_content_reviewed','publication_queued','exact_user_manual_publish_confirmation',%s)""",
+            (inserted["id"], Jsonb({"approval_event_id": approval["id"],
+             "title_sha256": snapshot["title_sha256"], "body_sha256": snapshot["body_sha256"],
+             "html_sha256": snapshot["html_sha256"], "followup_review_id": str(review_id) if review_id else None})),
+        )
+        conn.execute(
+            "INSERT INTO audit_events(event_type,blog_id,language_code,payload) VALUES ('publication.manual_request.approved',%s,%s,%s)",
+            (request.blog_id, row["blog_language"], Jsonb({
+                "job_id": str(inserted["id"]), "approval_event_id": approval["id"],
+                "content_version_id": str(request.content_version_id),
+                "import_id": snapshot["import_id"], "generation_method": snapshot["generation_method"],
+                "title_sha256": snapshot["title_sha256"], "body_sha256": snapshot["body_sha256"],
+                "html_sha256": snapshot["html_sha256"], "actor_label": request.actor_label,
+                "reason": request.reason, "reviewed_exact_content": True,
+                "assertions_safe_to_publish": True, "rights_privacy_harm_checked": True,
+                "followup_review_id": str(review_id) if review_id else None,
+                "public_write_performed": False,
+            })),
+        )
+        return {**dict(inserted), "duplicate": False,
+                "approval_event_id": approval["id"], "approved_at": approval["created_at"],
+                "followup_review_id": str(review_id) if review_id else None,
+                "followup_count": len(snapshot["followups"]), "public_write_performed": False}
 
 
 @router.post("/scheduled-auto/verify-connections")
@@ -916,7 +1083,7 @@ def _candidate(conn: Any, version_id: UUID, blog_id: UUID) -> dict[str, Any] | N
             l.language_code AS version_language,l.target_country,b.id AS blog_uuid,
             b.language_code AS blog_language,b.url,b.active AS blog_active,
             b.blog_id AS blog_id_value,b.oauth_connection_id,b.connection_verified_at,b.test_publish_verified_at,
-            lang.active AS language_active,g.status AS oauth_status,
+            lang.active AS language_active,g.status AS oauth_status,g.scopes AS oauth_scopes,
             p.id AS policy_id,p.active AS policy_active,p.auto_publish_allowed,
             COALESCE(q.machine_passed,false) AS machine_passed,
             COALESCE(q.human_review_required,true) AS human_review_required,
@@ -927,7 +1094,8 @@ def _candidate(conn: Any, version_id: UUID, blog_id: UUID) -> dict[str, Any] | N
             COALESCE(q.publish_ready,false) AS publish_ready,
             q.id AS quality_evaluation_id,q.id AS evaluation_id,q.status AS quality_status,
             editorial.id AS editorial_version_id,editorial.html_body,
-            editorial.title AS editorial_title,editorial.seo_description,
+            editorial.title AS editorial_title,editorial.body AS editorial_body,
+            editorial.seo_description,editorial.blogger_labels AS editorial_blogger_labels,
             (SELECT imported.event_group_id FROM external_content_import_content_links link
               JOIN external_content_imports imported ON imported.id=link.import_id
               WHERE link.content_version_id=v.id
@@ -970,8 +1138,11 @@ def _candidate(conn: Any, version_id: UUID, blog_id: UUID) -> dict[str, Any] | N
         JOIN blogger_blogs b ON b.id=%s
         LEFT JOIN google_connections g ON g.id=b.oauth_connection_id
         JOIN languages lang ON lang.code=l.language_code
-        LEFT JOIN language_profiles lp ON lp.language_code=l.language_code
-          AND lp.target_country=l.target_country
+        LEFT JOIN LATERAL (
+          SELECT id FROM language_profiles
+          WHERE language_code=l.language_code AND target_country IN (l.target_country,'')
+          ORDER BY (target_country=l.target_country) DESC LIMIT 1
+        ) lp ON true
         LEFT JOIN publishing_policies p ON p.blog_id=b.id AND p.profile_id=lp.id
         LEFT JOIN LATERAL (
           SELECT id,id AS evaluation_id,machine_passed,human_review_required,publish_ready,status,
@@ -980,7 +1151,7 @@ def _candidate(conn: Any, version_id: UUID, blog_id: UUID) -> dict[str, Any] | N
           ORDER BY created_at DESC,id DESC LIMIT 1
         ) q ON true
         LEFT JOIN LATERAL (
-          SELECT id,body_sha256,html_body,html_body_sha256,title,seo_description FROM article_editorial_versions
+          SELECT id,body_sha256,html_body,html_body_sha256,title,body,seo_description,blogger_labels FROM article_editorial_versions
           WHERE evaluation_id=q.evaluation_id AND base_content_version_id=v.id
           ORDER BY revision_number DESC,created_at DESC,id DESC LIMIT 1
         ) editorial ON true
@@ -1000,6 +1171,157 @@ def _candidate(conn: Any, version_id: UUID, blog_id: UUID) -> dict[str, Any] | N
             (blog_id, version_id),
         ).fetchone(),
     )
+
+
+def _manual_publication_snapshot(conn: Any, row: dict[str, Any] | None) -> dict[str, Any]:
+    """Build the exact sanitized manual payload and post-publication follow-ups."""
+    from .editorial_html import markdown_to_blogger_html, sanitize_editorial_html
+
+    if row is None:
+        return {"blockers": ["content_or_blog_not_found"], "followups": []}
+    content_version_id = str(row["content_version_id"])
+    imported = conn.execute(
+        """SELECT i.id AS import_id,i.external_content_id,i.generation_method,i.language_code,
+            v.id AS import_version_id,v.version_number,v.title AS import_title,
+            v.body_markdown,v.blogger_labels,v.content_sha256,
+            (SELECT id FROM external_content_import_versions newest
+              WHERE newest.import_id=i.id ORDER BY newest.version_number DESC LIMIT 1) AS latest_import_version_id
+        FROM external_content_import_content_links link
+        JOIN external_content_imports i ON i.id=link.import_id
+        JOIN external_content_import_versions v ON v.id=link.import_version_id
+        WHERE link.content_version_id=%s
+        ORDER BY v.version_number DESC,i.received_at DESC,i.id DESC LIMIT 1""",
+        (content_version_id,),
+    ).fetchone()
+    blockers: list[str] = []
+    if not imported or imported["generation_method"] != "manual_codex_import":
+        blockers.append("manual_codex_import_origin_required")
+    elif str(imported["latest_import_version_id"]) != str(imported["import_version_id"]):
+        blockers.append("stale_import_version")
+    title = str(row.get("editorial_title") or row.get("title") or "").strip()
+    body = str(row.get("editorial_body") or row.get("body") or "")
+    if not title:
+        blockers.append("publication_title_missing")
+    if not body.strip():
+        blockers.append("publication_body_missing")
+    raw_html = str(row.get("html_body") or "")
+    labels = list(row.get("editorial_blogger_labels") or [])
+    if not labels and imported:
+        labels = list(imported.get("blogger_labels") or [])
+    if not raw_html and imported:
+        assessment = conn.execute(
+            """SELECT safe_html FROM external_content_import_assessments
+            WHERE import_id=%s AND version_id=%s ORDER BY assessed_at DESC,id DESC LIMIT 1""",
+            (imported["import_id"], imported["import_version_id"]),
+        ).fetchone()
+        raw_html = str(assessment.get("safe_html") or "") if assessment else ""
+    try:
+        if not raw_html:
+            raw_html = markdown_to_blogger_html(body, post_title=title)
+        safe_html, _plain_text = sanitize_editorial_html(raw_html, post_title=title)
+    except (ValueError, TypeError):
+        safe_html = ""
+        blockers.append("sanitized_blogger_html_unavailable")
+    if not safe_html:
+        blockers.append("sanitized_blogger_html_unavailable")
+    if len(labels) > 10 or any(not str(label).strip() or len(str(label)) > 100 for label in labels):
+        blockers.append("blogger_labels_invalid")
+
+    followups: list[dict[str, str]] = []
+    def followup(issue_type: str, severity: str, description: str) -> None:
+        followups.append({"issue_type": issue_type, "severity": severity, "description": description})
+
+    if not row.get("machine_passed"):
+        followup("other", "medium", "기계 품질 검사 미통과 항목을 게시 후 확인하세요.")
+    if not row.get("sources_reviewed"):
+        followup("source", "medium", "출처 원문과 이용 조건을 추가 확인하세요.")
+    if not row.get("evidence_facts_reviewed"):
+        followup("number", "medium", "주요 주장과 수치의 근거를 보강하세요.")
+    if not row.get("rights_reviewed"):
+        followup("copyright", "medium", "출처의 이용 조건과 인용 범위를 확인하세요.")
+    if not row.get("seo_passed"):
+        followup("other", "low", "SEO 제목·설명과 검색 의도를 보완하세요.")
+    if row.get("human_review_required") or not row.get("human_review_approved"):
+        followup("other", "low", "편집 검토 기록이 완료되지 않았습니다.")
+    if not row.get("publish_ready"):
+        followup("other", "low", "일반 publish_ready 평가 미통과 상태를 게시 후 검토하세요.")
+
+    return {
+        "blockers": list(dict.fromkeys(blockers)), "followups": followups,
+        "title": title, "body": body, "safe_html": safe_html, "blogger_labels": labels,
+        "title_sha256": _body_digest(title), "body_sha256": _body_digest(body),
+        "html_sha256": _body_digest(safe_html),
+        "import_id": str(imported["import_id"]) if imported else None,
+        "import_version_id": str(imported["import_version_id"]) if imported else None,
+        "external_content_id": imported.get("external_content_id") if imported else None,
+        "generation_method": imported.get("generation_method") if imported else None,
+    }
+
+
+def _manual_publication_blockers(
+    conn: Any, row: dict[str, Any] | None, snapshot: dict[str, Any], blog_id: UUID,
+    *, ignore_job_id: UUID | None = None,
+) -> list[str]:
+    """Hard safety and operational checks; quality gaps remain follow-ups."""
+    if row is None:
+        return ["content_or_blog_not_found"]
+    reasons = list(snapshot.get("blockers") or [])
+    if not row.get("language_active"):
+        reasons.append("language_inactive")
+    if not row.get("blog_active"):
+        reasons.append("blog_inactive")
+    if row.get("version_language") != row.get("blog_language"):
+        reasons.append("blog_language_mismatch")
+    if not row.get("blog_id_value") or not row.get("connection_verified_at"):
+        reasons.append("blog_connection_unverified")
+    from .google_http import WRITE_SCOPE
+    if row.get("oauth_status") != "connected" or list(row.get("oauth_scopes") or []) != [WRITE_SCOPE]:
+        reasons.append("blogger_write_oauth_not_verified")
+    if not row.get("policy_id"):
+        reasons.append("publication_policy_missing")
+    modes = _mode_settings(conn)
+    if modes.get("migration_required"):
+        reasons.append("publication_modes_unavailable")
+    else:
+        blog, error = _blog_settings(conn, str(blog_id))
+        if error or not blog:
+            reasons.append(error or "registered_blog_unavailable")
+        else:
+            mode = resolve_mode(modes["settings"], str(blog["language_code"]), str(blog_id))
+            if mode["configured_mode"] != "manual":
+                reasons.append("target_uses_auto_mode")
+        if modes["emergency_stopped"]:
+            reasons.append("publication_emergency_stop_active")
+    if external_policy._blogger_policy_approval() is None:
+        reasons.append("blogger_zero_cost_policy_required")
+    try:
+        BloggerLivePublisher._target(blog_id)
+    except GoogleFailure as exc:
+        reasons.append(exc.category)
+    newest = conn.execute(
+        """SELECT id FROM content_versions WHERE group_id=%s AND localization_id=%s
+        ORDER BY version DESC,created_at DESC,id DESC LIMIT 1""",
+        (row["group_id"], row["localization_id"]),
+    ).fetchone()
+    if newest and str(newest["id"]) != str(row["content_version_id"]):
+        reasons.append("stale_content_version")
+    existing = conn.execute(
+        """SELECT id,status,publication_state FROM publishing_jobs
+        WHERE blog_id=%s AND content_version_id=%s AND NOT simulation_only
+          AND adapter_type='blogger_live' AND publication_lane='manual'
+          AND (%s::uuid IS NULL OR id<>%s::uuid)
+        ORDER BY updated_at DESC,id DESC LIMIT 1""",
+        (blog_id, row["content_version_id"], ignore_job_id, ignore_job_id),
+    ).fetchone()
+    if existing:
+        reasons.append("manual_live_job_already_exists")
+    record = conn.execute(
+        "SELECT 1 FROM publishing_records WHERE blog_id=%s AND content_version_id=%s LIMIT 1",
+        (blog_id, row["content_version_id"]),
+    ).fetchone()
+    if record:
+        reasons.append("remote_publication_already_recorded")
+    return list(dict.fromkeys(reasons))
 
 
 @router.get("")
@@ -1318,7 +1640,7 @@ def list_publications(
 def list_post_publication_reviews(
     status: Literal["all", "pending", "completed"] = Query("all"),
 ) -> dict[str, Any]:
-    """List only scheduled-auto posts whose LIVE status was remotely verified."""
+    """List manually and automatically published posts whose LIVE status was remotely verified."""
     with connection() as conn:
         rows = conn.execute(
             """SELECT r.id,r.review_status,r.review_notes,r.created_at,r.updated_at,
@@ -1329,7 +1651,7 @@ def list_post_publication_reviews(
                 COALESCE(items.all_items,'[]'::jsonb) AS review_items
             FROM post_publication_reviews r
             JOIN publishing_records p ON p.id=r.publishing_record_id
-            JOIN publishing_jobs j ON j.id=p.job_id AND j.publication_lane='scheduled_auto'
+            JOIN publishing_jobs j ON j.id=p.job_id
             JOIN content_versions v ON v.id=p.content_version_id
             JOIN blogger_blogs b ON b.id=p.blog_id
             LEFT JOIN LATERAL (SELECT link.import_id FROM external_content_import_content_links link
@@ -1369,7 +1691,7 @@ def update_post_publication_review(review_id: UUID, request: PostPublicationRevi
             """UPDATE post_publication_reviews r SET review_status=%s,review_notes=%s,updated_at=now()
             FROM publishing_records p JOIN publishing_jobs j ON j.id=p.job_id
             WHERE r.id=%s AND p.id=r.publishing_record_id AND p.remote_status='LIVE'
-              AND p.remote_verified_at IS NOT NULL AND j.publication_lane='scheduled_auto'
+              AND p.remote_verified_at IS NOT NULL AND j.publication_lane IN ('scheduled_auto','manual')
             RETURNING r.id,r.review_status,r.review_notes,r.updated_at""",
             (request.review_status, request.review_notes, review_id),
         ).fetchone()
@@ -1392,7 +1714,7 @@ def add_post_publication_review_item(
             JOIN publishing_records p ON p.id=r.publishing_record_id
             JOIN publishing_jobs j ON j.id=p.job_id
             WHERE r.id=%s AND p.remote_status='LIVE' AND p.remote_verified_at IS NOT NULL
-              AND j.publication_lane='scheduled_auto' FOR UPDATE OF r""", (review_id,),
+              AND j.publication_lane IN ('scheduled_auto','manual') FOR UPDATE OF r""", (review_id,),
         ).fetchone()
         if not verified:
             raise HTTPException(404, "Verified scheduled publication review not found")
@@ -1433,7 +1755,7 @@ def resolve_post_publication_review_item(review_id: UUID, item_id: UUID) -> dict
             JOIN publishing_jobs j ON j.id=p.job_id
             WHERE x.id=%s AND x.review_id=r.id AND r.id=%s AND NOT x.resolved
               AND p.remote_status='LIVE' AND p.remote_verified_at IS NOT NULL
-              AND j.publication_lane='scheduled_auto'
+              AND j.publication_lane IN ('scheduled_auto','manual')
             RETURNING x.id,x.review_id,x.issue_type,x.severity,x.description,x.resolved,x.resolved_at,x.updated_at""",
             (item_id, review_id),
         ).fetchone()
@@ -1913,6 +2235,13 @@ def publication_worker_status() -> dict[str, Any]:
               ,count(*) FILTER (WHERE NOT simulation_only AND adapter_type='blogger_live'
                 AND publication_lane='scheduled_auto' AND status='queued'
                 AND scheduled_at<=now() AND available_at<=now())::int AS scheduled_auto_due
+              ,count(*) FILTER (WHERE NOT simulation_only AND adapter_type='blogger_live'
+                AND publication_lane='manual' AND status='queued'
+                AND EXISTS (SELECT 1 FROM manual_publication_approval_events a WHERE a.job_id=publishing_jobs.id))::int AS manual_confirmed_queued
+              ,count(*) FILTER (WHERE NOT simulation_only AND adapter_type='blogger_live'
+                AND publication_lane='manual' AND status='queued'
+                AND scheduled_at<=now() AND available_at<=now()
+                AND EXISTS (SELECT 1 FROM manual_publication_approval_events a WHERE a.job_id=publishing_jobs.id))::int AS manual_confirmed_due
             FROM publishing_jobs"""
         ).fetchone()
         queued_drafts = conn.execute(
@@ -1955,6 +2284,8 @@ def publication_worker_status() -> dict[str, Any]:
             "scheduled_auto_policy": _scheduled_auto_state(conn),
             "scheduled_auto_queued": queue["scheduled_auto_queued"],
             "scheduled_auto_due": queue["scheduled_auto_due"],
+            "manual_confirmed_queued": queue["manual_confirmed_queued"],
+            "manual_confirmed_due": queue["manual_confirmed_due"],
             "queued_mock_jobs": queue["mock_queued"],
             "queued_confirmed_private_drafts": queued_drafts["n"],
             "private_draft_worker_available": True,

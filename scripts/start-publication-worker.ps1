@@ -1,4 +1,4 @@
-param([ValidateSet('mock-only','scheduled-auto')][string]$Mode='mock-only')
+param([ValidateSet('mock-only','scheduled-auto','manual-confirmed','scheduled-auto-manual')][string]$Mode='mock-only')
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'server-common.ps1')
 $worker = [IO.Path]::GetFullPath((Join-Path $script:ProjectRoot 'scripts\publication-worker.py'))
@@ -11,9 +11,13 @@ if ($existing.Count) {
 if (-not (Test-Path -LiteralPath $python -PathType Leaf) -or -not (Test-Path -LiteralPath $worker -PathType Leaf)) {
   throw 'The project virtual environment or Publication Worker entry point is missing.'
 }
-$modeArgs = if ($Mode -eq 'scheduled-auto') { @('--operations-scheduled-auto','--continuous') }
-  else { @('--operations-mock-only','--continuous') }
-if ($Mode -eq 'scheduled-auto') {
+$modeArgs = switch ($Mode) {
+  'scheduled-auto' { @('--operations-scheduled-auto','--continuous') }
+  'manual-confirmed' { @('--operations-manual-confirmed','--continuous') }
+  'scheduled-auto-manual' { @('--operations-scheduled-auto-and-manual','--continuous') }
+  default { @('--operations-mock-only','--continuous') }
+}
+if ($Mode -in @('scheduled-auto','scheduled-auto-manual')) {
   $statusOutput = & $python $worker --status 2>$null
   if ($LASTEXITCODE -ne 0 -or -not $statusOutput) {
     throw 'Scheduled Auto Worker status could not be verified; no process was started.'
@@ -75,5 +79,10 @@ $manifest.services['publication_worker'] = @{
   started_utc=(Get-ProcessStarted ([int]$actualWorker.Id))
 }
 Write-ServerManifest $manifest
-$modeLabel = if ($Mode -eq 'scheduled-auto') { 'scheduled-auto live lane' } else { 'mock-only' }
+$modeLabel = switch ($Mode) {
+  'scheduled-auto' { 'scheduled-auto live lane' }
+  'manual-confirmed' { 'exactly user-confirmed manual live lane' }
+  'scheduled-auto-manual' { 'scheduled-auto plus exactly user-confirmed manual lanes' }
+  default { 'mock-only' }
+}
 Write-Output "Publication Worker started in $modeLabel continuous mode (PID $($actualWorker.Id)); heartbeat verified. Logs: $logs"

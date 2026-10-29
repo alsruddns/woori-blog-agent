@@ -300,6 +300,29 @@ def test_mock_and_private_draft_modes_never_dispatch_publication_jobs(
     assert live_calls == []
 
 
+def test_manual_confirmed_lane_is_opt_in_and_kept_separate_from_scheduled_auto(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from woori import publication_worker
+
+    calls: list[dict[str, bool]] = []
+    monkeypatch.setattr(
+        publication_worker,
+        "process_next_live_job",
+        lambda **kwargs: calls.append(kwargs) or {"status": "queued"},
+    )
+    result = publication_worker.tick(allow_manual_confirmed_publications=True)
+    assert result is not None
+    assert result["job_type"] == "manual_confirmed_blogger_live"
+    assert calls == [{"manual_confirmed_only": True}]
+
+    calls.clear()
+    result = publication_worker.tick(allow_scheduled_auto_publications=True)
+    assert result is not None
+    assert result["job_type"] == "scheduled_auto_blogger_live"
+    assert calls == [{"scheduled_auto_only": True}]
+
+
 def test_publication_mode_defaults_manual_and_auto_requires_allowlist() -> None:
     assert ModeSettingsInput().configured_mode == "manual"
     with pytest.raises(ValidationError, match="category_allowlist"):
@@ -444,7 +467,8 @@ def test_publication_worker_continuous_loop_has_singleton_and_graceful_idle_stop
 
     assert ticks == [{"args": (30,), "allow_private_drafts": False,
                       "allow_live_publications": False,
-                      "allow_scheduled_auto_publications": False}]
+                      "allow_scheduled_auto_publications": False,
+                      "allow_manual_confirmed_publications": False}]
     assert events[0] == "lock"
     assert "running" in events
     assert events[-2:] == ["stopped", "unlock"]
@@ -557,6 +581,14 @@ def test_emergency_stop_blocks_live_job_before_any_blogger_request(monkeypatch: 
                 return Result(rows=[])
             if "SELECT id,policy_id,blog_id,content_version_id" in query:
                 return Result(job)
+            if "FROM manual_publication_approval_events" in query:
+                return Result({
+                        "job_id": job_id, "blog_id": blog_id,
+                        "content_version_id": content_version_id,
+                    "title_sha256": "a" * 64, "body_sha256": "b" * 64,
+                    "html_sha256": "c" * 64, "reviewed_exact_content": True,
+                    "assertions_safe_to_publish": True, "rights_privacy_harm_checked": True,
+                })
             if "SELECT oauth_connection_id,blog_id FROM blogger_blogs" in query:
                 return Result({"oauth_connection_id": oauth_id, "blog_id": "blog-verified"})
             if "SELECT emergency_stopped FROM publication_mode_settings" in query:
@@ -569,6 +601,12 @@ def test_emergency_stop_blocks_live_job_before_any_blogger_request(monkeypatch: 
 
     monkeypatch.setattr(publication_worker, "connection", fake_connection)
     monkeypatch.setattr(publications, "_candidate", lambda *_: {"id": content_version_id})
+    monkeypatch.setattr(publications, "_manual_publication_snapshot", lambda *_: {
+        "title": "A title", "body": "A body", "safe_html": "<p>A body</p>",
+        "blogger_labels": [], "title_sha256": "a" * 64, "body_sha256": "b" * 64,
+        "html_sha256": "c" * 64, "followups": [],
+    })
+    monkeypatch.setattr(publications, "_manual_publication_blockers", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(publications, "_assess", lambda *_: {"reasons": []})
     monkeypatch.setattr(publication_worker.external_policy, "_blogger_operation_is_approved", lambda _: True)
     monkeypatch.setattr(

@@ -159,7 +159,7 @@ function Test-ExactCheckoutServiceProcess($ProcessInfo, [string]$ServiceName) {
       $quotedVenv = [regex]::Escape('"' + $python + '"')
       $absoluteScript = [regex]::Escape('"' + $workerScript + '"')
       $relativeScript = '(?:\.\\scripts\\publication-worker\.py|scripts\\publication-worker\.py)'
-      $knownOption = '(?:--operations-(?:mock-only|confirmed-private-drafts|approved-live-publications|scheduled-auto)|--continuous|--poll-seconds\s+\d+|--backoff-seconds\s+\d+)'
+      $knownOption = '(?:--operations-(?:mock-only|confirmed-private-drafts|approved-live-publications|scheduled-auto|manual-confirmed|scheduled-auto-and-manual)|--continuous|--poll-seconds\s+\d+|--backoff-seconds\s+\d+)'
       $expectedInvocation = '^\s*' + $quotedVenv + '\s+(?:' + $absoluteScript + '|' + $relativeScript + ')(?:\s+' + $knownOption + ')*\s*$'
       return [IO.Path]::GetFileName($path) -ieq 'python.exe' -and $pathIsProjectInterpreter -and
         $command -match $expectedInvocation

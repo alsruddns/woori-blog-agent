@@ -29,6 +29,10 @@ def main() -> None:
     mode.add_argument("--operations-approved-live-publications", action="store_true")
     mode.add_argument("--operations-scheduled-auto", action="store_true",
                       help="Process only scheduled-export jobs after the separate scoped DB approval")
+    mode.add_argument("--operations-manual-confirmed", action="store_true",
+                      help="Process only manual jobs bound to an exact user confirmation event")
+    mode.add_argument("--operations-scheduled-auto-and-manual", action="store_true",
+                      help="Process scoped scheduled jobs and separately user-confirmed manual jobs")
     parser.add_argument("--backoff-seconds", type=int, default=30)
     parser.add_argument("--continuous", action="store_true", help="Poll continuously with a DB singleton lock")
     parser.add_argument("--poll-seconds", type=int, default=15)
@@ -65,12 +69,15 @@ def main() -> None:
         print(json.dumps(publication_worker_status(), ensure_ascii=True, default=str))
         return
     if args.continuous:
+        allow_scheduled = args.operations_scheduled_auto or args.operations_scheduled_auto_and_manual
+        allow_manual = args.operations_manual_confirmed or args.operations_scheduled_auto_and_manual
         run_forever(
             args.poll_seconds,
             args.backoff_seconds,
             allow_private_drafts=args.operations_confirmed_private_drafts,
             allow_live_publications=args.operations_approved_live_publications,
-            allow_scheduled_auto_publications=args.operations_scheduled_auto,
+            allow_scheduled_auto_publications=allow_scheduled,
+            allow_manual_confirmed_publications=allow_manual,
         )
         return
     print(json.dumps(
@@ -78,7 +85,8 @@ def main() -> None:
             args.backoff_seconds,
             allow_private_drafts=args.operations_confirmed_private_drafts,
             allow_live_publications=args.operations_approved_live_publications,
-            allow_scheduled_auto_publications=args.operations_scheduled_auto,
+            allow_scheduled_auto_publications=(args.operations_scheduled_auto or args.operations_scheduled_auto_and_manual),
+            allow_manual_confirmed_publications=(args.operations_manual_confirmed or args.operations_scheduled_auto_and_manual),
         ),
         ensure_ascii=True,
         default=str,
