@@ -25,7 +25,7 @@ P5-CODEX-016은 `BloggerLivePublisher` 초안·공개 adapter, idempotency 원�
 
 - schema version: 48
 - 기존 콘텐츠 버전: 360 (작업 중 새 버전 추가 없음)
-- 감사 이벤트: 1,526 (현재 관측값; 작업 전 수치와 비교하지 않음)
+- 감사 이벤트: 1,526 (read-only observation time; finalization audit is appended separately)
 - Trends: 최근 24시간 160 observations, 성공 run 16, 실패 0
 - 지역별 최근 24시간: HK 30, JP 30, KR 30, SG 30, TW 20, US 20
 - research package: 0; topic: 0
@@ -66,13 +66,13 @@ OpenAI sources: [ChatGPT Work and Codex](https://help.openai.com/en/articles/200
 ## 코드 변경
 
 - `services/api/woori/blogger_writes.py`: 실초안 생성 후 same-connection read-back 검증 추가; 성공 결과는 `post_verified` 및 GET status 저장.
-- `services/api/tests/test_blogger_live_policy.py`: MockTransport가 GET(blog) → POST(draft) → GET(post)를 모두 거쳐야 성공하는 단위 테스트 추가.
+- `services/api/tests/test_blogger_live_policy.py`: MockTransport GET(blog) → POST(draft) → GET(post) 순서와 잘못된 read-back 상태의 실패 기록을 검사.
 - `docs/development/P5-CODEX-017-article-ko.md`: 공식자료 기반의 단회 수동 작성 원고와 review metadata.
 - `docs/development/P5-CODEX-017.md`: 본 작업/환경 근거 및 차단조건.
 
 ## 검증
 
-- `python -m pytest services/api/tests/test_blogger_live_policy.py -q`: 21 passed.
+- `python -m pytest services/api/tests/test_blogger_live_policy.py services/api/tests/test_scheduled_import_inbox.py -q`: 29 passed.
 - 테스트는 격리 `.env.test`에서 수행했고 신규 테스트는 DB 호출을 mock 처리했다.
 - 실제 API live external request: 0. Blogger POST: 0. 유료 AI API call: 0.
 - 운영 API read-only state calls: dashboard/research/blogger status; data row writes 0.
@@ -90,5 +90,5 @@ OpenAI sources: [ChatGPT Work and Codex](https://help.openai.com/en/articles/200
 5. `BloggerLivePublisher`는 publishing queue/Worker에 연결되지 않았고 Auto 설정은 계속 disabled다.
 6. BEA September PIO release 이후 해당 원고의 최신성/수치를 다시 확인해야 한다.
 
-커밋 해시: 본 문서가 처음 포함되는 커밋 후, 후속 기록/`git log`에서 연결.
+커밋 해시: adapter `379c7c5a68bbbfd18a5210a614f971eee3a97285`; mismatch regression test `46b756a`. 이 문서의 포함 커밋은 `git log -- docs/development/P5-CODEX-017.md`로 확인한다.
 관련 선행 기록: P5-CODEX-011~016, `docs/operations/P5-CODEX-013-publisher-readiness.md`, `docs/operations/zero-cost-policy.md`.
