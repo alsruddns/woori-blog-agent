@@ -20,12 +20,12 @@ from .external_policy import client as external_client
 
 PROVIDER = "google_trends_rss"
 ENDPOINT = "https://trends.google.com/trending/rss"
-ALLOWED_GEOS = {"KR", "US", "JP", "TW", "HK", "SG"}
+ALLOWED_GEOS = {"KR", "US", "JP", "TW", "HK", "SG", "GB", "CA", "AU", "IN", "PH"}
 GOOGLE_TRENDS_HELP = "https://support.google.com/trends/answer/3076011?hl=en"
 MAX_RESPONSE_BYTES = 1024 * 1024
 MAX_ITEMS = 20
 COLLECTION_INTERVAL = timedelta(hours=1)
-MIN_REQUEST_SPACING = timedelta(minutes=10)
+MIN_REQUEST_SPACING = timedelta(minutes=5)
 SCHEDULER_LOCK = "google_trends_hourly_scheduler"
 NS = {"ht": "https://trends.google.com/trending/rss"}
 
@@ -136,6 +136,34 @@ def collect_geo(geo: str) -> dict[str, Any]:
     http_status: int | None = None
     with connection() as conn:
         conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('google_trends_rss',0))")
+        spacing_row = conn.execute(
+            "SELECT max(attempted_at) AS last_attempt FROM trend_collection_attempts"
+        ).fetchone()
+        last_attempt = spacing_row["last_attempt"] if spacing_row else None
+        now = datetime.now(UTC)
+        if last_attempt and now - last_attempt < MIN_REQUEST_SPACING:
+            next_eligible_at = last_attempt + MIN_REQUEST_SPACING
+            conn.execute(
+                "INSERT INTO audit_events(event_type,payload) VALUES ('trend.collection.pacing_blocked',%s)",
+                (
+                    Jsonb(
+                        {
+                            "collection_run_id": str(run_id),
+                            "provider": PROVIDER,
+                            "geo": geo,
+                            "next_eligible_at": next_eligible_at.isoformat(),
+                        }
+                    ),
+                ),
+            )
+            return {
+                "run_id": str(run_id),
+                "geo": geo,
+                "status": "blocked",
+                "item_count": 0,
+                "failure_category": "global_minimum_spacing",
+                "next_eligible_at": next_eligible_at,
+            }
         quota_row = conn.execute(
             "SELECT count(*) AS n FROM trend_collection_attempts WHERE attempted_at>now()-interval '1 hour'"
         ).fetchone()

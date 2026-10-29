@@ -33,20 +33,37 @@ def test_hourly_scheduler_spreads_regions_and_respects_global_spacing() -> None:
     from datetime import timedelta
 
     now = datetime(2026, 10, 29, 0, 0, tzinfo=UTC)
-    assert trends.choose_due_geo({}, None, now) == "HK"
+    assert trends.choose_due_geo({}, None, now) == "AU"
     attempts = {"HK": now}
-    assert trends.choose_due_geo(attempts, now, now + timedelta(minutes=9)) is None
-    assert trends.choose_due_geo(attempts, now, now + timedelta(minutes=10)) == "JP"
-    spread = {"HK": now, "JP": now + timedelta(minutes=10)}
-    assert trends.choose_due_geo(spread, now + timedelta(minutes=10), now + timedelta(hours=1)) == "KR"
+    assert trends.choose_due_geo(attempts, now, now + timedelta(minutes=4)) is None
+    assert trends.choose_due_geo(attempts, now, now + timedelta(minutes=5)) == "AU"
+    spread = {"AU": now, "CA": now + timedelta(minutes=5)}
+    assert trends.choose_due_geo(spread, now + timedelta(minutes=5), now + timedelta(hours=1)) == "GB"
     full = {geo: now - timedelta(minutes=5) for geo in trends.ALLOWED_GEOS}
     assert trends.choose_due_geo(full, now - timedelta(minutes=5), now) is None
 
 
-@pytest.mark.parametrize("geo", ["CN", "KR/../US", "", "GB"])
+@pytest.mark.parametrize("geo", ["CN", "KR/../US", "", "ZZ"])
 def test_google_trends_rejects_unconfigured_geographies(geo: str) -> None:
     with pytest.raises(ValueError, match="trend_geo_not_allowlisted"):
         parse_feed(b"<rss><channel/></rss>", geo)
+
+
+def test_google_trends_allowlist_has_eleven_regions_and_supports_full_cycle_under_quota() -> None:
+    from datetime import timedelta
+
+    assert trends.ALLOWED_GEOS == {"KR", "US", "JP", "TW", "HK", "SG", "GB", "CA", "AU", "IN", "PH"}
+    now = datetime(2026, 10, 29, 0, 0, tzinfo=UTC)
+    attempts: dict[str, datetime] = {}
+    seen: list[str] = []
+    for offset in range(0, 55, 5):
+        current = now + timedelta(minutes=offset)
+        geo = trends.choose_due_geo(attempts, current - timedelta(minutes=5) if attempts else None, current)
+        assert geo is not None
+        seen.append(geo)
+        attempts[geo] = current
+    assert set(seen) == trends.ALLOWED_GEOS
+    assert len(seen) == 11
 
 
 def test_google_trends_feed_rejects_entities_and_oversize() -> None:
@@ -96,7 +113,7 @@ def test_trend_collection_persists_actual_pipeline_shape_in_isolated_db(
     </channel></rss>"""
 
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url == "https://trends.google.com/trending/rss?geo=JP"
+        assert request.url == "https://trends.google.com/trending/rss?geo=GB"
         return httpx.Response(200, content=raw, headers={"Content-Type": "application/rss+xml"})
 
     monkeypatch.setattr(trends, "connection", shared_connection)
@@ -107,7 +124,7 @@ def test_trend_collection_persists_actual_pipeline_shape_in_isolated_db(
             transport=httpx.MockTransport(handler), timeout=kwargs.get("timeout", 15)
         ),
     )
-    response = api.post("/admin/research/trends/collect", headers=headers, json={"geo": "JP"})
+    response = api.post("/admin/research/trends/collect", headers=headers, json={"geo": "GB"})
     assert response.status_code == 200
     result = response.json()
     assert result["status"] == "succeeded"
@@ -123,7 +140,7 @@ def test_trend_collection_persists_actual_pipeline_shape_in_isolated_db(
         (UUID(result["run_id"]),),
     ).fetchone()
     assert dict(row) == {
-        "geo": "JP",
+        "geo": "GB",
         "query": "Fixture trend",
         "source_rank": None,
         "source_volume_label": "1,000+",
@@ -142,3 +159,36 @@ def test_trend_collection_persists_actual_pipeline_shape_in_isolated_db(
             "UPDATE trend_observations SET query='changed' WHERE run_id=%s",
             (UUID(result["run_id"]),),
         )
+
+
+def test_direct_trend_collection_obeys_global_minimum_spacing(
+    lab: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    conn, api, headers = lab
+    prior = conn.execute(
+        "SELECT count(*) AS n FROM trend_collection_attempts"
+    ).fetchone()["n"]
+    conn.execute(
+        "INSERT INTO trend_collection_attempts(id,provider,geo,attempted_at) VALUES (%s,%s,%s,now())",
+        (UUID("00000000-0000-4000-8000-000000000021"), "google_trends_rss", "KR"),
+    )
+
+    @contextmanager
+    def shared_connection() -> Any:
+        with conn.transaction():
+            yield conn
+
+    def forbidden(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("external request must be blocked by durable pacing")
+
+    monkeypatch.setattr(trends, "connection", shared_connection)
+    monkeypatch.setattr(trends, "external_client", forbidden)
+    response = api.post("/admin/research/trends/collect", headers=headers, json={"geo": "GB"})
+    assert response.status_code == 200
+    assert response.json()["status"] == "blocked"
+    assert response.json()["failure_category"] == "global_minimum_spacing"
+    assert conn.execute("SELECT count(*) AS n FROM trend_collection_attempts").fetchone()["n"] == prior + 1
+    event = conn.execute(
+        "SELECT payload FROM audit_events WHERE event_type='trend.collection.pacing_blocked' ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    assert event["payload"]["geo"] == "GB"

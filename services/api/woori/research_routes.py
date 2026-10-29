@@ -48,7 +48,14 @@ class Selection(Input):
 
 
 class TrendCollectionRequest(Input):
-    geo: Literal["KR", "US", "JP", "TW", "HK", "SG"]
+    geo: str = Field(min_length=2, max_length=2, pattern=r"^[A-Z]{2}$")
+
+    @field_validator("geo")
+    @classmethod
+    def geo_allowed(cls, value: str) -> str:
+        if value not in trends.ALLOWED_GEOS:
+            raise ValueError("trend_geo_not_allowlisted")
+        return value
 
 
 class TrendTopicDecision(Input):
