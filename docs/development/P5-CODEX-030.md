@@ -80,5 +80,6 @@ pytest는 `.env.test`의 `woori_blog_agent_test` / `woori_test_app`으로 실행
 
 ## 커밋
 
-- 커밋 해시: 이 기록과 같은 커밋을 가리키는 후속 `git log` 기록을 사용한다.
-- 원격 푸시 결과: 커밋 후 기록한다.
+- 구현 커밋: `bf09e69ec594e18bac622e60d05bdc458e7ceaa3`
+- `origin/develop` 푸시: 성공 (`ce1bc65..bf09e69`)
+- 기록 갱신 커밋: 뒤따르는 `git log`에서 확인한다.
