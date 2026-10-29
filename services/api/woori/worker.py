@@ -246,7 +246,8 @@ def scheduled_import_intake_tick() -> dict[str, object]:
                 payload = {
                     key: item.get(key)
                     for key in (
-                        "file_key", "file_sha256", "status", "reason", "http_status",
+                        "file_key", "file_sha256", "status", "reason", "http_status", "api_error",
+                        "validation_errors",
                         "import_id", "audit_event_id", "duplicate",
                         "machine_assessment_passed", "independent_source_verification",
                     )

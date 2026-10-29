@@ -6,6 +6,7 @@ import hashlib
 import ipaddress
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -23,6 +24,60 @@ sys.path.insert(0, str(PROJECT_ROOT / "services" / "api"))
 MAX_FILE_BYTES = 256 * 1024
 DEFAULT_MAX_FILES = 4
 IMPORT_PATH = "/admin/research/content-imports"
+_SECRETISH = re.compile(
+    r"(?i)(bearer\s+)[a-z0-9._~+/-]+=*|([?&](?:access_token|token|code|key)=)[^&\s]+|"
+    r"(\b(?:access_token|refresh_token|token|password|client_secret|api_key)\s*[:=]\s*)[^\s,;]+|"
+    r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"
+)
+
+
+def _safe_error_text(value: object, *, limit: int = 500) -> str:
+    """Keep useful API/Pydantic diagnostics while excluding secrets and PII."""
+    text = " ".join(str(value).split())
+    if re.search(r"(?i)\b(?:secret|credential|authorization|cookie|password)\b", text):
+        return "sensitive_api_error_omitted"
+    text = _SECRETISH.sub(
+        lambda match: (match.group(1) or match.group(2) or match.group(3) or "") + "[redacted]", text
+    )
+    return text[:limit]
+
+
+def _safe_validation_errors(error: ValidationError) -> list[dict[str, Any]]:
+    return [
+        {
+            "location": ".".join(str(part) for part in entry.get("loc", ()))[:160],
+            "type": _safe_error_text(entry.get("type", "validation_error"), limit=80),
+            "message": _safe_error_text(entry.get("msg", "Invalid value"), limit=240),
+        }
+        for entry in error.errors(include_input=False)[:8]
+    ]
+
+
+def _safe_api_error(response: httpx.Response) -> str | None:
+    """Extract only a bounded JSON detail; never retain headers or raw bodies."""
+    try:
+        payload = response.json()
+    except (ValueError, json.JSONDecodeError):
+        return None
+    detail = payload.get("detail") if isinstance(payload, dict) else None
+    if isinstance(detail, (str, int, float)):
+        return _safe_error_text(detail)
+    if isinstance(detail, list):
+        parts = []
+        for entry in detail[:5]:
+            if isinstance(entry, dict):
+                location = ".".join(str(part) for part in entry.get("loc", ()))
+                message = entry.get("msg", "Invalid request")
+                parts.append(f"{location}: {message}" if location else str(message))
+            else:
+                parts.append(str(entry))
+        return _safe_error_text("; ".join(parts)) if parts else None
+    return None
+
+
+def validate_envelope(raw: bytes) -> ScheduledImportEnvelope:
+    """Single schema/cross-field validation entry point for CLI and Worker."""
+    return ScheduledImportEnvelope.model_validate_json(raw)
 
 
 def _loopback_api_url(value: str) -> str:
@@ -155,13 +210,23 @@ def process_inbox_once(
                 raw = processing.read_bytes()
                 file_sha256 = hashlib.sha256(raw).hexdigest()
                 file_hashes[file_key] = file_sha256
-                envelope = ScheduledImportEnvelope.model_validate_json(raw)
-            except (OSError, ValueError, ValidationError, json.JSONDecodeError):
+                envelope = validate_envelope(raw)
+            except ValidationError as exc:
+                validation_errors = _safe_validation_errors(exc)
                 try:
                     _move(processing, directories["quarantine"] / processing.name)
                 except OSError:
                     pass
-                results.append({"file_key": file_key, "status": "quarantined", "reason": "invalid_envelope"})
+                results.append({"file_key": file_key, "status": "quarantined", "reason": "invalid_envelope",
+                                "http_status": None, "validation_errors": validation_errors})
+                continue
+            except (OSError, ValueError, json.JSONDecodeError) as exc:
+                try:
+                    _move(processing, directories["quarantine"] / processing.name)
+                except OSError:
+                    pass
+                results.append({"file_key": file_key, "status": "quarantined", "reason": "invalid_envelope",
+                                "http_status": None, "api_error": _safe_error_text(exc)})
                 continue
 
             submission = {
@@ -179,6 +244,7 @@ def process_inbox_once(
                     _move(processing, destination)
                     results.append({"file_key": file_key, "status": target, "reason": category,
                                     "http_status": imported.status_code,
+                                    "api_error": _safe_api_error(imported),
                                     "file_sha256": file_sha256})
                     continue
                 import_result = imported.json()
@@ -199,7 +265,7 @@ def process_inbox_once(
                     retry_name = source.name if retry_target == "ready" else processing.name
                     _move(processing, directories[retry_target] / retry_name)
                     results.append({"file_key": file_key, "status": retry_target, "reason": "origin_audit_pending",
-                                    "http_status": origin.status_code})
+                                    "http_status": origin.status_code, "api_error": _safe_api_error(origin)})
                     continue
                 receipt = origin.json()
                 detail = client.get(f"{IMPORT_PATH}/{import_id}")
@@ -209,7 +275,7 @@ def process_inbox_once(
                     _move(processing, directories[retry_target] / retry_name)
                     results.append({"file_key": file_key, "status": retry_target,
                                     "reason": "assessment_state_unavailable",
-                                    "http_status": detail.status_code})
+                                    "http_status": detail.status_code, "api_error": _safe_api_error(detail)})
                     continue
                 detail_data = detail.json()
                 latest_version = detail_data.get("latest_version") or {}
@@ -234,7 +300,7 @@ def process_inbox_once(
                         _move(processing, directories[retry_target] / retry_name)
                         results.append({"file_key": file_key, "status": retry_target,
                                         "reason": "machine_assessment_failed",
-                                        "http_status": assessed.status_code})
+                                        "http_status": assessed.status_code, "api_error": _safe_api_error(assessed)})
                         continue
                     assessment = assessed.json()
                 _move(processing, directories["processed"] / processing.name)

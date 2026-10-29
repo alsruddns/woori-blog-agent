@@ -16,7 +16,7 @@ from woori.config import settings
 from woori.content_imports import ScheduledImportEnvelope, ScheduledImportOrigin
 from woori.db import connection
 from woori.main import app
-from woori.scheduled_import_inbox import process_inbox_once
+from woori.scheduled_import_inbox import process_inbox_once, validate_envelope
 
 
 def scheduled_payload(**updates: object) -> dict[str, object]:
@@ -112,6 +112,28 @@ def test_scheduled_envelope_requires_self_reported_task_and_consistent_target() 
         ScheduledImportEnvelope.model_validate(wrong_method)
 
 
+def test_scheduled_envelope_requires_taxonomy_labels_and_imported_parent_for_revision() -> None:
+    valid_json = json.dumps(scheduled_payload(), ensure_ascii=False).encode("utf-8")
+    allowed = validate_envelope(valid_json)
+    assert allowed == ScheduledImportEnvelope.model_validate_json(valid_json)
+    assert allowed.item.blogger_labels == content_imports.suggested_labels(
+        "stocks", "ko", google_trends_based=False
+    )
+    forbidden = scheduled_payload()
+    forbidden["item"]["blogger_labels"] = ["주식", "임의라벨"]  # type: ignore[index]
+    with pytest.raises(ValidationError, match="unrecognized_or_unreviewed_blogger_label"):
+        validate_envelope(json.dumps(forbidden, ensure_ascii=False).encode("utf-8"))
+
+    unregistered_revision = scheduled_payload()
+    unregistered_revision["item"].update({  # type: ignore[union-attr]
+        "content_id": "scheduled-revision-unregistered-parent",
+        "parent_content_id": "never-imported-parent",
+        "relation": "revision",
+    })
+    # Shape validation accepts the relation. The API's DB-backed check must reject it.
+    assert ScheduledImportEnvelope.model_validate(unregistered_revision).item.relation == "revision"
+
+
 def test_scheduled_origin_rejects_naive_time_and_unregistered_url_shape() -> None:
     payload = scheduled_payload()["scheduled_origin"]
     assert isinstance(payload, dict)
@@ -190,6 +212,52 @@ def test_inbox_quarantines_invalid_and_ignores_incomplete_files(tmp_path: Path) 
     assert "must-not-be-logged" not in json.dumps(result)
     assert (tmp_path / "quarantine" / "bad.processing.json").exists()
     assert incomplete.exists()
+
+
+def test_inbox_records_exact_safe_pydantic_validation_reason(tmp_path: Path) -> None:
+    ready = tmp_path / "ready"
+    ready.mkdir()
+    payload = scheduled_payload()
+    payload["item"]["blogger_labels"] = ["허용되지 않은 라벨"]  # type: ignore[index]
+    source = ready / "invalid-label.ready.json"
+    original = json.dumps(payload, ensure_ascii=False)
+    source.write_text(original, encoding="utf-8")
+
+    result = process_inbox_once(tmp_path, "http://127.0.0.1:18100", "x" * 32,
+                                transport=httpx.MockTransport(lambda _: pytest.fail("invalid envelope must not call API")))
+    outcome = result["results"][0]
+    assert outcome["status"] == "quarantined"
+    assert outcome["reason"] == "invalid_envelope"
+    assert outcome["http_status"] is None
+    assert any(error["type"] == "value_error" and "unrecognized_or_unreviewed_blogger_label" in error["message"]
+               for error in outcome["validation_errors"])
+    assert (tmp_path / "quarantine" / "invalid-label.processing.json").read_text(encoding="utf-8") == original
+
+
+def test_inbox_records_http_status_and_sanitized_api_detail(tmp_path: Path) -> None:
+    ready = tmp_path / "ready"
+    ready.mkdir()
+    source = ready / "missing-parent.ready.json"
+    payload = scheduled_payload()
+    payload["item"].update({  # type: ignore[union-attr]
+        "content_id": "scheduled-revision-with-missing-parent",
+        "parent_content_id": "unregistered-parent-0001",
+        "relation": "revision",
+    })
+    source.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+    def reject(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(409, json={"detail": "The referenced parent import does not exist; token=abc123"})
+
+    result = process_inbox_once(tmp_path, "http://127.0.0.1:18100", "x" * 32,
+                                transport=httpx.MockTransport(reject))
+    outcome = result["results"][0]
+    assert outcome["status"] == "rejected"
+    assert outcome["reason"] == "api_rejected"
+    assert outcome["http_status"] == 409
+    assert outcome["api_error"] == "The referenced parent import does not exist; token=[redacted]"
+    assert not source.exists()
+    assert (tmp_path / "rejected" / "missing-parent.processing.json").exists()
 
 
 def test_inbox_requeues_transient_failure_and_recovers_interrupted_processing(tmp_path: Path) -> None:
@@ -286,6 +354,50 @@ def test_local_inbox_import_and_duplicate_use_isolated_database(tmp_path: Path, 
                 assert result["results"][0]["publish_ready"] is False
                 assert result["blogger_writes"] == 0
                 assert result["results"][0]["duplicate"] is (index == 1)
+            missing_parent = scheduled_payload()
+            missing_parent["item"].update({  # type: ignore[union-attr]
+                "content_id": "scheduled-missing-parent-e2e",
+                "parent_content_id": "not-imported-parent-e2e",
+                "relation": "revision",
+            })
+            missing_parent_response = client.post(
+                "/admin/research/content-imports", json={"submitted_by": "test scheduled import", "item": missing_parent["item"]},
+                headers={"Authorization": f"Bearer {settings().admin_token}"},
+            )
+            assert missing_parent_response.status_code == 409
+            assert missing_parent_response.json()["detail"] == "The referenced parent import does not exist"
+            corrected_original = scheduled_payload()
+            corrected_original["item"].update({  # type: ignore[union-attr]
+                "content_id": "scheduled-corrected-before-first-import",
+                "parent_content_id": None,
+                "relation": "original",
+            })
+            corrected_response = client.post(
+                "/admin/research/content-imports",
+                json={"submitted_by": "test scheduled import", "item": corrected_original["item"]},
+                headers={"Authorization": f"Bearer {settings().admin_token}"},
+            )
+            assert corrected_response.status_code == 201, corrected_response.text
+
+            different_content_same_occurrence = scheduled_payload()
+            different_content_same_occurrence["item"]["content_id"] = "scheduled-same-occurrence-new-content"  # type: ignore[index]
+            imported_response = client.post(
+                "/admin/research/content-imports",
+                json={"submitted_by": "test scheduled import", "item": different_content_same_occurrence["item"]},
+                headers={"Authorization": f"Bearer {settings().admin_token}"},
+            )
+            assert imported_response.status_code == 201, imported_response.text
+            duplicate_origin = dict(origin)
+            duplicate_origin["occurrence_id"] = "woori-market-close-kr-20261028-01"
+            duplicate_origin["target_blog_id"] = blog["blog_id"]
+            duplicate_origin["target_blog_url"] = blog["url"]
+            duplicate_origin_response = client.post(
+                f"/admin/research/content-imports/{imported_response.json()['import_id']}/scheduled-origin",
+                json=duplicate_origin,
+                headers={"Authorization": f"Bearer {settings().admin_token}"},
+            )
+            assert duplicate_origin_response.status_code == 409
+            assert "already recorded" in duplicate_origin_response.json()["detail"]
             imports = conn.execute(
                 "SELECT count(*)::int AS count FROM external_content_imports WHERE external_content_id=%s",
                 (payload["item"]["content_id"],),
@@ -331,6 +443,8 @@ def test_worker_inbox_tick_records_sanitized_file_outcome(monkeypatch: pytest.Mo
                 "import_id": "import-1", "audit_event_id": 77, "duplicate": False,
                 "machine_assessment_passed": False,
                 "independent_source_verification": False, "publish_ready": False,
+                "http_status": 409, "api_error": "parent does not exist",
+                "validation_errors": [{"type": "value_error", "message": "safe detail"}],
             }],
             "blogger_writes": 0,
         },
@@ -346,6 +460,9 @@ def test_worker_inbox_tick_records_sanitized_file_outcome(monkeypatch: pytest.Mo
     assert payload["file_sha256"] == "a" * 64
     assert payload["publish_ready"] is False
     assert payload["blogger_writes"] == 0
+    assert payload["http_status"] == 409
+    assert payload["api_error"] == "parent does not exist"
+    assert payload["validation_errors"][0]["message"] == "safe detail"
     assert "title" not in payload and "body" not in payload
     assert any("pg_try_advisory_lock" in query for query, _ in statements)
     assert any("pg_advisory_unlock" in query for query, _ in statements)

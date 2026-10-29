@@ -32,6 +32,13 @@ Registered Blogger targets:
 
 The inbox validates the existing `woori-content-import/1.0` item. For each claim, include evidence excerpt and source ID; excerpts should be the minimum needed for verification. Do not add undocumented fields. `research_package_id` may be set only to an existing package ID that was actually available to the task; otherwise use `null`. Scheduled authoring must not make remote requests outside the project's allowlisted source routes; if the required official evidence is not already available in a Research Package or local reviewed source snapshot, create no file.
 
+## Import identity and label rules (required for every scheduled task)
+
+- Submit a manuscript as `relation="original"` with `parent_content_id=null` unless the parent is confirmed as a successful existing import in PostgreSQL. A quarantined, rejected, incoming, or merely generated file is not an imported parent. Do not turn a pre-import correction into a revision.
+- If correcting a file that never imported, submit the final corrected manuscript as an original with a new unique `content_id`. Keep the same `occurrence_id` only for a correction of that same scheduled execution; a new scheduled execution must have a new occurrence ID. If the same file was already imported, retry that exact envelope and content ID idempotently. A true revision is permitted only for a parent that already exists in `external_content_imports` and has a native content-version mapping.
+- `blogger_labels` must be copied exactly from `services/api/woori/editorial_taxonomy.py` via `suggested_labels(category, language_code, google_trends_based=...)`. Do not invent, translate, or add free-form labels. For example, `stocks`/`ko` allows `주식`, and when Trends-based allows `이슈`, `주식`.
+- Write the completed envelope to `incoming/<name>.part`, then run `.venv\\Scripts\\python.exe scripts\\validate-scheduled-import.py .local\\gpt-scheduled-import\\incoming\\<name>.part`. This read-only command uses the same `ScheduledImportEnvelope` Pydantic model as the Import Worker and has no API/DB access. Only after it reports `valid: true` may the completed file be atomically renamed to `ready/<name>.ready.json`. A schema-only JSON parse is insufficient because category/language label and cross-field rules are enforced by Pydantic.
+
 ## A. Korea market close
 
 ```text
