@@ -6,7 +6,7 @@
 - 변경 사유: 기존 운영 스케줄러는 6개 지역만 허용했고, 직접 수집 API 호출은 스케줄러의 요청 간격을 우회할 수 있었다.
 - 변경 목적: 공식 Google Trends RSS 허용 지역을 11개로 확장하고, 어떤 호출 경로에서도 DB 기반 전역 간격과 시간당 한도를 지킨다.
 - 변경 전 상태: 운영 DB schema 49, 24시간 Trends 실행 28회·관측 280건(6개 지역), 자동 GPT 수신 0건, Research Package 1건(사람 검토 대기), Blogger 게시 0건, Auto OFF.
-- 변경 후 상태: migration 050 적용, 11개 지역이 설정·API·외부 호출 allowlist에 반영됨. 최근 24시간 11개 지역 모두 실제 수집, 33회/330관측. 실행 중인 구버전 Worker/API는 운영자가 띄운 프로세스일 수 있어 종료하지 않았다. 새 코드에서 직접 수집 간격도 DB advisory lock 안에서 검사한다.
+- 변경 후 상태: migration 050 적용, 11개 지역이 설정·API·외부 호출 allowlist에 반영됨. 최근 24시간 11개 지역 모두 실제 수집, 33회/330관측. 신규 5개 지역은 제한 간격을 지킨 수동 scheduler 호출이다. 실행 중인 구버전 Worker/API는 운영자가 띄운 프로세스일 수 있어 종료하지 않았다. 새 코드에서 직접 수집 간격도 DB advisory lock 안에서 검사한다.
 
 ## 현재 운영 증거
 
@@ -14,7 +14,7 @@
 | --- | --- | --- |
 | Research Worker | 실제 heartbeat 갱신 중 | PID 46704 (부모 37512), 마지막 확인 시 PID/명령은 이 체크아웃의 `.venv`와 `python -m woori.worker`; 구버전 프로세스이므로 새 11개 지역 코드는 적용되지 않음. 프로세스 종료/재시작은 하지 않음. |
 | API / Dashboard | 로컬 HTTP 200 | API `127.0.0.1:18100`, Dashboard `127.0.0.1:13100`; 프로젝트 프로세스이지만 기존 터미널을 보존. 지정 기본 포트 8100/3100에는 리스너 없음. |
-| Trends | 실제 자동 실행 성공 (수집 경로) | 24시간 33회/330 관측, 11개 지역 전부 성공. 신규 AU/CA/GB/IN/PH RSS 요청 각 1회 HTTP 200·항목 10건. 신규 5개 지역 실패·429 없음. RSS 항목/트래픽 구간은 절대 검색량 순위가 아니며 기사 사실의 근거로 쓰지 않음. |
+| Trends | 실제 수동 실행 성공 (11개 지역 RSS) | 24시간 33회/330 관측, 11개 지역 전부 실제 응답 있음. 신규 AU/CA/GB/IN/PH 각 1회 HTTP 200·항목 10건은 새 코드의 durable scheduler tick을 수동 실행. 기존 Worker는 구버전이므로 새 11개 지역 스케줄의 무인 실행은 미검증. 신규 5개 지역 실패·429 없음. RSS 항목/트래픽 구간은 절대 검색량 순위가 아니며 기사 사실의 근거로 쓰지 않음. |
 | 후보·조사 | 기사 후보 0 | 기존 운영 Dashboard read-model은 이슈 그룹을 검토/근거 부족 상태로 표시하고, 공식 조사 자동 실행은 비활성이라고 보고함. 기존 Research Package 1건은 `evidence_collected_pending_human_review`, 독립 출처 0건. |
 | GPT 예약 파일 수신 | 0건 | 수신 0, 검증된 GPT 예약 실행 0, 마지막 파일 수신 없음. 기존 수동 Codex Import를 무인 실행 실적으로 계산하지 않음. |
 | 기존 원고 Import | 수동 Codex 1건 | 운영 DB `generation_method=manual_codex_import`, 상태 `awaiting_human_review`; 품질 평가는 기계 통과 2건/보류 3건(버전/평가 이력 행 기준), 독립 출처 검증 0, `publish_ready=false`. |
