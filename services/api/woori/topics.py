@@ -38,7 +38,7 @@ DEFAULT_WEIGHTS = {
 # current source review, evidence spans, rights, and freshness checks pass.
 OFFICIAL_SOURCE_HOSTS = frozenset({
     "federalreserve.gov", "www.federalreserve.gov", "sec.gov", "www.sec.gov", "data.sec.gov",
-    "www.ey.gov.tw", "www.ly.gov.tw",
+    "www.ey.gov.tw", "www.ly.gov.tw", "www.ons.gov.uk",
 })
 
 # Deliberately conservative topic signals. These select material for research;

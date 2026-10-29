@@ -135,6 +135,24 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "commercial_use": "Campaign page has no visible reuse notice in the checked content; rights stay unknown unless a governing reuse notice is confirmed",
         "zero_cost_reviewed": True,
     },
+    "ons_official_statistics": {
+        "hosts": {"www.ons.gov.uk"},
+        "methods": {"GET"},
+        "rpm": 3,
+        "rph": 6,
+        "operations": {"source_collection"},
+        "paths_by_host": {
+            "www.ons.gov.uk": (
+                "/economy/governmentpublicsectorandtaxes/publicsectorfinance/bulletins/publicsectorfinances/september2026",
+                "/help/terms-conditions",
+            ),
+        },
+        "cost": "Public ONS bulletin and terms pages; no key, account, or per-request API fee identified; bounded GET quota",
+        "commercial_use": "ONS bulletin explicitly states OGL v3.0 except where otherwise stated; exclude third-party images and confirm page-specific notices",
+        "terms_reviewed_at": "2026-10-29",
+        "terms_review_due": "2027-01-29",
+        "zero_cost_reviewed": True,
+    },
 }
 
 _BILLING_PREFIXES = (
@@ -565,7 +583,11 @@ def _authorize(provider: str, operation: str, request: httpx.Request) -> None:
         _deny(provider, operation, request, "provider_not_allowlisted")
     if billing_credential_names():
         _deny(provider, operation, request, "potentially_billable_credentials_detected")
-    if datetime.now(UTC).date() > TERMS_REVIEW_DUE:
+    try:
+        terms_review_due = date.fromisoformat(rule.get("terms_review_due", TERMS_REVIEW_DUE.isoformat()))
+    except ValueError:
+        _deny(provider, operation, request, "external_terms_review_date_invalid")
+    if datetime.now(UTC).date() > terms_review_due:
         _deny(provider, operation, request, "external_terms_review_expired")
     parsed = request.url
     path_prefixes = rule.get("paths_by_host", {}).get(parsed.host, rule.get("paths", ()))
@@ -573,6 +595,13 @@ def _authorize(provider: str, operation: str, request: httpx.Request) -> None:
     operation_path_allowed = any(parsed.path.startswith(prefix) for prefix in path_prefixes)
     if provider == "japan_energy_subsidy_site":
         operation_path_allowed = parsed.host == "www.nenryo-teigakuhikisage.go.jp" and parsed.path == "/" and not parsed.query
+    if provider == "ons_official_statistics":
+        operation_path_allowed = (
+            parsed.host == "www.ons.gov.uk"
+            and parsed.path in rule["paths_by_host"]["www.ons.gov.uk"]
+            and not parsed.query
+            and not parsed.fragment
+        )
     if provider == "google_blogger_read":
         blog_id = r"[0-9]{1,40}"
         post_id = r"[0-9]{1,40}"

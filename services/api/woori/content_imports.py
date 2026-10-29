@@ -886,6 +886,8 @@ def assess_import(import_id: UUID, request: ImportAssessmentRequest) -> dict[str
         for source in source_rows:
             verification = live_by_source.get(str(source["source_id"]), {})
             published_at = str(source.get("published_at") or "")
+            if not published_at and verification.get("source_published_date"):
+                published_at = str(verification["source_published_date"])
             if published_at:
                 try:
                     published_date = datetime.fromisoformat(published_at).date()

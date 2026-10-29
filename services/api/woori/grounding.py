@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 import langcodes
 
 from .ai import Draft
+from .scheduled_auto_verification import _quantity_facts
 
 
 def numbers(text: str) -> set[str]:
@@ -124,7 +125,46 @@ def numbers(text: str) -> set[str]:
     # reviewed separately, and aliases remain unit-bound to preserve other numbers.
     # They remain unit-bound so unrelated factual numbers stay exact.
     normalized_values: set[str] = set(dates)
+    for kind, value in _quantity_facts(text):
+        if kind == "GBP":
+            normalized_values.add(f"FACT:{kind}:{value}")
 
+    def gbp_amount(match: re.Match[str], multiplier: Decimal) -> str:
+        amount = Decimal(match.group(1).replace(",", "")) * multiplier
+        normalized_values.add(f"GBP_MAGNITUDE:{amount.normalize():f}")
+        return " "
+
+    gbp_patterns = (
+        (r"(?i)£\s*([\d,]+(?:\.\d+)?)\s*(?:trillion|tn)\b", Decimal(1_000_000_000_000)),
+        (r"(?i)£\s*([\d,]+(?:\.\d+)?)\s*(?:billion|bn)\b", Decimal(1_000_000_000)),
+        (r"(?i)£\s*([\d,]+(?:\.\d+)?)\s*(?:million|mn)\b", Decimal(1_000_000)),
+        (r"(?i)£\s*([\d,]+(?:\.\d+)?)\s*(?:thousand|k)\b", Decimal(1_000)),
+    )
+    for pattern, multiplier in gbp_patterns:
+        text = re.sub(pattern, lambda match, scale=multiplier: gbp_amount(match, scale), text)
+
+    compound_gbp = re.compile(
+        r"(?<!\d)([\d,]+(?:\.\d+)?)\s*조\s*([\d,]+(?:\.\d+)?)\s*억\s*파운드"
+    )
+
+    def compound_pounds(match: re.Match[str]) -> str:
+        amount = (
+            Decimal(match.group(1).replace(",", "")) * Decimal(1_000_000_000_000)
+            + Decimal(match.group(2).replace(",", "")) * Decimal(100_000_000)
+        )
+        normalized_values.add(f"GBP_MAGNITUDE:{amount.normalize():f}")
+        return " "
+
+    text = compound_gbp.sub(compound_pounds, text)
+    korean_gbp = re.compile(r"(?<!\d)([\d,]+(?:\.\d+)?)\s*(조|억|만)\s*파운드")
+    korean_gbp_scales = {"조": Decimal(1_000_000_000_000), "억": Decimal(100_000_000), "만": Decimal(10_000)}
+
+    def single_pounds(match: re.Match[str]) -> str:
+        amount = Decimal(match.group(1).replace(",", "")) * korean_gbp_scales[match.group(2)]
+        normalized_values.add(f"GBP_MAGNITUDE:{amount.normalize():f}")
+        return " "
+
+    text = korean_gbp.sub(single_pounds, text)
     def scaled_amount(match: re.Match[str], multiplier: Decimal) -> str:
         amount = Decimal(match.group(1).replace(",", "")) * multiplier
         normalized_values.add(f"MAGNITUDE:{amount.normalize():f}")

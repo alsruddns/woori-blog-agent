@@ -9,11 +9,132 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 from typing import Any
 from urllib.parse import urlsplit
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _NUMBER = re.compile(r"(?<!\w)[+-]?\d[\d,.]*(?:%|bp)?", re.IGNORECASE)
+_NUMBER_VALUE = r"[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?"
+_GBP_EN = re.compile(
+    rf"£\s*({_NUMBER_VALUE})\s*(trillion|billion|million|thousand|tn|bn|m|k)?\b",
+    re.IGNORECASE,
+)
+_GBP_KO = re.compile(
+    rf"(?:(?P<trillion>{_NUMBER_VALUE})\s*조\s*)?"
+    rf"(?:(?P<billion>{_NUMBER_VALUE})\s*억\s*)?"
+    rf"(?:(?P<ten_thousand>{_NUMBER_VALUE})\s*만\s*)?파운드"
+)
+_PERCENT_POINTS = re.compile(
+    rf"({_NUMBER_VALUE})\s*(?:%\s*포인트|퍼센트\s*포인트|percentage\s+points?)",
+    re.IGNORECASE,
+)
+_PERCENT = re.compile(rf"({_NUMBER_VALUE})\s*(?:%|percent\b)", re.IGNORECASE)
+_KO_MONTH_RANGE = re.compile(r"(20\d{2})년\s*(1[0-2]|0?[1-9])\s*~\s*(1[0-2]|0?[1-9])월")
+_KO_YEAR_MONTH = re.compile(r"(20\d{2})년\s*(1[0-2]|0?[1-9])월")
+_EN_MONTH_RANGE = re.compile(
+    r"\b(january|february|march|april|may|june|july|august|september|october|november|december)"
+    r"\s*-\s*to\s*-\s*(january|february|march|april|may|june|july|august|september|october|november|december)\b",
+    re.IGNORECASE,
+)
+_EN_YEAR_MONTH = re.compile(
+    r"\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+(20\d{2})\b",
+    re.IGNORECASE,
+)
+_EN_MONTHS = {
+    name.casefold(): number for number, name in enumerate(
+        ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"),
+        start=1,
+    )
+}
+
+
+def _decimal(value: str) -> Decimal:
+    try:
+        return Decimal(value.replace(",", ""))
+    except InvalidOperation:
+        return Decimal("NaN")
+
+
+def _quantity_facts(text: str) -> set[tuple[str, str]]:
+    """Normalize numeric facts across English and Korean number-unit notation.
+
+    Currency units, percentages, percentage points, year-month references and
+    ordinary counts remain distinct. This checks quantities and units only; it
+    does not establish that a claim semantically follows from its source.
+    """
+    facts: set[tuple[str, str]] = set()
+    consumed: list[tuple[int, int]] = []
+
+    def remember(match: re.Match[str], kind: str, value: Decimal) -> None:
+        if value.is_finite():
+            facts.add((kind, format(value.normalize(), "f")))
+        consumed.append(match.span())
+
+    en_scale = {
+        None: Decimal(1), "k": Decimal(1000), "thousand": Decimal(1000),
+        "m": Decimal(1_000_000), "million": Decimal(1_000_000),
+        "bn": Decimal(1_000_000_000), "billion": Decimal(1_000_000_000),
+        "tn": Decimal(1_000_000_000_000), "trillion": Decimal(1_000_000_000_000),
+    }
+    for match in _GBP_EN.finditer(text):
+        value = _decimal(match.group(1)) * en_scale[(match.group(2) or "").casefold() or None]
+        remember(match, "GBP", value)
+    for match in _GBP_KO.finditer(text):
+        value = (
+            (_decimal(match.group("trillion") or "0") * Decimal(1_000_000_000_000))
+            + (_decimal(match.group("billion") or "0") * Decimal(100_000_000))
+            + (_decimal(match.group("ten_thousand") or "0") * Decimal(10_000))
+        )
+        remember(match, "GBP", value)
+    for match in _PERCENT_POINTS.finditer(text):
+        remember(match, "percentage_points", _decimal(match.group(1)))
+    for match in _PERCENT.finditer(text):
+        if any(start <= match.start() and match.end() <= end for start, end in consumed):
+            continue
+        remember(match, "percent", _decimal(match.group(1)))
+
+    # Treat a year-month pair as one typed fact, so 2026-09 and 2026년 9월
+    # compare while a wrong month remains visible.
+    for match in _KO_MONTH_RANGE.finditer(text):
+        start_month = int(match.group(2))
+        end_month = int(match.group(3))
+        facts.add(("year_month_range", f"{start_month:02d}-{end_month:02d}"))
+        facts.add(("year_month", f"{int(match.group(1)):04d}-{end_month:02d}"))
+        consumed.append(match.span())
+    for match in _EN_MONTH_RANGE.finditer(text):
+        start_month = _EN_MONTHS[match.group(1).casefold()]
+        end_month = _EN_MONTHS[match.group(2).casefold()]
+        facts.add(("year_month_range", f"{start_month:02d}-{end_month:02d}"))
+        consumed.append(match.span())
+    for match in _KO_YEAR_MONTH.finditer(text):
+        if any(start <= match.start() and match.end() <= end for start, end in consumed):
+            continue
+        facts.add(("year_month", f"{int(match.group(1)):04d}-{int(match.group(2)):02d}"))
+        consumed.append(match.span())
+    for match in _EN_YEAR_MONTH.finditer(text):
+        month = _EN_MONTHS[match.group(1).casefold()]
+        facts.add(("year_month", f"{int(match.group(2)):04d}-{month:02d}"))
+        consumed.append(match.span())
+
+    for match in re.finditer(r"\b(\d+)(?:st|nd|rd|th)\b", text, re.IGNORECASE):
+        facts.add(("ordinal", str(int(match.group(1)))))
+        consumed.append(match.span())
+    korean_ordinals = {"첫": 1, "두": 2, "세": 3, "네": 4, "다섯": 5, "여섯": 6, "일곱": 7, "여덟": 8, "아홉": 9, "열": 10}
+    for match in re.finditer(r"(첫|두|세|네|다섯|여섯|일곱|여덟|아홉|열)\s*번째", text):
+        facts.add(("ordinal", str(korean_ordinals[match.group(1)])))
+        consumed.append(match.span())
+
+    for match in _NUMBER.finditer(text):
+        if any(start <= match.start() and match.end() <= end for start, end in consumed):
+            continue
+        value = match.group(0).rstrip("%")
+        if value.casefold().endswith("bp"):
+            value = value[:-2]
+        parsed = _decimal(value)
+        if parsed.is_finite():
+            facts.add(("number", format(parsed.normalize(), "f")))
+    return facts
 
 
 def _compact(value: str) -> str:
@@ -90,18 +211,10 @@ def evaluate_scheduled_evidence(
         ):
             reasons.append("claim_span_not_found_in_live_source_evidence")
             continue
-        claim_text = _compact(str(claim.get("claim") or ""))
-        evidence_text = _compact(evidence)
-        if not claim_text or claim_text not in evidence_text:
-            reasons.append("claim_not_supported_by_exact_source_span")
-        evidence_numbers = {
-            token.replace(",", "") for token in _NUMBER.findall(evidence)
-        }
-        claim_numbers = {
-            token.replace(",", "") for token in _NUMBER.findall(str(claim.get("claim") or ""))
-        }
-        if not claim_numbers.issubset(evidence_numbers):
-            reasons.append("claim_contains_unsupported_number")
+        evidence_quantities = _quantity_facts(evidence)
+        claim_quantities = _quantity_facts(str(claim.get("claim") or ""))
+        if not claim_quantities.issubset(evidence_quantities):
+            reasons.append("claim_contains_unsupported_number_or_unit")
         if claim.get("verification_status") == "corroborated":
             organizations = {
                 str(source_by_id[source_id].get("organization", "")).strip().casefold()
@@ -113,8 +226,12 @@ def evaluate_scheduled_evidence(
 
     human_claims_checked = bool(human_review and human_review.get("claims_checked"))
     human_rights_reviewed = bool(human_review and human_review.get("rights_reviewed"))
-    # Claim-span checks are machine evidence only; the result deliberately
-    # reports whether a separate human semantic review exists.
+    # Exact source spans and numeric/date checks establish traceability only.
+    # They cannot establish that a paraphrased sentence means the same thing.
+    # Keep that semantic decision separate and fail closed until a reviewer
+    # attests to the exact immutable version.
+    if not human_claims_checked:
+        reasons.append("semantic_claim_review_required")
     if not human_rights_reviewed:
         for source_id, source in source_by_id.items():
             proof = proof_for_source.get(source_id, {})
@@ -170,6 +287,7 @@ def evaluate_scheduled_evidence(
             "rights_terms": "source_rights_not_machine_verified" not in unique_reasons,
             "human_claim_review_present": human_claims_checked,
             "human_rights_review_present": human_rights_reviewed,
+            "semantic_claim_review_required": not human_claims_checked,
         },
         "source_ids": sorted(source_by_id),
         "claim_ids": sorted(

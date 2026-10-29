@@ -41,16 +41,29 @@ def _case() -> tuple[dict[str, object], dict[str, dict[str, object]]]:
     return imported, proofs
 
 
-def test_scheduled_machine_evidence_can_pass_without_fabricating_human_review() -> None:
+def test_source_and_numeric_checks_do_not_substitute_for_semantic_review() -> None:
     imported, proofs = _case()
     result = evaluate_scheduled_evidence(
         imported, version_sha256="c" * 64, source_proofs=proofs, human_review=None,
     )
-    assert result["status"] == "passed"
+    assert result["status"] == "held"
+    assert "semantic_claim_review_required" in result["reasons"]
     assert result["checks"]["human_claim_review_present"] is False
     assert result["checks"]["human_rights_review_present"] is False
     assert result["claim_ids"] == ["claim-1"]
     assert result["source_evidence_sha256"]["source-1"]["source_body_sha256"] == "a" * 64
+
+
+def test_human_review_allows_a_supported_paraphrase_without_literal_sentence_match() -> None:
+    imported, proofs = _case()
+    imported["claims"][0]["claim"] = "The reported rate reached 12.5 percent."
+    result = evaluate_scheduled_evidence(
+        imported, version_sha256="c" * 64, source_proofs=proofs,
+        human_review={"claims_checked": True, "rights_reviewed": True},
+    )
+    assert result["status"] == "passed"
+    assert result["checks"]["claim_source_spans"] is True
+    assert result["checks"]["human_claim_review_present"] is True
 
 
 def test_scheduled_machine_evidence_holds_unknown_rights() -> None:
@@ -73,7 +86,7 @@ def test_scheduled_machine_evidence_holds_expired_reuse_policy() -> None:
     assert "source_rights_not_machine_verified" in result["reasons"]
 
 
-def test_scheduled_machine_evidence_holds_unmatched_claim_or_hash() -> None:
+def test_scheduled_evidence_holds_unsupported_number_or_hash() -> None:
     imported, proofs = _case()
     imported["claims"][0]["claim"] = "The agency reported 13 percent."
     result = evaluate_scheduled_evidence(
@@ -81,8 +94,47 @@ def test_scheduled_machine_evidence_holds_unmatched_claim_or_hash() -> None:
     )
     assert result["status"] == "held"
     assert "scheduled_version_hash_invalid" in result["reasons"]
-    assert "claim_contains_unsupported_number" in result["reasons"]
-    assert "claim_not_supported_by_exact_source_span" in result["reasons"]
+    assert "claim_contains_unsupported_number_or_unit" in result["reasons"]
+
+
+def test_currency_units_percent_and_year_month_are_compared_semantically() -> None:
+    imported, proofs = _case()
+    imported["claims"][0]["claim"] = "2026년 9월 공공부문 차입은 18억 파운드와 7.7%로 보고됐다."
+    imported["claims"][0]["evidence_excerpt"] = "£1.8 billion in September 2026; 7.7%"
+    proofs["source-1"]["verified_claim_evidence"] = ["£1.8 billion in September 2026; 7.7%"]
+    result = evaluate_scheduled_evidence(
+        imported, version_sha256="c" * 64, source_proofs=proofs,
+        human_review={"claims_checked": True, "rights_reviewed": True},
+    )
+    assert result["status"] == "passed"
+    assert "claim_contains_unsupported_number_or_unit" not in result["reasons"]
+
+
+def test_currency_unit_or_reference_month_mismatch_is_held() -> None:
+    imported, proofs = _case()
+    imported["claims"][0]["claim"] = "2026년 8월 차입은 19억 파운드였다."
+    imported["claims"][0]["evidence_excerpt"] = "£1.8 billion in September 2026"
+    proofs["source-1"]["verified_claim_evidence"] = ["£1.8 billion in September 2026"]
+    result = evaluate_scheduled_evidence(
+        imported, version_sha256="c" * 64, source_proofs=proofs,
+        human_review={"claims_checked": True, "rights_reviewed": True},
+    )
+    assert result["status"] == "held"
+    assert "claim_contains_unsupported_number_or_unit" in result["reasons"]
+
+
+def test_korean_fiscal_month_range_matches_english_source_period() -> None:
+    imported, proofs = _case()
+    imported["claims"][0]["claim"] = "2026년 4~9월 순차입은 같은 기간 기준 열 번째로 높았다."
+    imported["claims"][0]["evidence_excerpt"] = (
+        "Borrowing in the FY to September 2026 was the 10th highest April-to-September figure."
+    )
+    proofs["source-1"]["verified_claim_evidence"] = [imported["claims"][0]["evidence_excerpt"]]
+    result = evaluate_scheduled_evidence(
+        imported, version_sha256="c" * 64, source_proofs=proofs,
+        human_review={"claims_checked": True, "rights_reviewed": True},
+    )
+    assert result["status"] == "passed"
 
 
 def test_corroborated_claim_requires_distinct_organizations() -> None:
