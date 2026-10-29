@@ -308,6 +308,14 @@ def test_grounding_normalizes_dates_and_avoids_sentence_boundary_name_false_posi
     assert "Terminated October" not in names
 
 
+def test_internal_source_tokens_are_not_numeric_facts_and_name_matches_allow_overlap() -> None:
+    from woori.grounding import numbers, proper_names
+
+    assert numbers("Confirmed [source:fed-fomc-20261028]") == set()
+    names = proper_names("The Federal Open Market Committee approved the statement.")
+    assert "Federal Open Market Committee" in names
+
+
 def test_proper_names_allow_adjacent_korean_particles_without_relaxing_name_matching() -> None:
     names = proper_names(
         "Federal Reserve Board? ??? ???. "

@@ -13,6 +13,8 @@ from .ai import Draft
 
 
 def numbers(text: str) -> set[str]:
+    # Citation tokens are internal identifiers, not reader-facing numeric claims.
+    text = re.sub(r"\[source:[^\]]+\]", "", text, flags=re.IGNORECASE)
     months = {
         name.casefold(): index
         for index, name in enumerate(
@@ -239,8 +241,8 @@ def proper_names(text: str) -> set[str]:
     # Latin proper name followed by a Korean particle was missed. Bound
     # against ASCII name characters while preserving exact name matching.
     pattern = (
-        r"(?<![A-Za-z0-9-])[A-Z][A-Za-z0-9&'\-]*"
-        r"(?:\s+[A-Z][A-Za-z0-9&'\-]*){1,3}(?![A-Za-z0-9])"
+        r"(?=((?<![A-Za-z0-9-])[A-Z][A-Za-z0-9&'\-]*"
+        r"(?:\s+[A-Z][A-Za-z0-9&'\-]*){1,3}(?![A-Za-z0-9])))"
     )
     names: set[str] = set()
     for candidate in re.findall(pattern, text):

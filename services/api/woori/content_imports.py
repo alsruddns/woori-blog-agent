@@ -383,11 +383,13 @@ def _link_manuscript_version(
 
 
 def _require_import_review_schema(conn: Any) -> None:
-    relation = conn.execute("SELECT to_regclass('public.schema_migrations') AS table_name").fetchone()
+    # The runtime role intentionally cannot read schema_migrations. Migration 048
+    # creates this bridge relation and grants the application role its required
+    # privileges, so check the required capability without expanding DB grants.
+    relation = conn.execute(
+        "SELECT to_regclass('public.external_content_import_content_links') AS table_name"
+    ).fetchone()
     if not relation or not relation.get("table_name"):
-        raise HTTPException(409, "Content import manuscript bridge migration 048 is required")
-    row = conn.execute("SELECT COALESCE(MAX(version),0) AS version FROM schema_migrations").fetchone()
-    if not row or int(row["version"]) < 48:
         raise HTTPException(409, "Content import manuscript bridge migration 048 is required")
 
 

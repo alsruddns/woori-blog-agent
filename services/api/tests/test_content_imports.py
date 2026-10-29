@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -164,6 +165,52 @@ def test_import_endpoint_is_admin_only_idempotent_and_always_review_held(
             assert any(item["id"] == result["import_id"] for item in listed.json()["items"])
 
 
+def test_p5_codex_021_fed_article_isolated_import_assessment_and_html(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifact = Path(__file__).resolve().parents[3] / "docs" / "development" / "P5-CODEX-021-article-ko.json"
+    item = json.loads(artifact.read_text(encoding="utf-8"))
+    validated = content_imports.ContentImport.model_validate(item)
+    assert validated.research_package_id == "c0b6f2b2-7a74-4b3f-a4f1-f4219c12321d"
+    assert validated.generation_method == "manual_codex_import"
+    assert validated.language_code == "ko"
+    with connection() as conn, conn.transaction(force_rollback=True):
+        @contextmanager
+        def shared() -> Iterator[Any]:
+            with conn.transaction():
+                yield conn
+
+        monkeypatch.setattr(content_imports, "connection", shared)
+        headers = {"Authorization": "Bearer " + settings().admin_token}
+        with TestClient(app) as client:
+            submitted = client.post("/admin/research/content-imports", headers=headers,
+                json={"submitted_by": "P5-CODEX-021 manual Codex import", "item": item})
+            assert submitted.status_code == 201, submitted.text
+            receipt = submitted.json()
+            assert receipt["state"] == "awaiting_human_review"
+            assert receipt["publish_ready"] is False
+            assert receipt["provider_called"] is False
+            assert receipt["blogger_write_performed"] is False
+            assert receipt["content_version_id"]
+            assessment = client.post(
+                f"/admin/research/content-imports/{receipt['import_id']}/assessment",
+                headers=headers, json={},
+            )
+            assert assessment.status_code == 201, assessment.text
+            result = assessment.json()
+            assert result["version_id"]
+            assert result["publish_ready"] is False
+            assert result["independent_source_verification"] is False
+            assert "[source:" not in result["safe_html"].casefold()
+            assert "FOMC" in result["safe_html"]
+            assert result["safe_html"].startswith('<article class="wb-article"><p>')
+            assert not any(token in result["safe_html"].casefold() for token in ("<script", "<iframe", "onerror="))
+            detail = client.get(f"/admin/research/content-imports/{receipt['import_id']}", headers=headers)
+            assert detail.status_code == 200
+            assert detail.json()["latest_version"]["content_version_id"] == receipt["content_version_id"]
+            assert len(detail.json()["assessments"]) == 1
+
+
 def test_scheduled_origin_audit_requires_registered_blog_and_is_idempotent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -310,7 +357,7 @@ def test_import_assessment_versions_review_localization_and_mock_are_fail_closed
             assert final["publish_ready"] is False and final["generation_ready"] is False
 
 
-def test_import_review_endpoints_fail_closed_until_migration_047(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_import_review_endpoints_fail_closed_until_migration_048(monkeypatch: pytest.MonkeyPatch) -> None:
     class Result:
         def __init__(self, row: dict[str, Any]) -> None:
             self.row = row
@@ -320,10 +367,8 @@ def test_import_review_endpoints_fail_closed_until_migration_047(monkeypatch: py
 
     class OldSchemaConnection:
         def execute(self, query: str, params: Any = None) -> Result:
-            if "to_regclass('public.schema_migrations')" in query:
-                return Result({"table_name": "schema_migrations"})
-            if "COALESCE(MAX(version),0)" in query:
-                return Result({"version": 34})
+            if "to_regclass('public.external_content_import_content_links')" in query:
+                return Result({"table_name": None})
             raise AssertionError("The old-schema guard must stop before reading import tables")
 
     old_schema = OldSchemaConnection()
