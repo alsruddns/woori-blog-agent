@@ -64,5 +64,5 @@ Rights review 조인을 유효한 `JOIN LATERAL ... ON true`로 수정하고 별
 3. 수정된 코드가 실행 중인 API/Worker에 적용됐는지 확인. 사용자 프로세스 재시작이 필요하나 이번 작업에서는 하지 않았다.
 4. 공개 Worker heartbeat 부재 및 실제 Blogger 공개 게시 end-to-end 검증.
 
-구현 커밋: `4180a4cb8cd1f52c30b6abc298dd0eb7bb311f9e` (`develop`).
+구현 커밋: `4180a4c1cc29eb1a3b739c6e10165ba142eb5ca6` (`develop`).
 `origin/develop` push: 성공. 이 개발 기록을 반영한 후속 문서 커밋은 `git log`로 연결한다.
