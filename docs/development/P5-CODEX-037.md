@@ -65,3 +65,4 @@
 - 변경은 새 운영 지시문 문서 1개 추가와 이 개발 기록 갱신이다. 애플리케이션 코드는 바꾸지 않아 테스트를 재실행하지 않았다. 선행 변경의 격리 테스트 결과는 위에 기록된 47 passed다.
 - 예약 task 등록·자동 실행·파일 전달·Import를 수행하지 않았으므로 이 단계들의 실적은 각각 0 / 미검증이다. 본 문서의 기록은 변경 후 후속 개발 기록 커밋으로 연결한다.
 - 분류: 예약 원고 자동 실행 `NOT VERIFIED`; 공식 근거 조사(최신 shortlist) `BLOCKED/UNSUPPORTED SOURCE ROUTE`; Research Package 사용 원고 Import `NOT RUN`; auto eligibility 및 실제 발행 Job `0`; Blogger 공개 게시 `0`; Auto `OFF`.
+- 후속 변경 커밋: `733252312b37cba5d0349950b4772f8572b7ace5` (새 1회성 작업 지시문과 후속 운영 기록). 이 줄은 개발 기록을 갱신하는 다음 커밋으로 연결한다.
