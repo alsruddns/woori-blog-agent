@@ -182,7 +182,7 @@ export default function PublicationManager({ initial }: { initial: PublicationDa
             <option value="">선택</option>{data.mode_policy.blogs.map(blog => <option key={blog.id} value={blog.id}>{blog.display_name} · {blog.url}</option>)}
           </select></label>}
           <label>게시 모드 <select value={selectedMode} onChange={event => setSelectedMode(event.target.value as "manual" | "auto")}>
-          <option value="manual">수동 게시</option><option value="auto">자동 게시 설정 요청 (현재 실행 차단)</option>
+          <option value="manual">수동 게시</option><option value="auto" disabled>자동 게시 (Publisher 연결 및 운영 승인 후 사용 가능)</option>
           </select></label>
           {selectedMode === "auto" && <>
             <label>허용 분야 <select multiple value={categories.split(",").map(value => value.trim()).filter(Boolean)} onChange={event => setCategories(Array.from(event.currentTarget.selectedOptions, option => option.value).join(", "))}>{Object.entries(categoryNames).map(([slug, name]) => <option key={slug} value={slug}>{name}</option>)}</select></label>

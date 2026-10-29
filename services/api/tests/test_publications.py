@@ -155,6 +155,46 @@ def test_publication_mode_defaults_manual_and_auto_requires_allowlist() -> None:
     assert auto.retry_limit == 0
 
 
+def test_auto_mode_cannot_be_saved_until_live_publisher_and_operations_approval_exist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fastapi import HTTPException
+    from woori import publications
+
+    class FakeConnection:
+        def execute(self, *_: object, **__: object) -> None:
+            raise AssertionError("blocked Auto settings must not write to the database")
+
+    class Context:
+        def __enter__(self) -> FakeConnection:
+            return FakeConnection()
+
+        def __exit__(self, *_: object) -> None:
+            return None
+
+    monkeypatch.setattr(publications, "connection", lambda: Context())
+    monkeypatch.setattr(
+        publications,
+        "_mode_settings",
+        lambda _: {"migration_required": False, "emergency_stopped": False},
+    )
+
+    with pytest.raises(HTTPException) as caught:
+        publications.save_mode_settings(
+            ModeSettingsInput(configured_mode="auto", allowed_categories=["policy"])
+        )
+
+    assert caught.value.status_code == 409
+    assert caught.value.detail == {
+        "code": "auto_publication_unavailable",
+        "reasons": [
+            "live_blogger_publisher_not_enabled",
+            "operations_auto_approval_required",
+        ],
+        "real_writes_enabled": False,
+    }
+
+
 def test_mode_scope_precedence_is_blog_then_language_then_global() -> None:
     from woori.publication_modes import resolve_mode
 

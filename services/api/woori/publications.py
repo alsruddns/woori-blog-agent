@@ -151,6 +151,21 @@ def save_mode_settings(request: ModeSettingsInput) -> dict[str, Any]:
         current = _mode_settings(conn)
         if current["migration_required"]:
             raise HTTPException(409, "Publication settings migration 042 is required")
+        if request.configured_mode == "auto":
+            # Auto is a write-capable operating mode, not a preference-only
+            # preview. Keep it unavailable until this release has a verified
+            # live Publisher and an explicit operations approval path.
+            raise HTTPException(
+                409,
+                detail={
+                    "code": "auto_publication_unavailable",
+                    "reasons": [
+                        "live_blogger_publisher_not_enabled",
+                        "operations_auto_approval_required",
+                    ],
+                    "real_writes_enabled": False,
+                },
+            )
         if request.scope_type == "language":
             found = conn.execute(
                 "SELECT 1 FROM languages WHERE code=%s AND active", (request.scope_key,)
