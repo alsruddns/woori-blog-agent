@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -47,6 +47,11 @@ def test_publication_eligibility_fails_closed_even_for_machine_pass() -> None:
     assert "human_review_pending" in result["reasons"]
     assert "publish_ready_disabled" in result["reasons"]
     assert "production_writes_disabled" in result["reasons"]
+
+
+def test_candidate_query_parses_and_returns_none_for_unknown_ids(lab: Any) -> None:
+    conn, _, _ = lab
+    assert publications._candidate(conn, uuid4(), uuid4()) is None
 
 
 def test_manual_publication_requires_editorial_and_exact_version_approval() -> None:

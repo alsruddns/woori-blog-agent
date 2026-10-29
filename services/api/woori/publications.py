@@ -399,10 +399,12 @@ def _candidate(conn: Any, version_id: UUID, blog_id: UUID) -> dict[str, Any] | N
                 AND package.independent_source_count>0
                 AND package.source_ids && COALESCE(q.source_ids,'{}'::uuid[])) AS research_package_reviewed,
             EXISTS (SELECT 1 FROM external_content_import_content_links link
-              JOIN LATERAL (SELECT rights_reviewed FROM external_content_import_review_events event
-                WHERE event.import_id=link.import_id AND event.version_id=link.import_version_id
-                ORDER BY event.created_at DESC,event.id DESC LIMIT 1) rights
-              WHERE link.content_version_id=v.id AND rights.rights_reviewed) AS rights_reviewed,
+              JOIN LATERAL (SELECT review_event.rights_reviewed
+                FROM external_content_import_review_events review_event
+                WHERE review_event.import_id=link.import_id
+                  AND review_event.version_id=link.import_version_id
+                ORDER BY review_event.created_at DESC,review_event.id DESC LIMIT 1) latest_rights_review ON true
+              WHERE link.content_version_id=v.id AND latest_rights_review.rights_reviewed) AS rights_reviewed,
             EXISTS (SELECT 1 FROM seo_audits seo WHERE seo.content_version_id=v.id
               AND seo.passed AND seo.profile_id=(SELECT profile_id FROM language_profiles
                 WHERE language_code=l.language_code AND target_country=l.target_country LIMIT 1)) AS seo_passed,
@@ -416,7 +418,8 @@ def _candidate(conn: Any, version_id: UUID, blog_id: UUID) -> dict[str, Any] | N
           AND lp.target_country=l.target_country
         LEFT JOIN publishing_policies p ON p.blog_id=b.id AND p.profile_id=lp.id
         LEFT JOIN LATERAL (
-          SELECT id,id AS evaluation_id,machine_passed,human_review_required,publish_ready,status
+          SELECT id,id AS evaluation_id,machine_passed,human_review_required,publish_ready,status,
+            source_ids,fact_ids
           FROM article_quality_evaluations WHERE content_version_id=v.id
           ORDER BY created_at DESC,id DESC LIMIT 1
         ) q ON true
