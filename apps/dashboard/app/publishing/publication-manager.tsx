@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import PostPublicationReviewPanel from "./post-publication-review-panel";
 
 type Item = {
   id: string; content_version_id: string; group_id?: string; title: string; language_code: string;
@@ -133,9 +134,10 @@ export default function PublicationManager({ initial }: { initial: PublicationDa
       {tabs.map(([key,label]) => <button key={key} role="tab" aria-selected={activeTab===key} onClick={() => void refresh(1,key)}>{label}<span>{counts[key] ?? 0}</span></button>)}
       <button role="tab" aria-selected={activeTab==="settings"} onClick={() => setActiveTab("settings")}>운영 설정</button>
       <button role="tab" aria-selected={activeTab==="scheduled-auto"} onClick={() => setActiveTab("scheduled-auto")}>예약 Auto</button>
+      <button role="tab" aria-selected={activeTab==="post-review"} onClick={() => setActiveTab("post-review")}>?? ? ??</button>
     </nav>
     {error && <p className="quality-held" role="alert">{error}</p>}
-    {activeTab === "scheduled-auto" ? <section className="workspace-panel publication-section scheduled-auto-section" aria-labelledby="scheduled-auto-title">
+    {activeTab === "post-review" ? <PostPublicationReviewPanel /> : activeTab === "scheduled-auto" ? <section className="workspace-panel publication-section scheduled-auto-section" aria-labelledby="scheduled-auto-title">
       <div className="section-heading"><div><p className="eyebrow">예약 원고만 적용 · 일반 Auto·Trends와 별도</p><h2 id="scheduled-auto-title">예약 원고 자동 게시 관리</h2><p>Codex 예약 원고만 대상으로 합니다. 기본은 중지이며, 첫 공개 게시에는 원고별 별도 확인이 필요합니다.</p></div>
         <strong className={data.mode_policy.scheduled_auto_policy?.enabled ? "status-positive" : "status-muted"} role="status">{data.mode_policy.scheduled_auto_policy?.enabled ? "예약 Auto 활성" : "예약 Auto 중지"}</strong></div>
       <div className="scheduled-auto-grid">

@@ -359,6 +359,7 @@ def process_next_live_job(*, scheduled_auto_only: bool = False) -> dict[str, Any
         version_id = UUID(str(job["content_version_id"]))
         candidate = publications._candidate(conn, version_id, blog_id)
         lane = str(job["publication_lane"])
+        assessment = None
         if lane == "scheduled_auto":
             link = conn.execute(
                 """SELECT i.*,v.id AS import_version_id,v.version_number,link.content_version_id,
@@ -400,7 +401,7 @@ def process_next_live_job(*, scheduled_auto_only: bool = False) -> dict[str, Any
                     reasons.append("exact_first_publication_approval_missing")
             if candidate is not None and link:
                 assessment = conn.execute(
-                    """SELECT safe_html,html_sha256 FROM external_content_import_assessments
+                    """SELECT safe_html,html_sha256,seo_checks FROM external_content_import_assessments
                     WHERE import_id=%s AND version_id=%s ORDER BY assessed_at DESC,id DESC LIMIT 1""",
                     (link["id"], link["import_version_id"]),
                 ).fetchone()
@@ -605,11 +606,12 @@ def process_next_live_job(*, scheduled_auto_only: bool = False) -> dict[str, Any
             conn.execute(
                 """INSERT INTO publishing_records(job_id,blog_id,content_version_id,remote_post_id,
                 published_at,remote_url,remote_status,remote_verified_at)
-                VALUES (%s,%s,%s,%s,%s,%s,'LIVE',now()) ON CONFLICT(blog_id,content_version_id) DO NOTHING""",
+                VALUES (%s,%s,%s,%s,%s,%s,'LIVE',now()) ON CONFLICT(blog_id,content_version_id) DO NOTHING
+                RETURNING id""",
                 (job_id, blog_id, version_id, result["post_id"], result["published_at"], result["url"]),
             )
             record = conn.execute(
-                "SELECT remote_post_id,remote_url FROM publishing_records WHERE blog_id=%s AND content_version_id=%s",
+                "SELECT id,remote_post_id,remote_url FROM publishing_records WHERE blog_id=%s AND content_version_id=%s",
                 (blog_id, version_id),
             ).fetchone()
             if not record or record["remote_post_id"] != result["post_id"] or record["remote_url"] != result["url"]:
@@ -635,6 +637,57 @@ def process_next_live_job(*, scheduled_auto_only: bool = False) -> dict[str, Any
                 "url": result["url"], "published_at": result["published_at"],
                 "remote_readback_verified": True,
             })
+            if lane == "scheduled_auto":
+                review = conn.execute(
+                    """INSERT INTO post_publication_reviews(publishing_record_id,blog_id,content_version_id,
+                    post_id,import_id,content_id) VALUES (%s,%s,%s,%s,%s,%s)
+                    ON CONFLICT(publishing_record_id) DO NOTHING
+                    RETURNING id""",
+                    (record["id"], blog_id, version_id, result["post_id"],
+                     str(link["id"]) if link else None,
+                     str(link.get("external_content_id")) if link and link.get("external_content_id") else None),
+                ).fetchone()
+                review_id = review["id"] if review else conn.execute(
+                    "SELECT id FROM post_publication_reviews WHERE publishing_record_id=%s",
+                    (record["id"],),
+                ).fetchone()["id"]
+                if review:
+                    _append_audit(conn, "publication.post_review.created", {
+                        "review_id": str(review["id"]), "publishing_record_id": str(record["id"]),
+                        "job_id": str(job_id), "import_id": str(link["id"]) if link else None,
+                        "content_version_id": str(version_id), "post_id": str(result["post_id"]),
+                        "remote_readback_verified": True,
+                    })
+                soft_followups = {
+                    "title_matches_article": ("other", "게시 제목과 검색 제목의 일치 여부를 확인하세요."),
+                    "primary_term": ("other", "핵심 검색어와 본문 검색 의도의 자연스러운 일치를 검토하세요."),
+                    "search_intent": ("other", "검색 의도 적합성이 자동 측정되지 않았습니다."),
+                    "source_links": ("source", "게시된 본문에 출처 링크가 읽기 쉽게 연결됐는지 확인하세요."),
+                    "blogger_search_description": ("other", "Blogger 편집 화면에서 검색 설명 표시를 확인하세요."),
+                    "blogger_theme_seo": ("other", "Blogger 테마의 검색 표시 설정을 확인하세요."),
+                }
+                for check in (assessment.get("seo_checks", []) if assessment else []):
+                    if not isinstance(check, dict) or check.get("key") not in soft_followups:
+                        continue
+                    if check.get("status") not in {"review", "not_measured"}:
+                        continue
+                    issue_type, description = soft_followups[check["key"]]
+                    issue_key = "postreview-" + hashlib.sha256(
+                        f"{record['id']}:{check['key']}".encode()
+                    ).hexdigest()[:40]
+                    issue = conn.execute(
+                        """INSERT INTO post_publication_review_items(review_id,issue_type,severity,
+                        description,idempotency_key) VALUES (%s,%s,'low',%s,%s)
+                        ON CONFLICT(idempotency_key) DO NOTHING RETURNING id""",
+                        (review_id, issue_type, description, issue_key),
+                    ).fetchone()
+                    if issue:
+                        _append_audit(conn, "publication.post_review_item.created", {
+                            "review_id": str(review_id),
+                            "item_id": str(issue["id"]), "issue_type": issue_type,
+                            "severity": "low", "assessment_key": check["key"],
+                            "post_id": str(result["post_id"]),
+                        })
         return {"job_id": str(job_id), "status": "published", "post_id": result["post_id"],
                 "url": result["url"], "remote_readback_verified": True}
     except GoogleFailure as exc:

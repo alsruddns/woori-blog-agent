@@ -245,6 +245,27 @@ main.workspace-main{max-width:1480px;padding:34px 32px 64px}.page-heading{displa
 .publishing-summary article{min-width:0;padding:14px 16px;border:1px solid var(--line);border-radius:11px;background:var(--surface)}
 .publishing-summary span{display:block;color:var(--muted);font-size:12px}.publishing-summary strong{display:block;margin-top:6px;color:var(--ink);font-size:20px;overflow-wrap:anywhere}
 .publication-tabs{margin-bottom:12px}
+.post-review-panel{overflow-wrap:anywhere}
+.post-review-toolbar{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 18px}
+.post-review-toolbar button[aria-pressed="true"]{background:var(--accent);color:var(--on-accent,#fff)}
+.post-review-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:14px}
+.post-review-card{min-width:0;padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.post-review-card header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.post-review-card h3,.post-review-card p,.post-review-card li{overflow-wrap:anywhere}
+.post-review-card h3{margin:8px 0}
+.post-review-card header p{color:var(--muted);font-size:13px}
+.post-review-status,.post-review-risk{display:inline-flex;padding:4px 8px;border-radius:999px;background:var(--surface-raised);font-size:12px;font-weight:700}
+.post-review-risk{color:var(--danger,#9f2d25)}
+.post-review-card ul{display:grid;gap:8px;padding:0;list-style:none}
+.post-review-card li{padding:10px;border:1px solid var(--line);border-radius:8px}
+.post-review-card li>span{font-weight:700;font-size:12px}
+.post-review-card li.is-resolved{opacity:.65}
+.post-review-actions{display:grid;gap:10px}
+.post-review-actions>label{display:grid;gap:6px}
+.post-review-actions textarea{min-height:76px;resize:vertical}
+.post-review-actions>div{display:flex;gap:8px;flex-wrap:wrap}
+.post-review-add{display:grid;grid-template-columns:auto minmax(90px,.45fr) minmax(90px,.35fr) minmax(180px,1fr) auto;align-items:center;gap:8px}
+.post-review-add input,.post-review-actions textarea{min-width:0;width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)}
 .publication-section{margin-top:14px}
 .publication-manager aside{margin:14px 0;padding:12px 15px;border-radius:9px;font-size:13px}
 .scheduled-auto-section{overflow-wrap:anywhere}
@@ -527,3 +548,5 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 :root[data-theme="dark"] .secondary-button { background:var(--surface-raised); border-color:var(--line); color:var(--ink); }
 :root[data-theme="dark"] .data-grid td,.data-grid th { border-color:var(--line); }
 :root[data-theme="dark"] .data-grid tbody tr:hover { color:var(--ink); }
+
+@media(max-width:700px){.post-review-card header{display:grid}.post-review-add{grid-template-columns:1fr}.post-review-add>label{font-weight:700}.post-review-actions>div>button{flex:1 1 150px}}

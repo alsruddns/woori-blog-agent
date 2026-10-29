@@ -6,12 +6,18 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path?: s
   if (!process.env.ADMIN_TOKEN) return NextResponse.json({ error: "API unavailable" }, { status: 503 });
   const path = (await context.params).path ?? [];
   const route = path.join("/");
-  const allowed = request.method === "GET" && (route === "" || route === "scheduled-auto-policy")
+  const allowed = request.method === "GET" && (route === "" || route === "scheduled-auto-policy" || route === "post-publication-reviews")
     ? true
     : request.method === "POST" && (route === "requests" || /^jobs\/[a-f0-9-]+\/simulate$/.test(route) || /^blogs\/[a-f0-9-]+\/sync-readonly$/.test(route))
       ? true
         : request.method === "POST" && (route === "emergency-stop" || route === "scheduled-auto-policy"
           || route === "scheduled-auto-first-post" || route === "scheduled-auto/verify-connections")
+          ? true
+          : request.method === "POST" && /^post-publication-reviews\/[a-f0-9-]+\/items$/.test(route)
+            ? true
+            : request.method === "POST" && /^post-publication-reviews\/[a-f0-9-]+\/items\/[a-f0-9-]+\/resolve$/.test(route)
+              ? true
+        : request.method === "PATCH" && /^post-publication-reviews\/[a-f0-9-]+$/.test(route)
           ? true
           : request.method === "PUT" && (route === "mode-settings" || /^jobs\/[a-f0-9-]+\/schedule$/.test(route))
         ? true
@@ -34,4 +40,5 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path?: s
 export const GET = proxy;
 export const POST = proxy;
 export const PUT = proxy;
+export const PATCH = proxy;
 export const DELETE = proxy;
