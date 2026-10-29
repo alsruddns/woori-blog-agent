@@ -13,7 +13,7 @@
 |---|---|---|
 | Dashboard/API | READY (기존 실행 상태) | 3100 Dashboard 및 8100 API health 정상. 기존 서비스는 재시작하지 않음. |
 | Research Worker | PARTIAL | PID 13436 heartbeat `running`, fresh; PID 15720은 같은 worker의 부모 런처. 둘을 중복 Worker로 오인해 종료하지 않음. |
-| Trends | PARTIAL | 운영 Dashboard API의 기록에서 collection runs 46건. 이번 작업에서 외부 수집을 추가 실행하지 않았으며 최근 11개 지역별 성공 수를 새로 확인하지 않음. |
+| Trends | PARTIAL (실제 수집 정상) | Dashboard의 운영 API에서 보이는 collection run 46건과 observation 300건을 확인. 최근 각 지역별 마지막 RSS 실행은 11/11 모두 HTTP 200, 각 10건이며 마지막 관측 시각은 13:01~13:52 KST. 이번 작업에서 Trends API를 호출하지 않았으며, 기사 후보·Research Package 자동화는 별도 단계. |
 | Research Package | PARTIAL | 저장 패키지 1건. 이는 무인 생성 파이프라인의 이번 실행 성공으로 계산하지 않음. |
 | GPT 예약 원고 | BLOCKED / 미검증 | 공식 문서상 ChatGPT 데스크톱 예약 작업은 권한이 허용된 local project의 파일을 다룰 수 있음. 하지만 현재 계정/워크스페이스 기능 사용 가능 여부 및 예약 실행은 확인하지 못함. 운영 `dispatches=0`, 실제 GPT 생성 증거 0건. |
 | 로컬 JSON 수신 | PARTIAL (코드·격리 테스트) | `.local/gpt-scheduled-import` 상태 폴더들은 존재하며 현재 파일 0개. Worker는 `*.ready.json`만 원자적으로 선점하도록 구현돼 있음. |
