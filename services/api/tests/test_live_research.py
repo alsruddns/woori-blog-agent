@@ -1082,14 +1082,17 @@ def test_trend_worker_builds_candidates_only_after_successful_feed_collection(
     calls: list[str] = []
     monkeypatch.setattr(worker.trends, "schedule_tick", lambda: {"status": "not_due"})
     monkeypatch.setattr(worker.topics, "build_candidates", lambda: calls.append("built"))
+    monkeypatch.setattr(worker.topics, "select_research_candidates", lambda _limit=4: calls.append("selected"))
     assert worker.collect_trends_and_build_topics() == {"status": "not_due"}
     assert calls == []
     monkeypatch.setattr(worker.trends, "schedule_tick", lambda: {"status": "succeeded", "geo": "KR"})
     monkeypatch.setattr(worker.topics, "build_candidates", lambda: calls.append("built") or {"topic_count": 1})
+    monkeypatch.setattr(worker.topics, "select_research_candidates", lambda _limit=4: calls.append("selected") or {"selected_count": 0})
     assert worker.collect_trends_and_build_topics() == {
-        "status": "succeeded", "geo": "KR", "candidate_build": {"topic_count": 1}
+        "status": "succeeded", "geo": "KR", "candidate_build": {"topic_count": 1},
+        "research_triage": {"selected_count": 0}
     }
-    assert calls == ["built"]
+    assert calls == ["built", "selected"]
 
 
 def test_evaluation_cannot_silently_use_mock(lab: Any) -> None:

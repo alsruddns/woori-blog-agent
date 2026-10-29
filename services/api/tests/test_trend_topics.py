@@ -18,6 +18,18 @@ def test_normalize_query_uses_unicode_compatibility_and_punctuation() -> None:
     assert topics.normalize_query("以色列，大選") == topics.normalize_query("以色列 大選")
 
 
+def test_research_domains_select_supported_topics_only() -> None:
+    assert topics.research_domains("fed meeting") == ["finance"]
+    assert "artificial-intelligence" in topics.research_domains("生成式人工智能")
+    assert topics.research_domains("weather") == []
+
+
+@pytest.mark.parametrize("limit", [-1, 11, True, 1.5])
+def test_research_candidate_hourly_limit_fails_closed(limit: Any) -> None:
+    with pytest.raises(ValueError, match="trend_research_hourly_limit"):
+        topics.select_research_candidates(limit)
+
+
 def test_build_candidates_keeps_cross_geo_event_identity_unconfirmed(
     lab: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

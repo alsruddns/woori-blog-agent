@@ -56,6 +56,8 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
         "article_candidates": 0,
         "held_issue_groups_24h": 0,
         "research_packages_24h": 0,
+        "research_triage": None,
+        "awaiting_official_research_issues_24h": 0,
         "ai_articles_written_24h": 0,
         "actual_posts_24h": 0,
         "article_lineage_available": False,
@@ -99,11 +101,38 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
                 WHERE created_at>=now()-interval '24 hours'"""
             ).fetchone()["count"]
         trend_pipeline["hold_reasons"] = [dict(row) for row in conn.execute(
-            """SELECT reason,count(*)::int AS count FROM (
-              SELECT unnest(reasons) AS reason FROM trend_topic_assessments a
-              WHERE a.created_at>=now()-interval '24 hours'
-            ) recent GROUP BY reason ORDER BY count DESC,reason LIMIT 10"""
+            """WITH latest AS (
+              SELECT DISTINCT ON (topic_id) topic_id,reasons
+              FROM trend_topic_assessments ORDER BY topic_id,created_at DESC,id DESC
+            ), recent AS (
+              SELECT DISTINCT m.topic_id FROM trend_topic_memberships m
+              JOIN trend_observations o ON o.id=m.observation_id
+              WHERE o.collected_at>=now()-interval '24 hours'
+            ) SELECT unnest(latest.reasons) AS reason,count(*)::int AS count
+              FROM latest JOIN recent USING(topic_id)
+              GROUP BY reason ORDER BY count DESC,reason LIMIT 10"""
         ).fetchall()]
+        triage = conn.execute(
+            """SELECT payload,created_at FROM audit_events
+            WHERE event_type='trend.research_candidates.selected'
+              AND created_at>=now()-interval '24 hours'
+            ORDER BY created_at DESC LIMIT 1"""
+        ).fetchone()
+        if triage:
+            trend_pipeline["research_triage"] = {
+                **dict(triage["payload"]), "created_at": triage["created_at"]
+            }
+        trend_pipeline["awaiting_official_research_issues_24h"] = conn.execute(
+            """WITH latest AS (
+              SELECT DISTINCT ON (topic_id) topic_id,reasons
+              FROM trend_topic_assessments ORDER BY topic_id,created_at DESC,id DESC
+            ), recent AS (
+              SELECT DISTINCT m.topic_id FROM trend_topic_memberships m
+              JOIN trend_observations o ON o.id=m.observation_id
+              WHERE o.collected_at>=now()-interval '24 hours'
+            ) SELECT count(*)::int AS count FROM latest JOIN recent USING(topic_id)
+              WHERE 'awaiting_official_research'=ANY(latest.reasons)"""
+        ).fetchone()["count"]
     collection_sources = [dict(row) for row in conn.execute("""SELECT adapter,name,active,scheduled,interval_minutes,last_successful_at,
         (last_error IS NOT NULL) AS has_error,next_run_at
         FROM collection_sources ORDER BY name""").fetchall()]

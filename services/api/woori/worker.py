@@ -10,6 +10,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from . import collection, pipeline, topics, trends
+from .config import settings
 from .db import connection
 
 
@@ -92,6 +93,9 @@ def collect_trends_and_build_topics() -> dict[str, object]:
     result = trends.schedule_tick()
     if result.get("status") == "succeeded":
         result["candidate_build"] = topics.build_candidates()
+        result["research_triage"] = topics.select_research_candidates(
+            settings().trend_research_hourly_limit
+        )
     return result
 
 

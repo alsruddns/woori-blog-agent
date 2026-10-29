@@ -7,6 +7,7 @@ import json
 import math
 import re
 import unicodedata
+from datetime import UTC, datetime
 from difflib import SequenceMatcher
 from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid5
@@ -31,6 +32,19 @@ DEFAULT_WEIGHTS = {
     "deduplication_risk": 10,
 }
 
+# Deliberately conservative topic signals. These select material for research;
+# they do not establish an event, factual claim, target language, or publication approval.
+RESEARCH_MARKERS = {
+    "economy": ("inflation", "cpi", "gdp", "jobs report", "unemployment", "economic growth", "물가", "인플레이션", "고용", "실업", "경제성장", "消費者物価", "失業", "通胀", "失业"),
+    "finance": ("fed meeting", "fomc", "interest rate", "central bank", "monetary policy", "federal funds", "연준", "금리", "기준금리", "금융통화위원회", "日銀", "金利", "利率", "央行"),
+    "stocks": ("earnings", "quarterly results", "stock price", "shares", "ipo", "주가", "실적발표", "상장", "株価", "決算", "股价", "财报"),
+    "crypto": ("bitcoin", "ethereum", "crypto", "암호화폐", "비트코인", "暗号資産", "加密货币", "比特币"),
+    "technology": ("technology", "software", "smartphone", "cloud computing", "정보기술", "소프트웨어", "スマートフォン", "ソフトウェア", "科技", "软件"),
+    "semiconductors": ("semiconductor", "chipmaker", "chip sales", "반도체", "메모리칩", "半導体", "芯片", "半導体"),
+    "artificial-intelligence": ("artificial intelligence", "generative ai", "large language model", "ai model", "인공지능", "생성형 ai", "人工知能", "生成ai", "人工智能", "生成式人工智能"),
+    "policy": ("regulation", "government policy", "law passed", "regulatory", "규제", "정부 정책", "법안", "規制", "政策", "监管", "政策"),
+}
+
 
 def _current_scoring_config(conn: Any) -> dict[str, Any]:
     row = conn.execute(
@@ -48,6 +62,14 @@ def _current_scoring_config(conn: Any) -> dict[str, Any]:
 def normalize_query(value: str) -> str:
     folded = unicodedata.normalize("NFKC", value).casefold()
     return " ".join(re.sub(r"[^\w]+", " ", folded, flags=re.UNICODE).split())
+
+
+def research_domains(query: str) -> list[str]:
+    normalized = normalize_query(query)
+    return [
+        domain for domain, markers in RESEARCH_MARKERS.items()
+        if any(normalize_query(marker) in normalized for marker in markers)
+    ]
 
 
 def _assert_schema(conn: Any) -> None:
@@ -184,8 +206,8 @@ def _assess_topic(conn: Any, topic_id: UUID, run_id: UUID | None = None) -> dict
     if broad:
         reasons.append("broad_query_requires_specific_event_or_official_data")
     if source_count == 0:
-        reasons.append("no_current_reviewed_fact_source_linked")
-    if fact_count < 3:
+        reasons.append("awaiting_official_research")
+    elif fact_count < 3:
         reasons.append("fewer_than_three_source_span_verified_facts")
     if independent_count < 2:
         reasons.append("two_independent_sources_not_human_verified")
@@ -204,6 +226,7 @@ def _assess_topic(conn: Any, topic_id: UUID, run_id: UUID | None = None) -> dict
     ) else "review_required"
     snapshot = {
         "topic_id": str(topic_id),
+        "assessment_policy_version": "research-before-evidence-v1",
         "observation_ids": sorted(str(row["id"]) for row in observations),
         "source_ids": sorted(str(row["id"]) for row in source_rows),
         "verified_fact_count": fact_count,
@@ -294,6 +317,104 @@ def build_candidates(lookback_hours: int = LOOKBACK_HOURS) -> dict[str, Any]:
             "grouping_proposals_added": proposals,
             "assessments": assessments,
         }
+
+
+def select_research_candidates(max_per_hour: int = 4) -> dict[str, Any]:
+    """Select a bounded research queue, separate from evidence and publish gates.
+
+    RSS order and volume labels are not treated as rank or numeric demand. The
+    hourly selection is stored in append-only audit history and replayed by all
+    worker iterations in that UTC hour.
+    """
+    if not isinstance(max_per_hour, int) or isinstance(max_per_hour, bool) or not 0 <= max_per_hour <= 10:
+        raise ValueError("trend_research_hourly_limit_must_be_between_0_and_10")
+    now = datetime.now(UTC)
+    bucket = now.strftime("%Y-%m-%dT%H")
+    with connection() as conn:
+        _assert_schema(conn)
+        conn.execute("SELECT pg_advisory_xact_lock(781219)")
+        prior = conn.execute(
+            """SELECT payload FROM audit_events WHERE event_type='trend.research_candidates.selected'
+            AND payload->>'hour_bucket_utc'=%s ORDER BY created_at DESC LIMIT 1""",
+            (bucket,),
+        ).fetchone()
+        if prior:
+            return {**dict(prior["payload"]), "idempotent_replay": True}
+
+        rows = conn.execute(
+            """SELECT t.id,t.representative_geo,t.representative_query,
+              max(o.collected_at) AS latest_observed,count(DISTINCT o.id)::int AS observation_count,
+              count(DISTINCT date_trunc('hour',o.collected_at))::int AS observed_hours,
+              bool_or(o.source_volume_label IS NOT NULL) AS has_interest_label,
+              bool_or(o.trend_started_at IS NOT NULL AND o.trend_started_at>=now()-interval '24 hours') AS recent_interest,
+              EXISTS(SELECT 1 FROM trend_research_packages p WHERE p.topic_id=t.id) AS has_package,
+              EXISTS(SELECT 1 FROM trend_topic_editorial_decisions d WHERE d.topic_id=t.id
+                AND d.id=(SELECT d2.id FROM trend_topic_editorial_decisions d2 WHERE d2.topic_id=t.id ORDER BY d2.created_at DESC,d2.id DESC LIMIT 1)
+                AND d.decision='excluded') AS editorially_excluded,
+              EXISTS(SELECT 1 FROM trend_topic_memberships m JOIN trend_grouping_proposals gp
+                ON gp.observation_a=m.observation_id OR gp.observation_b=m.observation_id
+                WHERE m.topic_id=t.id AND gp.status='human_review_required'
+                AND NOT EXISTS(SELECT 1 FROM trend_grouping_reviews gr WHERE gr.proposal_id=gp.id)) AS open_duplicate_review
+              FROM trend_topics t JOIN trend_topic_memberships tm ON tm.topic_id=t.id
+              JOIN trend_observations o ON o.id=tm.observation_id
+              WHERE o.collected_at>=now()-interval '24 hours'
+              GROUP BY t.id"""
+        ).fetchall()
+        candidates: list[dict[str, Any]] = []
+        excluded: dict[str, int] = {}
+        for row in rows:
+            query = normalize_query(row["representative_query"])
+            if query in BROAD_QUERIES:
+                reason = "broad_query"
+            elif row["has_package"]:
+                reason = "research_package_already_exists"
+            elif row["editorially_excluded"]:
+                reason = "editorial_exclusion"
+            elif row["open_duplicate_review"]:
+                reason = "duplicate_event_review_open"
+            elif not row["recent_interest"]:
+                reason = "freshness_not_established"
+            else:
+                domains = research_domains(query)
+                if not domains:
+                    reason = "no_supported_editorial_topic_signal"
+                else:
+                    candidates.append({
+                        "topic_id": str(row["id"]),
+                        "geo": row["representative_geo"],
+                        "query": row["representative_query"],
+                        "domains": domains,
+                        "latest_observed": row["latest_observed"].isoformat(),
+                        "observation_count": int(row["observation_count"]),
+                        "observed_hours": int(row["observed_hours"]),
+                        "interest_label_present": bool(row["has_interest_label"]),
+                        "source_rank_used": False,
+                        "volume_label_used_as_numeric_rank": False,
+                    })
+                    continue
+            excluded[reason] = excluded.get(reason, 0) + 1
+
+        # Freshness first; persistence only breaks ties. RSS item order/rank is never used.
+        candidates.sort(key=lambda item: (-item["observed_hours"], -item["observation_count"], item["query"].casefold(), item["geo"]))
+        selected = candidates[:max_per_hour]
+        result = {
+            "hour_bucket_utc": bucket,
+            "configured_hourly_limit": max_per_hour,
+            "eligible_issue_count": len(candidates),
+            "selected_count": len(selected),
+            "selected": selected,
+            "excluded_reason_counts": excluded,
+            "stage": "selected_for_official_research",
+            "official_research_executed": False,
+            "generation_provider_connected": False,
+            "publish_ready": False,
+            "idempotent_replay": False,
+        }
+        conn.execute(
+            "INSERT INTO audit_events(event_type,payload) VALUES ('trend.research_candidates.selected',%s)",
+            (Jsonb(result),),
+        )
+        return result
 
 
 def state() -> dict[str, Any]:
