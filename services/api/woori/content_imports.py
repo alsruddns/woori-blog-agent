@@ -187,7 +187,7 @@ class ScheduledImportOrigin(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     task_type: Literal[
         "market_close_kr", "market_close_jp", "market_close_cn", "market_close_us",
-        "weekly_finance", "trends_major_issue",
+        "weekly_finance", "trends_major_issue", "scheduled_article",
     ]
     task_id: str = Field(min_length=3, max_length=128, pattern=r"^[A-Za-z0-9_.:-]+$")
     occurrence_id: str = Field(min_length=8, max_length=160, pattern=r"^[A-Za-z0-9_.:-]+$")

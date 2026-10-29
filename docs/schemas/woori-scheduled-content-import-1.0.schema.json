@@ -18,7 +18,7 @@
       "additionalProperties": false,
       "required": ["task_type", "task_id", "occurrence_id", "executed_at", "market_date", "target_language_code", "target_blog_id", "target_blog_url", "source_as_of"],
       "properties": {
-        "task_type": {"enum": ["market_close_kr", "market_close_jp", "market_close_cn", "market_close_us", "weekly_finance", "trends_major_issue"]},
+        "task_type": {"enum": ["market_close_kr", "market_close_jp", "market_close_cn", "market_close_us", "weekly_finance", "trends_major_issue", "scheduled_article"]},
         "task_id": {"type": "string", "minLength": 3, "maxLength": 128, "pattern": "^[A-Za-z0-9_.:-]+$"},
         "occurrence_id": {"type": "string", "minLength": 8, "maxLength": 160, "pattern": "^[A-Za-z0-9_.:-]+$"},
         "executed_at": {"type": "string", "format": "date-time"},

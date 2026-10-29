@@ -86,7 +86,7 @@ def test_scheduled_envelope_requires_self_reported_task_and_consistent_target() 
     assert contract["required"] == ["schema_version", "submitted_by", "item", "scheduled_origin"]
     assert contract["properties"]["item"]["$ref"].endswith("woori-content-import-1.0.schema.json#/properties/item")
     assert contract["properties"]["scheduled_origin"]["properties"]["task_type"]["enum"] == [
-        "market_close_kr", "market_close_jp", "market_close_cn", "market_close_us", "weekly_finance", "trends_major_issue",
+        "market_close_kr", "market_close_jp", "market_close_cn", "market_close_us", "weekly_finance", "trends_major_issue", "scheduled_article",
     ]
     no_market_date = json.loads(json.dumps(payload))
     no_market_date["scheduled_origin"]["market_date"] = None
@@ -106,6 +106,10 @@ def test_scheduled_envelope_requires_self_reported_task_and_consistent_target() 
     wrong_market_language["scheduled_origin"]["target_language_code"] = "en"
     with pytest.raises(ValidationError, match="market_task_language_mismatch"):
         ScheduledImportEnvelope.model_validate(wrong_market_language)
+    general_article = json.loads(json.dumps(payload))
+    general_article["scheduled_origin"]["task_type"] = "scheduled_article"
+    general_article["scheduled_origin"]["market_date"] = None
+    assert ScheduledImportEnvelope.model_validate(general_article).scheduled_origin.task_type == "scheduled_article"
     wrong_method = json.loads(json.dumps(payload))
     wrong_method["item"]["generation_method"] = "manual_codex_import"
     with pytest.raises(ValidationError, match="scheduled_envelope_requires_scheduled_export_method"):
