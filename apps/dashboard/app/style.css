@@ -398,6 +398,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .scheduled-auto-section { padding:20px; border:1px solid var(--line); border-radius:14px; background:var(--surface-raised); }
 .scheduled-auto-grid { gap:12px; }
 .scheduled-auto-grid>article { box-shadow:none; }
+.scheduled-policy-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
 .blogger-page { display:grid; gap:16px; }
 .blogger-page > h2 { margin:14px 0 0; font-size:18px; }
 .blogger-page > p[role="status"] { margin:0; padding:12px 15px; border:1px solid var(--line); border-radius:10px; background:var(--surface); }

@@ -146,9 +146,11 @@ export default function PublicationManager({ initial }: { initial: PublicationDa
         </article>
         <article><h3>2. 예약 원고 Auto 정책</h3><p>초기 자체 상한은 하루 1건입니다. 품질·근거·권리·중복 검사를 통과하지 못한 원고는 자동 보류됩니다.</p>
           <p>승인 범위: {(data.mode_policy.scheduled_auto_policy?.policy_event?.approved_blog_ids ?? []).map(id=>data.mode_policy.blogs.find(item=>item.id===id)?.display_name ?? id).join(", ") || "없음"}</p>
-          {data.mode_policy.scheduled_auto_policy?.enabled
-            ? <button className="secondary-button" disabled={scheduledBusy} onClick={()=>void setScheduledAuto("disable")}>{scheduledBusy?"기록 중…":"예약 원고 자동 게시 중지"}</button>
-            : <button disabled={scheduledBusy||scheduledBlogs.length===0} onClick={()=>void setScheduledAuto("enable")}>{scheduledBusy?"기록 중…":"선택 블로그 예약 Auto 승인·활성화"}</button>}
+          <div className="scheduled-policy-actions">
+            <button className="secondary-button" disabled={scheduledBusy||!data.mode_policy.scheduled_auto_policy?.enabled} onClick={()=>void setScheduledAuto("disable")}>{scheduledBusy?"기록 중…":"예약 원고 자동 게시 중지"}</button>
+            <button disabled={scheduledBusy||Boolean(data.mode_policy.scheduled_auto_policy?.enabled)||scheduledBlogs.length===0} onClick={()=>void setScheduledAuto("enable")}>{scheduledBusy?"기록 중…":"선택 블로그 예약 Auto 승인·활성화"}</button>
+          </div>
+          <p className="publication-list-note">현재 상태에 맞는 작업만 사용할 수 있습니다. 비활성 버튼은 상태 확인용이며 설정을 변경하지 않습니다.</p>
           <p>이 설정은 기존 일반 Auto·Trends 정책을 바꾸지 않으며, 버튼을 눌러도 게시 Job을 직접 실행하지 않습니다.</p>
         </article>
       </div>
