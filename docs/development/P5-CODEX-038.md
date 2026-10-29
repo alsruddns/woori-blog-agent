@@ -64,3 +64,4 @@
 - Codex desktop Scheduled에 우선 한국어/Fed 패키지 단일 1회 검증 task를 등록·실행하고, 실제 `.ready.json`/SHA-256, Import receipt, content version 및 assessment를 확인해야 한다.
 - 검증·권리·사람 검토와 게시 승인이 분리되어 있다. Auto OFF 및 Blogger real writes disabled 상태로 유지한다.
 - 마지막 commit SHA와 push 결과는 후속 개발 기록 커밋에 연결한다.
+- 구현 커밋: `cf8f309` (`origin/develop` push 대기). 이 SHA와 푸시 결과는 후속 개발 기록 커밋으로 연결한다.
