@@ -47,4 +47,21 @@
 
 - P5-CODEX-036 선행 커밋: `f384645b98bdf71004a686a05c3b7cfc0b642aa7` (`origin/develop` push 완료).
 - P5-CODEX-037 커밋: `e32a0b1ddb23781bd28ad56050d9cae1f1161ea0`; `origin/develop` push 완료. 이 SHA 기록은 이 개발 기록의 후속 문서 커밋으로 연결한다.
-- 남은 작업: 기존 ChatGPT/Codex 예약 task의 본문을 전용 지시문으로 업데이트하고 실제 예약 실행을 관측해야 한다. 예약 JSON Import 이후에도 의미·권리 검토와 독립 검증이 남으면 자동 게시하지 않는다. stale Research Worker를 소유 터미널에서 안전하게 재시작하고 heartbeat를 새로 확인해야 자동 Import가 운영 DB에 반영된다. Publication Worker와 Auto 정책은 현 상태 그대로 비활성이다.
+- 당시 남은 작업: 실제 예약 실행과 원고 Import를 관측해야 했다. 후속 지시가 기존 예약 작업을 보존하도록 명시했으므로, 아래 후속 점검에서 기존 task 편집 대신 새 1회성 작업 지시문을 별도 작성했다.
+
+## 후속 통합 점검 — 2026-10-29 16:05 KST
+
+- 작업 범위: 기존 probe 예약 작업은 조회·수정·삭제·재실행하지 않았다. 별도 1회성 원고 작업 지시문 `docs/operations/P5-CODEX-037-scheduled-article-run.md`를 추가했다. 공식 Codex Scheduled UI에서 사용자가 새 1회 작업으로 등록해야 하며, 저장만으로 예약이 등록되었다고 보지 않는다.
+- probe 증거를 다시 확인했다. 파일은 268바이트이며 NTFS 생성 시각 `15:33:29 KST`, JSON 안의 `executedAtAsiaSeoul` 및 수정 시각 `15:51:06 KST`로 다르다. JSON의 SHA-256은 `dbafc020c20ab8b97a22ca7a1d04bc6d17c2a197206a2943fcbd18a92a8651da`. 이 메타데이터는 원고 파일이 아니고 실행이 예약·수동 중 어느 경로였는지 또는 권한 프롬프트가 있었는지 입증하지 않는다.
+- 공식 OpenAI 설명상 Scheduled task는 로컬 프로젝트에서 실행될 수 있지만, 로컬 파일이 필요한 경우 데스크톱 앱과 컴퓨터가 사용 가능해야 하고 실제 동작은 해당 실행의 sandbox/approval 권한에 따른다. 저장소 도구에는 Scheduled UI의 task 이력이나 권한 프롬프트를 조회·조작하는 API가 없어서 자동 실행 여부는 미검증이다. 자세한 등록 지시문은 별도 작업 파일에 두었다.
+- 운영 DB의 최신 `trend.research_candidates.selected`는 `2026-10-29 15:01:29 KST`, 4건이다: IN `bls polymers ipo gmp today`, IN `bombay coated special steels ipo`, HK `fomc`, IN `sfc environmental technologies ipo`. 현재 연결된 topic source 및 package는 각각 0건이다. 3개 인도 IPO 검색어는 현재 제한된 공식 조사 어댑터(Federal Reserve Board 및 SEC EDGAR)만으로 공식 근거를 수집할 수 없어 통과 처리하지 않았다. HK `fomc` topic도 기존 SG `fed meeting` 패키지와 DB상 연결되어 있지 않다.
+- 재사용 가능한 Fed 패키지 `c0b6f2b2-7a74-4b3f-a4f1-f4219c12321d`는 기존 공식 성명 1개와 fact span 11개를 보유하지만 최신 4개 후보 중 하나로 기록된 패키지가 아니다. 상태는 계속 `evidence_collected_pending_human_review`, 독립 출처 0, `generation_ready=false`, `publish_ready=false`다. 새 패키지나 조사 근거를 위조·복제하지 않았다.
+- 운영 DB의 auto 후보/queue 수는 기존 점검값 그대로다: `auto_eligible=0`, 실 발행 큐 0. `.local/gpt-scheduled-import/ready/`에 원고 envelope 0건, 예약 Import 0건, 이 후속 실행에서 신규 원고 0건, 신규 Research Package 0건, Blogger Job 0건, 공개 게시 0건. Auto/manual 설정과 OAuth는 바꾸지 않았다.
+- Import Worker 코드는 ready envelope의 선점, schema 검증, 멱등 Import, scheduled-origin 감사와 결정론적 assessment까지 수행하되 결과에 `publish_ready=false`를 유지한다. 따라서 원고 자동 Import가 되더라도 현재 구조에서는 auto eligibility나 live Blogger job이 자동 생성되지 않는다. 실제 자동 게시로 가려면 프로젝트의 명시적 사람 검토·권리·운영 승인 정책과 외부 쓰기 gate를 별도 충족해야 한다.
+- 본 후속 실행 시작 이벤트는 `agent.task.started`로 운영 감사에 append했다. 기존 운영 콘텐츠·Research Package·OAuth·발행 설정·queue를 수정하지 않았다.
+
+### 후속 검증 및 상태
+
+- 변경은 새 운영 지시문 문서 1개 추가와 이 개발 기록 갱신이다. 애플리케이션 코드는 바꾸지 않아 테스트를 재실행하지 않았다. 선행 변경의 격리 테스트 결과는 위에 기록된 47 passed다.
+- 예약 task 등록·자동 실행·파일 전달·Import를 수행하지 않았으므로 이 단계들의 실적은 각각 0 / 미검증이다. 본 문서의 기록은 변경 후 후속 개발 기록 커밋으로 연결한다.
+- 분류: 예약 원고 자동 실행 `NOT VERIFIED`; 공식 근거 조사(최신 shortlist) `BLOCKED/UNSUPPORTED SOURCE ROUTE`; Research Package 사용 원고 Import `NOT RUN`; auto eligibility 및 실제 발행 Job `0`; Blogger 공개 게시 `0`; Auto `OFF`.
