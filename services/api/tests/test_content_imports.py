@@ -168,6 +168,77 @@ def test_import_list_read_model_returns_latest_lineage_representative(monkeypatc
     assert any("content_version_number DESC NULLS LAST" in query for query in statements)
 
 
+def test_import_list_dedupes_before_origin_search_and_pagination(monkeypatch: pytest.MonkeyPatch) -> None:
+    core = "The agency published a reporting schedule that explains the planned implementation date. "
+    rows = [
+        {"id": "new", "external_content_id": "new-content", "event_group_id": "event-new",
+         "language_code": "en", "source_region": "US", "category": "policy",
+         "title": "Official Agency policy change and reporting schedule", "content_sha256": "a" * 64,
+         "state": "awaiting_human_review", "received_at": "2026-10-30T02:00:00Z",
+         "generation_method": "manual_codex_import", "model_name": "Codex", "google_trends_based": False,
+         "content_version_id": "cv-new", "content_version_number": 2, "import_version_id": "iv-new",
+         "editorial_review_status": "awaiting_human_review", "machine_passed": False,
+         "body_markdown": core * 5 + "The latest notice remains the authoritative source.",
+         "target_blog_id": "blog-en", "representative_group": "group-new"},
+        {"id": "old", "external_content_id": "old-content", "event_group_id": "event-old",
+         "language_code": "en", "source_region": "US", "category": "policy",
+         "title": "Official Agency policy change and reporting schedule", "content_sha256": "b" * 64,
+         "state": "awaiting_human_review", "received_at": "2026-10-30T01:00:00Z",
+         "generation_method": "manual_codex_import", "model_name": "Codex", "google_trends_based": False,
+         "content_version_id": "cv-old", "content_version_number": 1, "import_version_id": "iv-old",
+         "editorial_review_status": "awaiting_human_review", "machine_passed": False,
+         "body_markdown": core * 6, "target_blog_id": "blog-en", "representative_group": "group-old"},
+        {"id": "other", "external_content_id": "other-content", "event_group_id": "event-other",
+         "language_code": "en", "source_region": "US", "category": "policy",
+         "title": "Official Agency policy change and reporting schedule", "content_sha256": "c" * 64,
+         "state": "awaiting_human_review", "received_at": "2026-10-30T00:00:00Z",
+         "generation_method": "manual_codex_import", "model_name": "Codex", "google_trends_based": False,
+         "content_version_id": "cv-other", "content_version_number": 1, "import_version_id": "iv-other",
+         "editorial_review_status": "awaiting_human_review", "machine_passed": False,
+         "body_markdown": "A separate licensing notice provides different reporting steps. " * 7,
+         "target_blog_id": "blog-en", "representative_group": "group-other"},
+    ]
+
+    class Cursor:
+        def __init__(self, result: list[dict[str, Any]]):
+            self.result = result
+
+        def fetchone(self) -> dict[str, Any] | None:
+            return self.result[0] if self.result else None
+
+        def fetchall(self) -> list[dict[str, Any]]:
+            return self.result
+
+    class ReadOnlyConnection:
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            return None
+
+        def execute(self, query: str, _params: Any = None) -> Cursor:
+            if "to_regclass('public.external_content_import_content_links')" in query:
+                return Cursor([{"table_name": "external_content_import_content_links"}])
+            if "WITH RECURSIVE import_lineage" in query:
+                return Cursor(rows)
+            raise AssertionError(f"Unexpected import list query: {query}")
+
+    monkeypatch.setattr(content_imports, "connection", lambda: ReadOnlyConnection())
+    headers = {"Authorization": "Bearer " + settings().admin_token}
+    with TestClient(app) as client:
+        response = client.get(
+            "/admin/research/content-imports?origin=manual_codex_import&q=Official&page=2&page_size=1",
+            headers=headers,
+        )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["total_count"] == 2
+    assert payload["duplicates_suppressed"] == 1
+    assert payload["page"] == 2 and payload["page_count"] == 2
+    assert [row["id"] for row in payload["items"]] == ["other"]
+
+
 def test_import_revision_chain_shows_one_list_item_and_preserves_parent_history(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

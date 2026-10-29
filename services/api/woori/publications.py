@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from . import blogger_service, external_policy
 from .blogger_writes import BloggerLivePublisher
+from .content_representatives import same_manuscript_content
 from .db import connection
 from .google_http import GoogleFailure
 from .publication_daily import (
@@ -1305,7 +1306,7 @@ def list_publications(
               WHERE remote_status='LIVE' AND remote_verified_at IS NOT NULL"""
         ).fetchone()
         latest_candidates: list[dict[str, Any]] = []
-        seen_bodies: set[tuple[str, str, str]] = set()
+        seen_bodies: dict[tuple[str, str], list[tuple[str, str, str]]] = {}
         duplicate_suppressed = 0
         for raw_candidate in rows:
             candidate = dict(raw_candidate)
@@ -1317,11 +1318,16 @@ def list_publications(
             candidate["blog_id"] = str(candidate["blog_uuid"])
             body = str(candidate.pop("body", ""))
             candidate["body_sha256"] = _body_digest(body)
-            body_key = (candidate["blog_id"], candidate["language_code"], candidate["body_sha256"])
-            if body_key in seen_bodies:
+            body_scope = (candidate["blog_id"], candidate["language_code"])
+            scoped_seen = seen_bodies.setdefault(body_scope, [])
+            if any(
+                (bool(body) and digest == candidate["body_sha256"])
+                or same_manuscript_content(candidate["title"], body, prior_title, prior_body)
+                for digest, prior_title, prior_body in scoped_seen
+            ):
                 duplicate_suppressed += 1
                 continue
-            seen_bodies.add(body_key)
+            scoped_seen.append((candidate["body_sha256"], str(candidate["title"]), body))
             candidate["version_language"] = candidate["language_code"]
             candidate["blog_language"] = candidate["language_code"]
             candidate["blog_id_value"] = candidate["blogger_blog_id"]

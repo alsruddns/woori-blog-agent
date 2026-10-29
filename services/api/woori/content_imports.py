@@ -28,6 +28,7 @@ from pydantic import (
     model_validator,
 )
 
+from .content_representatives import body_digest, dedupe_manuscript_rows, same_manuscript_content
 from .db import connection
 from .editorial_taxonomy import (
     EDITORIAL_CATEGORIES,
@@ -546,7 +547,13 @@ def _require_import_review_schema(conn: Any) -> None:
 
 
 @router.get("")
-def list_content_imports(limit: int = Query(default=50, ge=1, le=100)) -> dict[str, Any]:
+def list_content_imports(
+    limit: int | None = Query(default=None, ge=1, le=100),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=100),
+    q: str = Query(default="", max_length=200),
+    origin: str = Query(default="all", max_length=40),
+) -> dict[str, Any]:
     with connection() as conn:
         _require_import_review_schema(conn)
         rows = conn.execute(
@@ -563,8 +570,11 @@ def list_content_imports(limit: int = Query(default=50, ge=1, le=100)) -> dict[s
                 NULL::boolean AS google_trends_based,i.parent_content_id,lineage.root_content_id,
                 mapped.import_version_id,mapped.content_version_id,cv.group_id,cv.localization_id,
                 cv.version AS content_version_number,cv.created_at AS content_version_created_at,
+                latest.body_markdown,
                 COALESCE(review.event_type,'awaiting_human_review') AS editorial_review_status,
-                COALESCE(assessment.machine_passed,false) AS machine_passed
+                COALESCE(assessment.machine_passed,false) AS machine_passed,
+                COALESCE(scheduled.target_blog_id,sole_blog.blog_id::text) AS target_blog_id,
+                COALESCE(cv.group_id::text,lineage.root_content_id,i.external_content_id) AS representative_group
               FROM external_content_imports i
               LEFT JOIN import_lineage lineage ON lineage.id=i.id
               LEFT JOIN LATERAL (
@@ -583,6 +593,20 @@ def list_content_imports(limit: int = Query(default=50, ge=1, le=100)) -> dict[s
                 WHERE import_id=i.id AND version_id=mapped.import_version_id
                 ORDER BY assessed_at DESC,id DESC LIMIT 1
               ) assessment ON true
+              LEFT JOIN LATERAL (
+                SELECT v.body_markdown FROM external_content_import_versions v
+                WHERE v.import_id=i.id ORDER BY v.version_number DESC,v.created_at DESC,v.id DESC LIMIT 1
+              ) latest ON true
+              LEFT JOIN LATERAL (
+                SELECT payload->>'target_blog_id' AS target_blog_id
+                FROM audit_events WHERE event_type='content.import.scheduled_origin_recorded'
+                  AND payload->>'import_id'=i.id::text
+                ORDER BY created_at DESC,id DESC LIMIT 1
+              ) scheduled ON true
+              LEFT JOIN LATERAL (
+                SELECT CASE WHEN count(*)=1 THEN min(blog_id) END AS blog_id
+                FROM blogger_blogs WHERE active AND language_code=i.language_code
+              ) sole_blog ON true
             ), ranked AS (
               SELECT latest_imports.*,row_number() OVER (
                 PARTITION BY COALESCE(group_id::text,root_content_id,external_content_id),language_code,
@@ -594,11 +618,38 @@ def list_content_imports(limit: int = Query(default=50, ge=1, le=100)) -> dict[s
             )
             SELECT id,external_content_id,event_group_id,language_code,source_region,category,title,
               content_sha256,state,received_at,generation_method,model_name,google_trends_based,
-              content_version_id,editorial_review_status,machine_passed
+              content_version_id,content_version_number,import_version_id,editorial_review_status,machine_passed,
+              body_markdown,target_blog_id,representative_group
             FROM ranked WHERE representative_rank=1
-            ORDER BY received_at DESC,id DESC LIMIT %s""", (limit,),
+            ORDER BY received_at DESC,id DESC"""
         ).fetchall()
-        return {"items": [dict(row) for row in rows], "categories": [dict(row) for row in EDITORIAL_CATEGORIES],
+        candidates = [dict(row) for row in rows]
+        representatives, duplicate_count = dedupe_manuscript_rows(candidates)
+        for candidate in representatives:
+            candidate.pop("body_markdown", None)
+            candidate.pop("representative_group", None)
+        query = q.strip().casefold()
+        if query:
+            representatives = [row for row in representatives if query in " ".join(
+                str(row.get(key) or "") for key in (
+                    "title", "external_content_id", "event_group_id", "source_region", "language_code",
+                )
+            ).casefold()]
+        if origin == "trends":
+            representatives = [row for row in representatives if row.get("google_trends_based") is True]
+        elif origin not in {"all", "other_external_export"}:
+            representatives = [row for row in representatives if row.get("generation_method") == origin]
+        elif origin == "other_external_export":
+            representatives = [row for row in representatives if row.get("google_trends_based") is not True
+                               and row.get("generation_method") not in {"chatgpt_scheduled_export", "manual_codex_import"}]
+        total_count = len(representatives)
+        effective_page_size = limit if limit is not None else page_size
+        page_count = (total_count + effective_page_size - 1) // effective_page_size
+        start = (page - 1) * effective_page_size
+        return {"items": representatives[start:start + effective_page_size],
+            "total_count": total_count, "page": page, "page_size": effective_page_size,
+            "page_count": page_count, "duplicates_suppressed": duplicate_count,
+            "categories": [dict(row) for row in EDITORIAL_CATEGORIES],
             "generator_available": False, "publication_enabled": False, "requires_human_review": True}
 
 
@@ -636,6 +687,41 @@ def get_content_import(import_id: UUID) -> dict[str, Any]:
             LEFT JOIN external_content_import_content_links l ON l.import_id=v.import_id AND l.import_version_id=v.id
             ORDER BY i.received_at DESC,v.version_number DESC,v.created_at DESC,v.id DESC""", (import_id,)
         ).fetchall()
+        duplicate_import_history: list[dict[str, Any]] = []
+        if latest:
+            current_target = conn.execute(
+                """SELECT COALESCE(origin.target_blog_id,sole.blog_id::text) AS target_blog_id
+                FROM external_content_imports i
+                LEFT JOIN LATERAL (SELECT payload->>'target_blog_id' AS target_blog_id FROM audit_events
+                    WHERE event_type='content.import.scheduled_origin_recorded' AND payload->>'import_id'=i.id::text
+                    ORDER BY created_at DESC,id DESC LIMIT 1) origin ON true
+                LEFT JOIN LATERAL (SELECT CASE WHEN count(*)=1 THEN min(blog_id) END AS blog_id
+                    FROM blogger_blogs WHERE active AND language_code=i.language_code) sole ON true
+                WHERE i.id=%s""", (import_id,),
+            ).fetchone()
+            duplicate_candidates = conn.execute(
+                """SELECT i.id AS import_id,i.external_content_id,i.title,i.language_code,i.source_region,
+                    i.received_at,v.id AS import_version_id,v.version_number,v.content_sha256,v.body_markdown,
+                    COALESCE(origin.target_blog_id,sole.blog_id::text) AS target_blog_id
+                FROM external_content_imports i
+                JOIN LATERAL (SELECT v.id,v.version_number,v.content_sha256,v.body_markdown FROM external_content_import_versions v
+                    WHERE v.import_id=i.id ORDER BY v.version_number DESC,v.created_at DESC,v.id DESC LIMIT 1) v ON true
+                LEFT JOIN LATERAL (SELECT payload->>'target_blog_id' AS target_blog_id FROM audit_events
+                    WHERE event_type='content.import.scheduled_origin_recorded' AND payload->>'import_id'=i.id::text
+                    ORDER BY created_at DESC,id DESC LIMIT 1) origin ON true
+                LEFT JOIN LATERAL (SELECT CASE WHEN count(*)=1 THEN min(blog_id) END AS blog_id
+                    FROM blogger_blogs WHERE active AND language_code=i.language_code) sole ON true
+                WHERE i.language_code=%s AND i.title=%s AND i.id<>%s
+                ORDER BY i.received_at DESC,i.id DESC""",
+                (row["language_code"], row["title"], import_id),
+            ).fetchall()
+            duplicate_import_history = [dict(candidate) for candidate in duplicate_candidates
+                if current_target and current_target.get("target_blog_id")
+                and candidate.get("target_blog_id") == current_target.get("target_blog_id")
+                and same_manuscript_content(row["title"], latest.get("body_markdown"),
+                    candidate["title"], candidate.get("body_markdown"))]
+            for prior_import in duplicate_import_history:
+                prior_import["body_sha256"] = body_digest(prior_import.get("body_markdown"))
         assessments = conn.execute(
             "SELECT id,version_id,machine_checks,seo_checks,machine_passed,safe_html,html_sha256,assessed_at,independent_source_verification,generation_ready,publish_ready FROM external_content_import_assessments WHERE import_id=%s ORDER BY assessed_at DESC,id DESC",
             (import_id,),
@@ -667,6 +753,7 @@ def get_content_import(import_id: UUID) -> dict[str, Any]:
         return {"item": dict(row), "latest_version": dict(latest) if latest else None,
             "versions": [dict(version) for version in versions],
             "lineage_history": [dict(version) for version in lineage_history],
+            "duplicate_import_history": duplicate_import_history,
             "assessments": [dict(check) for check in assessments],
             "source_verifications": [dict(event) for event in source_verifications],
             "events": [dict(event) for event in events], "reviews": [dict(review) for review in reviews],

@@ -12,12 +12,12 @@ test("manuscript views explain latest representative version and show current re
       editorial_status: "editorial_review_passed", publication_status: "not_published", machine_passed: true }],
     page: 1, page_size: 25, total: 1, languages: ["ko"], categories: ["finance"],
   } }));
-  await page.route("**/api/research/content-imports", route => route.fulfill({ json: { items: [{
-    id: "import-latest", external_content_id: "content-latest", title: "Representative imported article",
+  await page.route("**/api/research/content-imports**", route => route.fulfill({ json: { items: [{
+    id: "import-latest", external_content_id: "content-latest", content_version_id: "content-version-latest", title: "Representative imported article",
     generation_method: "chatgpt_scheduled_export", google_trends_based: false, category: "finance",
     language_code: "ko", source_region: "KR", state: "awaiting_human_review", received_at: "2026-10-30T01:00:00Z",
     editorial_review_status: "editorial_review_passed", machine_passed: true,
-  }] } }));
+  }], total_count: 1, page: 1, page_size: 25, page_count: 1, duplicates_suppressed: 0 } }));
 
   await page.goto("/manuscripts");
   await expect(page.getByRole("tab", { name: "원고 목록" })).toBeVisible();

@@ -5,7 +5,7 @@ import Link from "next/link";
 
 type Row = Record<string, unknown>;
 type Details = {
-  item: Row; latest_version: Row | null; versions: Row[]; lineage_history?: Row[]; assessments: Row[]; reviews: Row[];
+  item: Row; latest_version: Row | null; versions: Row[]; lineage_history?: Row[]; duplicate_import_history?: Row[]; assessments: Row[]; reviews: Row[];
   source_verifications?: Row[]; editorial_review_status: string; localization_requests: Row[]; mock_publications: Row[];
   publication?: Row; publish_ready: false; generation_ready: false;
 };
@@ -78,22 +78,24 @@ export function ExternalImportQueue() {
   const [items, setItems] = useState<Row[]>([]);
   const [error, setError] = useState("");
   const [origin, setOrigin] = useState("all");
+  const [page, setPage] = useState(1);
+  const [pageCount, setPageCount] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
   useEffect(() => {
     let active = true;
-    void fetch("/api/research/content-imports", { cache: "no-store" }).then(async response => {
+    void fetch(`/api/research/content-imports?origin=${encodeURIComponent(origin)}&page=${page}&page_size=25`, { cache: "no-store" }).then(async response => {
       const data = await response.json();
-      if (!response.ok) throw new Error("외부 원고 목록을 불러오지 못했습니다.");
-      if (active) setItems((data.items ?? []) as Row[]);
-    }).catch(reason => { if (active) setError(reason instanceof Error ? reason.message : "목록을 불러오지 못했습니다."); });
+      if (!response.ok) throw new Error("Import list could not be loaded.");
+      if (active) { setItems((data.items ?? []) as Row[]); setPageCount(Number(data.page_count ?? 0)); setTotalCount(Number(data.total_count ?? 0)); }
+    }).catch(reason => { if (active) setError(reason instanceof Error ? reason.message : "Import list could not be loaded."); });
     return () => { active = false; };
-  }, []);
-  const visibleItems = items.filter(item => origin === "all"
-    || (origin === "trends" ? item.google_trends_based === true
-      : item.generation_method === origin && item.google_trends_based !== true));
+  }, [origin, page]);
+  const visibleItems = items;
   return <section className="workspace-panel" aria-labelledby="external-imports-title">
     <div className="section-heading"><div><h2 id="external-imports-title">가져온 원고 · 출처·근거 검토</h2><p>Codex 예약·수동 Import 등 가져온 원고를 보여줍니다. 같은 원고 계열은 최신 대표 버전만 표시하고 이전 버전은 상세의 변경 이력에서 확인합니다.</p></div></div>
-    <label>생성 경로<select value={origin} onChange={event => setOrigin(event.target.value)}><option value="all">전체</option><option value="chatgpt_scheduled_export">Codex 예약</option><option value="manual_codex_import">수동 작성·Import</option><option value="trends">Google Trends</option><option value="other_external_export">기타 외부 Import</option></select></label>
-    {error ? <p role="alert" className="quality-held">{error}</p> : visibleItems.length ? <div className="publication-table-scroll import-list-scroll"><table><thead><tr><th>제목</th><th>생성 경로</th><th>분야</th><th>언어</th><th>자료 지역</th><th>상태</th></tr></thead><tbody>{visibleItems.map(item => <tr key={String(item.id)} data-testid="external-import-row" data-content-id={String(item.external_content_id)}><td><Link href={`/imports?open_import_id=${encodeURIComponent(String(item.id))}`}>{String(item.title)}</Link></td><td>{item.google_trends_based === true ? "Google Trends" : item.generation_method === "chatgpt_scheduled_export" ? "Codex 예약" : item.generation_method === "manual_codex_import" ? "수동 작성·Import" : "기타 외부 Import"}</td><td>{categoryNames[String(item.category)] ?? String(item.category)}</td><td>{languageNames[String(item.language_code)] ?? String(item.language_code)}</td><td>{String(item.source_region)}</td><td><span className="status-text">{importReviewLabel(item)}</span></td></tr>)}</tbody></table></div> : <p className="empty-state">선택한 경로에 원고가 없습니다.</p>}
+    <label>생성 경로<select value={origin} onChange={event => { setOrigin(event.target.value); setPage(1); }}><option value="all">전체</option><option value="chatgpt_scheduled_export">Codex 예약</option><option value="manual_codex_import">수동 작성·Import</option><option value="trends">Google Trends</option><option value="other_external_export">기타 외부 Import</option></select></label>
+    {error ? <p role="alert" className="quality-held">{error}</p> : visibleItems.length ? <div className="publication-table-scroll import-list-scroll"><table><thead><tr><th>제목</th><th>생성 경로</th><th>분야</th><th>언어</th><th>자료 지역</th><th>상태</th></tr></thead><tbody>{visibleItems.map(item => <tr key={String(item.id)} data-testid="external-import-row" data-content-id={String(item.external_content_id)}><td><Link href={`/imports?open_import_id=${encodeURIComponent(String(item.id))}&open_content_version_id=${encodeURIComponent(String(item.content_version_id ?? ""))}`}>{String(item.title)}</Link></td><td>{item.google_trends_based === true ? "Google Trends" : item.generation_method === "chatgpt_scheduled_export" ? "Codex 예약" : item.generation_method === "manual_codex_import" ? "수동 작성·Import" : "기타 외부 Import"}</td><td>{categoryNames[String(item.category)] ?? String(item.category)}</td><td>{languageNames[String(item.language_code)] ?? String(item.language_code)}</td><td>{String(item.source_region)}</td><td><span className="status-text">{importReviewLabel(item)}</span></td></tr>)}</tbody></table></div> : <p className="empty-state">선택한 경로에 원고가 없습니다.</p>}
+  <p>{totalCount} items</p>{pageCount > 1 && <nav aria-label="Import list pages"><button type="button" disabled={page <= 1} onClick={() => setPage(value => value - 1)}>Previous</button><span>{page} / {pageCount} | {totalCount} items</span><button type="button" disabled={page >= pageCount} onClick={() => setPage(value => value + 1)}>Next</button></nav>}
   </section>;
 }
 
@@ -102,6 +104,10 @@ const categoryNames: Record<string, string> = { economy: "경제", finance: "금
 export default function ExternalImportWorkspace() {
   const [items, setItems] = useState<Row[]>([]);
   const [originFilter, setOriginFilter] = useState("all");
+  const [listPage, setListPage] = useState(1);
+  const [listPageCount, setListPageCount] = useState(0);
+  const [listTotal, setListTotal] = useState(0);
+  const [listSearch, setListSearch] = useState("");
   const [selectedId, setSelectedId] = useState("");
   const [detail, setDetail] = useState<Details | null>(null);
   const [notice, setNotice] = useState("");
@@ -127,9 +133,9 @@ export default function ExternalImportWorkspace() {
   const detailDialog = useRef<HTMLElement | null>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
 
-  const openDetail = useCallback(async (id: string) => {
+  const openDetail = useCallback(async (id: string, expectedContentVersionId = "") => {
     setError("");
-    autoOpened.current = id;
+    autoOpened.current = `${id}:${expectedContentVersionId}`;
     if (!detailDialog.current && document.activeElement instanceof HTMLElement) returnFocus.current = document.activeElement;
     const [response, publicationResponse] = await Promise.all([
       fetch(`/api/research/content-imports/${id}`, { cache: "no-store" }),
@@ -142,6 +148,7 @@ export default function ExternalImportWorkspace() {
       : { status_error: publicationResponse.status === 404 ? "예약 발행 상태 조회 API를 찾을 수 없습니다." : "예약 발행 상태를 조회하지 못했습니다." };
     const nextDetail = { ...data, publication } as Details;
     setSelectedId(id); setDetail(nextDetail); setPreview(null); setDetailTab("editor");
+    if (expectedContentVersionId && String(data.latest_version?.content_version_id ?? "") !== expectedContentVersionId) { setNotice("The listed version changed before the detail loaded. Current version history is shown."); }
     const publicationTargets = (publication.targets as Row[] | undefined) ?? [];
     const defaultTarget = publicationTargets.find(target => target.in_scheduled_scope === true)
       ?? publicationTargets[0];
@@ -152,27 +159,32 @@ export default function ExternalImportWorkspace() {
     setSeo(current.seo_metadata ?? data.item.seo_metadata ?? {});
     setLabels(Array.isArray(current.blogger_labels ?? data.item.blogger_labels) ? (current.blogger_labels ?? data.item.blogger_labels).join(", ") : "");
     const url = new URL(window.location.href);
-    if (url.searchParams.get("open_import_id") !== id) {
+    if (url.searchParams.get("open_import_id") !== id || url.searchParams.get("open_content_version_id") !== expectedContentVersionId) {
       url.searchParams.set("open_import_id", id);
+      if (expectedContentVersionId) url.searchParams.set("open_content_version_id", expectedContentVersionId);
+      else url.searchParams.delete("open_content_version_id");
       window.history.pushState({ importDetail: id }, "", `${url.pathname}${url.search}${url.hash}`);
     }
   }, []);
 
   useEffect(() => {
     let active = true;
-    void fetch("/api/research/content-imports", { cache: "no-store" }).then(async response => {
+    const params = new URLSearchParams({ origin: originFilter, page: String(listPage), page_size: "25", q: listSearch });
+    void fetch(`/api/research/content-imports?${params.toString()}`, { cache: "no-store" }).then(async response => {
       const data = await response.json();
-      if (!response.ok) throw new Error("외부 원고 목록을 불러오지 못했습니다.");
-      if (active) setItems((data.items ?? []) as Row[]);
-    }).catch(reason => { if (active) setError(reason instanceof Error ? reason.message : "목록을 불러오지 못했습니다."); });
+      if (!response.ok) throw new Error("Import list could not be loaded.");
+      if (active) { setItems((data.items ?? []) as Row[]); setListPageCount(Number(data.page_count ?? 0)); setListTotal(Number(data.total_count ?? 0)); }
+    }).catch(reason => { if (active) setError(reason instanceof Error ? reason.message : "Import list could not be loaded."); });
     return () => { active = false; };
-  }, []);
+  }, [originFilter, listPage, listSearch]);
 
   useEffect(() => {
-    const requestedId = new URLSearchParams(window.location.search).get("open_import_id") ?? "";
-    if (!requestedId || autoOpened.current === requestedId || !items.some(item => String(item.id) === requestedId)) return;
-    autoOpened.current = requestedId;
-    void openDetail(requestedId);
+    const params = new URLSearchParams(window.location.search);
+    const requestedId = params.get("open_import_id") ?? "";
+    const requestedVersion = params.get("open_content_version_id") ?? "";
+    if (!requestedId || autoOpened.current === `${requestedId}:${requestedVersion}`) return;
+    autoOpened.current = `${requestedId}:${requestedVersion}`;
+    void openDetail(requestedId, requestedVersion);
   }, [items, openDetail]);
 
   const closeDetail = useCallback(() => {
@@ -188,6 +200,7 @@ export default function ExternalImportWorkspace() {
     }
     setDetail(null); setSelectedId("");
     url.searchParams.delete("open_import_id");
+    url.searchParams.delete("open_content_version_id");
     window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
   }, []);
 
@@ -244,8 +257,9 @@ export default function ExternalImportWorkspace() {
     return publication;
   };
   const refreshListOnly = async () => {
-    const response = await fetch("/api/research/content-imports", { cache: "no-store" });
-    if (response.ok) { const data = await response.json(); setItems((data.items ?? []) as Row[]); }
+    const params = new URLSearchParams({ origin: originFilter, page: String(listPage), page_size: "25", q: listSearch });
+    const response = await fetch(`/api/research/content-imports?${params.toString()}`, { cache: "no-store" });
+    if (response.ok) { const data = await response.json(); setItems((data.items ?? []) as Row[]); setListPageCount(Number(data.page_count ?? 0)); setListTotal(Number(data.total_count ?? 0)); }
   };
   const submitImport = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -277,9 +291,7 @@ export default function ExternalImportWorkspace() {
     version_id: latestVersion?.id, disposition, reviewer_label: reviewer, reason,
     sources_examined: attest.sources, claims_checked: attest.claims, rights_reviewed: attest.rights,
   }), disposition === "editorial_review_passed" ? "편집 검토 이벤트를 기록했습니다. 이 기록은 Blogger 게시 승인과 다릅니다." : "검토 이력을 추가했습니다.");
-  const visibleImports = items.filter(item => originFilter === "all"
-    || (originFilter === "trends" ? item.google_trends_based === true
-      : item.google_trends_based !== true && item.generation_method === originFilter));
+  const visibleImports = items;
   const submitManualPublication = async () => {
     if (!detail || !latestVersion?.content_version_id || !publicationTargetId) return;
     const target = ((detail.publication?.targets as Row[] | undefined) ?? []).find(item => String(item.id) === publicationTargetId);
@@ -316,9 +328,11 @@ export default function ExternalImportWorkspace() {
         <button disabled={busy || json.length === 0 || submitter.trim().length < 2}>{busy ? "처리 중…" : "검토 대기열에 가져오기"}</button></form>
     </section>
     {notice && <p role="status" className="quality-ok">{notice}</p>}{error && <p role="alert" className="quality-held">{error}</p>}
-    <details className="workspace-panel import-recent"><summary>최근 가져온 원고 · {visibleImports.length}건</summary><div className="section-heading"><p>원고 제목을 누르면 해당 원고 상세가 바로 열립니다.</p><button type="button" className="secondary-button" onClick={() => void refreshListOnly()}>새로고침</button></div>
-      <label>생성 경로<select aria-label="가져온 원고 생성 경로" value={originFilter} onChange={event => setOriginFilter(event.target.value)}><option value="all">전체 원고</option><option value="chatgpt_scheduled_export">Codex 예약</option><option value="manual_codex_import">수동 작성·Import</option><option value="trends">Google Trends</option><option value="other_external_export">기타 외부 원고</option></select></label>
-      {visibleImports.length ? <div className="publication-table-scroll import-list-scroll"><table><thead><tr><th>제목</th><th>생성 경로</th><th>분야</th><th>언어</th><th>자료 지역</th><th>상태</th><th>접수 시각</th></tr></thead><tbody>{visibleImports.map(item => <tr key={String(item.id)} data-testid="import-row" data-content-id={String(item.external_content_id)}><td><button className="import-title" title={String(item.title)} onClick={() => void openDetail(String(item.id))}>{String(item.title)}</button></td><td>{item.google_trends_based === true ? "Google Trends" : item.generation_method === "chatgpt_scheduled_export" ? "Codex 예약" : item.generation_method === "manual_codex_import" ? "수동 작성·Import" : "기타 외부 원고"}</td><td>{categoryNames[String(item.category)] ?? String(item.category)}</td><td>{languageNames[String(item.language_code)] ?? String(item.language_code)}</td><td>{String(item.source_region)}</td><td><span className="status-text">{importReviewLabel(item)}</span></td><td>{fmt(item.received_at)}</td></tr>)}</tbody></table></div> : <p className="empty-state">선택한 생성 경로의 원고가 없습니다.</p>}
+    <details className="workspace-panel import-recent"><summary>Imported manuscripts: {listTotal}</summary><div className="section-heading"><p>원고 제목을 누르면 해당 원고 상세가 바로 열립니다.</p><span>{listTotal} representative items. Earlier versions and duplicate imports are available in detail history.</span><button type="button" className="secondary-button" onClick={() => void refreshListOnly()}>새로고침</button></div>
+      <label>Search<input aria-label="Search imported manuscripts" value={listSearch} onChange={event => { setListSearch(event.target.value); setListPage(1); }} /></label>
+      <label>생성 경로<select aria-label="가져온 원고 생성 경로" value={originFilter} onChange={event => { setOriginFilter(event.target.value); setListPage(1); }}><option value="all">전체 원고</option><option value="chatgpt_scheduled_export">Codex 예약</option><option value="manual_codex_import">수동 작성·Import</option><option value="trends">Google Trends</option><option value="other_external_export">기타 외부 원고</option></select></label>
+      {visibleImports.length ? <div className="publication-table-scroll import-list-scroll"><table><thead><tr><th>제목</th><th>생성 경로</th><th>분야</th><th>언어</th><th>자료 지역</th><th>상태</th><th>접수 시각</th></tr></thead><tbody>{visibleImports.map(item => <tr key={String(item.id)} data-testid="import-row" data-content-id={String(item.external_content_id)}><td><button className="import-title" title={String(item.title)} onClick={() => void openDetail(String(item.id), String(item.content_version_id ?? ""))}>{String(item.title)}</button></td><td>{item.google_trends_based === true ? "Google Trends" : item.generation_method === "chatgpt_scheduled_export" ? "Codex 예약" : item.generation_method === "manual_codex_import" ? "수동 작성·Import" : "기타 외부 원고"}</td><td>{categoryNames[String(item.category)] ?? String(item.category)}</td><td>{languageNames[String(item.language_code)] ?? String(item.language_code)}</td><td>{String(item.source_region)}</td><td><span className="status-text">{importReviewLabel(item)}</span></td><td>{fmt(item.received_at)}</td></tr>)}</tbody></table></div> : <p className="empty-state">선택한 생성 경로의 원고가 없습니다.</p>}
+    {listPageCount > 1 && <nav aria-label="Import list pages"><button type="button" disabled={listPage <= 1} onClick={() => setListPage(value => value - 1)}>Previous</button><span>{listPage} / {listPageCount} | {listTotal} items</span><button type="button" disabled={listPage >= listPageCount} onClick={() => setListPage(value => value + 1)}>Next</button></nav>}
     </details>
     {detail && latestVersion && <div className="sheet-backdrop import-sheet-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) closeDetail(); }}><section ref={detailDialog} tabIndex={-1} className="detail-sheet import-detail" role="dialog" aria-modal="true" aria-labelledby="import-detail-title" data-testid="import-detail" data-content-id={String(detail.item.external_content_id)}>
       <div className="section-heading import-detail-heading"><div><p className="eyebrow">{languageNames[String(detail.item.language_code)] ?? String(detail.item.language_code)} · {String(detail.item.source_region)} · {categoryNames[String(detail.item.category)] ?? String(detail.item.category)}</p><h2 id="import-detail-title">{String(latestVersion.title)}</h2><p>버전 {String(latestVersion.version_number)} · 수정 {fmt(latestVersion.created_at)} · 상태: {statusNames[reviewState] ?? "사람 검토 대기"}</p></div><button type="button" className="secondary-button" onClick={closeDetail}>닫기</button></div>
@@ -402,7 +416,7 @@ export default function ExternalImportWorkspace() {
           </section>}
           <section className="workspace-panel" id="import-publication"><h3>모의 게시</h3><p>실제 Blogger 요청이 아닌 테스트 시뮬레이션입니다. publish_ready=false는 유지됩니다.</p><button type="button" className="secondary-button" data-testid="mock-publish" disabled={busy || !publicationAllowed} onClick={() => void run(() => api("mock-publications", "POST", { version_id: latestVersion.id, idempotency_key: `import-${selectedId}-${String(latestVersion.content_sha256).slice(0,64)}`, scenario: "success", requested_by: reviewer }), "테스트 어댑터 결과를 기록했습니다. 실제 Blogger에는 변경이 없습니다.")}>모의 게시 시뮬레이션</button>{!publicationAllowed && <p role="status">현재 버전에 통과한 검사와 명시적 편집 검토 기록이 모두 있어야 모의 게시를 실행할 수 있습니다.</p>}{detail.mock_publications.map(attempt => <p key={String(attempt.id)}>모의 결과: {String(attempt.outcome)} · 모의 전용 · 외부 요청 0건</p>)}</section>
         </>}
-        {detailTab === "history" && <section className="workspace-panel" id="import-history"><h3>버전 및 변경 이력</h3>{(detail.lineage_history ?? []).filter(version => String(version.import_id) !== String(detail.item.id)).map(version => <article className="history-card" key={String(version.import_version_id)}><strong>원고 계열 이전 버전 · v{String(version.version_number)} · {String(version.title)}</strong><p>{fmt(version.created_at)} · {String(version.author_label)} · {String(version.change_reason)}</p><details><summary>이전 원고 내용 보기</summary><pre>{String(version.body_markdown ?? "")}</pre></details></article>)}{detail.versions.map(version => <article className="history-card" key={String(version.id)}><strong>v{String(version.version_number)} · {String(version.title)}</strong><p>{fmt(version.created_at)} · {String(version.author_label)} · {String(version.change_reason)}</p>{version.id !== latestVersion.id && <button type="button" className="secondary-button" onClick={() => void openDetail(selectedId)}>최신 버전 새로고침</button>}</article>)}{detail.reviews.map(event => <article className="history-card" key={String(event.version_id) + String(event.created_at)}><strong>{statusNames[String(event.event_type)] ?? String(event.event_type)}</strong><p>{String(event.reviewer_label)} · {fmt(event.created_at)} · {String(event.reason)}</p></article>)}</section>}
+        {detailTab === "history" && <section className="workspace-panel" id="import-history"><h3>버전 및 변경 이력</h3>{(detail.duplicate_import_history ?? []).map(version => <article className="history-card" key={String(version.import_version_id)}><strong>Duplicate import record | v{String(version.version_number)} | {String(version.title)}</strong><p>Import {String(version.import_id)} | {fmt(version.received_at)} | body SHA-256 {String(version.body_sha256)}</p><details><summary>View preserved import body</summary><pre>{String(version.body_markdown ?? "")}</pre></details></article>)}{(detail.lineage_history ?? []).filter(version => String(version.import_id) !== String(detail.item.id)).map(version => <article className="history-card" key={String(version.import_version_id)}><strong>원고 계열 이전 버전 · v{String(version.version_number)} · {String(version.title)}</strong><p>{fmt(version.created_at)} · {String(version.author_label)} · {String(version.change_reason)}</p><details><summary>이전 원고 내용 보기</summary><pre>{String(version.body_markdown ?? "")}</pre></details></article>)}{detail.versions.map(version => <article className="history-card" key={String(version.id)}><strong>v{String(version.version_number)} · {String(version.title)}</strong><p>{fmt(version.created_at)} · {String(version.author_label)} · {String(version.change_reason)}</p>{version.id !== latestVersion.id && <button type="button" className="secondary-button" onClick={() => void openDetail(selectedId)}>최신 버전 새로고침</button>}</article>)}{detail.reviews.map(event => <article className="history-card" key={String(event.version_id) + String(event.created_at)}><strong>{statusNames[String(event.event_type)] ?? String(event.event_type)}</strong><p>{String(event.reviewer_label)} · {fmt(event.created_at)} · {String(event.reason)}</p></article>)}</section>}
       </div>
     </section></div>}
   </main>;
