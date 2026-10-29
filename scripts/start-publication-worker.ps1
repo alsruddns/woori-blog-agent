@@ -21,8 +21,8 @@ if ($Mode -eq 'scheduled-auto') {
   try { $status = ($statusOutput -join "`n") | ConvertFrom-Json }
   catch { throw 'Scheduled Auto Worker status was not valid JSON; no process was started.' }
   $policy = $status.scheduled_auto_policy
-  if (-not $policy.enabled -or (-not $policy.first_post_approval -and -not $policy.first_post_confirmed)) {
-    throw 'Scheduled Auto is not dispatchable: its scoped policy or exact first-post approval is missing. No process was started.'
+  if (-not $policy.enabled) {
+    throw 'Scheduled Auto is not enabled for any approved blog. No process was started.'
   }
   if ($status.global_mode.emergency_stopped) {
     throw 'The global emergency stop is active; no Scheduled Auto Worker was started.'

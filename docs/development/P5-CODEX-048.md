@@ -16,6 +16,7 @@
 - A human review event remains a separate evidence route. The new machine path does not create or modify editorial review, publication approval, or `publish_ready` state.
 - Scheduled queue assessment now emits an append-only `publication.scheduled_auto.evidence_assessed` event bound to import/version/content IDs and immutable version hash. It records check results, source/claim references, source evidence hashes, result, and hold reasons; unchanged results are deduplicated.
 - Eligibility assessment now runs before the exact first-post approval check. A candidate can be durably assessed while the first-post approval is absent, but it cannot enter the publishing queue.
+- The `scheduled-auto` launcher no longer refuses to start the observation/assessment Worker just because the first-post approval is absent; the enabled scoped policy and emergency stop are still checked at startup, while actual queue dispatch continues to enforce exact first-post approval.
 - Updated `AGENTS.md` with the narrow scheduled-auto exception and conditions; ordinary/manual/Trends publication remains under the existing human-review policy.
 
 ## Tests
@@ -24,6 +25,7 @@
 - `.venv\Scripts\pytest.exe services/api/tests/test_scheduled_auto_verification.py services/api/tests/test_publications.py -q` — 29 passed.
 - `.venv\Scripts\python.exe -m compileall -q services/api/woori/publication_worker.py services/api/woori/scheduled_auto_verification.py` — passed.
 - `.venv\Scripts\mypy.exe services/api/woori/scheduled_auto_verification.py` — passed. Running strict mypy on the existing `publication_worker.py` still reports 11 DB-row Optional/signal typing errors outside the new verifier; this check is not reported as passing.
+- PowerShell parser validation for `scripts/start-publication-worker.ps1` — passed.
 - `git diff --check` — passed before the final documentation edit; rerun before commit.
 
 ## Operational result
@@ -38,6 +40,7 @@
 
 - `AGENTS.md`
 - `services/api/woori/publication_worker.py`
+- `scripts/start-publication-worker.ps1`
 - `services/api/woori/scheduled_auto_verification.py`
 - `services/api/tests/test_scheduled_auto_verification.py`
 - `docs/development/P5-CODEX-048.md`
