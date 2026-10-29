@@ -8,7 +8,7 @@ const links = [
   { href: "/sources", label: "수집 자료", section: "/sources" },
   { href: "/manuscripts", label: "원고 관리", section: "/manuscripts" },
   { href: "/publishing", label: "발행 관리", section: "/publishing" },
-  { href: "/operations/research#automation", label: "자동화 관리", section: "/operations/research" },
+  { href: "/operations/research", label: "자동화 관리", section: "/operations/research" },
   { href: "/operations", label: "운영 진단", section: "/operations" },
 ];
 

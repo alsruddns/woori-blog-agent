@@ -17,7 +17,7 @@ export default async function Page() {
     } else loadState = "unauthenticated";
   } catch {}
   return <main className="workspace-main publication-workspace">
-    <div className="page-heading"><div><p className="eyebrow">콘텐츠 배포</p><h1>발행 관리</h1><p>승인 대기 원고, 게시 이력과 블로그별 게시 정책을 확인합니다.</p></div><Link className="secondary-button" href="/blogger">Blogger 연결 확인</Link></div>
+    <div className="page-heading"><div><p className="eyebrow">콘텐츠 배포</p><h1>발행 관리</h1><p>최신 원고의 발행 대기·검토·게시 결과와 실제 블로그 정책을 확인합니다.</p></div><Link className="secondary-button" href="/blogger">Blogger 연결 확인</Link></div>
     {data ? <PublicationManager initial={data} /> : <section className="workspace-panel"><p role="alert" className="quality-held">{loadState === "unauthenticated" ? "인증되지 않았습니다. 로컬 관리자 인증 설정을 확인하세요." : loadState === "server_error" ? "서버가 발행 정보를 불러오지 못했습니다. 잠시 후 다시 시도하거나 운영 진단을 확인하세요." : "로컬 API 서버에 연결할 수 없습니다. API 서버가 실행 중인지 확인하세요."}</p></section>}
   </main>;
 }

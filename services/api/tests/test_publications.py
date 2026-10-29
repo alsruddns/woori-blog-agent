@@ -17,11 +17,19 @@ from woori.publications import (
     PublicationError,
     ScheduleInput,
     _assess,
+    _has_identical_body,
     sync_readonly,
     transition_allowed,
 )
 
 lab = shared_lab
+
+
+def test_same_event_dedup_requires_identical_body() -> None:
+    candidate = "FOMC held the target range.\n[source:statement]"
+    assert _has_identical_body(candidate, [candidate])
+    assert not _has_identical_body(candidate, ["FOMC held rates; this analysis differs."])
+    assert not _has_identical_body(candidate, [])
 
 
 def test_publication_eligibility_fails_closed_even_for_machine_pass() -> None:

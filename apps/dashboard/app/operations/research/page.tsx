@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { API_BASE, headers } from "../../../lib/server";
-import Research, { type State } from "../../research/research";
+import AutomationDashboard, { type Snapshot } from "./automation-dashboard";
 export const dynamic = "force-dynamic";
 export default async function OperationsResearchPage() {
-  let data: State | null = null;
-  try { const response = await fetch(`${API_BASE}/admin/research/state`, { headers: headers(), cache: "no-store", signal: AbortSignal.timeout(5000) }); if (response.ok) data = await response.json() as State; } catch {}
-  return <main className="workspace-main"><header><Link href="/operations">운영 및 진단</Link></header><div className="page-heading"><div><p className="eyebrow">기술 상세</p><h1>리서치·실행 기록</h1><p>내부 실행 상태, 모델 지표 및 원본 데이터는 이 진단 화면에 분리되어 있습니다.</p></div></div>{data ? <Research initial={data}/> : <p role="alert">진단 정보를 조회할 수 없습니다.</p>}</main>;
+  let data: Snapshot | null = null;
+  try { const response=await fetch(`${API_BASE}/admin/operations/dashboard`,{headers:headers(),cache:"no-store",signal:AbortSignal.timeout(5000)}); if(response.ok)data=await response.json() as Snapshot; } catch {}
+  return <main className="workspace-main"><header><Link href="/operations">운영 및 진단</Link></header><div className="page-heading"><div><p className="eyebrow">콘텐츠 운영</p><h1>자동화 관리</h1><p>자료 수집부터 원고 검증과 Blogger 발행까지 실제 운영 상태를 확인합니다. 예약 원고 자동 전달은 검증된 실행만 집계합니다.</p></div></div><AutomationDashboard data={data}/></main>;
 }

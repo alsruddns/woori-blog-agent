@@ -29,15 +29,23 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
     generation_counts = _grouped_counts(conn, "SELECT state AS key,count(*)::int AS count FROM generation_results GROUP BY state")
     quality_counts = _grouped_counts(conn, "SELECT status AS key,count(*)::int AS count FROM article_quality_evaluations GROUP BY status")
     publication_counts = _grouped_counts(conn, """SELECT status || ':' || publication_state AS key,count(*)::int AS count FROM publishing_jobs GROUP BY status,publication_state""")
-    record_count = conn.execute("SELECT count(*)::int AS count FROM publishing_records").fetchone()["count"]
-    latest_published = conn.execute("SELECT max(published_at) AS at FROM publishing_records").fetchone()["at"]
+    record_count = conn.execute("SELECT count(*)::int AS count FROM publishing_records WHERE remote_status='LIVE' AND remote_verified_at IS NOT NULL").fetchone()["count"]
+    latest_published = conn.execute("SELECT max(published_at) AS at FROM publishing_records WHERE remote_status='LIVE' AND remote_verified_at IS NOT NULL").fetchone()["at"]
+    latest_publication = conn.execute(
+        """SELECT r.remote_post_id,r.remote_url,r.published_at,r.remote_verified_at,v.title,
+        b.language_code,b.display_name AS blog_name FROM publishing_records r
+        JOIN content_versions v ON v.id=r.content_version_id JOIN blogger_blogs b ON b.id=r.blog_id
+        WHERE r.remote_status='LIVE' AND r.remote_verified_at IS NOT NULL
+        ORDER BY r.published_at DESC,r.id DESC LIMIT 1"""
+    ).fetchone()
     # Use an explicit KST date; never rely on the host or PostgreSQL session timezone.
     today_kst = datetime.now(UTC).astimezone(ZoneInfo("Asia/Seoul")).date()
     day_start, day_end = kst_day_bounds(today_kst)
     daily_rows = conn.execute(
         """SELECT b.language_code,count(*)::int AS count FROM publishing_records r
         JOIN blogger_blogs b ON b.id=r.blog_id
-        WHERE r.published_at >= %s AND r.published_at < %s GROUP BY b.language_code""",
+        WHERE r.remote_status='LIVE' AND r.remote_verified_at IS NOT NULL
+          AND r.published_at >= %s AND r.published_at < %s GROUP BY b.language_code""",
         (day_start, day_end),
     ).fetchall()
     daily_published = {str(row["language_code"]): int(row["count"]) for row in daily_rows}
@@ -59,7 +67,8 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
         FROM publishing_records r JOIN blogger_blogs b ON b.id=r.blog_id
         JOIN content_versions v ON v.id=r.content_version_id
         JOIN publishing_jobs j ON j.id=r.job_id
-        WHERE r.published_at >= %s AND r.published_at < %s
+        WHERE r.remote_status='LIVE' AND r.remote_verified_at IS NOT NULL
+          AND r.published_at >= %s AND r.published_at < %s
         ORDER BY r.published_at DESC,r.id DESC LIMIT 100""",
         (day_start, day_end),
     ).fetchall()]
@@ -207,6 +216,11 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
             "received_last_24h": int(totals["recent"] or 0),
             "last_received_at": totals["last_received"],
         })
+        scheduled_import["imported_total"] = conn.execute(
+            """SELECT count(DISTINCT i.id)::int AS count FROM external_content_imports i
+            JOIN external_content_import_content_links link ON link.import_id=i.id
+            WHERE i.generation_method='chatgpt_scheduled_export'"""
+        ).fetchone()["count"]
         scheduled_import["languages"] = {
             str(row["language_code"]): int(row["count"])
             for row in conn.execute(
@@ -236,6 +250,10 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
             """SELECT payload->>'status' AS key,count(*)::int AS count FROM audit_events
             WHERE event_type='scheduled_import.file_outcome' AND payload ? 'status'
             GROUP BY payload->>'status'""",
+        )
+        scheduled_import["rejected_total"] = sum(
+            int(count) for status, count in scheduled_import["outcomes"].items()
+            if str(status).casefold() in {"rejected", "quarantined", "failed", "error"}
         )
         scheduled_import["scheduled_claims"] = conn.execute(
             """SELECT count(*)::int AS count FROM audit_events
@@ -386,13 +404,40 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
         "emergency_stopped": bool(global_config.get("emergency_stopped", False)),
     }
     schema_version = int(schema["version"] or 0) if schema else 0
-    return {"schema_version":schema_version,"trends":trends,"trend_pipeline":trend_pipeline,"collection_sources":collection_sources,"scheduled_import":scheduled_import,"jobs":job_counts,
+    recent_activity = [
+        {key: row[key] for key in ("event_type", "created_at", "stage", "target", "outcome", "error_category")}
+        for row in conn.execute(
+            """SELECT a.event_type,a.created_at,
+            CASE WHEN a.event_type LIKE 'trend.%' THEN '자료 수집'
+              WHEN a.event_type LIKE '%research%' OR a.event_type LIKE '%source%' THEN '공식 자료 조사'
+              WHEN a.event_type LIKE '%import%' OR a.event_type LIKE '%content.%' THEN '원고 수신·저장'
+              WHEN a.event_type LIKE '%quality%' OR a.event_type LIKE '%seo%' THEN '품질 검증'
+              WHEN a.event_type LIKE 'publication.%' OR a.event_type LIKE 'blogger.write.%' THEN 'Blogger 발행'
+              ELSE '운영 상태' END AS stage,
+            COALESCE(v.title,i.title) AS target,
+            CASE WHEN COALESCE(a.payload->>'outcome',a.payload->>'status',a.payload->>'state') ~ '^[a-zA-Z0-9_.-]{1,80}$'
+              THEN COALESCE(a.payload->>'outcome',a.payload->>'status',a.payload->>'state') END AS outcome,
+            CASE WHEN COALESCE(a.payload->>'error_category',a.payload->>'failure_category') ~ '^[a-zA-Z0-9_.-]{1,80}$'
+              THEN COALESCE(a.payload->>'error_category',a.payload->>'failure_category') END AS error_category
+            FROM audit_events a
+            LEFT JOIN content_versions v ON v.id::text=a.payload->>'content_version_id'
+            LEFT JOIN external_content_imports i ON i.id::text=a.payload->>'import_id'
+            ORDER BY a.created_at DESC,a.id DESC LIMIT 20"""
+        ).fetchall()
+    ]
+    live_queued_row = conn.execute(
+        "SELECT count(*)::int AS count FROM publishing_jobs WHERE status='queued' AND NOT simulation_only AND adapter_type='blogger_live'"
+    ).fetchone()
+    return {"schema_version":schema_version,"recent_activity":recent_activity,"trends":trends,"trend_pipeline":trend_pipeline,"collection_sources":collection_sources,"scheduled_import":scheduled_import,"jobs":job_counts,
         "readiness":readiness,"monitoring":monitoring,
         "generation":{"provider_connected":False,"provider_status":"not_configured","counts":generation_counts,
             "queue_waiting":job_counts.get("content:queued",0),"reason":"운영 원고 생성 Provider가 연결되어 있지 않습니다."},
         "quality":{"machine_passed":quality_counts.get("machine_passed_review_required",0),"held":quality_counts.get("quality_held",0),
             "failed":quality_counts.get("failed",0),"human_review_required":quality_counts.get("machine_passed_review_required",0)},
-        "publishing":{"jobs":publication_counts,"recorded_posts":int(record_count or 0),"last_recorded_at":latest_published,"recent_public_url":None,
+        "publishing":{"jobs":publication_counts,"recorded_posts":int(record_count or 0),"last_recorded_at":latest_published,
+            "latest_publication":dict(latest_publication) if latest_publication else None,
+            "live_queued_jobs":int((live_queued_row or {}).get("count", 0)),
+            "recent_public_url":latest_publication["remote_url"] if latest_publication else None,
             "url_note":"게시 기록에 공개 URL 필드가 없어 링크를 추정하지 않습니다.",
             "queued_mock_jobs":sum(v for k,v in publication_counts.items() if k.startswith("queued:")),
             "live_writes_enabled":False,"auto_enabled":False,"emergency_stopped":bool(global_config.get("emergency_stopped",False)),

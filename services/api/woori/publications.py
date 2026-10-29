@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, cast
 from uuid import UUID, uuid4
@@ -15,9 +16,13 @@ from . import blogger_service, external_policy
 from .blogger_writes import BloggerLivePublisher
 from .db import connection
 from .google_http import GoogleFailure
+from .publication_daily import (
+    GLOBAL_DAILY_PUBLISH_LIMIT,
+    LANGUAGE_DAILY_LIMITS,
+    LANGUAGE_HOURLY_LIMITS,
+)
 from .publication_modes import (
     ModeSettingsInput,
-    assess_auto_candidate,
     effective_mode,
     resolve_mode,
 )
@@ -344,11 +349,21 @@ def _assess(row: dict[str, Any] | None) -> dict[str, Any]:
     return {"state": state, "reasons": reasons}
 
 
+def _body_digest(value: str | bytes) -> str:
+    body = value if isinstance(value, bytes) else value.encode("utf-8")
+    return hashlib.sha256(body).hexdigest()
+
+
+def _has_identical_body(candidate: str | bytes, existing: list[str | bytes]) -> bool:
+    candidate_digest = _body_digest(candidate)
+    return any(_body_digest(body) == candidate_digest for body in existing)
+
+
 def _candidate(conn: Any, version_id: UUID, blog_id: UUID) -> dict[str, Any] | None:
     return cast(
         dict[str, Any] | None,
         conn.execute(
-            """SELECT v.id AS content_version_id,v.title,v.body,v.localization_id,
+            """SELECT v.id AS content_version_id,v.group_id,v.version,v.source_version_id,v.title,v.body,v.localization_id,
             l.language_code AS version_language,l.target_country,b.id AS blog_uuid,
             b.language_code AS blog_language,b.url,b.active AS blog_active,
             b.blog_id AS blog_id_value,b.oauth_connection_id,b.connection_verified_at,b.test_publish_verified_at,
@@ -364,6 +379,10 @@ def _candidate(conn: Any, version_id: UUID, blog_id: UUID) -> dict[str, Any] | N
             q.id AS quality_evaluation_id,q.id AS evaluation_id,q.status AS quality_status,
             editorial.id AS editorial_version_id,editorial.html_body,
             editorial.title AS editorial_title,editorial.seo_description,
+            (SELECT imported.event_group_id FROM external_content_import_content_links link
+              JOIN external_content_imports imported ON imported.id=link.import_id
+              WHERE link.content_version_id=v.id
+              ORDER BY imported.received_at DESC,imported.id DESC LIMIT 1) AS event_group_id,
             (cardinality(COALESCE(q.source_ids,'{}'::uuid[]))>0 AND NOT EXISTS (
               SELECT 1 FROM unnest(q.source_ids) sid
               WHERE NOT EXISTS (SELECT 1 FROM research_sources s
@@ -435,45 +454,79 @@ def _candidate(conn: Any, version_id: UUID, blog_id: UUID) -> dict[str, Any] | N
 
 
 @router.get("")
-def list_publications() -> dict[str, Any]:
+def list_publications(
+    view: Literal["queue", "review", "published", "held"] = Query("review"),
+    q: str = Query("", max_length=200),
+    language_code: str = Query("", max_length=35),
+    blog_id: str = Query("", max_length=64),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
+) -> dict[str, Any]:
     with connection() as conn:
         mode_data = _mode_settings(conn)
-        candidates = conn.execute(
-            """SELECT v.id AS content_version_id,v.title,l.language_code,
-                l.target_country,b.id AS blog_id,b.url,b.blog_id AS blogger_blog_id,
-                v.created_at AS version_created_at,
-                COALESCE(q.machine_passed,false) AS machine_passed,
-                COALESCE(q.human_review_required,true) AS human_review_required,
-                COALESCE(q.publish_ready,false) AS publish_ready,q.status AS quality_status,
-                q.evaluation_id,
-                q.created_at AS evaluated_at,
-                COALESCE(review.disposition='approved',false) AS editorial_review_approved,
-                COALESCE(approval.action='approved' AND
-                    (editorial.id IS NULL OR approval.body_sha256=editorial.body_sha256),false)
-                    AS publication_approval_approved
-            FROM content_versions v JOIN content_localizations l ON l.id=v.localization_id
-            JOIN blogger_blogs b ON b.language_code=l.language_code AND b.active
-            LEFT JOIN LATERAL (SELECT id AS evaluation_id,machine_passed,human_review_required,publish_ready,status,created_at
-                FROM article_quality_evaluations WHERE content_version_id=v.id
-                ORDER BY created_at DESC,id DESC LIMIT 1) q ON true
-            LEFT JOIN LATERAL (
-                SELECT id,body_sha256 FROM article_editorial_versions
-                WHERE evaluation_id=q.evaluation_id AND base_content_version_id=v.id
-                ORDER BY revision_number DESC,created_at DESC,id DESC LIMIT 1
-            ) editorial ON true
-            LEFT JOIN LATERAL (
-                SELECT disposition FROM article_human_reviews
-                WHERE evaluation_id=q.evaluation_id AND content_version_id=v.id
-                  AND editorial_version_id IS NOT DISTINCT FROM editorial.id
-                ORDER BY created_at DESC,id DESC LIMIT 1
-            ) review ON true
-            LEFT JOIN LATERAL (
-                SELECT action,body_sha256 FROM publication_approval_events
-                WHERE evaluation_id=q.evaluation_id AND content_version_id=v.id
-                  AND editorial_version_id IS NOT DISTINCT FROM editorial.id
-                ORDER BY created_at DESC,id DESC LIMIT 1
-            ) approval ON true
-            ORDER BY v.created_at DESC LIMIT 100"""
+        raw_latest_count = conn.execute(
+            """SELECT count(*)::int AS count FROM (
+              SELECT DISTINCT ON (v.group_id,v.localization_id,b.id) v.group_id,v.localization_id,b.id
+              FROM content_versions v JOIN content_localizations l ON l.id=v.localization_id
+              JOIN blogger_blogs b ON b.language_code=l.language_code AND b.active
+              ORDER BY v.group_id,v.localization_id,b.id,v.version DESC,v.created_at DESC,v.id DESC
+            ) latest"""
+        ).fetchone()["count"]
+        rows = conn.execute(
+            """WITH latest AS (
+              SELECT DISTINCT ON (v.group_id,v.localization_id,b.id)
+                v.id AS content_version_id,v.group_id,v.localization_id,v.version,v.title,v.body,v.created_at AS version_created_at,
+                l.language_code,l.target_country,b.id AS blog_uuid,b.url,b.display_name AS blog_name,
+                b.blog_id AS blogger_blog_id,b.active AS blog_active,b.oauth_connection_id,
+                b.connection_verified_at,b.test_publish_verified_at
+              FROM content_versions v
+              JOIN content_localizations l ON l.id=v.localization_id
+              JOIN blogger_blogs b ON b.language_code=l.language_code AND b.active
+              ORDER BY v.group_id,v.localization_id,b.id,v.version DESC,v.created_at DESC,v.id DESC
+            )
+            SELECT latest.*,lang.active AS language_active,g.status AS oauth_status,
+              p.id AS policy_id,p.active AS policy_active,p.auto_publish_allowed,
+              COALESCE(q.machine_passed,false) AS machine_passed,
+              COALESCE(q.human_review_required,true) AS human_review_required,
+              COALESCE(q.publish_ready,false) AS publish_ready,q.status AS quality_status,q.id AS evaluation_id,
+              imported.research_package_id,imported.event_group_id,
+              COALESCE(imported.title,imported.category) AS topic,
+              publication.published_at AS remote_published_at,publication.remote_post_id,
+              publication.remote_url,publication.remote_verified_at,publication.remote_status,
+              active_job.id AS active_job_id,active_job.status AS active_job_status,
+              active_job.publication_state AS active_job_publication_state,
+              active_job.scheduled_at AS next_publish_at
+            FROM latest
+            JOIN languages lang ON lang.code=latest.language_code
+            LEFT JOIN google_connections g ON g.id=latest.oauth_connection_id
+            LEFT JOIN language_profiles lp ON lp.language_code=latest.language_code AND lp.target_country=latest.target_country
+            LEFT JOIN publishing_policies p ON p.blog_id=latest.blog_uuid AND p.profile_id=lp.id
+            LEFT JOIN LATERAL (SELECT machine_passed,human_review_required,publish_ready,status,id
+              FROM article_quality_evaluations WHERE content_version_id=latest.content_version_id
+              ORDER BY created_at DESC,id DESC LIMIT 1) q ON true
+            LEFT JOIN LATERAL (SELECT imported.research_package_id,imported.event_group_id,imported.title,imported.category
+              FROM external_content_import_content_links link
+              JOIN external_content_imports imported ON imported.id=link.import_id
+              WHERE link.content_version_id=latest.content_version_id
+              ORDER BY imported.received_at DESC,imported.id DESC LIMIT 1) imported ON true
+            LEFT JOIN LATERAL (SELECT r.published_at,r.remote_post_id,r.remote_url,r.remote_verified_at,r.remote_status
+              FROM publishing_records r JOIN content_versions pv ON pv.id=r.content_version_id
+              JOIN content_localizations pl ON pl.id=pv.localization_id
+              WHERE r.blog_id=latest.blog_uuid AND pv.group_id=latest.group_id
+                AND pl.language_code=latest.language_code AND pl.target_country=latest.target_country
+                AND r.remote_status='LIVE' AND r.remote_verified_at IS NOT NULL
+              ORDER BY r.published_at DESC,r.id DESC LIMIT 1) publication ON true
+            LEFT JOIN LATERAL (SELECT j.id,j.status,j.publication_state,j.scheduled_at
+              FROM publishing_jobs j JOIN content_versions jv ON jv.id=j.content_version_id
+              JOIN content_localizations jl ON jl.id=jv.localization_id
+              WHERE j.blog_id=latest.blog_uuid AND jv.group_id=latest.group_id
+                AND jl.language_code=latest.language_code AND jl.target_country=latest.target_country
+                AND j.status IN ('queued','running') AND NOT j.simulation_only
+              ORDER BY j.scheduled_at,j.id LIMIT 1) active_job ON true
+            WHERE trim(lower(latest.title)) NOT IN ('revised','localized','mock','test')
+              AND lower(latest.title) NOT LIKE 'mock pipeline verification%'
+              AND position('test only' in lower(latest.title))=0
+            ORDER BY latest.version_created_at DESC,latest.content_version_id DESC"""
         ).fetchall()
         jobs = conn.execute(
             """SELECT j.id,j.content_version_id,j.blog_id,b.language_code,b.url,v.title AS content_title,
@@ -491,7 +544,7 @@ def list_publications() -> dict[str, Any]:
             LEFT JOIN content_versions v ON v.id=j.content_version_id
             LEFT JOIN LATERAL (SELECT remote_url,remote_status,remote_verified_at,published_at
               FROM publishing_records r WHERE r.job_id=j.id ORDER BY r.published_at DESC LIMIT 1) live_record ON true
-            ORDER BY j.scheduled_at DESC,j.id DESC LIMIT 100"""
+             ORDER BY j.scheduled_at DESC,j.id DESC"""
         ).fetchall()
         attempts = conn.execute(
             "SELECT id,job_id,scenario,outcome,fake_post_id,result,created_at FROM publication_attempts ORDER BY created_at DESC LIMIT 50"
@@ -522,7 +575,25 @@ def list_publications() -> dict[str, Any]:
             """SELECT count(*)::int AS n FROM publishing_records
               WHERE remote_status='LIVE' AND remote_verified_at IS NOT NULL"""
         ).fetchone()
-        for candidate in candidates:
+        latest_candidates: list[dict[str, Any]] = []
+        seen_bodies: set[tuple[str, str, str]] = set()
+        duplicate_suppressed = 0
+        for raw_candidate in rows:
+            candidate = dict(raw_candidate)
+            candidate["id"] = str(candidate["content_version_id"])
+            candidate["group_id"] = str(candidate["group_id"])
+            candidate["content_version_id"] = str(candidate["content_version_id"])
+            candidate["blog_id"] = str(candidate["blog_uuid"])
+            body = str(candidate.pop("body", ""))
+            candidate["body_sha256"] = _body_digest(body)
+            body_key = (candidate["blog_id"], candidate["language_code"], candidate["body_sha256"])
+            if body_key in seen_bodies:
+                duplicate_suppressed += 1
+                continue
+            seen_bodies.add(body_key)
+            candidate["version_language"] = candidate["language_code"]
+            candidate["blog_language"] = candidate["language_code"]
+            candidate["blog_id_value"] = candidate["blogger_blog_id"]
             candidate["mode_policy"] = resolve_mode(
                 mode_data["settings"], str(candidate["language_code"]), str(candidate["blog_id"])
             )
@@ -530,37 +601,122 @@ def list_publications() -> dict[str, Any]:
                 candidate["mode_policy"]["configured_mode"],
                 emergency_stopped=bool(mode_data["emergency_stopped"]),
             )
-            # The compact candidate read model does not carry the immutable,
-            # current proofs required by the Auto policy. Missing proof must
-            # stay unknown instead of triggering a per-row fallback query or
-            # borrowing the separate human/manual approval state.
-            candidate["auto_eligibility"] = assess_auto_candidate(
-                {
-                    "machine_passed": candidate["machine_passed"],
-                    "source_accessible": False,
-                    "source_body_verified": False,
-                    "key_facts_verified": False,
-                    "claim_evidence_semantically_verified": False,
-                    "independent_verification_satisfied": False,
-                    "source_rights_cleared": False,
-                    "language_quality_passed": False,
-                    "topic_relevance_passed": False,
-                    "seo_passed": False,
-                    "html_safe": False,
-                    "not_duplicate": False,
-                    "sources_current": False,
-                    "blog_mapping_valid": False,
-                    "not_evaluation_only": False,
-                    "topic": candidate.get("title"),
-                },
-                requested_mode=candidate["mode_policy"]["configured_mode"],
-                emergency_stopped=bool(mode_data["emergency_stopped"]),
-                settings=candidate["mode_policy"],
-                auto_policy_active=False,
-                live_writes_enabled=False,
-            )
+            is_published = bool(candidate["remote_post_id"] and candidate["remote_verified_at"])
+            is_queued = bool(candidate["active_job_id"])
+            if is_published:
+                candidate["operational_status"] = "published"
+                candidate["eligibility_reasons"] = []
+            elif is_queued:
+                candidate["operational_status"] = "queued"
+                candidate["eligibility_reasons"] = []
+            else:
+                candidate["operational_status"] = "review_needed"
+                candidate["eligibility_reasons"] = (
+                    ["quality_evaluation_missing"] if candidate["evaluation_id"] is None
+                    else ["quality_not_passed"] if not candidate["machine_passed"]
+                    else ["editorial_source_rights_and_publication_review_required"]
+                )
+            candidate["auto_eligibility"] = {
+                "eligible": False, "auto_eligible": False, "dispatchable": False,
+                "reasons": ["automatic_publication_policy_inactive"],
+                "human_review_required": True, "human_approval_recorded": False,
+                "simulation_only": True,
+            }
+            latest_candidates.append(candidate)
+
+        publication_records = [dict(row) for row in conn.execute(
+            """SELECT r.id AS record_id,r.job_id,r.blog_id,b.language_code,b.display_name AS blog_name,
+            b.url AS blog_url,b.blog_id AS blogger_blog_id,r.content_version_id,v.group_id,v.title,
+            r.remote_post_id,r.remote_url,r.remote_status,r.remote_verified_at,r.published_at
+            FROM publishing_records r JOIN blogger_blogs b ON b.id=r.blog_id
+            JOIN content_versions v ON v.id=r.content_version_id
+            WHERE r.remote_status='LIVE' AND r.remote_verified_at IS NOT NULL
+            ORDER BY r.published_at DESC,r.id DESC"""
+        ).fetchall()]
+        held_jobs = [dict(row) for row in jobs if row["status"] in {"blocked", "failed", "uncertain"}
+                     or row["publication_state"] in {"quality_held", "publication_blocked", "publication_failed"}]
+
+        queue_items: list[dict[str, Any]] = []
+        review_items: list[dict[str, Any]] = []
+        for candidate in latest_candidates:
+            if candidate["operational_status"] == "published":
+                continue
+            item = {
+                **candidate,
+                "item_type": "manuscript",
+                "topic": candidate.get("topic") or candidate.get("title"),
+                "blog_name": candidate.get("blog_name") or candidate.get("url"),
+                "status": candidate["operational_status"],
+                "created_at": candidate["version_created_at"],
+                "remote_url": None,
+            }
+            if candidate["operational_status"] in {"queued", "queueable"}:
+                queue_items.append(item)
+            else:
+                review_items.append(item)
+        published_items = [{
+            "item_type": "published", "id": str(row["record_id"]),
+            "content_version_id": str(row["content_version_id"]), "group_id": str(row["group_id"]),
+            "title": row["title"], "language_code": row["language_code"],
+            "blog_id": str(row["blog_id"]), "blog_name": row["blog_name"],
+            "url": row["blog_url"], "blogger_blog_id": row["blogger_blog_id"],
+            "topic": row["title"], "status": "published", "created_at": row["published_at"],
+            "remote_post_id": row["remote_post_id"], "remote_url": row["remote_url"],
+            "remote_status": row["remote_status"], "remote_verified_at": row["remote_verified_at"],
+            "published_at": row["published_at"], "eligibility_reasons": [],
+            "research_package_id": None, "source_names": None,
+        } for row in publication_records]
+        held_items = [{
+            "item_type": "job", "id": str(row["id"]),
+            "content_version_id": str(row["content_version_id"]),
+            "title": row["content_title"] or "제목 없음", "language_code": row["language_code"],
+            "blog_id": str(row["blog_id"]), "blog_name": row["url"], "url": row["url"],
+            "blogger_blog_id": None, "topic": row["content_title"],
+            "status": row["publication_state"], "created_at": row["updated_at"],
+            "next_publish_at": row["scheduled_at"], "remote_post_id": row["remote_post_id"],
+            "remote_url": None, "remote_status": None, "remote_verified_at": None,
+            "simulation_only": row["simulation_only"], "adapter_type": row["adapter_type"],
+            "attempts": row["attempts"], "last_error_category": row["last_error_category"],
+            "eligibility_reasons": row["block_reasons"] or [],
+            "research_package_id": None, "source_names": None,
+        } for row in held_jobs]
+
+        all_views = {
+            "queue": queue_items,
+            "review": review_items,
+            "published": published_items,
+            "held": held_items,
+        }
+        summary = {
+            "queue": len(queue_items), "review": len(review_items),
+            "published": len(published_items), "held": len(held_items),
+            "latest_manuscripts": len(latest_candidates),
+            "duplicate_suppressed": duplicate_suppressed,
+            "excluded_non_operational": max(0, int(raw_latest_count) - len(latest_candidates) - duplicate_suppressed),
+        }
+        selected = all_views[view]
+        query = q.strip().casefold()
+        if query:
+            selected = [item for item in selected if query in " ".join(str(item.get(key) or "") for key in (
+                "title", "topic", "source_names", "remote_post_id", "content_version_id", "id"
+            )).casefold()]
+        if language_code:
+            selected = [item for item in selected if item.get("language_code") == language_code]
+        if blog_id:
+            selected = [item for item in selected if item.get("blog_id") == blog_id]
+        total_count = len(selected)
+        page_count = (total_count + page_size - 1) // page_size
+        start = (page - 1) * page_size
+        items = selected[start:start + page_size]
         return {
-            "candidates": [dict(row) for row in candidates],
+            "candidates": [dict(row) for row in latest_candidates],
+            "items": [dict(row) for row in items],
+            "view": view,
+            "summary": summary,
+            "total_count": total_count,
+            "page": page,
+            "page_size": page_size,
+            "page_count": page_count,
             "jobs": [dict(row) for row in jobs],
             "simulations": [dict(row) for row in attempts],
             "live_attempts": [dict(row) for row in live_attempts],
@@ -572,8 +728,17 @@ def list_publications() -> dict[str, Any]:
             "publish_ready_enabled": False,
             "adapter_available": "fake_and_guarded_blogger_live_queue",
             "mode_policy": mode_data,
+            "operational_limits": {
+                "timezone": "Asia/Seoul",
+                "global_daily": GLOBAL_DAILY_PUBLISH_LIMIT,
+                "language_daily": {**LANGUAGE_DAILY_LIMITS, "en": None},
+                "language_hourly": LANGUAGE_HOURLY_LIMITS,
+                "english_daily_policy": "remaining_global_capacity",
+                "blog_minimum_interval_minutes": 5,
+                "account_minimum_interval_minutes": 2,
+            },
             "auto_candidate_count": sum(
-                1 for candidate in candidates if candidate["auto_eligibility"]["eligible"]
+                1 for candidate in latest_candidates if candidate["auto_eligibility"]["eligible"]
             ),
             "auto_runtime_status": "disabled_pending_separate_activation",
             "auto_policy_active": False,
@@ -703,7 +868,34 @@ def create_live_request(request: RequestInput) -> dict[str, Any]:
         row = _candidate(conn, request.content_version_id, request.blog_id)
         if row is None:
             raise HTTPException(404, "Content version or registered blog not found")
-        reasons = list(_assess(dict(row))["reasons"])
+        row = dict(row)
+        reasons = list(_assess(row)["reasons"])
+        newest = conn.execute(
+            """SELECT id FROM content_versions WHERE group_id=%s AND localization_id=%s
+            ORDER BY version DESC,created_at DESC,id DESC LIMIT 1""",
+            (row["group_id"], row["localization_id"]),
+        ).fetchone()
+        if newest and str(newest["id"]) != str(request.content_version_id):
+            reasons.append("stale_content_version")
+        if row.get("event_group_id"):
+            conn.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
+                (f"publication:{request.blog_id}:{row['event_group_id']}:{_body_digest(str(row['body']))}",),
+            )
+            duplicate_bodies = conn.execute(
+                """SELECT v.body FROM publishing_jobs j
+                JOIN content_versions v ON v.id=j.content_version_id
+                WHERE j.blog_id=%s AND j.content_version_id<>%s
+                  AND (j.status IN ('queued','running','uncertain','succeeded','published') OR EXISTS (
+                    SELECT 1 FROM publishing_records r WHERE r.job_id=j.id
+                      AND r.remote_status='LIVE' AND r.remote_verified_at IS NOT NULL))
+                  AND EXISTS (SELECT 1 FROM external_content_import_content_links link
+                    JOIN external_content_imports imported ON imported.id=link.import_id
+                    WHERE link.content_version_id=v.id AND imported.event_group_id=%s)""",
+                (request.blog_id, request.content_version_id, row["event_group_id"]),
+            ).fetchall()
+            if _has_identical_body(str(row["body"]), [str(existing["body"]) for existing in duplicate_bodies]):
+                reasons.append("same_event_same_blog_identical_body_already_queued_or_published")
         modes = _mode_settings(conn)
         if modes["migration_required"]:
             reasons.append("publication_modes_unavailable")

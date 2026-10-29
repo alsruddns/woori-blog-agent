@@ -2,232 +2,151 @@
 
 import { useState } from "react";
 
-type Candidate = {
-  evaluation_id: string | null; content_version_id: string; title: string; language_code: string; target_country: string;
-  blog_id: string; url: string; blogger_blog_id: string | null; machine_passed: boolean;
-  human_review_required: boolean; publish_ready: boolean; quality_status: string | null;
-  editorial_review_approved?: boolean; publication_approval_approved?: boolean;
-  effective_mode?: string; auto_eligibility?: { eligible: boolean; auto_eligible: boolean; dispatchable: boolean; reasons: string[]; human_review_required: false; human_approval_recorded: false; simulation_only: boolean };
+type Item = {
+  id: string; content_version_id: string; group_id?: string; title: string; language_code: string;
+  blog_id: string; blog_name?: string; url: string; topic?: string | null; source_names?: string | null;
+  status: string; quality_status?: string | null; eligibility_reasons?: string[];
+  next_publish_at?: string | null; created_at?: string | null; remote_url?: string | null;
+  remote_post_id?: string | null; remote_status?: string | null; remote_verified_at?: string | null;
+  simulation_only?: boolean; adapter_type?: string; evaluation_id?: string | null;
 };
-type Job = { id: string; evaluation_id: string | null; content_version_id: string; content_title?: string | null; language_code: string; url: string; status: string; publication_state: string; block_reasons: string[]; simulation_count: number; adapter_type?: string; simulation_only?: boolean; remote_post_id?: string | null; remote_url?: string | null; remote_status?: string | null; remote_verified_at?: string | null; published_at?: string | null; live_attempt_count?: number; last_error_category?: string | null };
-type ModeSetting = { scope_type: "global" | "language" | "blog"; scope_key: string; configured_mode: "manual" | "auto"; daily_auto_limit: number; minimum_interval_minutes: number; allowed_start_hour: number; allowed_end_hour: number; timezone: string; allowed_categories: string[]; excluded_topics: string[]; max_source_age_hours: number; retry_limit: number; emergency_stopped: boolean; operations_auto_approved: boolean; updated_at?: string };
-type SyncPost = { id: string | null; url: string | null; title: string | null; status: string | null; published: string | null; updated: string | null; internal_record: boolean; content_version_id: string | null };
-type SyncResult = { language_code: string; blog_uuid: string; posts: SyncPost[]; next_page_token: string; read_only: true; internal_state_changed: false };
-export type PublicationData = { candidates: Candidate[]; jobs: Job[]; simulations: unknown[]; worker: { process_id: number; status: string; last_seen_at: string } | null; queued_mock_jobs: number; queued_confirmed_private_drafts?: number; actual_published_count?: number; real_writes_enabled: false; publish_ready_enabled: false; adapter_available: string; mode_policy: { migration_required: boolean; default_mode: string; settings: ModeSetting[]; languages: { code: string; display_name: string; active: boolean }[]; blogs: { id: string; language_code: string; url: string; display_name: string; active: boolean }[]; emergency_stopped: boolean; operations_auto_approved: false; live_auto_enabled: false; real_writes_enabled: false }; auto_candidate_count: number; auto_runtime_status: string };
-
-const stateNames: Record<string, string> = {
-  queued: "대기 중", blocked: "차단됨", failed: "실패", published: "게시 완료", succeeded: "모의 성공",
-  cancelled: "취소됨", pending: "승인 대기", quality_held: "품질 검토 필요", insufficient_evidence: "근거 자료 부족",
-  publish_ready: "게시 준비 완료", awaiting_human_review: "사람 검토 대기", review_started: "검토 중",
+type ModeSetting = { scope_type: string; scope_key: string; configured_mode: string; daily_auto_limit: number; minimum_interval_minutes: number; allowed_start_hour?:number; allowed_end_hour?:number; timezone?:string; allowed_categories?:string[]; excluded_topics?:string[]; max_source_age_hours?:number; retry_limit?:number };
+export type PublicationData = {
+  candidates: Item[]; items?: Item[]; view?: string; summary?: Record<string, number>; total_count?: number;
+  page?: number; page_size?: number; page_count?: number; jobs: Array<Record<string, unknown>>;
+  worker: { process_id: number; status: string; last_seen_at: string } | null; queued_mock_jobs: number;
+  queued_confirmed_private_drafts?: number; actual_published_count?: number; real_writes_enabled: false;
+  publish_ready_enabled: false; adapter_available: string;
+  mode_policy: { migration_required: boolean; default_mode: string; settings: ModeSetting[];
+    languages: { code: string; display_name: string; active: boolean }[];
+    blogs: { id: string; language_code: string; url: string; display_name: string; active: boolean }[];
+    emergency_stopped: boolean; operations_auto_approved: false; live_auto_enabled: false; real_writes_enabled: false };
+  auto_candidate_count: number; auto_runtime_status: string;
+  operational_limits?: {timezone:string;global_daily:number;language_daily:Record<string,number|null>;language_hourly:Record<string,number>;english_daily_policy:string;blog_minimum_interval_minutes:number;account_minimum_interval_minutes:number};
 };
-const languageNames: Record<string, string> = { ko: "한국어", en: "영어", ja: "일본어", "zh-CN": "중국어 간체" };
-const languageLabel = (code: string) => languageNames[code] ?? "언어 확인 필요";
-const categoryNames: Record<string, string> = { economy: "경제", finance: "금융", stocks: "주식", crypto: "암호화폐", technology: "IT", semiconductors: "반도체", ai: "인공지능", policy: "정치·정책" };
-const runtimeNames: Record<string, string> = { disabled: "비활성", stopped: "중지됨", blocked: "실행 차단", ready: "대기 중", unavailable: "사용할 수 없음" };
-const runtimeLabel = (status: string) => runtimeNames[status] ?? "상태 확인 필요";
+const tabs = [["queue", "발행 대기"], ["review", "검토 필요"], ["published", "게시 완료"], ["held", "실패·보류"]] as const;
+const languageLabel = (code: string) => ({ko:"한국어",en:"영어",ja:"일본어","zh-CN":"중국어 간체"}[code] ?? code);
+const statusLabel = (status: string) => ({review_needed:"검토 필요",queued:"발행 대기",published:"게시 완료",quality_held:"품질 보류",publication_blocked:"게시 차단",failed:"실패",uncertain:"결과 확인 필요"}[status] ?? status);
+const reasonLabel = (reason: string) => ({quality_evaluation_missing:"품질 검사 기록 없음",quality_not_passed:"품질 검사 통과 필요",editorial_source_rights_and_publication_review_required:"근거·권리·승인 확인 필요",automatic_publication_policy_inactive:"자동 발행 정책 비활성"}[reason] ?? "상세 검토 필요");
+const kst = (value?: string | null) => value ? new Intl.DateTimeFormat("ko-KR", { timeZone:"Asia/Seoul", dateStyle:"medium", timeStyle:"short" }).format(new Date(value)) + " KST" : "기록 없음";
 
 export default function PublicationManager({ initial }: { initial: PublicationData }) {
-  const globalMode = initial.mode_policy.settings.find(item => item.scope_type === "global" && item.scope_key === "");
   const [data, setData] = useState(initial);
-  const [message, setMessage] = useState("");
-  const [busy, setBusy] = useState("");
-  const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
-  const [scopeType, setScopeType] = useState<"global" | "language" | "blog">("global");
-  const [scopeKey, setScopeKey] = useState("");
-  const [selectedMode, setSelectedMode] = useState<"manual" | "auto">(globalMode?.configured_mode ?? "manual");
-  const [categories, setCategories] = useState(globalMode?.allowed_categories.join(", ") ?? "");
-  const [dailyLimit, setDailyLimit] = useState(globalMode?.daily_auto_limit ?? 1);
-  const [minimumInterval, setMinimumInterval] = useState(globalMode?.minimum_interval_minutes ?? 1440);
-  const [maxAge, setMaxAge] = useState(globalMode?.max_source_age_hours ?? 24);
-  const [retryLimit, setRetryLimit] = useState(globalMode?.retry_limit ?? 0);
-  const [startHour, setStartHour] = useState(globalMode?.allowed_start_hour ?? 9);
-  const [endHour, setEndHour] = useState(globalMode?.allowed_end_hour ?? 17);
-  const [excludedTopics, setExcludedTopics] = useState(globalMode?.excluded_topics.join(", ") ?? "");
-  const [activeTab, setActiveTab] = useState<"pending" | "history" | "settings">("pending");
-  const pendingCount = data.candidates.filter(candidate => !candidate.editorial_review_approved || !candidate.publication_approval_approved).length;
-  const publishedCount = data.actual_published_count ?? data.jobs.filter(job => job.adapter_type === "blogger_live" && job.remote_status === "LIVE" && job.remote_post_id && job.remote_verified_at).length;
-  const blockedCount = data.jobs.filter(job => job.publication_state === "blocked" || job.status === "failed").length;
-  function chooseScope(type: "global" | "language" | "blog", key = "") {
-    setScopeType(type); setScopeKey(key);
-    const saved = data.mode_policy.settings.find(item => item.scope_type === type && item.scope_key === key);
-    setSelectedMode(saved?.configured_mode ?? "manual");
-    setCategories(saved?.allowed_categories.join(", ") ?? "");
-    setDailyLimit(saved?.daily_auto_limit ?? 1);
-    setMinimumInterval(saved?.minimum_interval_minutes ?? 1440);
-    setMaxAge(saved?.max_source_age_hours ?? 24);
-    setRetryLimit(saved?.retry_limit ?? 0);
-    setStartHour(saved?.allowed_start_hour ?? 9);
-    setEndHour(saved?.allowed_end_hour ?? 17);
-    setExcludedTopics(saved?.excluded_topics.join(", ") ?? "");
-  }
-  async function saveMode() {
-    if (selectedMode === "auto" && !window.confirm("자동 게시 설정을 요청합니다. 운영 승인과 실제 Blogger 쓰기 잠금은 유지되므로 게시가 실행되지 않습니다. 이 설정을 저장할까요?")) return;
-    setBusy("mode-settings"); setMessage("");
+  const initialGlobalMode=initial.mode_policy.settings.find(item=>item.scope_type==="global"&&!item.scope_key);
+  const [view, setView] = useState<(typeof tabs)[number][0]>((initial.view as (typeof tabs)[number][0]) || "review");
+  const [query, setQuery] = useState(""); const [language, setLanguage] = useState(""); const [blog, setBlog] = useState("");
+  const [page, setPage] = useState(1); const [loading, setLoading] = useState(false); const [error, setError] = useState("");
+  const [activeTab, setActiveTab] = useState<string>(view);
+  const [emergencyBusy, setEmergencyBusy] = useState(false);
+  const [notice,setNotice]=useState("");
+  const [scopeType,setScopeType]=useState<"global"|"language"|"blog">("global");
+  const [scopeKey,setScopeKey]=useState("");
+  const [selectedMode,setSelectedMode]=useState<"manual"|"auto">((initialGlobalMode?.configured_mode as "manual"|"auto")??"manual");
+  const [dailyLimit,setDailyLimit]=useState(initialGlobalMode?.daily_auto_limit??1); const [minimumInterval,setMinimumInterval]=useState(initialGlobalMode?.minimum_interval_minutes??1440);
+  const [startHour,setStartHour]=useState(initialGlobalMode?.allowed_start_hour??9); const [endHour,setEndHour]=useState(initialGlobalMode?.allowed_end_hour??17);
+  const [maxAge,setMaxAge]=useState(initialGlobalMode?.max_source_age_hours??24); const [retryLimit,setRetryLimit]=useState(initialGlobalMode?.retry_limit??0);
+  const [categories,setCategories]=useState(initialGlobalMode?.allowed_categories?.join(", ")??""); const [excludedTopics,setExcludedTopics]=useState(initialGlobalMode?.excluded_topics?.join(", ")??"");
+  async function refresh(nextPage = page, nextView = view) {
+    setLoading(true); setError("");
+    const params = new URLSearchParams({ view: nextView, q: query, language_code: language, blog_id: blog, page: String(nextPage), page_size: "25" });
     try {
-      const response = await fetch("/api/publications/mode-settings", { method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scope_type: scopeType, scope_key: scopeKey, configured_mode: selectedMode,
-          daily_auto_limit: dailyLimit, minimum_interval_minutes: minimumInterval,
-          allowed_start_hour: startHour, allowed_end_hour: endHour, timezone: "Asia/Seoul",
-          allowed_categories: categories.split(",").map(value => value.trim()).filter(Boolean),
-          excluded_topics: excludedTopics.split(",").map(value => value.trim()).filter(Boolean), max_source_age_hours: maxAge, retry_limit: retryLimit }) });
-      const result = await response.json();
-      setMessage(response.ok ? "설정을 저장했습니다. 자동 게시 실행은 운영 승인과 발행 안전 게이트가 열리기 전까지 차단됩니다." : String(result.detail ?? result.error ?? "설정 저장 실패"));
-      const refreshed = await fetch("/api/publications", { cache: "no-store" });
-      if (refreshed.ok) setData(await refreshed.json());
-    } catch { setMessage("로컬 API에 연결할 수 없습니다."); }
-    finally { setBusy(""); }
+      const response = await fetch(`/api/publications?${params}`, { cache:"no-store" });
+      if (!response.ok) throw new Error("발행 현황을 불러오지 못했습니다.");
+      const next = await response.json() as PublicationData; setData(next); setPage(nextPage); setView(nextView); setActiveTab(nextView);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "연결 오류"); }
+    finally { setLoading(false); }
   }
-  async function stopAuto() {
-    setBusy("emergency-stop"); setMessage("");
-    try {
-      const response = await fetch("/api/publications/emergency-stop", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled: true }) });
-      const result = await response.json();
-      setMessage(response.ok ? "긴급 중지를 기록했습니다. 이 화면에서는 중지를 해제할 수 없습니다." : String(result.detail ?? result.error ?? "긴급 중지 실패"));
-      const refreshed = await fetch("/api/publications", { cache: "no-store" });
-      if (refreshed.ok) setData(await refreshed.json());
-    } catch { setMessage("로컬 API에 연결할 수 없습니다."); }
-    finally { setBusy(""); }
+  async function emergencyStop() {
+    setEmergencyBusy(true); setError("");
+    try { const r = await fetch("/api/publications/emergency-stop", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({enabled:true}) });
+      if (!r.ok) throw new Error("긴급 정지를 기록하지 못했습니다."); await refresh(); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "정지 요청 실패"); }
+    finally { setEmergencyBusy(false); }
   }
-  async function request(candidate: Candidate) {
-    const key = crypto.randomUUID().replaceAll("-", "");
-    setBusy(candidate.content_version_id); setMessage("");
-    try {
-      const response = await fetch("/api/publications/requests", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content_version_id: candidate.content_version_id, blog_id: candidate.blog_id, idempotency_key: key }) });
-      const result = await response.json();
-      setMessage(response.ok ? `요청 상태: ${stateNames[String(result.publication_state ?? result.state)] ?? "기록됨"}. 실제 Blogger 게시 기능은 비활성화되어 있습니다.` : "게시 요청을 저장하지 못했습니다. 차단 사유는 운영 진단에서 확인하세요.");
-      const refreshed = await fetch("/api/publications", { cache: "no-store" });
-      if (refreshed.ok) setData(await refreshed.json());
-    } catch { setMessage("로컬 API 서버에 연결할 수 없습니다."); }
-    finally { setBusy(""); }
+  function chooseScope(type:"global"|"language"|"blog",key=""){
+    setScopeType(type);setScopeKey(key);
+    const saved=data.mode_policy.settings.find(item=>item.scope_type===type&&item.scope_key===key);
+    setSelectedMode((saved?.configured_mode as "manual"|"auto")??"manual");setDailyLimit(saved?.daily_auto_limit??1);
+    setMinimumInterval(saved?.minimum_interval_minutes??1440);setStartHour(saved?.allowed_start_hour??9);setEndHour(saved?.allowed_end_hour??17);
+    setMaxAge(saved?.max_source_age_hours??24);setRetryLimit(saved?.retry_limit??0);
+    setCategories(saved?.allowed_categories?.join(", ")??"");setExcludedTopics(saved?.excluded_topics?.join(", ")??"");
   }
-  async function simulate(job: Job) {
-    const key = crypto.randomUUID().replaceAll("-", "");
-    setBusy(job.id); setMessage("");
-    try {
-      const response = await fetch(`/api/publications/jobs/${job.id}/simulate`, { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idempotency_key: key, scenario: "success" }) });
-      const result = await response.json();
-      setMessage(response.ok ? `모의 게시 결과: ${stateNames[String(result.outcome)] ?? "처리됨"} · 모의 ID ${result.fake_post_id}. 실제 게시물은 생성되지 않았습니다.` : "모의 게시를 완료하지 못했습니다. 차단 사유는 운영 진단에서 확인하세요.");
-      const refreshed = await fetch("/api/publications", { cache: "no-store" });
-      if (refreshed.ok) setData(await refreshed.json());
-    } catch { setMessage("로컬 API 서버에 연결할 수 없습니다."); }
-    finally { setBusy(""); }
+  async function saveMode(){
+    if(selectedMode==="auto"&&!window.confirm("Auto 정책 설정을 저장합니다. 실제 공개 발행은 별도 운영 게이트가 열리기 전까지 차단됩니다. 저장할까요?"))return;
+    setEmergencyBusy(true);setNotice("");setError("");
+    try{const response=await fetch("/api/publications/mode-settings",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({scope_type:scopeType,scope_key:scopeKey,configured_mode:selectedMode,daily_auto_limit:dailyLimit,minimum_interval_minutes:minimumInterval,allowed_start_hour:startHour,allowed_end_hour:endHour,timezone:"Asia/Seoul",allowed_categories:categories.split(",").map(x=>x.trim()).filter(Boolean),excluded_topics:excludedTopics.split(",").map(x=>x.trim()).filter(Boolean),max_source_age_hours:maxAge,retry_limit:retryLimit})});
+      const result=await response.json();if(!response.ok)throw new Error(String(result.detail??"설정 저장에 실패했습니다."));
+      setNotice("설정을 저장했습니다. Blogger 실제 쓰기 및 Auto 게시 활성화는 별도 게이트에 의해 계속 차단됩니다.");
+      const params=new URLSearchParams({view,q:query,language_code:language,blog_id:blog,page:String(page),page_size:"25"});const refreshResponse=await fetch(`/api/publications?${params}`,{cache:"no-store"});if(refreshResponse.ok)setData(await refreshResponse.json() as PublicationData);
+    }catch(cause){setError(cause instanceof Error?cause.message:"설정 저장 실패");}finally{setEmergencyBusy(false);}
   }
-  async function schedule(job: Job) {
-    const input = document.getElementById(`schedule-${job.id}`) as HTMLInputElement | null;
-    if (!input?.value) { setMessage("한국 표준시 기준의 예약 일시를 선택하세요."); return; }
-    setBusy(job.id); setMessage("");
-    try {
-      const response = await fetch(`/api/publications/jobs/${job.id}/schedule`, { method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idempotency_key: crypto.randomUUID().replaceAll("-", ""), scheduled_at: `${input.value}:00+09:00`, timezone: "Asia/Seoul", mock_scenario: "success" }) });
-      const result = await response.json();
-      setMessage(response.ok ? `모의 예약을 기록했습니다: ${result.scheduled_at}. 실제 게시 예약은 생성되지 않았습니다.` : "모의 예약을 기록하지 못했습니다.");
-      const refreshed = await fetch("/api/publications", { cache: "no-store" });
-      if (refreshed.ok) setData(await refreshed.json());
-    } catch { setMessage("로컬 API 서버에 연결할 수 없습니다."); }
-    finally { setBusy(""); }
-  }
-  async function cancelSchedule(job: Job) {
-    setBusy(job.id); setMessage("");
-    try {
-      const response = await fetch(`/api/publications/jobs/${job.id}/schedule`, { method: "DELETE", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idempotency_key: crypto.randomUUID().replaceAll("-", "") }) });
-      const result = await response.json();
-      setMessage(response.ok ? "모의 예약 취소를 기록했습니다." : "모의 예약 취소를 기록하지 못했습니다.");
-      const refreshed = await fetch("/api/publications", { cache: "no-store" });
-      if (refreshed.ok) setData(await refreshed.json());
-    } catch { setMessage("로컬 API 서버에 연결할 수 없습니다."); }
-    finally { setBusy(""); }
-  }
-  async function syncReadOnly(candidate: Candidate, pageToken = "") {
-    setBusy(candidate.blog_id); setMessage("");
-    try {
-      const query = pageToken ? `?page_token=${encodeURIComponent(pageToken)}` : "";
-      const response = await fetch(`/api/publications/blogs/${candidate.blog_id}/sync-readonly${query}`, { method: "POST" });
-      const result = await response.json();
-      if (response.ok) {
-        setSyncResult(result as SyncResult);
-        setMessage(`읽기 전용 확인: ${result.language_code} 블로그 게시물 ${result.posts.length}건을 조회했습니다. 다음 페이지 ${result.next_page_token ? "있음" : "없음"}. 차이는 사람이 확인해야 합니다.`);
-      } else setMessage("Blogger 읽기 확인에 실패했습니다. 연결 상태를 확인하세요.");
-    } catch { setMessage("로컬 API 서버에 연결할 수 없습니다."); }
-    finally { setBusy(""); }
-  }
+  const counts = data.summary ?? {};
+  const items = data.items ?? [];
+  const shownCount = data.total_count ?? items.length;
+  const globalMode = data.mode_policy.settings.find(x => x.scope_type === "global" && !x.scope_key);
   return <div className="publication-manager">
-    <section className="publishing-summary" aria-label="발행 현황">
-      <article><span>실제 Blogger 게시 (원격 확인)</span><strong>{publishedCount.toLocaleString("ko-KR")}건</strong></article>
-      <article><span>자동 게시 실행</span><strong>비활성</strong></article>
-      <article><span>승인 대기 후보</span><strong>{pendingCount.toLocaleString("ko-KR")}건</strong></article>
-      <article><span>게시 기록</span><strong>{publishedCount.toLocaleString("ko-KR")}건 · 보류 {blockedCount.toLocaleString("ko-KR")}건</strong></article>
+    <section className="publishing-summary" aria-label="발행 요약">
+      <article><span>실제 공개 게시</span><strong>{data.actual_published_count ?? counts.published ?? 0}건</strong></article>
+      <article><span>발행 대기</span><strong>{counts.queue ?? 0}건</strong></article>
+      <article><span>검토 필요</span><strong>{counts.review ?? 0}건</strong></article>
+      <article><span>실패·보류</span><strong>{counts.held ?? 0}건</strong></article>
     </section>
-    <nav className="workspace-tabs publication-tabs" role="tablist" aria-label="발행 관리 보기">
-      <button role="tab" aria-selected={activeTab === "pending"} onClick={() => setActiveTab("pending")}>승인 대기 <span>{pendingCount}</span></button>
-      <button role="tab" aria-selected={activeTab === "history"} onClick={() => setActiveTab("history")}>게시 이력</button>
-      <button role="tab" aria-selected={activeTab === "settings"} onClick={() => setActiveTab("settings")}>게시 설정</button>
+    <p className="publication-list-note">임시 제목·Mock/Test 표식 {counts.excluded_non_operational??0}건은 후보 목록에서 제외했습니다. 원고·평가·감사 기록은 보존됩니다. 본문 완전 중복 억제 {counts.duplicate_suppressed??0}건.</p>
+    <nav className="workspace-tabs publication-tabs" role="tablist" aria-label="발행 상태">
+      {tabs.map(([key,label]) => <button key={key} role="tab" aria-selected={activeTab===key} onClick={() => void refresh(1,key)}>{label}<span>{counts[key] ?? 0}</span></button>)}
+      <button role="tab" aria-selected={activeTab==="settings"} onClick={() => setActiveTab("settings")}>운영 설정</button>
     </nav>
-    {message && <p role="status">{message}</p>}
-    {activeTab === "settings" && <section className="workspace-panel" aria-labelledby="publication-mode-heading">
-      <h2 id="publication-mode-heading">게시 모드</h2>
-      {data.mode_policy.migration_required ? <p role="status">게시 모드 설정을 사용하려면 DB 스키마 갱신이 필요합니다. 기본 게시 모드는 수동이며 현재 설정은 읽기 전용입니다.</p> : <>
-      <p>기본값은 수동 게시입니다. 자동 게시를 선택해도 별도 운영 승인이 없고 실제 Blogger 쓰기가 잠겨 있어 실행되지 않습니다.</p>
-        <p>현재 자동 게시 상태: {data.mode_policy.emergency_stopped ? "긴급 중지됨" : runtimeLabel(data.auto_runtime_status)} · 운영 승인: 없음 · 실제 Blogger 쓰기: 차단</p>
-        <div className="mode-settings-form">
-          <label>적용 범위 <select value={scopeType} onChange={event => chooseScope(event.target.value as "global" | "language" | "blog", "")}>
-            <option value="global">전체 기본값</option><option value="language">언어별</option><option value="blog">블로그별</option>
-          </select></label>
-          {scopeType === "language" && <label>언어 <select value={scopeKey} onChange={event => chooseScope("language", event.target.value)}>
-            <option value="">선택</option>{data.mode_policy.languages.map(language => <option key={language.code} value={language.code}>{languageLabel(language.code)}</option>)}
-          </select></label>}
-          {scopeType === "blog" && <label>블로그 <select value={scopeKey} onChange={event => chooseScope("blog", event.target.value)}>
-            <option value="">선택</option>{data.mode_policy.blogs.map(blog => <option key={blog.id} value={blog.id}>{blog.display_name} · {blog.url}</option>)}
-          </select></label>}
-          <label>게시 모드 <select value={selectedMode} onChange={event => setSelectedMode(event.target.value as "manual" | "auto")}>
-          <option value="manual">수동 게시</option><option value="auto">Auto 정책 설정 (비활성 상태로 저장)</option>
-          </select></label>
-          {selectedMode === "auto" && <>
-            <label>허용 분야 <select multiple value={categories.split(",").map(value => value.trim()).filter(Boolean)} onChange={event => setCategories(Array.from(event.currentTarget.selectedOptions, option => option.value).join(", "))}>{Object.entries(categoryNames).map(([slug, name]) => <option key={slug} value={slug}>{name}</option>)}</select></label>
-            <label>하루 최대 게시 후보 <input type="number" min={0} max={3} value={dailyLimit} onChange={event => setDailyLimit(Number(event.target.value))} /></label>
-            <label>최소 게시 간격 (분) <input type="number" min={60} max={10080} value={minimumInterval} onChange={event => setMinimumInterval(Number(event.target.value))} /></label>
-            <label>자료 최신성 제한 (시간) <input type="number" min={1} max={720} value={maxAge} onChange={event => setMaxAge(Number(event.target.value))} /></label>
-            <label>최대 재시도 <input type="number" min={0} max={2} value={retryLimit} onChange={event => setRetryLimit(Number(event.target.value))} /></label>
-            <label>게시 시작 시간 (KST) <input type="number" min={0} max={23} value={startHour} onChange={event => setStartHour(Number(event.target.value))} /></label>
-            <label>게시 종료 시간 (KST) <input type="number" min={0} max={23} value={endHour} onChange={event => setEndHour(Number(event.target.value))} /></label>
-            <label>제외 주제 (쉼표 구분) <input value={excludedTopics} onChange={event => setExcludedTopics(event.target.value)} /></label>
-          </>}
-          <button disabled={!!busy || (scopeType !== "global" && !scopeKey)} onClick={() => void saveMode()}>{busy === "mode-settings" ? "저장 중…" : "설정 저장"}</button>
-          <button disabled={!!busy || data.mode_policy.emergency_stopped} onClick={() => void stopAuto()}>{busy === "emergency-stop" ? "중지 중…" : "긴급 자동 게시 중지"}</button>
-        </div>
-        <p>자동 실행 승인은 이 설정과 별도로 관리됩니다. 설정 변경은 감사 이력에 추가됩니다. 예약 작업은 현재 Fake 어댑터 테스트로만 동작합니다.</p>
-      </>}
-    </section>}
-    {activeTab === "pending" && syncResult && <section className="workspace-panel"><h2>Blogger 읽기 전용 확인 결과 ({languageLabel(syncResult.language_code)})</h2><p>이 조회는 내부 게시 상태를 변경하지 않습니다.</p>
-      <table><thead><tr><th>Blogger 게시물 ID</th><th>제목</th><th>상태</th><th>내부 원고 연결</th></tr></thead><tbody>
-        {syncResult.posts.map((post) => <tr key={post.id}><td>{post.id}</td><td>{post.title}</td><td>{post.status ?? "상태 미확인"}</td><td>{post.internal_record ? post.content_version_id : "연결된 내부 원고 없음"}</td></tr>)}
-      </tbody></table>
-      {syncResult.next_page_token && <button disabled={!!busy} onClick={() => {
-        const candidate = data.candidates.find((item) => item.blog_id === syncResult.blog_uuid);
-        if (candidate) void syncReadOnly(candidate, syncResult.next_page_token);
-      }}>다음 페이지 읽기</button>}
-    </section>}
-    {activeTab === "pending" && <section className="workspace-panel publication-section"><div className="section-heading"><div><h2>승인 대기 원고</h2><p>기계 검사 통과와 사람의 발행 승인은 별개입니다. 조건이 부족하면 요청은 차단 상태로 기록됩니다.</p></div></div>
-      {data.candidates.length ? <div className="publication-table-scroll"><table><thead><tr><th>원고</th><th>언어</th><th>대상 블로그·모드</th><th>검토·게시 상태</th><th>작업</th></tr></thead><tbody>
-        {data.candidates.map((candidate) => <tr key={`${candidate.content_version_id}-${candidate.blog_id}`}>
-          <td>{candidate.title}<small>원고 버전 {candidate.content_version_id.slice(0, 8)}</small></td><td>{languageLabel(candidate.language_code)}</td><td>{candidate.url}<small>{candidate.effective_mode === "auto" ? "자동 게시 설정 · 실행 차단" : "수동 게시"}</small></td>
-          <td>품질 {candidate.quality_status ? stateNames[candidate.quality_status] ?? "검토 필요" : "검사 전"} · 편집 검토 {candidate.editorial_review_approved ? "완료" : "대기"} · 발행 승인 {candidate.publication_approval_approved ? "완료" : "대기"}<small>{candidate.publish_ready ? "게시 준비됨" : "게시 준비 안 됨"} · 세부 차단 사유는 운영 진단에서 확인</small>{candidate.auto_eligibility && <small>Auto eligible: {candidate.auto_eligibility.auto_eligible ? "yes" : "held"} | dispatch: {candidate.auto_eligibility.dispatchable ? "ready" : "disabled"} | {candidate.auto_eligibility.reasons.join(", ")}</small>}</td>
-          <td>{candidate.evaluation_id ? <a href={`/manuscripts?open_evaluation_id=${encodeURIComponent(candidate.evaluation_id)}&open_content_version_id=${encodeURIComponent(candidate.content_version_id)}`}>다른 언어로 발행</a> : <span>평가 연결 없음</span>}{" "}
-            <button disabled={!!busy || candidate.effective_mode?.startsWith("auto")} onClick={() => void request(candidate)}>{busy === candidate.content_version_id ? "기록 중…" : "수동 발행 요청 기록"}</button>{" "}
-            <button className="secondary-button" disabled={!!busy} onClick={() => void syncReadOnly(candidate)}>Blogger 게시물 읽기 확인</button></td>
+    {error && <p className="quality-held" role="alert">{error}</p>}
+    {activeTab === "settings" ? <section className="workspace-panel publication-section">
+      <h2>현재 운영 설정</h2><dl className="publication-settings-list">
+        <div><dt>운영 모드</dt><dd>{globalMode?.configured_mode === "auto" ? "Auto 정책 설정" : "수동"} · 실제 쓰기 {data.real_writes_enabled ? "허용" : "차단"}</dd></div>
+        <div><dt>긴급 정지</dt><dd>{data.mode_policy.emergency_stopped ? "활성" : "해제"}</dd></div>
+        <div><dt>Worker</dt><dd>{data.worker ? `${data.worker.status} · ${kst(data.worker.last_seen_at)}` : "실행 기록 없음"}</dd></div>
+        <div><dt>모의 대기 작업</dt><dd>{data.queued_mock_jobs}건 (실제 게시와 별도)</dd></div>
+        <div><dt>확인된 비공개 초안 요청</dt><dd>{data.queued_confirmed_private_drafts ?? 0}건</dd></div>
+        <div><dt>자동 후보</dt><dd>{data.auto_candidate_count}건 · 자동 발행은 비활성</dd></div>
+      </dl>
+      <h3>운영 DB 설정 편집</h3><p>상단은 저장된 정책값입니다. Auto 설정을 저장해도 실제 쓰기 권한이나 자동 게시를 켜지 않습니다.</p>
+      <div className="mode-settings-form">
+        <label>적용 범위<select value={scopeType} onChange={event=>chooseScope(event.target.value as "global"|"language"|"blog","")}><option value="global">전체 기본값</option><option value="language">언어별</option><option value="blog">블로그별</option></select></label>
+        {scopeType==="language"&&<label>언어<select value={scopeKey} onChange={event=>chooseScope("language",event.target.value)}><option value="">선택</option>{data.mode_policy.languages.map(item=><option key={item.code} value={item.code}>{item.display_name||languageLabel(item.code)}</option>)}</select></label>}
+        {scopeType==="blog"&&<label>블로그<select value={scopeKey} onChange={event=>chooseScope("blog",event.target.value)}><option value="">선택</option>{data.mode_policy.blogs.map(item=><option key={item.id} value={item.id}>{item.display_name}</option>)}</select></label>}
+        <label>운영 모드<select value={selectedMode} onChange={event=>setSelectedMode(event.target.value as "manual"|"auto")}><option value="manual">수동</option><option value="auto">Auto 정책 미리 설정</option></select></label>
+        <label>운영 모드 일일 Auto 상한<input type="number" min={0} max={3} value={dailyLimit} onChange={event=>setDailyLimit(Number(event.target.value))}/></label>
+        <label>운영 모드 최소 간격(분)<input type="number" min={60} max={10080} value={minimumInterval} onChange={event=>setMinimumInterval(Number(event.target.value))}/></label>
+        <label>자료 최신성(시간)<input type="number" min={1} max={720} value={maxAge} onChange={event=>setMaxAge(Number(event.target.value))}/></label>
+        <label>재시도 상한<input type="number" min={0} max={2} value={retryLimit} onChange={event=>setRetryLimit(Number(event.target.value))}/></label>
+        <label>허용 분야(쉼표 구분)<input value={categories} onChange={event=>setCategories(event.target.value)}/></label>
+        <label>제외 주제<input value={excludedTopics} onChange={event=>setExcludedTopics(event.target.value)}/></label>
+        <label>허용 시작 시각 KST<input type="number" min={0} max={23} value={startHour} onChange={event=>setStartHour(Number(event.target.value))}/></label>
+        <label>허용 종료 시각 KST<input type="number" min={0} max={23} value={endHour} onChange={event=>setEndHour(Number(event.target.value))}/></label>
+        <button disabled={emergencyBusy||(scopeType!=="global"&&!scopeKey)} onClick={()=>void saveMode()}>{emergencyBusy?"저장 중…":"설정 저장"}</button>
+      </div>
+      <h3>코드상 발행 안전 상한</h3><p>KST · 전체 {data.operational_limits?.global_daily??"—"}건/일 · 영어는 잔여량 우선 · 블로그 간격 {data.operational_limits?.blog_minimum_interval_minutes??"—"}분 · Blogger 계정 간격 {data.operational_limits?.account_minimum_interval_minutes??"—"}분</p>
+      <ul>{Object.entries(data.operational_limits?.language_daily??{}).map(([code,limit])=><li key={code}>{languageLabel(code)} 일일 {limit??"전역 잔여량"}건 · 시간당 {data.operational_limits?.language_hourly[code]??"—"}건</li>)}</ul>
+      <h3>저장된 범위별 설정</h3><ul>{data.mode_policy.settings.map(item=><li key={`${item.scope_type}-${item.scope_key}`}>{item.scope_type}:{item.scope_key||"global"} · {item.configured_mode} · {item.daily_auto_limit}건/일 · {item.minimum_interval_minutes}분</li>)}</ul>
+      {notice&&<p role="status">{notice}</p>}
+      <button className="secondary-button" disabled={emergencyBusy || data.mode_policy.emergency_stopped} onClick={() => void emergencyStop()}>{data.mode_policy.emergency_stopped ? "긴급 정지 활성" : "긴급 발행 정지"}</button>
+      <p>발행 한도는 상한입니다. 이 화면은 Blogger 실제 게시를 수행하지 않습니다.</p>
+    </section> : <section className="workspace-panel publication-section">
+      <div className="section-heading"><div><h2>{tabs.find(x=>x[0]===view)?.[1]}</h2><p>{shownCount}건 · 최신 대표 버전 기준 · 이전 버전은 원고 상세의 변경 이력에서 확인합니다.</p></div></div>
+      <form className="publication-filters" onSubmit={event => { event.preventDefault(); void refresh(1,view); }}>
+        <label>제목·주제 검색<input value={query} onChange={e=>setQuery(e.target.value)} placeholder="검색어" /></label>
+        <label>언어<select value={language} onChange={e=>setLanguage(e.target.value)}><option value="">모든 언어</option>{data.mode_policy.languages.map(x=><option key={x.code} value={x.code}>{x.display_name || languageLabel(x.code)}</option>)}</select></label>
+        <label>블로그<select value={blog} onChange={e=>setBlog(e.target.value)}><option value="">모든 블로그</option>{data.mode_policy.blogs.map(x=><option key={x.id} value={x.id}>{x.display_name}</option>)}</select></label>
+        <button type="submit" disabled={loading}>검색</button>
+      </form>
+      {loading ? <p className="empty-state">불러오는 중…</p> : items.length ? <div className="publication-table-scroll"><table><thead><tr><th>원고</th><th>언어</th><th>대상 블로그</th><th>주제·출처</th><th>상태</th><th>시각</th>{view==="published"&&<th>게시 URL</th>}</tr></thead><tbody>
+        {items.map(item=><tr key={`${item.id}-${item.blog_id}`}>
+          <td><a href={`/manuscripts?open_content_version_id=${encodeURIComponent(item.content_version_id)}`}>{item.title || "제목 없음"}</a><small>버전 {item.content_version_id.slice(0,8)}</small></td>
+          <td>{languageLabel(item.language_code)}</td><td>{item.blog_name || item.url}</td>
+          <td>{item.topic || item.source_names || "주제·출처 정보 없음"}</td>
+          <td>{statusLabel(item.status)}{item.eligibility_reasons?.length ? <small>{item.eligibility_reasons.slice(0,2).map(reasonLabel).join(" · ")}</small> : null}{item.simulation_only && <small>모의 작업</small>}</td>
+          <td>{kst(item.next_publish_at || item.created_at)}</td>
+          {view==="published"&&<td>{item.remote_url&&item.remote_status==="LIVE"&&item.remote_verified_at?<a href={item.remote_url} target="_blank" rel="noreferrer">게시물 열기</a>:"원격 게시 확인 없음"}{item.remote_post_id&&<small>postId {item.remote_post_id}</small>}</td>}
         </tr>)}
-      </tbody></table></div> : <p className="empty-state">승인 대기 원고가 없습니다.</p>}
+      </tbody></table></div> : <p className="empty-state">이 상태의 원고가 없습니다.</p>}
+      <div className="publication-pagination"><button disabled={page<=1||loading} onClick={()=>void refresh(page-1,view)}>이전</button><span>{page} / {Math.max(data.page_count ?? 0,1)}</span><button disabled={page>=(data.page_count??0)||loading} onClick={()=>void refresh(page+1,view)}>다음</button></div>
     </section>}
-    {activeTab === "history" && <section className="workspace-panel publication-section"><div className="section-heading"><div><h2>발행 요청 및 처리 이력</h2><p>실제 게시와 모의 테스트 결과를 구분해 표시합니다.</p></div></div>{data.jobs.length === 0 ? <p className="empty-state">발행 요청 기록이 없습니다.</p> : <div className="publication-table-scroll"><table><thead><tr><th>요청</th><th>언어·블로그</th><th>상태</th><th>차단 사유</th><th>모의 작업</th></tr></thead><tbody>
-      {data.jobs.map((job) => <tr key={job.id}><td>{job.content_title ?? job.id}<small>{stateNames[job.status] ?? "상태 확인 필요"} · {job.adapter_type === "blogger_live" ? "실제 Blogger 작업" : "모의 작업"}</small>{job.remote_post_id && <small>Blogger postId {job.remote_post_id}</small>}{job.remote_url && <a href={job.remote_url} target="_blank" rel="noreferrer">공개 게시물 열기</a>}{job.remote_verified_at && <small>원격 GET 확인 {new Date(job.remote_verified_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })} KST · {job.remote_status}</small>}</td><td>{languageLabel(job.language_code)} · {job.url}<small>콘텐츠 버전 {job.content_version_id}</small></td>
-        <td>{stateNames[job.publication_state] ?? stateNames[job.status] ?? "상태 확인 필요"}{job.published_at && <small>{new Date(job.published_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })} KST</small>}</td><td>{job.block_reasons.length ? job.block_reasons.join(", ") : "차단 사유 없음"}{job.last_error_category && <small>오류: {job.last_error_category}</small>}</td>
-        <td>{job.adapter_type === "blogger_live" ? <span>실제 쓰기 시도 {job.live_attempt_count ?? 0}회</span> : <><button disabled={!!busy} onClick={() => void simulate(job)}>{busy === job.id ? "실행 중…" : "모의 게시 시험"}</button>{" "}
-          <label>모의 예약 일시 (한국 표준시) <input id={`schedule-${job.id}`} type="datetime-local" /></label>{" "}
-          <button className="secondary-button" disabled={!!busy} onClick={() => void schedule(job)}>모의 예약 기록</button>{" "}
-          {job.status === "queued" && <button className="secondary-button" disabled={!!busy} onClick={() => void cancelSchedule(job)}>모의 예약 취소</button>}</>}{job.evaluation_id && <a href={`/manuscripts?open_evaluation_id=${encodeURIComponent(job.evaluation_id)}&open_content_version_id=${encodeURIComponent(job.content_version_id)}`}>원고 상세</a>}</td></tr>)}
-    </tbody></table></div>}</section>}
-    {activeTab === "settings" && <aside>게시 작업자 상태: {data.worker?.status === "running" ? "실행 중" : data.worker ? "중지됨" : "실행 기록 없음"} · 모의 작업 {data.queued_mock_jobs}건 · 명시 확인된 비공개 초안 대기 {data.queued_confirmed_private_drafts ?? 0}건. 운영 CLI의 `--operations-confirmed-private-drafts` 모드만 비공개 초안 큐를 처리하며 공개 발행은 계속 차단됩니다.</aside>}
   </div>;
 }
