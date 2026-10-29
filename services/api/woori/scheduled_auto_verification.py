@@ -6,6 +6,7 @@ evaluates source retrieval and reuse evidence produced by a reviewed collector.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
@@ -59,6 +60,121 @@ _EN_MONTHS = {
         start=1,
     )
 }
+
+_SOURCE_MARKER = re.compile(r"\[source:([A-Za-z0-9_-]+)\]")
+_IMAGE_MARKDOWN = re.compile(r"!\[[^\]]*\]\([^)]*\)")
+_DIRECT_QUOTE = re.compile(r"「[^」]{2,}」|『[^』]{2,}』|“[^”]{2,}”|‘[^’]{2,}’|\"[^\"]{8,}\"")
+
+
+def sanitize_scheduled_body(
+    body: str, claims: list[Mapping[str, Any]], *, verified_claim_ids: set[str] | None = None,
+) -> dict[str, Any]:
+    """Keep only complete Markdown paragraphs whose cited sources have no
+    unverified claims. Uncited substantive paragraphs and embedded images are
+    removed. This is a conservative mechanical sanitizer, not fact approval.
+    """
+    claims_by_source: dict[str, list[Mapping[str, Any]]] = {}
+    for claim in claims:
+        if not isinstance(claim, Mapping):
+            continue
+        for source_id in claim.get("source_ids") or []:
+            claims_by_source.setdefault(str(source_id), []).append(claim)
+
+    retained: list[str] = []
+    removed: list[dict[str, Any]] = []
+    pending_heading: str | None = None
+    for raw in re.split(r"\n\s*\n", body.strip()):
+        block = raw.strip()
+        if not block:
+            continue
+        if block.startswith("#") and not _SOURCE_MARKER.search(block):
+            pending_heading = block
+            continue
+        markers = set(_SOURCE_MARKER.findall(block))
+        reasons: list[str] = []
+        if not markers:
+            reasons.append("uncited_paragraph")
+        for source_id in markers:
+            source_claims = claims_by_source.get(source_id, [])
+            if not source_claims or any(
+                claim.get("factual_state") == "unverified"
+                or (verified_claim_ids is not None and str(claim.get("claim_id")) not in verified_claim_ids)
+                or claim.get("verification_status") not in {"source_span_verified", "corroborated"}
+                for claim in source_claims
+            ):
+                reasons.append("source_has_unverified_claim")
+            if any(
+                str(claim.get("evidence_excerpt") or "").strip()
+                and str(claim.get("evidence_excerpt")).strip() in block
+                for claim in source_claims
+            ):
+                reasons.append("source_excerpt_copy_removed")
+        if _IMAGE_MARKDOWN.search(block):
+            reasons.append("embedded_image_removed")
+        if _DIRECT_QUOTE.search(block):
+            reasons.append("direct_quote_removed")
+        if reasons:
+            removed.append({
+                "block_sha256": hashlib.sha256(block.encode("utf-8")).hexdigest(),
+                "source_ids": sorted(markers), "reasons": sorted(set(reasons)),
+            })
+            pending_heading = None
+            continue
+        if pending_heading:
+            retained.append(pending_heading)
+            pending_heading = None
+        retained.append(block)
+
+    cleaned = "\n\n".join(retained).strip()
+    return {
+        "body_markdown": cleaned,
+        "changed": cleaned != body.strip(),
+        "input_sha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
+        "output_sha256": hashlib.sha256(cleaned.encode("utf-8")).hexdigest(),
+        "removed_blocks": removed,
+        "substantive_blocks_remaining": sum(1 for item in retained if not item.startswith("#")),
+        "policy_version": "scheduled-post-first-sanitizer-1",
+    }
+
+
+def verified_scheduled_claim_ids(
+    imported: Mapping[str, Any], source_proofs: Mapping[str, Mapping[str, Any]],
+) -> set[str]:
+    """Return claims with exact live excerpt, supported quantities and required corroboration."""
+    sources = {
+        str(source.get("source_id")): source for source in imported.get("sources", [])
+        if isinstance(source, Mapping) and source.get("source_id")
+    }
+    verified: set[str] = set()
+    for claim in imported.get("claims", []):
+        if not isinstance(claim, Mapping) or claim.get("factual_state") == "unverified":
+            continue
+        if claim.get("verification_status") not in {"source_span_verified", "corroborated"}:
+            continue
+        source_ids = [str(value) for value in claim.get("source_ids") or []]
+        excerpt = str(claim.get("evidence_excerpt") or "").strip()
+        if not source_ids or not excerpt or any(source_id not in sources for source_id in source_ids):
+            continue
+        matched: list[str] = []
+        for source_id in source_ids:
+            proof = source_proofs.get(source_id, {})
+            source = sources[source_id]
+            if (proof.get("http_status") == 200
+                and proof.get("source_url") == str(source.get("url"))
+                and proof.get("import_id") == str(imported.get("id"))
+                and str(proof.get("source_id")) == source_id
+                and _SHA256.fullmatch(str(proof.get("source_body_sha256") or ""))
+                and any(excerpt in str(span) for span in proof.get("verified_claim_evidence", []) if isinstance(span, str))):
+                matched.append(source_id)
+        if not matched or not _quantity_facts(excerpt).issuperset(_quantity_facts(str(claim.get("claim") or ""))):
+            continue
+        if claim.get("verification_status") == "corroborated" and len({
+            str(sources[source_id].get("organization", "")).strip().casefold() for source_id in matched
+        }) < 2:
+            continue
+        if claim.get("claim_id"):
+            verified.add(str(claim["claim_id"]))
+    return verified
 
 
 def _decimal(value: str) -> Decimal:
@@ -188,6 +304,8 @@ def evaluate_scheduled_evidence(
     version_sha256: str,
     source_proofs: Mapping[str, Mapping[str, Any]],
     human_review: Mapping[str, Any] | None,
+    scheduled_publish_first: bool = False,
+    article_body: str = "",
 ) -> dict[str, Any]:
     """Evaluate machine-verifiable evidence without impersonating a reviewer.
 
@@ -271,8 +389,12 @@ def evaluate_scheduled_evidence(
     # They cannot establish that a paraphrased sentence means the same thing.
     # Keep that semantic decision separate and fail closed until a reviewer
     # attests to the exact immutable version.
-    if not human_claims_checked:
+    followups: list[dict[str, str]] = []
+    if not human_claims_checked and not scheduled_publish_first:
         reasons.append("semantic_claim_review_required")
+    elif not human_claims_checked:
+        followups.append({"issue_type": "source", "severity": "medium",
+                          "description": "게시 후 주장과 원문 의미의 추가 편집 검토가 필요합니다."})
     if not human_rights_reviewed:
         for source_id, source in source_by_id.items():
             proof = proof_for_source.get(source_id, {})
@@ -284,7 +406,16 @@ def evaluate_scheduled_evidence(
                 terms_current = False
             terms_url = str(proof.get("reuse_terms_url") or "")
             terms_url_parts = urlsplit(terms_url)
-            if (
+            rights_explicitly_blocked = source.get("rights_status") in {
+                "restricted", "permission_required", "prohibited", "copyright_blocked"
+            }
+            verbatim_excerpt_in_body = any(
+                str(claim.get("evidence_excerpt") or "").strip()
+                and str(claim.get("evidence_excerpt")).strip() in article_body
+                and source_id in [str(item) for item in (claim.get("source_ids") or [])]
+                for claim in claims if isinstance(claim, Mapping)
+            )
+            if rights_explicitly_blocked or verbatim_excerpt_in_body or (
                 source.get("rights_status") not in {"public_domain", "open_license", "permission_confirmed"}
                 or not proof.get("reuse_terms_verified")
                 or proof.get("reuse_terms_status") != "allowed"
@@ -297,8 +428,12 @@ def evaluate_scheduled_evidence(
                 or not str(proof.get("reuse_policy_version") or "").strip()
                 or not terms_current
             ):
-                reasons.append("source_rights_not_machine_verified")
-                break
+                if scheduled_publish_first and not rights_explicitly_blocked and not verbatim_excerpt_in_body:
+                    followups.append({"issue_type": "copyright", "severity": "medium",
+                                      "description": f"출처 {source_id}의 재사용 조건을 추가 확인하세요. 본문은 검증 구간을 그대로 복사하지 않도록 제한했습니다."})
+                else:
+                    reasons.append("source_rights_not_machine_verified")
+                    break
 
     unique_reasons = list(dict.fromkeys(reasons))
     evidence_hashes = {
@@ -314,6 +449,7 @@ def evaluate_scheduled_evidence(
     return {
         "status": "passed" if not unique_reasons else "held",
         "reasons": unique_reasons,
+        "followups": followups,
         "version_sha256": version_sha256,
         "checks": {
             "source_retrieval_and_hash": not any(

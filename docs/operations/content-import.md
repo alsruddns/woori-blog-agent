@@ -33,3 +33,7 @@ The documentation says eligible models, availability, and usage limits depend on
 - [ChatGPT Work and Codex](https://help.openai.com/en/articles/20001275-chatgpt-work-and-codex)
 
 The 2026-10-29 scheduled probe did not create a manuscript, Import record, or Blogger request. The exact account usage allowance and whether additional Codex credits are enabled are not visible to the project; recurring tasks must not be enabled until the operator confirms the account's usage settings and selected schedule.
+
+## P5-CODEX-052 scheduled publish-first exception
+
+The review-only boundary above remains the rule for manual imports. A `chatgpt_scheduled_export` inside the already enabled scheduled-auto blog scope may use the separate publish-first lane in [`scheduled-auto-publish-first-policy.md`](scheduled-auto-publish-first-policy.md). The lane verifies current source retrieval and exact claim excerpts, removes unverified or unsupported cited paragraphs into a new immutable version, and records non-critical follow-ups in the existing post-publication review tables. An unusable sanitized remainder creates no job. The first public post still requires the exact-version operator approval; later eligible scheduled originals do not require per-article approval. This exception does not change `publish_ready`, general Auto, manual imports, or Trends policy.

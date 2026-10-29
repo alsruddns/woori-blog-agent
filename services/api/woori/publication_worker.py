@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import signal
 import threading
 from datetime import UTC, datetime, timedelta
@@ -25,7 +26,11 @@ from .publication_daily import (
     kst_day_bounds,
 )
 from .publications import FakeBloggerPublisher
-from .scheduled_auto_verification import evaluate_scheduled_evidence
+from .scheduled_auto_verification import (
+    evaluate_scheduled_evidence,
+    sanitize_scheduled_body,
+    verified_scheduled_claim_ids,
+)
 from .scheduled_duplicates import find_remote_duplicate
 from .worker import (
     acquire_process_lock,
@@ -65,12 +70,7 @@ def _live_attempt(
 
 
 def _scheduled_eligibility(conn: Any, imported: Any, version: Any, blog: Any) -> dict[str, Any]:
-    """Require durable source, rights, claim-span and target evidence for scheduled exports.
-
-    This lane does not modify the general manuscript-review or publish_ready
-    state. Machine-only eligibility requires exact source and reuse-term proof;
-    otherwise the existing human claim/rights attestations are required.
-    """
+    """Apply the publish-first policy only to scoped Codex scheduled exports."""
     reasons: list[str] = []
     if imported["generation_method"] != "chatgpt_scheduled_export":
         reasons.append("not_a_scheduled_export")
@@ -82,12 +82,6 @@ def _scheduled_eligibility(conn: Any, imported: Any, version: Any, blog: Any) ->
     if not assessment or not assessment["machine_passed"] or not assessment["safe_html"]:
         reasons.append("scheduled_machine_or_html_gate_not_passed")
     sources = imported["sources"] or []
-    if not sources or any(
-        source.get("rights_status") not in {"public_domain", "open_license", "permission_confirmed"}
-        or not str(source.get("rights_note") or "").strip()
-        for source in sources
-    ):
-        reasons.append("source_rights_not_cleared")
     verified = conn.execute(
         """SELECT DISTINCT ON (payload->>'source_id') payload FROM audit_events
         WHERE event_type='research.source.live_document_verified' AND payload->>'import_id'=%s
@@ -107,11 +101,40 @@ def _scheduled_eligibility(conn: Any, imported: Any, version: Any, blog: Any) ->
             "source_url": proof.get("source_url") or proof.get("url"),
             "source_body_sha256": proof.get("source_body_sha256") or proof.get("body_sha256"),
         }
+    article_body = conn.execute(
+        "SELECT body FROM content_versions WHERE id=%s", (version.get("content_version_id"),)
+    ).fetchone()
+    body = str(article_body["body"]) if article_body else ""
+    verified_claim_ids = verified_scheduled_claim_ids(imported, proof_by_id)
+    sanitizer = sanitize_scheduled_body(
+        body, imported.get("claims") or [], verified_claim_ids=verified_claim_ids,
+    )
+    manifest = conn.execute(
+        """SELECT payload FROM audit_events
+        WHERE event_type='publication.scheduled_auto.sanitization_revision_created'
+          AND payload->>'output_version_id'=%s AND payload->>'output_sha256'=%s
+        ORDER BY id DESC LIMIT 1""", (str(version["id"]), hashlib.sha256(body.encode("utf-8")).hexdigest()),
+    ).fetchone()
+    if sanitizer["changed"]:
+        reasons.append("scheduled_sanitized_revision_required"
+                       if sanitizer["substantive_blocks_remaining"] >= 2
+                       else "no_supported_body_after_sanitization")
+    cited_source_ids = set(re.findall(r"\[source:([A-Za-z0-9_-]+)\]", body))
+    claims = imported.get("claims") or []
+    if manifest:
+        retained_claim_ids = {str(value) for value in manifest["payload"].get("retained_claim_ids", [])}
+        claims = [claim for claim in claims if str(claim.get("claim_id")) in retained_claim_ids]
+    else:
+        claims = [claim for claim in claims if {str(value) for value in claim.get("source_ids") or []}.issubset(cited_source_ids)]
+    used_sources = [source for source in sources if str(source.get("source_id")) in cited_source_ids]
+    filtered_import = {**dict(imported), "claims": claims, "sources": used_sources}
     evidence_result = evaluate_scheduled_evidence(
-        imported,
+        filtered_import,
         version_sha256=str(imported.get("import_hash") or ""),
         source_proofs=proof_by_id,
         human_review=review,
+        scheduled_publish_first=True,
+        article_body=body,
     )
     reasons.extend(evidence_result["reasons"])
     origin = conn.execute(
@@ -138,13 +161,30 @@ def _scheduled_eligibility(conn: Any, imported: Any, version: Any, blog: Any) ->
         if duplicate:
             reasons.append("same_event_already_queued_or_published")
     unique_reasons = list(dict.fromkeys(reasons))
-    return {"reasons": unique_reasons, "evidence": evidence_result}
+    return {"reasons": unique_reasons, "evidence": evidence_result,
+            "sanitizer": sanitizer, "body": body, "assessment": assessment}
 
 
 def enqueue_scheduled_auto_jobs() -> dict[str, Any]:
     """Enqueue only evidence-reviewed scheduled exports inside the active policy scope."""
     created = 0
     held = 0
+    with connection() as conn:
+        policy_check = conn.execute(
+            "SELECT action FROM scheduled_publication_policy_events ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        global_check = conn.execute(
+            "SELECT emergency_stopped FROM publication_mode_settings WHERE scope_type='global' AND scope_key=''"
+        ).fetchone()
+        candidates = conn.execute(
+            """SELECT id FROM external_content_imports WHERE generation_method='chatgpt_scheduled_export'
+            ORDER BY received_at,id"""
+        ).fetchall()
+    if (policy_check and policy_check.get("action") == "enabled"
+        and global_check and not global_check.get("emergency_stopped", True)):
+        from .content_imports import prepare_scheduled_publishable_version
+        for candidate in candidates:
+            prepare_scheduled_publishable_version(UUID(str(candidate["id"])))
     with connection() as conn:
         conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('scheduled-auto-enqueue',0))")
         policy = conn.execute(
@@ -308,6 +348,49 @@ def enqueue_scheduled_auto_jobs() -> dict[str, Any]:
                     "blog_id": str(blog["blog_id"]), "first_post_approval_event_id": first["id"] if first else None,
                     "publication_lane": "scheduled_auto", "simulation_only": False,
                 })
+                review = conn.execute(
+                    """INSERT INTO post_publication_reviews(publishing_job_id,blog_id,content_version_id,
+                    import_id,content_id,review_notes) VALUES (%s,%s,%s,%s,%s,%s)
+                    ON CONFLICT(publishing_job_id) WHERE publishing_job_id IS NOT NULL DO NOTHING
+                    RETURNING id""",
+                    (job["id"], blog["blog_record_id"], imported["content_version_id"], imported["id"],
+                     imported.get("external_content_id"), "자동 게시 전 생성된 후속 확인 항목입니다."),
+                ).fetchone()
+                if review:
+                    _append_audit(conn, "publication.post_review.prepublication_created", {
+                        "review_id": str(review["id"]), "job_id": str(job["id"]),
+                        "import_id": str(imported["id"]), "content_version_id": str(imported["content_version_id"]),
+                        "post_id": None, "publication_lane": "scheduled_auto",
+                    })
+                    followups = list(eligibility["evidence"].get("followups", []))
+                    seo_followups = {
+                        "title_matches_article": ("other", "게시 제목과 검색 제목의 일치 여부를 확인하세요."),
+                        "primary_term": ("other", "핵심 검색어와 본문 검색 의도의 자연스러운 일치를 검토하세요."),
+                        "search_intent": ("other", "검색 의도 적합성이 자동 측정되지 않았습니다."),
+                        "source_links": ("source", "게시된 본문에 출처 링크가 읽기 쉽게 연결됐는지 확인하세요."),
+                        "blogger_search_description": ("other", "Blogger 편집 화면에서 검색 설명 표시를 확인하세요."),
+                        "blogger_theme_seo": ("other", "Blogger 테마의 검색 표시 설정을 확인하세요."),
+                    }
+                    current_assessment = eligibility.get("assessment") or {}
+                    for check in current_assessment.get("seo_checks", []):
+                        if isinstance(check, dict) and check.get("key") in seo_followups and check.get("status") in {"review", "not_measured"}:
+                            issue_type, description = seo_followups[check["key"]]
+                            followups.append({"issue_type": issue_type, "severity": "low", "description": description})
+                    for index, item in enumerate(followups):
+                        issue_key = "prepub-review-" + hashlib.sha256(
+                            f"{job['id']}:{item['issue_type']}:{item['description']}:{index}".encode()
+                        ).hexdigest()[:40]
+                        item_row = conn.execute(
+                            """INSERT INTO post_publication_review_items(review_id,issue_type,severity,description,idempotency_key)
+                            VALUES (%s,%s,%s,%s,%s) ON CONFLICT(idempotency_key) DO NOTHING RETURNING id""",
+                            (review["id"], item["issue_type"], item["severity"], item["description"], issue_key),
+                        ).fetchone()
+                        if item_row:
+                            _append_audit(conn, "publication.post_review_item.prepublication_created", {
+                                "review_id": str(review["id"]), "item_id": str(item_row["id"]),
+                                "job_id": str(job["id"]), "issue_type": item["issue_type"],
+                                "severity": item["severity"], "description": item["description"][:500],
+                            })
         return {"created": created, "held": held, "policy_active": True,
                 "first_post_confirmed": bool(prior_success)}
 
@@ -639,6 +722,13 @@ def process_next_live_job(*, scheduled_auto_only: bool = False) -> dict[str, Any
             })
             if lane == "scheduled_auto":
                 review = conn.execute(
+                    """UPDATE post_publication_reviews SET publishing_record_id=%s,post_id=%s,updated_at=now()
+                    WHERE publishing_job_id=%s AND publishing_record_id IS NULL RETURNING id""",
+                    (record["id"], result["post_id"], job_id),
+                ).fetchone()
+                linked_existing = bool(review)
+                if not review:
+                    review = conn.execute(
                     """INSERT INTO post_publication_reviews(publishing_record_id,blog_id,content_version_id,
                     post_id,import_id,content_id) VALUES (%s,%s,%s,%s,%s,%s)
                     ON CONFLICT(publishing_record_id) DO NOTHING
@@ -646,13 +736,17 @@ def process_next_live_job(*, scheduled_auto_only: bool = False) -> dict[str, Any
                     (record["id"], blog_id, version_id, result["post_id"],
                      str(link["id"]) if link else None,
                      str(link.get("external_content_id")) if link and link.get("external_content_id") else None),
-                ).fetchone()
-                review_id = review["id"] if review else conn.execute(
+                    ).fetchone()
+                review = review or conn.execute(
                     "SELECT id FROM post_publication_reviews WHERE publishing_record_id=%s",
                     (record["id"],),
-                ).fetchone()["id"]
-                if review:
-                    _append_audit(conn, "publication.post_review.created", {
+                ).fetchone()
+                review_id = review["id"] if review else None
+                if review and (linked_existing or not conn.execute(
+                    "SELECT 1 FROM audit_events WHERE event_type='publication.post_review.created' AND payload->>'review_id'=%s LIMIT 1",
+                    (str(review_id),),
+                ).fetchone()):
+                    _append_audit(conn, "publication.post_review.published_linked" if linked_existing else "publication.post_review.created", {
                         "review_id": str(review["id"]), "publishing_record_id": str(record["id"]),
                         "job_id": str(job_id), "import_id": str(link["id"]) if link else None,
                         "content_version_id": str(version_id), "post_id": str(result["post_id"]),
@@ -666,7 +760,7 @@ def process_next_live_job(*, scheduled_auto_only: bool = False) -> dict[str, Any
                     "blogger_search_description": ("other", "Blogger 편집 화면에서 검색 설명 표시를 확인하세요."),
                     "blogger_theme_seo": ("other", "Blogger 테마의 검색 표시 설정을 확인하세요."),
                 }
-                for check in (assessment.get("seo_checks", []) if assessment else []):
+                for check in (assessment.get("seo_checks", []) if assessment else []) if review_id else []:
                     if not isinstance(check, dict) or check.get("key") not in soft_followups:
                         continue
                     if check.get("status") not in {"review", "not_measured"}:
@@ -675,6 +769,11 @@ def process_next_live_job(*, scheduled_auto_only: bool = False) -> dict[str, Any
                     issue_key = "postreview-" + hashlib.sha256(
                         f"{record['id']}:{check['key']}".encode()
                     ).hexdigest()[:40]
+                    if conn.execute(
+                        "SELECT 1 FROM post_publication_review_items WHERE review_id=%s AND issue_type=%s AND description=%s LIMIT 1",
+                        (review_id, issue_type, description),
+                    ).fetchone():
+                        continue
                     issue = conn.execute(
                         """INSERT INTO post_publication_review_items(review_id,issue_type,severity,
                         description,idempotency_key) VALUES (%s,%s,'low',%s,%s)

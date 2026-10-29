@@ -8,10 +8,11 @@ from woori.main import app
 from woori.publications import PostPublicationReviewItemInput, PostPublicationReviewUpdate
 
 
-def test_post_publication_review_migration_is_additive_and_schema_53() -> None:
+def test_post_publication_review_migration_is_additive_and_schema_55() -> None:
     root = Path(__file__).resolve().parents[3]
     migration = (root / "scripts/053_post_publication_review.sql").read_text(encoding="utf-8").casefold()
     identity_migration = (root / "scripts/054_post_publication_content_identity.sql").read_text(encoding="utf-8").casefold()
+    prepublication_migration = (root / "scripts/055_scheduled_prepublication_reviews.sql").read_text(encoding="utf-8").casefold()
     runner = (root / "scripts/migrate.py").read_text(encoding="utf-8")
     provisioner = (root / "scripts/provision-test-database.py").read_text(encoding="utf-8")
     assert "references publishing_records(id)" in migration
@@ -19,10 +20,15 @@ def test_post_publication_review_migration_is_additive_and_schema_53() -> None:
     assert "insert into schema_migrations(version) values(53)" in migration
     assert "add column content_id text" in identity_migration
     assert "insert into schema_migrations(version) values(54)" in identity_migration
-    assert "MAX_SUPPORTED_SCHEMA_VERSION = 54" in runner
+    assert "MAX_SUPPORTED_SCHEMA_VERSION = 55" in runner
     assert "053_post_publication_review.sql" in runner
     assert "054_post_publication_content_identity.sql" in runner
-    assert '(54, "post_publication_content_identity")' in provisioner
+    assert "055_scheduled_prepublication_reviews.sql" in runner
+    assert "add column publishing_job_id uuid references publishing_jobs(id)" in prepublication_migration
+    assert "prepublication_review_requires_active_scheduled_job" in prepublication_migration
+    assert "before insert or update on post_publication_reviews" in prepublication_migration
+    assert "insert into schema_migrations(version) values(55)" in prepublication_migration
+    assert '(55, "scheduled_prepublication_reviews")' in provisioner
 
 
 def test_review_input_types_are_bounded_and_explicit() -> None:
@@ -50,6 +56,7 @@ def test_api_only_joins_remote_verified_scheduled_publications() -> None:
     worker = (root / "services/api/woori/publication_worker.py").read_text(encoding="utf-8")
     assert 'if lane == "scheduled_auto":' in worker
     assert "post_publication_reviews(publishing_record_id" in worker
+    assert "SET publishing_record_id=%s,post_id=%s,updated_at=now()" in worker
 
 
 def test_dashboard_proxy_limits_post_review_routes() -> None:

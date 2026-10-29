@@ -18,7 +18,15 @@ from uuid import UUID
 import psycopg
 from fastapi import APIRouter, HTTPException, Query
 from psycopg.types.json import Jsonb
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    HttpUrl,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from .db import connection
 from .editorial_taxonomy import (
@@ -1031,6 +1039,112 @@ def create_import_version(import_id: UUID, request: ImportVersionRequest) -> dic
             "content_version_id": str(content_version_id),
             "content_sha256": digest, "created_at": version["created_at"], "duplicate": False,
             "generation_ready": False, "publish_ready": False}
+
+
+def prepare_scheduled_publishable_version(import_id: UUID) -> dict[str, Any]:
+    """Create an immutable scheduled-only revision that removes unsupported blocks.
+
+    A sanitized revision is never created when the source evidence cannot support
+    at least two substantive paragraphs. Existing versions remain immutable.
+    """
+    from .scheduled_auto_verification import sanitize_scheduled_body, verified_scheduled_claim_ids
+
+    with connection() as conn:
+        imported = _require_import(conn, import_id)
+        if imported["generation_method"] != "chatgpt_scheduled_export":
+            return {"status": "not_scheduled"}
+        policy = conn.execute("SELECT action FROM scheduled_publication_policy_events ORDER BY id DESC LIMIT 1").fetchone()
+        global_state = conn.execute(
+            "SELECT emergency_stopped FROM publication_mode_settings WHERE scope_type='global' AND scope_key=''"
+        ).fetchone()
+        if not policy or policy["action"] != "enabled" or not global_state or global_state["emergency_stopped"]:
+            return {"status": "policy_off_or_stopped"}
+        latest = _latest_version(conn, import_id)
+        proofs = conn.execute(
+            """SELECT DISTINCT ON (payload->>'source_id') payload FROM audit_events
+            WHERE event_type='research.source.live_document_verified' AND payload->>'import_id'=%s
+            ORDER BY payload->>'source_id',id DESC""", (str(import_id),),
+        ).fetchall()
+        proof_by_id = {str(row["payload"].get("source_id")): row["payload"] for row in proofs}
+        normalized_proofs = {source_id: {
+            **proof, "source_url": proof.get("source_url") or proof.get("url"),
+            "source_body_sha256": proof.get("source_body_sha256") or proof.get("body_sha256"),
+        } for source_id, proof in proof_by_id.items()}
+        verified_claim_ids = verified_scheduled_claim_ids(imported, normalized_proofs)
+        sanitized = sanitize_scheduled_body(
+            str(latest["body_markdown"]), imported["claims"] or [],
+            verified_claim_ids=verified_claim_ids,
+        )
+        if not sanitized["changed"]:
+            return {"status": "unchanged", "version_id": str(latest["id"]),
+                    "body_sha256": sanitized["output_sha256"]}
+        if (sanitized["substantive_blocks_remaining"] < 2
+            or len(sanitized["body_markdown"]) < 100):
+            prior = conn.execute(
+                """SELECT 1 FROM audit_events WHERE event_type='publication.scheduled_auto.sanitization_held'
+                AND payload->>'import_id'=%s AND payload->>'version_id'=%s AND payload->>'input_sha256'=%s LIMIT 1""",
+                (str(import_id), str(latest["id"]), sanitized["input_sha256"]),
+            ).fetchone()
+            if not prior:
+                _audit(conn, "publication.scheduled_auto.sanitization_held", {
+                    "import_id": str(import_id), "version_id": str(latest["id"]),
+                    "input_sha256": sanitized["input_sha256"], "output_sha256": sanitized["output_sha256"],
+                    "removed_blocks": sanitized["removed_blocks"],
+                    "verified_claim_ids": sorted(verified_claim_ids),
+                    "reason": "insufficient_supported_body_after_sanitization",
+                    "policy_version": sanitized["policy_version"],
+                })
+            return {"status": "held", "reason": "insufficient_supported_body_after_sanitization",
+                    "removed_block_count": len(sanitized["removed_blocks"])}
+        base_id = latest["id"]
+        title = str(latest["title"])
+        seo = SeoMetadata.model_validate(latest["seo_metadata"])
+        labels = list(latest["blogger_labels"] or [])
+
+    revision = create_import_version(import_id, ImportVersionRequest(
+        base_version_id=base_id, title=title, body_markdown=sanitized["body_markdown"],
+        seo_metadata=seo, blogger_labels=labels, author_label="scheduled-policy-sanitizer",
+        reason="P5-CODEX-052: remove paragraphs whose cited claims lack current source evidence",
+    ))
+    if revision.get("duplicate"):
+        return {"status": "duplicate_revision", "version_id": revision["version_id"]}
+    version_id = UUID(revision["version_id"])
+    try:
+        assessment = assess_import(import_id, ImportAssessmentRequest(version_id=version_id))
+    except (HTTPException, ValueError, ValidationError, psycopg.Error) as exc:
+        with connection() as conn:
+            _audit(conn, "publication.scheduled_auto.sanitization_assessment_failed", {
+                "import_id": str(import_id), "version_id": str(version_id),
+                "input_sha256": sanitized["input_sha256"], "output_sha256": sanitized["output_sha256"],
+                "error_category": type(exc).__name__,
+                "policy_version": sanitized["policy_version"], "publish_ready": False,
+            })
+        return {"status": "held", "reason": "sanitized_revision_assessment_failed",
+                "version_id": str(version_id)}
+    retained_source_ids = sorted(set(re.findall(r"\[source:([A-Za-z0-9_-]+)\]", sanitized["body_markdown"])))
+    retained_claim_ids = sorted({
+        str(claim.get("claim_id")) for claim in imported["claims"]
+        if isinstance(claim, dict) and str(claim.get("claim_id")) in verified_claim_ids
+        and {str(x) for x in claim.get("source_ids") or []}.intersection(retained_source_ids)
+    })
+    with connection() as conn:
+        _audit(conn, "publication.scheduled_auto.sanitization_revision_created", {
+            "import_id": str(import_id), "input_version_id": str(base_id),
+            "output_version_id": str(version_id), "content_version_id": revision["content_version_id"],
+            "input_sha256": sanitized["input_sha256"],
+            "output_sha256": sanitized["output_sha256"],
+            "retained_source_ids": retained_source_ids,
+            "retained_claim_ids": retained_claim_ids,
+            "removed_blocks": sanitized["removed_blocks"],
+            "assessment_id": assessment["assessment_id"],
+            "machine_passed": assessment["machine_passed"],
+            "policy_version": sanitized["policy_version"], "publish_ready": False,
+        })
+    return {"status": "revision_created", "version_id": str(version_id),
+            "content_version_id": revision["content_version_id"],
+            "body_sha256": sanitized["output_sha256"],
+            "removed_block_count": len(sanitized["removed_blocks"]),
+            "machine_passed": assessment["machine_passed"]}
 
 
 @router.post("/{import_id}/reviews", status_code=201)
