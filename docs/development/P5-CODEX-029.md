@@ -2,6 +2,7 @@
 
 - 작업 일시: 2026-10-29 (KST)
 - 브랜치: `develop`
+- Implementation commit: `8f47084b10836906ec3c47ea0557b886160d1de6` (the final documentation commit is available in `git log`).
 - 작업 시작 감사 ID: `P5-CODEX-029-9557efb2-ea05-4b2f-a6f9-c9fe81d922cc`
 - 변경 사유: 기존 `stop.ps1`이 API/Dashboard 위주였고 실행 중인 Worker의 현재 작업을 보호하는 종료 경로가 없었다.
 - 변경 목적: 현재 체크아웃 소유가 분명한 서비스만 대화형·WhatIf 방식으로 안전하게 종료하고, Worker는 작업 주기 완료 후 협조적으로 종료한다.
@@ -67,6 +68,5 @@ Worker에는 강제 종료 경로가 없다. foreground/unmanaged 서비스 또�
 ## 데이터·감사·Git
 
 - 기존 원고, OAuth, 운영 DB 콘텐츠 및 감사 기록은 보존했다. DB 스키마 변경은 없다.
-- 운영 DB `audit_events`에 작업 시작 이벤트를 append했다. 완료 이벤트는 검증·Git 완료 후 추가한다.
-- 커밋 해시는 이 기록 작성 뒤 `git log` 및 후속 완료 이벤트에 기록한다.
+- PostgreSQL `audit_events` has separate append-only work-start and completion events. No manuscript or publication record was changed.
 - 남은 문제: 현재 실행 중인 프로세스는 WhatIf로만 확인했고 실제 종료는 실행하지 않았다. API 연결 2건이 남아 있어 안전 종료가 차단됐다. Worker에 새 협조 종료 코드를 적용하려면 기존 Worker를 원래 터미널에서 정상 재시작해야 한다.
