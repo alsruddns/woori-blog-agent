@@ -303,15 +303,17 @@ def process_next_live_job() -> dict[str, Any] | None:
 
 
 def tick(
-    backoff_seconds: int = 30, *, allow_private_drafts: bool = False
+    backoff_seconds: int = 30, *, allow_private_drafts: bool = False,
+    allow_live_publications: bool = False,
 ) -> dict[str, Any] | None:
     """Process one explicitly approved private draft or one due fake job."""
     if not 0 <= backoff_seconds <= 3600:
         raise ValueError("invalid_backoff")
-    live = process_next_live_job()
-    if live is not None:
-        return {"job_type": "blogger_live", **live, "simulation_only": False,
-                "auto_enabled": False}
+    if allow_live_publications:
+        live = process_next_live_job()
+        if live is not None:
+            return {"job_type": "blogger_live", **live, "simulation_only": False,
+                    "auto_enabled": False}
     if allow_private_drafts:
         draft = blogger_drafts.process_next_queued_draft()
         if draft is not None:
@@ -465,16 +467,19 @@ def tick(
 
 
 def run_once(
-    backoff_seconds: int = 30, *, allow_private_drafts: bool = False
+    backoff_seconds: int = 30, *, allow_private_drafts: bool = False,
+    allow_live_publications: bool = False,
 ) -> dict[str, Any]:
     heartbeat("running", service_name="publication_worker")
     try:
-        result = tick(backoff_seconds, allow_private_drafts=allow_private_drafts)
+        result = tick(backoff_seconds, allow_private_drafts=allow_private_drafts,
+                      allow_live_publications=allow_live_publications)
         return {
             "processed": result is not None,
             "result": result,
             "private_draft_creation_enabled": allow_private_drafts,
             "public_publication_enabled": False,
+            "live_publication_dispatch_enabled": allow_live_publications,
         }
     except Exception:
         heartbeat("degraded", "publication_worker_failed", "publication_worker")

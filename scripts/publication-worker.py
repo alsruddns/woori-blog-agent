@@ -1,4 +1,4 @@
-"""Run one fake job or an explicitly confirmed private Blogger draft job."""
+"""Run one fake job, confirmed private draft, or separately approved live job."""
 
 from __future__ import annotations
 
@@ -24,6 +24,7 @@ def main() -> None:
     mode.add_argument("--evaluation", action="store_true")
     mode.add_argument("--operations-mock-only", action="store_true")
     mode.add_argument("--operations-confirmed-private-drafts", action="store_true")
+    mode.add_argument("--operations-approved-live-publications", action="store_true")
     parser.add_argument("--backoff-seconds", type=int, default=30)
     args = parser.parse_args()
     if not 0 <= args.backoff_seconds <= 3600:
@@ -54,6 +55,7 @@ def main() -> None:
         run_once(
             args.backoff_seconds,
             allow_private_drafts=args.operations_confirmed_private_drafts,
+            allow_live_publications=args.operations_approved_live_publications,
         ),
         ensure_ascii=True,
         default=str,

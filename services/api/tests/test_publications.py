@@ -168,6 +168,39 @@ def test_publication_worker_dispatches_only_explicitly_confirmed_private_drafts(
     }
 
 
+def test_mock_and_private_draft_modes_never_dispatch_publication_jobs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from contextlib import contextmanager
+
+    from woori import blogger_drafts, publication_worker
+
+    monkeypatch.setattr(blogger_drafts, "process_next_queued_draft", lambda: None)
+    live_calls: list[bool] = []
+    monkeypatch.setattr(publication_worker, "process_next_live_job",
+                        lambda: live_calls.append(True) or {"status": "published"})
+
+    class Result:
+        def fetchall(self) -> list[object]:
+            return []
+        def fetchone(self) -> None:
+            return None
+
+    class FakeConnection:
+        def execute(self, _query: str, _params: tuple[object, ...] = ()) -> Result:
+            return Result()
+
+    @contextmanager
+    def fake_connection():
+        yield FakeConnection()
+
+    monkeypatch.setattr(publication_worker, "connection", fake_connection)
+
+    assert publication_worker.tick(allow_private_drafts=False) is None
+    assert publication_worker.tick(allow_private_drafts=True) is None
+    assert live_calls == []
+
+
 def test_publication_mode_defaults_manual_and_auto_requires_allowlist() -> None:
     assert ModeSettingsInput().configured_mode == "manual"
     with pytest.raises(ValidationError, match="category_allowlist"):
