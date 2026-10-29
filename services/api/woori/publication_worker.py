@@ -220,10 +220,6 @@ def enqueue_scheduled_auto_jobs() -> dict[str, Any]:
                 or settings.get("emergency_stopped")):
             return {"created": 0, "held": 0, "reason": "scheduled_auto_policy_off_or_stopped"}
         approved_blogs = {str(value) for value in policy["approved_blog_ids"]}
-        prior_success = conn.execute(
-            """SELECT EXISTS(SELECT 1 FROM publishing_jobs WHERE publication_lane='scheduled_auto'
-            AND status='succeeded') AS value"""
-        ).fetchone()["value"]
         rows = conn.execute(
             """SELECT i.*,v.id AS import_version_id,v.version_number,v.title AS import_title,
             v.body_markdown,v.blogger_labels,v.content_sha256 AS import_hash,
@@ -256,24 +252,6 @@ def enqueue_scheduled_auto_jobs() -> dict[str, Any]:
                 "id": imported["import_version_id"], "content_version_id": imported["content_version_id"],
             }, eligibility_blog)
             reasons = eligibility["reasons"]
-            first = None
-            if not reasons and not prior_success:
-                first = conn.execute(
-                    """SELECT id FROM scheduled_first_publication_events
-                    WHERE action='approved' AND blog_id=%s AND import_id=%s AND import_version_id=%s
-                      AND content_version_id=%s AND body_sha256=%s AND NOT EXISTS (
-                        SELECT 1 FROM scheduled_first_publication_events r WHERE r.action='revoked'
-                        AND r.blog_id=scheduled_first_publication_events.blog_id
-                        AND r.import_id=scheduled_first_publication_events.import_id
-                        AND r.import_version_id=scheduled_first_publication_events.import_version_id
-                        AND r.content_version_id=scheduled_first_publication_events.content_version_id
-                        AND r.body_sha256=scheduled_first_publication_events.body_sha256
-                        AND r.id>scheduled_first_publication_events.id) ORDER BY id DESC LIMIT 1""",
-                    (blog["blog_record_id"], imported["id"], imported["import_version_id"],
-                     imported["content_version_id"], hashlib.sha256(str(imported["body_markdown"]).encode()).hexdigest()),
-                ).fetchone()
-                if not first:
-                    reasons.append("exact_first_publication_approval_missing")
             verification_payload = {
                 "import_id": str(imported["id"]),
                 "import_version_id": str(imported["import_version_id"]),
@@ -286,7 +264,8 @@ def enqueue_scheduled_auto_jobs() -> dict[str, Any]:
                 "claim_ids": eligibility["evidence"]["claim_ids"],
                 "source_evidence_sha256": eligibility["evidence"]["source_evidence_sha256"],
                 "claim_count": eligibility["evidence"]["claim_count"],
-                "policy_version": "scheduled-evidence-1",
+                "policy_version": "scheduled-evidence-2-no-first-post-gate",
+                "first_publication_approval_required": False,
                 "live_write_performed": False,
             }
             prior_assessment = conn.execute(
@@ -367,7 +346,8 @@ def enqueue_scheduled_auto_jobs() -> dict[str, Any]:
                     "job_id": str(job["id"]), "import_id": str(imported["id"]),
                     "import_version_id": str(imported["import_version_id"]),
                     "content_version_id": str(imported["content_version_id"]),
-                    "blog_id": str(blog["blog_id"]), "first_post_approval_event_id": first["id"] if first else None,
+                    "blog_id": str(blog["blog_id"]),
+                    "first_publication_approval_required": False,
                     "publication_lane": "scheduled_auto", "simulation_only": False,
                 })
                 review = conn.execute(
@@ -414,7 +394,7 @@ def enqueue_scheduled_auto_jobs() -> dict[str, Any]:
                                 "severity": item["severity"], "description": item["description"][:500],
                             })
         return {"created": created, "held": held, "policy_active": True,
-                "first_post_confirmed": bool(prior_success)}
+                "first_publication_approval_required": False}
 
 
 def process_next_live_job(
@@ -492,23 +472,6 @@ def process_next_live_job(
             if (not policy or policy["action"] != "enabled"
                     or str(blog_id) not in {str(value) for value in policy["approved_blog_ids"]}):
                 reasons.append("scheduled_auto_policy_not_active_for_blog")
-            prior_success = conn.execute(
-                "SELECT EXISTS(SELECT 1 FROM publishing_jobs WHERE publication_lane='scheduled_auto' AND status='succeeded') AS value"
-            ).fetchone()["value"]
-            if not prior_success and link:
-                digest = hashlib.sha256(str(link["body_markdown"]).encode("utf-8")).hexdigest()
-                approved = conn.execute(
-                    """SELECT 1 FROM scheduled_first_publication_events e WHERE e.action='approved'
-                    AND e.blog_id=%s AND e.import_id=%s AND e.import_version_id=%s
-                    AND e.content_version_id=%s AND e.body_sha256=%s AND NOT EXISTS (
-                      SELECT 1 FROM scheduled_first_publication_events r WHERE r.action='revoked'
-                      AND r.blog_id=e.blog_id AND r.import_id=e.import_id
-                      AND r.import_version_id=e.import_version_id AND r.content_version_id=e.content_version_id
-                      AND r.body_sha256=e.body_sha256 AND r.id>e.id) LIMIT 1""",
-                    (blog_id, link["id"], link["import_version_id"], version_id, digest),
-                ).fetchone()
-                if not approved:
-                    reasons.append("exact_first_publication_approval_missing")
             if candidate is not None and link:
                 assessment = conn.execute(
                     """SELECT safe_html,html_sha256,seo_checks FROM external_content_import_assessments

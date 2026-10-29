@@ -25,10 +25,8 @@ export type PublicationData = {
     emergency_stopped: boolean; operations_auto_approved: false; live_auto_enabled: false; real_writes_enabled: false;
     scheduled_auto_policy?: { enabled: boolean;
       policy_event?: { id?: number; action?: string; approved_blog_ids?: string[]; daily_limit?: number; actor_label?: string; reason?: string; created_at?: string } | null;
-      first_post_approval?: { id?: number; blog_id?: string; import_id?: string; import_version_id?: string; content_version_id?: string; body_sha256?: string; actor_label?: string; created_at?: string } | null;
-      first_post_confirmed?: boolean;
+      first_publication_approval_required?: false;
       policy_history?: Array<{ id: number; action: string; approved_blog_ids: string[]; daily_limit: number; actor_label: string; reason: string; created_at: string }>;
-      first_post_history?: Array<{ id: number; action: string; blog_id: string; import_id: string; import_version_id: string; content_version_id: string; body_sha256: string; actor_label: string; reason: string; created_at: string }>;
       latest_connection_check?: { created_at: string; payload?: { results?: Array<{ blog_record_id: string; verified: boolean; remote_blog_id?: string; reason?: string }> } } | null;
       trends_lane_affected: false } };
   auto_candidate_count: number; auto_runtime_status: string;
@@ -158,12 +156,9 @@ export default function PublicationManager({ initial }: { initial: PublicationDa
         </article>
       </div>
       {data.mode_policy.scheduled_auto_policy?.latest_connection_check && <section aria-labelledby="scheduled-connection-result"><h3 id="scheduled-connection-result">최근 읽기 연결 확인</h3><p>{kst(data.mode_policy.scheduled_auto_policy.latest_connection_check.created_at)}</p><ul>{(data.mode_policy.scheduled_auto_policy.latest_connection_check.payload?.results ?? []).map(result=><li key={result.blog_record_id}>{data.mode_policy.blogs.find(item=>item.id===result.blog_record_id)?.display_name ?? result.blog_record_id} · {result.verified?`확인됨 (${result.remote_blog_id})`:`확인 실패 (${result.reason ?? "오류"})`}</li>)}</ul></section>}
-      <section aria-labelledby="first-post-state"><h3 id="first-post-state">최초 공개 게시 승인</h3><p>{data.mode_policy.scheduled_auto_policy?.first_post_confirmed?"예약 게시 성공 이력이 있습니다.":data.mode_policy.scheduled_auto_policy?.first_post_approval?"최초 원고·버전·본문 해시·블로그 승인이 기록됐습니다.":"아직 별도 승인이 없습니다. 정책 활성화와 별도로 대상 원고를 확인해 기록해야 합니다."}</p>
-        {data.mode_policy.scheduled_auto_policy?.first_post_approval && <p>원고 버전 {data.mode_policy.scheduled_auto_policy.first_post_approval.content_version_id} · 본문 SHA-256 {data.mode_policy.scheduled_auto_policy.first_post_approval.body_sha256} · 블로그 {data.mode_policy.blogs.find(item=>item.id===data.mode_policy.scheduled_auto_policy?.first_post_approval?.blog_id)?.display_name ?? data.mode_policy.scheduled_auto_policy.first_post_approval.blog_id}</p>}
-      </section>
+      <p className="publication-list-note" role="status">예약 Auto는 활성화된 Blogger 범위와 운영 한도에 따라 처리됩니다. 별도 최초 게시 승인 이벤트는 요구하지 않으며, 과거 승인 이벤트는 감사 데이터로만 보존됩니다.</p>
       <section aria-labelledby="scheduled-policy-history"><h3 id="scheduled-policy-history">예약 Auto 승인 이력</h3>
         {(data.mode_policy.scheduled_auto_policy?.policy_history?.length ?? 0)===0 ? <p className="empty-state">승인·중지 이력이 없습니다.</p> : <div className="publication-table-scroll"><table><thead><tr><th>시각(KST)</th><th>상태</th><th>대상 블로그</th><th>상한</th><th>기록자·사유</th></tr></thead><tbody>{data.mode_policy.scheduled_auto_policy?.policy_history?.map(item=><tr key={item.id}><td>{kst(item.created_at)}</td><td>{item.action==="enabled"?"활성 승인":"중지"}</td><td>{item.approved_blog_ids.map(id=>data.mode_policy.blogs.find(blogItem=>blogItem.id===id)?.display_name??id).join(", ")||"없음"}</td><td>{item.daily_limit}건/일</td><td>{item.actor_label}<small>{item.reason}</small></td></tr>)}</tbody></table></div>}
-        <h4>첫 게시 승인·취소 이력</h4>{(data.mode_policy.scheduled_auto_policy?.first_post_history?.length ?? 0)===0 ? <p className="empty-state">첫 게시 승인 이력이 없습니다.</p> : <div className="publication-table-scroll"><table><thead><tr><th>시각(KST)</th><th>상태</th><th>원고 버전</th><th>블로그</th><th>기록자·사유</th></tr></thead><tbody>{data.mode_policy.scheduled_auto_policy?.first_post_history?.map(item=><tr key={item.id}><td>{kst(item.created_at)}</td><td>{item.action==="approved"?"첫 게시 승인":"승인 취소"}</td><td>{item.content_version_id}<small>SHA-256 {item.body_sha256}</small></td><td>{data.mode_policy.blogs.find(blogItem=>blogItem.id===item.blog_id)?.display_name??item.blog_id}</td><td>{item.actor_label}<small>{item.reason}</small></td></tr>)}</tbody></table></div>}
       </section>
     </section> : activeTab === "settings" ? <section className="workspace-panel publication-section">
       <h2>현재 운영 설정</h2><dl className="publication-settings-list">

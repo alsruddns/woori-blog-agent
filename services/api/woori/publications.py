@@ -269,7 +269,9 @@ def _scheduled_auto_state(conn: Any) -> dict[str, Any]:
         "policy_history": [dict(item) for item in policy_history],
         "first_post_history": [dict(item) for item in first_post_history],
         "latest_connection_check": dict(connection_check) if connection_check else None,
-        "effective_for_new_jobs": enabled and (bool(first_post) or bool(published)),
+        "first_publication_approval_required": False,
+        "legacy_first_post_history_only": True,
+        "effective_for_new_jobs": enabled,
         "trends_lane_affected": False,
     }
 
@@ -362,154 +364,27 @@ def record_scheduled_auto_policy(request: ScheduledAutoPolicyInput) -> dict[str,
             "INSERT INTO audit_events(event_type,payload) VALUES (%s,%s)",
             ("publication.scheduled_auto." + request.action, Jsonb(payload)),
         )
-        revoked_first_approvals: list[str] = []
-        if request.action == "disable" and blog_ids:
-            active_approvals = conn.execute(
-                """SELECT e.id,e.blog_id,e.import_id,e.import_version_id,e.content_version_id,
-                e.body_sha256,e.actor_label FROM scheduled_first_publication_events e
-                WHERE e.action='approved' AND e.blog_id=ANY(%s::uuid[]) AND NOT EXISTS (
-                  SELECT 1 FROM scheduled_first_publication_events r WHERE r.action='revoked'
-                    AND r.blog_id=e.blog_id AND r.import_id=e.import_id
-                    AND r.import_version_id=e.import_version_id
-                    AND r.content_version_id=e.content_version_id AND r.body_sha256=e.body_sha256
-                    AND r.id>e.id)""",
-                (blog_ids,),
-            ).fetchall()
-            for approval in active_approvals:
-                revoke_key = "revoke-" + hashlib.sha256(
-                    f"{request.idempotency_key}:{approval['id']}".encode()
-                ).hexdigest()
-                conn.execute(
-                    """INSERT INTO scheduled_first_publication_events
-                    (action,blog_id,import_id,import_version_id,content_version_id,body_sha256,
-                     actor_label,reason,idempotency_key)
-                    VALUES ('revoked',%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(idempotency_key) DO NOTHING""",
-                    (approval["blog_id"], approval["import_id"], approval["import_version_id"],
-                     approval["content_version_id"], approval["body_sha256"], request.actor_label,
-                     "Scheduled Auto disabled; exact first-publication approval revoked.", revoke_key),
-                )
-                revoked_first_approvals.append(str(approval["id"]))
-            if revoked_first_approvals:
-                conn.execute(
-                    "INSERT INTO audit_events(event_type,payload) VALUES ('publication.scheduled_first_post.revoked_by_policy_stop',%s)",
-                    (Jsonb({"approval_event_ids": revoked_first_approvals,
-                            "policy_event_id": saved["id"], "actor_label": request.actor_label,
-                            "public_write_performed": False}),),
-                )
         return {"event_id": saved["id"], "created_at": saved["created_at"],
                 "scheduled_auto_enabled": request.action == "enable",
-                "approved_blog_ids": blog_ids, "first_post_approval_required": not current["first_post_confirmed"],
-                "revoked_first_post_approval_ids": revoked_first_approvals,
+                "approved_blog_ids": blog_ids, "first_post_approval_required": False,
+                "legacy_first_post_events_changed": False,
                 "trends_lane_affected": False}
 
 
-@router.post("/scheduled-auto-first-post", status_code=201)
+@router.post("/scheduled-auto-first-post", status_code=410)
 def approve_scheduled_first_post(request: ScheduledFirstPostApprovalInput) -> dict[str, Any]:
-    """Bind the initial public publication authorization to one exact version/hash/blog."""
-    with connection() as conn:
-        conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('scheduled-auto-policy',0))")
-        policy = _scheduled_auto_state(conn)
-        if not policy["enabled"]:
-            raise HTTPException(409, "Scheduled Auto policy is not enabled")
-        allowed = {str(value) for value in policy["policy_event"]["approved_blog_ids"]}
-        if str(request.blog_id) not in allowed:
-            raise HTTPException(409, "First publication blog is outside the approved policy scope")
-        row = conn.execute(
-            """SELECT i.generation_method,i.language_code,v.content_sha256,v.title,v.body_markdown,
-              link.content_version_id,blog.language_code AS blog_language
-            FROM external_content_imports i
-            JOIN external_content_import_versions v ON v.import_id=i.id AND v.id=%s
-              AND v.version_number=(SELECT max(v2.version_number) FROM external_content_import_versions v2 WHERE v2.import_id=i.id)
-            JOIN external_content_import_content_links link ON link.import_id=i.id AND link.import_version_id=v.id
-            JOIN content_versions cv ON cv.id=link.content_version_id
-            JOIN blogger_blogs blog ON blog.id=%s AND blog.active
-            WHERE i.id=%s AND link.content_version_id=%s""",
-            (request.import_version_id, request.blog_id, request.import_id,
-             request.content_version_id),
-        ).fetchone()
-        if not row or row["generation_method"] != "chatgpt_scheduled_export":
-            raise HTTPException(404, "Scheduled manuscript version or target was not found")
-        if row["language_code"] != row["blog_language"]:
-            raise HTTPException(409, "Manuscript language does not match the selected blog")
-        digest = hashlib.sha256(str(row["body_markdown"]).encode("utf-8")).hexdigest()
-        if digest != request.body_sha256:
-            raise HTTPException(409, "Manuscript body hash changed; reload and review the latest version")
-        assessed = conn.execute(
-            """SELECT machine_passed FROM external_content_import_assessments
-            WHERE import_id=%s AND version_id=%s ORDER BY assessed_at DESC,id DESC LIMIT 1""",
-            (request.import_id, request.import_version_id),
-        ).fetchone()
-        if not assessed or not assessed["machine_passed"]:
-            raise HTTPException(409, "The exact imported version requires a passing machine assessment")
-        editorial_review = conn.execute(
-            """SELECT event_type,sources_examined,claims_checked,rights_reviewed
-            FROM external_content_import_review_events
-            WHERE import_id=%s AND version_id=%s ORDER BY created_at DESC,id DESC LIMIT 1""",
-            (request.import_id, request.import_version_id),
-        ).fetchone()
-        if (not editorial_review or editorial_review["event_type"] != "editorial_review_passed"
-                or not editorial_review["sources_examined"] or not editorial_review["claims_checked"]
-                or not editorial_review["rights_reviewed"]):
-            raise HTTPException(409, "The exact imported version requires a completed positive editorial review")
-        evidence = conn.execute(
-            """SELECT payload FROM audit_events
-            WHERE event_type='publication.scheduled_auto.evidence_assessed'
-              AND payload->>'import_id'=%s AND payload->>'import_version_id'=%s
-              AND payload->>'version_sha256'=%s ORDER BY id DESC LIMIT 1""",
-            (str(request.import_id), str(request.import_version_id), str(row["content_sha256"])),
-        ).fetchone()
-        if not evidence or evidence["payload"].get("status") != "passed":
-            raise HTTPException(409, "The exact scheduled version requires a passing evidence assessment")
-        stopped = conn.execute(
-            "SELECT emergency_stopped FROM publication_mode_settings WHERE scope_type='global' AND scope_key=''"
-        ).fetchone()
-        if not stopped or stopped["emergency_stopped"]:
-            raise HTTPException(409, "Publication emergency stop is active or unavailable")
-        blog_connection = conn.execute(
-            """SELECT g.status,g.scopes FROM blogger_blogs b
-            JOIN google_connections g ON g.id=b.oauth_connection_id
-            WHERE b.id=%s AND b.active""",
-            (request.blog_id,),
-        ).fetchone()
-        from .google_http import WRITE_SCOPE
-        if not blog_connection or blog_connection["status"] != "connected" or list(blog_connection["scopes"] or []) != [WRITE_SCOPE]:
-            raise HTTPException(409, "The target Blogger requires an active write-scope OAuth connection")
-        if (not external_policy._blogger_policy_approval()
-                or not external_policy._scheduled_publication_approval(str(request.blog_id))):
-            raise HTTPException(409, "Scheduled Blogger live-write policy is unavailable for this blog")
-        existing = conn.execute(
-            "SELECT id FROM scheduled_first_publication_events WHERE idempotency_key=%s",
-            (request.idempotency_key,),
-        ).fetchone()
-        if existing:
-            return {"event_id": existing["id"], "duplicate": True,
-                    "public_write_performed": False}
-        saved = conn.execute(
-            """INSERT INTO scheduled_first_publication_events
-            (action,blog_id,import_id,import_version_id,content_version_id,body_sha256,
-             actor_label,reason,idempotency_key)
-            VALUES ('approved',%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id,created_at""",
-            (request.blog_id, request.import_id, request.import_version_id,
-             request.content_version_id, digest, request.actor_label, request.reason,
-             request.idempotency_key),
-        ).fetchone()
-        conn.execute(
-            "INSERT INTO audit_events(event_type,blog_id,language_code,payload) VALUES (%s,%s,%s,%s)",
-            ("publication.scheduled_first_post.approved", request.blog_id, row["language_code"],
-             Jsonb({"event_id": saved["id"], "import_id": str(request.import_id),
-                    "import_version_id": str(request.import_version_id),
-                    "content_version_id": str(request.content_version_id),
-                    "body_sha256": digest, "actor_label": request.actor_label,
-                    "reason": request.reason, "public_write_performed": False})),
-        )
-        return {"event_id": saved["id"], "created_at": saved["created_at"],
-                "public_write_performed": False, "approved_blog_id": str(request.blog_id),
-                "content_version_id": str(request.content_version_id), "body_sha256": digest}
+    """Deprecated: Scheduled Auto scope no longer requires a first-post event."""
+    del request
+    raise HTTPException(
+        status_code=410,
+        detail="Scheduled first-publication approval is retired; enable the scoped Scheduled Auto policy instead.",
+    )
 
 
+@router.get("/scheduled-auto-state")
 @router.get("/scheduled-auto-first-post")
 def scheduled_first_post_status(import_id: Annotated[UUID, Query()]) -> dict[str, Any]:
-    """Expose the exact scheduled-import publication gates for its detail view."""
+    """Expose Scheduled Auto status and hard blockers; first-post approval is retired."""
     from .google_http import WRITE_SCOPE
 
     with connection() as conn:
@@ -571,19 +446,6 @@ def scheduled_first_post_status(import_id: Annotated[UUID, Query()]) -> dict[str
         for blog in blogs:
             blog_id = str(blog["id"])
             in_scope = blog_id in approved_blog_ids
-            active_approval = None
-            if version_id and content_version_id:
-                active_approval = conn.execute(
-                    """SELECT e.id,e.actor_label,e.reason,e.created_at FROM scheduled_first_publication_events e
-                    WHERE e.action='approved' AND e.blog_id=%s AND e.import_id=%s
-                      AND e.import_version_id=%s AND e.content_version_id=%s AND e.body_sha256=%s
-                      AND NOT EXISTS (SELECT 1 FROM scheduled_first_publication_events r
-                        WHERE r.action='revoked' AND r.blog_id=e.blog_id AND r.import_id=e.import_id
-                          AND r.import_version_id=e.import_version_id AND r.content_version_id=e.content_version_id
-                          AND r.body_sha256=e.body_sha256 AND r.id>e.id)
-                    ORDER BY e.id DESC LIMIT 1""",
-                    (blog["id"], import_id, version_id, content_version_id, body_sha256),
-                ).fetchone()
             jobs = conn.execute(
                 """SELECT j.id,j.status,j.publication_state,j.scheduled_at,j.updated_at,
                     j.simulation_only,j.adapter_type,r.remote_post_id,r.remote_url,r.remote_status,
@@ -629,14 +491,6 @@ def scheduled_first_post_status(import_id: Annotated[UUID, Query()]) -> dict[str
                 blockers.append("not_a_codex_scheduled_export")
             if not content_version_id:
                 blockers.append("scheduled_version_not_promoted")
-            if not assessment or not assessment["machine_passed"]:
-                blockers.append("latest_version_machine_assessment_not_passed")
-            if (not review or review.get("event_type") != "editorial_review_passed"
-                    or not review.get("sources_examined") or not review.get("claims_checked")
-                    or not review.get("rights_reviewed")):
-                blockers.append("editorial_review_not_passed")
-            if not evidence_assessment or evidence_assessment["payload"].get("status") != "passed":
-                blockers.append("scheduled_evidence_assessment_not_passed")
             if not policy.get("enabled"):
                 blockers.append("scheduled_auto_policy_inactive")
             if emergency_stopped:
@@ -647,15 +501,13 @@ def scheduled_first_post_status(import_id: Annotated[UUID, Query()]) -> dict[str
                 blockers.append("blogger_write_oauth_not_verified")
             if not remote_write_policy:
                 blockers.append("scheduled_live_write_policy_not_available")
-            if active_approval:
-                blockers.append("first_publication_already_approved")
             if any(job.get("remote_post_id") and not job.get("simulation_only") for job in blog_jobs):
                 blockers.append("remote_publication_already_recorded")
             targets.append({
                 **dict(blog),
                 "in_scheduled_scope": in_scope,
-                "first_approval": dict(active_approval) if active_approval else None,
-                "can_record_first_approval": not blockers,
+                "first_approval": None,
+                "first_publication_approval_required": False,
                 "approval_blockers": blockers,
                 "remote_write_policy_available": remote_write_policy,
                 "manual_publication": manual_publication,
@@ -679,6 +531,9 @@ def scheduled_first_post_status(import_id: Annotated[UUID, Query()]) -> dict[str
                 "created_at": evidence_assessment["created_at"],
             } if evidence_assessment else None,
             "scheduled_auto_enabled": bool(policy.get("enabled")),
+            "effective_for_new_jobs": bool(policy.get("effective_for_new_jobs")),
+            "first_publication_approval_required": False,
+            "legacy_first_post_events_are_audit_only": True,
             "emergency_stopped": emergency_stopped,
             "targets": targets,
             "publish_ready": False,

@@ -197,8 +197,120 @@ def test_scheduled_first_post_status_exposes_exact_blockers_without_writing(monk
     assert result["body_sha256"] == digest
     assert result["scheduled_auto_enabled"] is True
     assert result["actual_write_performed"] is False
-    assert result["targets"][0]["can_record_first_approval"] is True
+    assert result["first_publication_approval_required"] is False
+    assert result["targets"][0]["first_publication_approval_required"] is False
     assert result["targets"][0]["approval_blockers"] == []
+
+
+def test_scheduled_first_post_approval_endpoint_is_retired_without_db_write() -> None:
+    from fastapi import HTTPException
+    from woori.publications import ScheduledFirstPostApprovalInput, approve_scheduled_first_post
+
+    request = ScheduledFirstPostApprovalInput(
+        blog_id=uuid4(), import_id=uuid4(), import_version_id=uuid4(),
+        content_version_id=uuid4(), body_sha256="a" * 64, actor_label="Operator",
+        reason="Legacy endpoint retirement regression test", idempotency_key="retired-first-post-001",
+        confirmation="APPROVE THIS SCHEDULED MANUSCRIPT FOR FIRST PUBLICATION",
+    )
+    with pytest.raises(HTTPException) as error:
+        approve_scheduled_first_post(request)
+    assert error.value.status_code == 410
+    assert "retired" in str(error.value.detail)
+
+
+def test_scheduled_auto_job_is_enqueued_without_any_first_post_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from contextlib import contextmanager
+    from uuid import uuid4
+
+    from woori import content_imports
+
+    blog_record_id = uuid4()
+    import_id = uuid4()
+    version_id = uuid4()
+    content_version_id = uuid4()
+    job_id = uuid4()
+    review_id = uuid4()
+    sql_seen: list[str] = []
+
+    class Result:
+        def __init__(self, one: Any = None, many: list[Any] | None = None) -> None:
+            self.one, self.many = one, many or []
+
+        def fetchone(self) -> Any:
+            return self.one
+
+        def fetchall(self) -> list[Any]:
+            return self.many
+
+    class FakeConnection:
+        def execute(self, sql: str, _params: Any = None) -> Result:
+            sql_seen.append(sql)
+            assert "scheduled_first_publication_events" not in sql
+            if "SELECT action FROM scheduled_publication_policy_events" in sql:
+                return Result({"action": "enabled"})
+            if "scope_type='global'" in sql:
+                return Result({"emergency_stopped": False})
+            if "SELECT id FROM external_content_imports" in sql:
+                return Result(many=[{"id": import_id}])
+            if "SELECT action,approved_blog_ids,daily_limit" in sql:
+                return Result({"action": "enabled", "approved_blog_ids": [blog_record_id], "daily_limit": 1})
+            if "SELECT EXISTS(SELECT 1 FROM publishing_jobs" in sql:
+                return Result({"value": False})
+            if "SELECT i.*,v.id AS import_version_id" in sql:
+                return Result(many=[{
+                    "id": import_id, "generation_method": "chatgpt_scheduled_export",
+                    "language_code": "ko", "state": "awaiting_human_review",
+                    "event_group_id": None, "sources": [], "claims": [],
+                    "import_version_id": version_id, "version_number": 1,
+                    "import_title": "Scheduled article", "title": "Scheduled article",
+                    "body_markdown": "Evidence-backed test body", "blogger_labels": ["business"],
+                    "import_hash": "a" * 64, "content_version_id": content_version_id,
+                    "content_body": "Evidence-backed test body",
+                    "blog_record_id": blog_record_id, "blog_id": "3321654108096579717",
+                    "blog_language": "ko", "url": "https://trend-ko.blogspot.com",
+                    "oauth_connection_id": uuid4(), "active": True,
+                    "connection_verified_at": datetime.now(UTC), "oauth_status": "connected",
+                    "external_content_id": uuid4(),
+                }])
+            if "SELECT id FROM publishing_jobs WHERE blog_id=%s AND content_version_id=%s" in sql:
+                return Result(None)
+            if "publication.scheduled_auto.evidence_assessed'" in sql and "SELECT 1 FROM audit_events" in sql:
+                return Result(None)
+            if "publication.scheduled_auto.remote_duplicate_check'" in sql and "SELECT payload" in sql:
+                return Result(None)
+            if "SELECT count(*)::int AS n FROM publishing_jobs WHERE publication_lane='scheduled_auto'" in sql:
+                return Result({"n": 0})
+            if "SELECT id FROM publishing_policies" in sql:
+                return Result({"id": uuid4()})
+            if "INSERT INTO publishing_jobs" in sql:
+                return Result({"id": job_id})
+            if "INSERT INTO post_publication_reviews" in sql:
+                return Result({"id": review_id})
+            if "FROM external_content_import_assessments" in sql:
+                return Result({"seo_checks": []})
+            return Result(None)
+
+    @contextmanager
+    def fake_connection():
+        yield FakeConnection()
+
+    monkeypatch.setattr(publication_worker, "connection", fake_connection)
+    monkeypatch.setattr(content_imports, "prepare_scheduled_publishable_version", lambda _id: {"prepared": True})
+    monkeypatch.setattr(
+        publication_worker, "_scheduled_eligibility",
+        lambda *_args, **_kwargs: {"reasons": [], "assessment": {"seo_checks": []}, "evidence": {
+            "checks": {}, "source_ids": [], "claim_ids": [], "source_evidence_sha256": {},
+            "claim_count": 0, "followups": [],
+        }},
+    )
+    monkeypatch.setattr(publication_worker, "find_remote_duplicate", lambda *_args: {"status": "clear", "reason": None})
+    result = publication_worker.enqueue_scheduled_auto_jobs()
+    assert result["created"] == 1
+    assert result["held"] == 0
+    assert result["first_publication_approval_required"] is False
+    assert any("INSERT INTO publishing_jobs" in sql for sql in sql_seen)
 
 
 def test_publication_state_machine_rejects_skipped_review_and_terminal_changes() -> None:

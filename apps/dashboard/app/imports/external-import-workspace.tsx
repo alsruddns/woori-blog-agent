@@ -40,7 +40,6 @@ const publicationBlockerNames: Record<string, string> = {
   blog_not_in_active_scheduled_scope: "대상 블로그가 활성 예약 Auto 범위에 없습니다.",
   blogger_write_oauth_not_verified: "대상 블로그의 Blogger 쓰기 연결이 확인되지 않았습니다.",
   scheduled_live_write_policy_not_available: "예약 Blogger 쓰기 정책이 허용되지 않습니다.",
-  first_publication_already_approved: "현재 버전·블로그의 첫 공개 승인이 이미 기록됐습니다.",
   remote_publication_already_recorded: "이 콘텐츠 버전의 원격 게시 기록이 있어 중복 발행을 차단했습니다.",
 };
 const manualBlockerNames: Record<string, string> = {
@@ -127,7 +126,6 @@ export default function ExternalImportWorkspace() {
   const autoOpened = useRef("");
   const detailDialog = useRef<HTMLElement | null>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
-  const firstApprovalIdempotencyKey = useRef("");
 
   const openDetail = useCallback(async (id: string) => {
     setError("");
@@ -135,7 +133,7 @@ export default function ExternalImportWorkspace() {
     if (!detailDialog.current && document.activeElement instanceof HTMLElement) returnFocus.current = document.activeElement;
     const [response, publicationResponse] = await Promise.all([
       fetch(`/api/research/content-imports/${id}`, { cache: "no-store" }),
-      fetch(`/api/publications/scheduled-auto-first-post?import_id=${encodeURIComponent(id)}`, { cache: "no-store" }),
+      fetch(`/api/publications/scheduled-auto-state?import_id=${encodeURIComponent(id)}`, { cache: "no-store" }),
     ]);
     const data = await response.json();
     if (!response.ok) throw new Error("원고 상세를 불러오지 못했습니다.");
@@ -239,48 +237,11 @@ export default function ExternalImportWorkspace() {
     finally { setBusy(false); }
   };
   const refreshScheduledPublication = async (id = selectedId) => {
-    const response = await fetch(`/api/publications/scheduled-auto-first-post?import_id=${encodeURIComponent(id)}`, { cache: "no-store" });
+    const response = await fetch(`/api/publications/scheduled-auto-state?import_id=${encodeURIComponent(id)}`, { cache: "no-store" });
     const publication = response.ok ? await response.json() as Row
       : { status_error: response.status === 404 ? "예약 발행 상태 조회 API를 찾을 수 없습니다." : "예약 발행 상태를 조회하지 못했습니다." };
     setDetail(current => current && String(current.item.id) === id ? { ...current, publication } : current);
     return publication;
-  };
-  const approveFirstPublication = async () => {
-    if (!detail) return;
-    const publication = detail.publication ?? {};
-    const targets = (publication.targets as Row[] | undefined) ?? [];
-    const target = targets.find(item => String(item.id ?? "") === publicationTargetId);
-    const blockers = (target?.approval_blockers as string[] | undefined) ?? [];
-    if (!target || target.can_record_first_approval !== true || blockers.length > 0) return;
-    const bodySha = String(publication.body_sha256 ?? "");
-    const titleText = String(publication.title ?? detail.latest_version?.title ?? "원고 제목 미확인");
-    const confirmed = window.confirm(
-      `이 원고의 첫 Blogger 공개 발행을 승인합니다.\n\n제목: ${titleText}\n원고 버전: ${String(publication.version_number ?? "미확인")}\n본문 SHA-256: ${bodySha}\n대상: ${String(target.display_name ?? "Blogger")} · ${String(target.url ?? "")}\nBlogger ID: ${String(target.blog_id ?? "미확인")}\n\n이 동작은 정확한 원고·버전·해시·블로그에 승인 이력을 기록합니다. 승인 후 Publication Worker가 모든 게이트를 다시 검사하며, 이 화면은 Blogger 쓰기 요청을 직접 보내지 않습니다.`
-    );
-    if (!confirmed) return;
-    setBusy(true); setError(""); setNotice("");
-    if (!firstApprovalIdempotencyKey.current) firstApprovalIdempotencyKey.current = `scheduled-first-${crypto.randomUUID()}`;
-    try {
-      const response = await fetch("/api/publications/scheduled-auto-first-post", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          blog_id: target.id, import_id: publication.import_id,
-          import_version_id: publication.import_version_id,
-          content_version_id: publication.content_version_id,
-          body_sha256: bodySha, actor_label: approvalActor.trim(), reason: approvalReason.trim(),
-          idempotency_key: firstApprovalIdempotencyKey.current,
-          confirmation: "APPROVE THIS SCHEDULED MANUSCRIPT FOR FIRST PUBLICATION",
-        }),
-      });
-      const result = await response.json() as Row;
-      if (!response.ok) throw new Error(typeof result.detail === "string" ? result.detail : "첫 공개 승인을 기록하지 못했습니다.");
-      firstApprovalIdempotencyKey.current = "";
-      setNotice("정확한 원고 버전의 첫 공개 승인 이력을 기록했습니다. 실제 게시 요청은 기존 Publication Worker가 안전 게이트를 다시 확인한 뒤 처리합니다.");
-      await refreshScheduledPublication();
-      await refreshListOnly();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "첫 공개 승인 요청 실패");
-    } finally { setBusy(false); }
   };
   const refreshListOnly = async () => {
     const response = await fetch("/api/research/content-imports", { cache: "no-store" });
@@ -405,10 +366,9 @@ export default function ExternalImportWorkspace() {
         {detailTab === "preview" && <section className="workspace-panel" id="import-preview">{previewDocument ? <><div className="section-heading"><div><h3>게시용 HTML 미리보기</h3><p>디자인 렌더러 결과 · {String(preview?.html_sha256 ?? latestAssessment?.html_sha256 ?? "")} · 실제 Blogger 테마 적용 결과와 다를 수 있습니다.</p></div></div><iframe data-testid="import-html-preview" title="게시용 원고 미리보기" sandbox="" srcDoc={previewDocument} /></> : <p className="empty-state">먼저 원고 편집 탭에서 품질·HTML 검사를 실행하고 게시용 미리보기를 엽니다.</p>}</section>}
         {detailTab === "distribution" && <>
           <section className="workspace-panel" id="import-localization"><h3>다국어 확장</h3><p>생성 Provider가 연결되지 않아 요청은 대기하며 원고를 생성한 것으로 표시하지 않습니다.</p><label>대상 언어<select value={targetLanguage} onChange={event => setTargetLanguage(event.target.value as typeof targetLanguage)}>{languages.filter(language => language !== detail.item.language_code).map(language => <option key={language} value={language}>{languageNames[language]}</option>)}</select></label><button type="button" className="secondary-button" disabled={busy} onClick={() => void run(() => api("localizations", "POST", { target_language: targetLanguage, requester_label: reviewer, reason: "요청한 언어로 외부 원고를 준비하고 사람 검토 대기" }), "다국어 원고 요청을 외부 공급자 대기로 저장했습니다.")}>현지화 원고 요청</button>{detail.localization_requests.map(request => <article className="history-card" key={String(request.target_language)}><p>{languageNames[String(request.target_language)]} · {statusNames[String(request.event_type)] ?? String(request.event_type)} · {fmt(request.created_at)}</p>{request.event_type === "requested" && <button type="button" className="secondary-button" disabled={busy} onClick={() => void run(() => api(`localizations/${encodeURIComponent(String(request.target_language))}/cancel`, "POST", { requester_label: reviewer, reason: "사용자가 다국어 확장 요청을 취소" }), "현지화 요청을 취소 기록으로 저장했습니다.")}>요청 취소</button>}</article>)}</section>
-          <section className="workspace-panel" id="import-review"><h3>사람 편집 검토</h3><label>검토자 표시 이름<input value={reviewer} onChange={event => setReviewer(event.target.value)} /></label><label>검토 메모<input value={reason} onChange={event => setReason(event.target.value)} /></label><div className="review-attestations"><label><input type="checkbox" checked={attest.sources} onChange={event => setAttest({ ...attest, sources: event.target.checked })} />원문 문서를 직접 확인했습니다</label><label><input type="checkbox" checked={attest.claims} onChange={event => setAttest({ ...attest, claims: event.target.checked })} />주장과 근거를 대조했습니다</label><label><input type="checkbox" checked={attest.rights} onChange={event => setAttest({ ...attest, rights: event.target.checked })} />저작권·인용 권리를 검토했습니다</label></div><div className="import-actions"><button type="button" className="secondary-button" disabled={busy} onClick={() => void recordReview("review_started")}>검토 시작</button><button type="button" className="secondary-button" disabled={busy} onClick={() => void recordReview("changes_requested")}>수정 요청</button><button type="button" disabled={busy || !latestAssessment?.machine_passed || !attest.sources || !attest.claims || !attest.rights} onClick={() => void recordReview("editorial_review_passed")}>편집 검토 통과 기록</button></div><p>편집 검토 기록은 유지됩니다. Blogger 첫 공개 승인은 아래의 별도 승인 영역에서 정확한 원고 버전에 대해 처리합니다.</p></section>
+           <section className="workspace-panel" id="import-review"><h3>사람 편집 검토</h3><label>검토자 표시 이름<input value={reviewer} onChange={event => setReviewer(event.target.value)} /></label><label>검토 메모<input value={reason} onChange={event => setReason(event.target.value)} /></label><div className="review-attestations"><label><input type="checkbox" checked={attest.sources} onChange={event => setAttest({ ...attest, sources: event.target.checked })} />원문 문서를 직접 확인했습니다</label><label><input type="checkbox" checked={attest.claims} onChange={event => setAttest({ ...attest, claims: event.target.checked })} />주장과 근거를 대조했습니다</label><label><input type="checkbox" checked={attest.rights} onChange={event => setAttest({ ...attest, rights: event.target.checked })} />저작권·인용 권리를 검토했습니다</label></div><div className="import-actions"><button type="button" className="secondary-button" disabled={busy} onClick={() => void recordReview("review_started")}>검토 시작</button><button type="button" className="secondary-button" disabled={busy} onClick={() => void recordReview("changes_requested")}>수정 요청</button><button type="button" disabled={busy || !latestAssessment?.machine_passed || !attest.sources || !attest.claims || !attest.rights} onClick={() => void recordReview("editorial_review_passed")}>편집 검토 통과 기록</button></div><p>편집 검토 기록은 유지됩니다. 예약 Auto 범위에서는 별도의 최초 게시 승인 없이 자동 발행 정책과 안전 게이트를 적용합니다.</p></section>
           {detail.item.generation_method !== "manual_codex_import" && <ScheduledBloggerPublication detail={detail} selectedTargetId={publicationTargetId} setSelectedTargetId={setPublicationTargetId}
-            actor={approvalActor} setActor={setApprovalActor} reason={approvalReason} setReason={setApprovalReason}
-            busy={busy} onApprove={() => void approveFirstPublication()} onRefresh={() => void refreshScheduledPublication()} />}
+            busy={busy} onRefresh={() => void refreshScheduledPublication()} />}
           {detail.item.generation_method === "manual_codex_import" && <section className="workspace-panel" id="manual-blogger-publication"><h3>수동 원고 Blogger 발행</h3>
             <p>예약 Auto와 별도인 사용자 직접 공개 게시입니다. 일반 품질·SEO·편집 검토 미완료는 게시 후 보완으로 기록하며, 최신 버전·정제 HTML·대상 블로그·쓰기 권한·중복·긴급 정지 조건은 유지합니다.</p>
             <label>수동 발행 대상 Blogger<select aria-label="수동 발행 대상 Blogger" value={publicationTargetId} onChange={event => setPublicationTargetId(event.target.value)}>
@@ -448,50 +408,37 @@ export default function ExternalImportWorkspace() {
   </main>;
 }
 
-function ScheduledBloggerPublication({ detail, selectedTargetId, setSelectedTargetId, actor, setActor, reason, setReason, busy, onApprove, onRefresh }: {
+function ScheduledBloggerPublication({ detail, selectedTargetId, setSelectedTargetId, busy, onRefresh }: {
   detail: Details; selectedTargetId: string; setSelectedTargetId: (value: string) => void;
-  actor: string; setActor: (value: string) => void; reason: string; setReason: (value: string) => void;
-  busy: boolean; onApprove: () => void; onRefresh: () => void;
+  busy: boolean; onRefresh: () => void;
 }) {
   const publication = detail.publication ?? {};
   const targets = (publication.targets as Row[] | undefined) ?? [];
   const target = targets.find(item => String(item.id ?? "") === selectedTargetId);
   const blockers = (target?.approval_blockers as string[] | undefined) ?? [];
-  const assessment = publication.assessment as Row | undefined;
-  const evidence = publication.evidence_assessment as Row | undefined;
-  const review = publication.editorial_review as Row | undefined;
   const jobs = (target?.jobs as Row[] | undefined) ?? [];
-  const recordedApproval = target?.first_approval as Row | undefined;
   const scheduled = publication.generation_method === "chatgpt_scheduled_export";
   const isPublished = jobs.some(job => job.remote_status === "LIVE" && job.remote_verified_at && job.remote_post_id && job.remote_url);
   return <section className="workspace-panel" id="scheduled-blogger-publication" aria-labelledby="scheduled-blogger-publication-title" data-testid="scheduled-blogger-publication">
-    <div className="section-heading"><div><h3 id="scheduled-blogger-publication-title">Blogger 공개 발행</h3><p>예약 원고의 최초 공개 승인은 원고 버전·본문 해시·대상 블로그에 결속됩니다. 승인 기록 후에도 Publication Worker가 게시 게이트를 다시 확인합니다.</p></div><button type="button" className="secondary-button" disabled={busy} onClick={onRefresh}>상태 새로고침</button></div>
+    <div className="section-heading"><div><h3 id="scheduled-blogger-publication-title">Blogger ?? ??</h3><p>?? Auto? ???? Blogger ????? ??? ?? ?? ?? ?? ?? ?? ??? ?????. ?? ?? ??? ??? ????, ?? ?????????OAuth??? ?? ???? ?? ?????.</p></div><button type="button" className="secondary-button" disabled={busy} onClick={onRefresh}>?? ????</button></div>
     {publication.status_error ? <p role="alert" className="quality-held">{String(publication.status_error)}</p> : <>
       <dl className="publication-detail-status">
-        <dt>예약 원고 여부</dt><dd>{scheduled ? "Codex 예약 Export" : `범위 밖 · ${String(publication.generation_method ?? "생성 출처 미확인")}`}</dd>
-        <dt>편집 검토</dt><dd>{displayState(review?.event_type ?? detail.editorial_review_status)}</dd>
-        <dt>기계 평가</dt><dd>{assessment?.machine_passed === true ? "최신 버전 통과" : "최신 버전 미통과 또는 기록 없음"}</dd>
-        <dt>근거 평가</dt><dd>{displayState(evidence?.status)}{Array.isArray(evidence?.reasons) && evidence.reasons.length ? ` · ${(evidence.reasons as unknown[]).join(", ")}` : ""}</dd>
-        <dt>예약 Auto</dt><dd>{publication.scheduled_auto_enabled === true ? "활성" : "비활성"}{publication.emergency_stopped === true ? " · 긴급 정지" : ""}</dd>
-        <dt>원고 버전 / SHA-256</dt><dd>v{String(publication.version_number ?? "—")} · {String(publication.body_sha256 ?? "—")}</dd>
+        <dt>?? ?? ??</dt><dd>{scheduled ? "Codex ?? Export" : `?? ? ? ${String(publication.generation_method ?? "?? ?? ???")}`}</dd>
+        <dt>?? Auto</dt><dd>{publication.scheduled_auto_enabled === true ? "??" : "???"}{publication.emergency_stopped === true ? " ? ?? ??" : ""}</dd>
+        <dt>?? ?? ??</dt><dd>?? ?? ??? ? ?? ?? ???? ?? ????? ??</dd>
+        <dt>?? ?? / SHA-256</dt><dd>v{String(publication.version_number ?? "?")} ? {String(publication.body_sha256 ?? "?")}</dd>
       </dl>
-      {!scheduled && publication.content_version_id != null && <p className="quality-held">이 원고는 수동 가져오기 경로입니다. 예약 Auto의 최초 승인 API는 사용할 수 없습니다. <Link href={`/manuscripts?open_content_version_id=${encodeURIComponent(String(publication.content_version_id))}`}>일반 원고 검토·발행 상태 열기</Link></p>}
-      {targets.length > 0 && <label>대상 Blogger<select aria-label="첫 공개 승인 대상 Blogger" value={selectedTargetId} onChange={event => setSelectedTargetId(event.target.value)}>
-        {targets.map(item => <option key={String(item.id)} value={String(item.id)}>{String(item.display_name)} · {String(item.url)} · Blogger ID {String(item.blog_id ?? "미확인")}{item.in_scheduled_scope ? " · 예약 Auto 범위" : " · 범위 밖"}</option>)}
+      {!scheduled && <p className="quality-held">?? Auto? ? ??? ???? ????. ?? ??? ?? ?? ?? ? ?? ?? ?? ??? ?????.</p>}
+      {targets.length > 0 && <label>?? Blogger<select aria-label="?? Auto ?? Blogger" value={selectedTargetId} onChange={event => setSelectedTargetId(event.target.value)}>
+        {targets.map(item => <option key={String(item.id)} value={String(item.id)}>{String(item.display_name)} ? {String(item.url)} ? Blogger ID {String(item.blog_id ?? "???")}{item.in_scheduled_scope ? " ? ?? Auto ??" : " ? ?? ?"}</option>)}
       </select></label>}
       {target ? <>
-        <p>대상 상태: {target.active ? "활성" : "비활성"} · OAuth {String(target.oauth_status ?? "미확인")} · 예약 범위 {target.in_scheduled_scope ? "포함" : "미포함"} · 실제 쓰기 정책 {target.remote_write_policy_available ? "허용 확인" : "차단 또는 미확인"}</p>
-        {recordedApproval && <p className="quality-ok" role="status">최초 공개 승인 기록됨 · {String(recordedApproval.actor_label)} · {fmt(recordedApproval.created_at)} · 이 승인만으로 Blogger 요청이 전송되지는 않습니다.</p>}
-        {!recordedApproval && blockers.length > 0 && <div className="quality-held" role="status"><strong>승인·발행 차단 사유</strong><ul>{blockers.map(blocker => <li key={blocker}>{publicationBlockerNames[blocker] ?? blocker}</li>)}</ul></div>}
-        {jobs.length > 0 && <div><h4>발행 작업</h4>{jobs.map(job => <article className="history-card" key={String(job.id)}><p>Job {String(job.id)} · {String(job.publication_state)} · {String(job.status)} · {job.simulation_only ? "Mock" : "실제 발행 경로"}</p>{job.remote_post_id != null && <p>Blogger postId: {String(job.remote_post_id)}</p>}{Boolean(job.remote_status === "LIVE" && job.remote_verified_at && job.remote_url) && <p><a href={String(job.remote_url)} target="_blank" rel="noopener noreferrer">실제 Blogger 게시 URL 열기 ↗</a></p>}{Boolean(job.remote_verified_at) && <p>원격 재검증 {fmt(job.remote_verified_at)}</p>}{job.published_at != null && <p>게시 시각 {fmt(job.published_at)}</p>}</article>)}</div>}
-        {isPublished && <p className="quality-ok">원격 공개 게시 기록이 확인됐습니다.</p>}
-        {!recordedApproval && <>
-          <label>승인자 표시 이름<input value={actor} onChange={event => setActor(event.target.value)} minLength={2} maxLength={120} /></label>
-          <label>첫 공개 승인 사유<input value={reason} onChange={event => setReason(event.target.value)} minLength={10} maxLength={2000} /></label>
-          <button type="button" data-testid="scheduled-first-publication-approve" disabled={busy || target.can_record_first_approval !== true || actor.trim().length < 2 || reason.trim().length < 10} onClick={onApprove}>Blogger 첫 공개 승인 기록</button>
-        </>}
-      </> : <p className="empty-state">현재 언어의 Blogger 대상이 없거나 예약 발행 상태를 확인할 수 없습니다.</p>}
-      <p>승인 버튼은 정확한 버전의 append-only 승인을 기록합니다. Blogger 공개 POST는 이 버튼에서 직접 실행하지 않고, 승인된 기존 발행 큐와 Publication Worker가 처리합니다. 외부 게시 URL은 원격 공개 상태가 확인된 경우에만 표시됩니다.</p>
+        <p>?? ??: {target.active ? "??" : "???"} ? OAuth {String(target.oauth_status ?? "???")} ? ?? ?? {target.in_scheduled_scope ? "??" : "???"} ? ?? ?? ?? {target.remote_write_policy_available ? "?? ??" : "?? ?? ???"}</p>
+        {blockers.length > 0 && <div className="quality-held" role="status"><strong>?? ?? ?? ??</strong><ul>{blockers.map(blocker => <li key={blocker}>{publicationBlockerNames[blocker] ?? blocker}</li>)}</ul></div>}
+        {jobs.length > 0 && <div><h4>?? ??</h4>{jobs.map(job => <article className="history-card" key={String(job.id)}><p>Job {String(job.id)} ? {String(job.publication_state)} ? {String(job.status)} ? {job.simulation_only ? "Mock" : "?? ?? ??"}</p>{job.remote_post_id != null && <p>Blogger postId: {String(job.remote_post_id)}</p>}{Boolean(job.remote_status === "LIVE" && job.remote_verified_at && job.remote_url) && <p><a href={String(job.remote_url)} target="_blank" rel="noopener noreferrer">?? Blogger ?? URL ?? ?</a></p>}{Boolean(job.remote_verified_at) && <p>?? ??? {fmt(job.remote_verified_at)}</p>}{job.published_at != null && <p>?? ?? {fmt(job.published_at)}</p>}</article>)}</div>}
+        {isPublished && <p className="quality-ok">?? ?? ?? ??? ??????.</p>}
+      </> : <p className="empty-state">?? ??? Blogger ??? ??? ?? ?? ??? ??? ? ????.</p>}
+      <p>?? Auto ??? ??? ?? ??? ???? Publication Worker? ?? ?????. ? ??? Blogger? ?? ?? ???, ?? URL? ?? ?? ??? ???? ???? ?????.</p>
     </>}
   </section>;
 }

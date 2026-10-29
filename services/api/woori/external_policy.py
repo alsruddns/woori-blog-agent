@@ -386,12 +386,13 @@ def _scheduled_publication_approval(blog_id: str) -> dict[str, Any] | None:
 
         with connection() as conn:
             row = conn.execute(
-                """SELECT approved_blog_ids,created_at FROM scheduled_publication_policy_events
-                WHERE action='enabled' ORDER BY id DESC LIMIT 1"""
+                """SELECT action,approved_blog_ids,created_at FROM scheduled_publication_policy_events
+                ORDER BY id DESC LIMIT 1"""
             ).fetchone()
     except (psycopg.Error, OSError):
         return None
-    if not row or str(blog_id) not in {str(value) for value in row["approved_blog_ids"]}:
+    if (not row or row.get("action") != "enabled"
+            or str(blog_id) not in {str(value) for value in row["approved_blog_ids"]}):
         return None
     return {"created_at": row["created_at"], "scope": ["scheduled_publication"]}
 

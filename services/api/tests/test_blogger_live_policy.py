@@ -137,6 +137,44 @@ def test_publish_delete_and_unapproved_blogger_shapes_stay_blocked(
         external_policy._authorize("google_blogger_read", operation, _request(method, path, params))
 
 
+def test_scheduled_write_scope_requires_latest_policy_event_to_be_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from contextlib import contextmanager
+
+    from woori import db
+
+    class Result:
+        def __init__(self, row: dict[str, object]) -> None:
+            self.row = row
+
+        def fetchone(self) -> dict[str, object]:
+            return self.row
+
+    class Connection:
+        def __init__(self, row: dict[str, object]) -> None:
+            self.row = row
+
+        def execute(self, _sql: str) -> Result:
+            return Result(self.row)
+
+    @contextmanager
+    def fake_connection(row: dict[str, object]):
+        yield Connection(row)
+
+    monkeypatch.setattr(db, "connection", lambda: fake_connection({
+        "action": "disabled", "approved_blog_ids": ["blog-record-ko"],
+        "created_at": datetime.now(UTC),
+    }))
+    assert external_policy._scheduled_publication_approval("blog-record-ko") is None
+
+    monkeypatch.setattr(db, "connection", lambda: fake_connection({
+        "action": "enabled", "approved_blog_ids": ["different-blog"],
+        "created_at": datetime.now(UTC),
+    }))
+    assert external_policy._scheduled_publication_approval("blog-record-ko") is None
+
+
 def test_public_publish_requires_separate_scope_not_in_existing_owner_attestation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

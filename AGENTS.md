@@ -1,3 +1,10 @@
+## Current scheduled-publication policy: P5-CODEX-058 (2026-10-30)
+
+- For Codex scheduled exports, an authenticated, active Scheduled Auto policy event authorizing the exact registered Blogger scope is sufficient operational approval for the first and subsequent public posts. No per-manuscript or first-post approval event is required. The legacy `scheduled_first_publication_events` table and prior audit rows are retained as history only; do not add, alter, or delete them for new Scheduled Auto posts. The legacy POST endpoint returns HTTP 410.
+- Scheduled Auto dispatch is independent of the global `manual` mode and global Auto setting. It still requires the latest policy event to be enabled for the target blog, an active emergency-stop state of false, exact language/blog mapping, current Blogger writer OAuth, the zero-cost Blogger policy gate, scoped external-write context, daily/interval limits, and duplicate/idempotency checks. Stop Scheduled Auto immediately blocks new scheduled work.
+- This policy does not change general/manual content or Trends publication. A manual manuscript still requires the user's explicit exact-version public-publish action.
+- Scheduled article assessment values (`machine_passed`, `generation_ready`, `publish_ready`, editorial review and evidence outcomes) are never rewritten to passed. Follow-up gaps may be recorded, while unsupported core claims, conflicting numbers/dates, explicit rights restrictions, unsafe HTML, or a body emptied by sanitization remain blocked.
+
 ## Current runtime baseline — P5-CODEX-038 (2026-10-29)
 
 - Qwen3 and llama.cpp execution, model download, status, and lifecycle management have been retired from this repository. Older phase notes below that describe local inference are historical records, not current instructions.
@@ -150,7 +157,7 @@ OAuth 토큰·API Key·비밀번호를 코드에 저장하지 않는다. .env �
 - Keep evaluation originals and every prior editorial version immutable. Human edits create a new version with author, reason, source version, plain-text and sanitized HTML hashes, metadata, quality results, and an optimistic base-version check. A stale editor must receive a conflict and may not overwrite newer work.
 - Human HTML is server-sanitized through a tag/attribute allowlist. Never render untrusted markup in the Dashboard DOM; previews must be isolated and sandboxed. Strip scripts, active embeds, event attributes, and unsafe URL schemes.
 - Blogger labels, target blog, SEO description, and planned publication time are versioned editorial metadata. Target blog must be registered, active, and match the content locale. A publication mode or planned date is metadata only and must not enqueue a real publication.
-- Default publication mode is manual. Editing approval, publication approval, and actual Blogger write permission are separate. Keep live Blogger create/update/delete and automatic publication blocked until a separate explicit operations approval; do not set `publish_ready=true`.
+- Default publication mode is manual. Editing approval, publication policy and actual Blogger write permission are separate. Scheduled Auto may publish only in its separately enabled, registered Blogger scope under P5-CODEX-058; no first-post event is required. Manual publication still requires the user's exact-content action. Do not set `publish_ready=true` to imply policy approval.
 - If a published Blogger post ID exists, future edits must be modeled as updates to that same blog/post identity, not as a duplicate insert. Read-only synchronization is the only Blogger integration allowed before approval; never fabricate remote post IDs or treat Mock IDs as real.
 - Preserve external service cost gates and append-only audit events for revisions, review decisions, publication state, and settings. Scheduling, preview, and editor saves do not bypass quality or human approval.
 
