@@ -1087,9 +1087,13 @@ def state() -> dict[str, Any]:
                 "name": "Google Trends public RSS export",
                 "endpoint": "https://trends.google.com/trending/rss",
                 "terms_url": trends.GOOGLE_TRENDS_HELP,
-                "policy": "RSS export; bucketed source volume only; source_rank remains null unless explicitly supplied",
+                "policy": "RSS traffic is a bucketed estimate; parsed lower bound is not an exact search count; period remains unknown unless explicitly reported; RSS order is not rank",
                 "hourly_limit": 12,
-                "automatic_schedule": False,
+                "automatic_schedule_configured": True,
+                "automatic_schedule_runtime_confirmed": False,
+                "schedule_timezone": "Asia/Seoul",
+                "schedule_start": "hourly at minute 00, one region per safe 5-minute slot",
+                "hours_parameter": "undocumented; not used",
             }
         ]
         trend_schema = conn.execute(
@@ -1102,9 +1106,7 @@ def state() -> dict[str, Any]:
             result["trend_collection_runs"] = conn.execute(
                 "SELECT * FROM trend_collection_runs ORDER BY started_at DESC LIMIT 100"
             ).fetchall()
-            result["trend_observations"] = conn.execute(
-                "SELECT * FROM trend_observations ORDER BY collected_at DESC,id LIMIT 300"
-            ).fetchall()
+            result["trend_observations"] = trends.observation_summaries(conn, limit=300)
         else:
             result["trend_collection_runs"] = []
             result["trend_observations"] = []

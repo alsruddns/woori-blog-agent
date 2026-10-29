@@ -165,9 +165,10 @@ def main() -> None:
             schema_created = True
             conn.execute(sql.SQL("SET LOCAL search_path TO {}").format(sql.Identifier(schema)))
             migration_files = sorted((ROOT / "scripts").glob("[0-9][0-9][0-9]_*.sql"))
-            if len(migration_files) != 31 or migration_files[-1].name != "031_editorial_existing_post_link.sql":
-                raise RuntimeError("Expected complete schema migrations 001 through 032")
-            for migration in migration_files:
+            worker_migrations = migration_files[:31]
+            if len(worker_migrations) != 31 or worker_migrations[-1].name != "031_editorial_existing_post_link.sql":
+                raise RuntimeError("Expected the worker isolation prerequisite migrations 001 through 031")
+            for migration in worker_migrations:
                 content = migration.read_text(encoding="utf-8").replace("SCHEMA public", "SCHEMA " + schema)
                 conn.execute(content, prepare=False)
             conn.execute(sql.SQL("GRANT USAGE ON SCHEMA {} TO woori_app").format(sql.Identifier(schema)))

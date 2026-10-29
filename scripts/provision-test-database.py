@@ -47,6 +47,7 @@ MIGRATIONS = [ROOT / "scripts" / f"{i:03d}_{name}.sql" for i, name in [
     (48, "import_content_version_bridge"),
     (49, "blogger_live_publication_queue"),
     (50, "trends_eleven_geographies"),
+    (51, "trend_approx_traffic"),
 ]]
 
 

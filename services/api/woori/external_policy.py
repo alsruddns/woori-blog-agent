@@ -11,7 +11,7 @@ from collections import deque
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -404,6 +404,61 @@ def _reserve_taiwan_official_call(host: str, method: str, hourly_limit: int) -> 
         )
 
 
+def _reserve_google_trends_call(host: str, method: str, operation: str) -> str | None:
+    """Durably share RSS spacing and rolling-hour caps across every caller/process."""
+    from psycopg.types.json import Jsonb
+
+    from .db import connection
+
+    with connection() as conn:
+        conn.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+            ("external-provider:google_trends_rss:rolling-caps",),
+        )
+        row = conn.execute(
+            """SELECT count(*) FILTER (WHERE created_at>=now()-interval '1 hour') AS hour_count,
+            min(created_at) FILTER (WHERE created_at>=now()-interval '1 hour') AS oldest_in_hour,
+            max(created_at) AS last_call FROM audit_events
+            WHERE event_type='external.call.started'
+              AND payload->>'provider'='google_trends_rss'"""
+        ).fetchone()
+        if row is None:
+            return "durable_quota_state_unavailable"
+        if row["hour_count"] >= 12:
+            return "durable_free_hourly_call_limit_reached"
+        if row["last_call"] is not None:
+            elapsed = conn.execute(
+                "SELECT now()-%s AS age", (row["last_call"],)
+            ).fetchone()
+            if elapsed is None or elapsed["age"] < timedelta(minutes=5):
+                return "provider_minimum_spacing"
+        run_id = _external_run_id.get()
+        last_collector_attempt = conn.execute(
+            """SELECT max(attempted_at) AS last_attempt FROM trend_collection_attempts
+            WHERE provider='google_trends_rss' AND (%s::text IS NULL OR id::text<>%s::text)""",
+            (run_id, run_id),
+        ).fetchone()
+        if last_collector_attempt and last_collector_attempt["last_attempt"] is not None:
+            elapsed = conn.execute(
+                "SELECT now()-%s AS age", (last_collector_attempt["last_attempt"],)
+            ).fetchone()
+            if elapsed is None or elapsed["age"] < timedelta(minutes=5):
+                return "provider_minimum_spacing"
+        payload: dict[str, Any] = {
+            "provider": "google_trends_rss",
+            "operation": operation,
+            "host": host,
+            "method": method,
+        }
+        if run_id:
+            payload["run_id"] = run_id
+        conn.execute(
+            "INSERT INTO audit_events(event_type,payload) VALUES ('external.call.started',%s)",
+            (Jsonb(payload),),
+        )
+    return None
+
+
 def _deny(provider: str, operation: str, request: httpx.Request, reason: str) -> NoReturn:
     try:
         _audit(
@@ -468,9 +523,10 @@ def _authorize(provider: str, operation: str, request: httpx.Request) -> None:
             operation_path_allowed = False
     elif provider == "google_trends_rss":
         method_allowed = request.method == "GET"
+        trend_params = list(request.url.params.multi_items())
         operation_path_allowed = bool(
             parsed.path == "/trending/rss"
-            and list(request.url.params.multi_items()) in [[("geo", code)] for code in ("KR", "US", "JP", "TW", "HK", "SG", "GB", "CA", "AU", "IN", "PH")]
+            and trend_params in [[("geo", code)] for code in ("KR", "US", "JP", "TW", "HK", "SG", "GB", "CA", "AU", "IN", "PH")]
         )
     if (
         parsed.scheme != "https"
@@ -499,6 +555,10 @@ def _authorize(provider: str, operation: str, request: httpx.Request) -> None:
     try:
         if provider == "taiwan_official_documents":
             _reserve_taiwan_official_call(parsed.host, request.method, rule["rph"])
+        elif provider == "google_trends_rss":
+            block_reason = _reserve_google_trends_call(parsed.host, request.method, operation)
+            if block_reason:
+                _deny(provider, operation, request, block_reason)
         else:
             _audit(provider, operation, "call.started", host=parsed.host, method=request.method)
     except psycopg.Error:

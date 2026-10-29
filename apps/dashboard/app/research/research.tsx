@@ -28,6 +28,7 @@ export type State = {
 };
 type Field = { name: string; label: string; type?: string; optional?: boolean; options?: { value: string; label: string }[] };
 const str = (row: Row, key: string) => String(row[key] ?? "");
+const kst = (value: unknown) => value ? new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", dateStyle: "short", timeStyle: "short" }).format(new Date(String(value))) : "-";
 const profileLabel = (p: Row) => `${str(p, "language_code")} / ${str(p, "target_country") || "국가 미지정"}`;
 
 function Editor({ fields, defaults = {}, submit, label, disabled }: {
@@ -78,6 +79,8 @@ export default function Research({ initial }: { initial: State }) {
   const versions = [data.versions.find(v => v.id === left), data.versions.find(v => v.id === right)];
   const measurements = [data.measurements.find(m => m.id === measureLeft), data.measurements.find(m => m.id === measureRight)];
   const experiments = data.experiments ?? [];
+  const trendWorkerStatus = data.worker?.fresh === true && str(data.worker, "status") === "running"
+    ? "heartbeat 정상" : data.worker?.status ? `heartbeat ${str(data.worker, "status")}` : "heartbeat 미확인";
   const currentExperimentId = experiments[0]?.experiment_id;
   const currentExperiments = experiments.filter(item => item.experiment_id === currentExperimentId);
   const c3ModelComparisons = (data.evaluation_results?.runs ?? []).filter(run => run.sec_source || run.fed_source)
@@ -128,13 +131,28 @@ export default function Research({ initial }: { initial: State }) {
     <section><h2>자동 주제 수집·근거 자료 조사</h2>
       <article aria-labelledby="trend-collection">
         <h3 id="trend-collection">국가별 Google Trends RSS</h3>
-        <p>공식 도움말이 RSS 내보내기를 안내합니다. 이 피드는 검색어 목록이며, 제공자가 순위를 명시하지 않으므로 순위는 미수집으로 저장합니다. 검색량은 원천의 구간 표기만 보존합니다.</p>
-        <p>대상 지역: KR, US, JP, TW, HK, SG. 중국 본토는 Google Trends 제공 지역으로 간주하지 않습니다. 자동 스케줄은 비활성 상태이며 아래 실행은 선택한 지역 1회 수집입니다.</p>
+        <p>RSS 순서는 순위가 아닙니다. 검색량은 Google 추정 구간이며, 저장된 하한도 정확한 검색 횟수를 뜻하지 않습니다. RSS 기준 기간은 확인되지 않아 비교하지 않습니다.</p>
+        <p>스케줄 정책: Asia/Seoul 매시 정각 시작, 지역별 최소 5분 간격. 실패 지역은 제한된 1회 재시도만 허용합니다. Worker 상태: {trendWorkerStatus}. heartbeat는 현재 프로세스가 새 코드를 읽었는지 증명하지 않습니다.</p>
+        <p>`hours=1`은 공식 RSS 규격으로 확인되지 않아 정기 수집에 사용하지 않습니다.</p>
         {!data.trend_collection_configured && <p role="status">추세 저장 스키마가 아직 운영 DB에 적용되지 않아 수집은 비활성화되어 있습니다.</p>}
         {data.trend_sources?.map(source => <p key={str(source, "endpoint")}>{str(source, "policy")} · 시간당 앱 제한 {str(source, "hourly_limit")}</p>)}
-        {(["KR", "US", "JP", "TW", "HK", "SG"] as const).map(geo => <button key={geo} disabled={busy || !data.trend_collection_configured} onClick={() => void act("trends/collect", { geo })}>{geo} 트렌드 1회 수집</button>)}
+        {(["KR", "US", "JP", "TW", "HK", "SG", "GB", "CA", "AU", "IN", "PH"] as const).map(geo => <button key={geo} disabled={busy || !data.trend_collection_configured} onClick={() => void act("trends/collect", { geo })}>{geo} 트렌드 1회 수집</button>)}
         <details><summary>최근 수집 실행 원본 데이터</summary><pre>{JSON.stringify(data.trend_collection_runs ?? [], null, 2)}</pre></details>
-        <details><summary>저장 검색어 원본 데이터 (최대 300건)</summary><pre>{JSON.stringify(data.trend_observations ?? [], null, 2)}</pre></details>
+        <h4>최근 고유 검색어 관측</h4>
+        <div style={{ overflowX: "auto" }}><table><thead><tr><th>검색어</th><th>국가</th><th>Google 추정 검색량</th><th>첫 관측</th><th>최근 관측</th><th>관측 상태</th><th>검색량 변화</th><th>공식 자료 조사</th></tr></thead>
+          <tbody>{(data.trend_observations ?? []).map(row => {
+            const status = str(row, "observation_status");
+            const statusLabel = status === "new" ? "신규" : status === "reappeared" ? "재등장" : "지속";
+            const researchStatus = str(row, "research_status");
+            const researchLabel = researchStatus === "not_researched" ? "조사 전" : researchStatus || "상태 미상";
+            const traffic = str(row, "source_volume_label");
+            const lower = row.source_volume_lower_bound;
+            const estimate = traffic ? `구간 ${traffic}${typeof lower === "number" ? ` · 하한 ${lower.toLocaleString()}` : ""}` : "제공되지 않음";
+            const period = row.source_volume_period ? str(row, "source_volume_period") : "기준 기간 미상";
+            const change = str(row, "traffic_change_status");
+            const changeLabel = ({ no_prior_observation: "이전 관측 없음", period_unknown: "기간 미상 · 비교 안 함", period_changed: "기간 불일치 · 비교 안 함", source_changed: "출처 불일치 · 비교 안 함", bucket_unparsed: "구간 파싱 불가", bucket_up: "구간 상승", bucket_down: "구간 하락", bucket_unchanged: "같은 구간" } as Record<string, string>)[change] ?? "비교 안 함";
+            return <tr key={str(row, "id")}><td>{str(row, "query")}</td><td>{str(row, "geo")}</td><td>{estimate}<br/><small>{period}</small></td><td>{kst(row.first_observed)}</td><td>{kst(row.last_observed)}</td><td>{statusLabel} · {str(row, "observation_count")}회</td><td>{changeLabel}</td><td>{researchLabel}</td></tr>;
+          })}</tbody></table></div>
         <h4>주제 후보 그룹화 및 게시 가치 평가</h4>
         <p>같은 지역의 정규화된 동일 검색어만 묶습니다. 지역 간 유사 검색어는 사건 동일성을 확인할 수 없어 검토 제안으로만 남깁니다. 자동 선택·게시 승인 기능은 없습니다.</p>
         {!data.trend_topic_workspace_configured && <p role="status">주제 및 자료 패키지 스키마가 적용되지 않았습니다.</p>}
