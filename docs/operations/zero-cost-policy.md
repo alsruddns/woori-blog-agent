@@ -82,6 +82,17 @@ The Blogger API price and Google Cloud project billing association are separate 
 
 An absent price entry is not evidence of free use. Re-review needs explicit official zero-cost evidence and an account-side billing check; do not relax the application gate based only on a free quota or public URL.
 
+## ChatGPT Work desktop scheduled tasks (2026-10-29)
+
+| Item | Finding | Decision |
+|---|---|---|
+| Local-file capability | OpenAI's ChatGPT Learn documentation says scheduled tasks in the desktop app can run in a local project or an isolated worktree. Tasks that need local files require the computer and desktop app to remain available. Web-only scheduled tasks cannot directly use a local folder. | Capability is documented; this project/account's access and successful unattended delivery are not verified. |
+| Usage/price basis | OpenAI Help says Work follows the Codex usage structure and refers to plan-included usage and additional credits. The exact allowance and whether additional credits are enabled/consumed depend on the user's plan/workspace and are not visible to this repository. | No account-level no-additional-currency guarantee can be made. Do not create or trigger scheduled generation until the operator confirms the account's usage/credit setting is acceptable. |
+| Local transfer | A local-project task can be instructed to write the `.local/gpt-scheduled-import` inbox, but task registration, local permission, first run, file receipt, and Import audit must all be observed. A web-only task, worktree artifact, or manually copied file is not local automatic delivery. | Keep the verified scheduled-run and delivery counts at zero until a real scheduled run produces a file and corresponding local receipt evidence. |
+| External API | The task uses ChatGPT Work's own scheduled execution; no OpenAI API key or repository API provider is configured by this policy. | No API integration or paid API fallback is permitted. |
+
+Official references, reviewed 2026-10-29: [Scheduled tasks](https://learn.chatgpt.com/docs/automations) and [ChatGPT Work and Codex](https://help.openai.com/en/articles/20001275-chatgpt-work-and-codex). Account-specific availability, quotas, price and credit settings remain unverified; recheck before enabling a recurring task or changing the usage plan.
+
 ## P5-CODEX-019 Blogger draft worker gate (2026-10-29)
 
 The confirmed private-draft operation queue is now callable by the operations-only publication worker, but this does not change the zero-cost decision above. Before executing `scripts/publication-worker.py --operations-confirmed-private-drafts`, an operator must verify the project's Blogger API quota/usage and Cloud Billing association in Google Cloud Console. The app's append-only owner attestation is not a live Cloud Console check. A quota cap alone is not a spending cap. Until both the zero-cost condition and quota headroom are verified, do not enqueue/execute a live test draft. No Blogger POST was performed during P5-CODEX-019.
