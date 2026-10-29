@@ -913,6 +913,18 @@ def test_supported_currency_code_does_not_trigger_unsupported_proper_name() -> N
     assert "United States Dollar" in held["unsupported_proper_names"]
 
 
+def test_markdown_source_link_punctuation_does_not_look_like_fabricated_url() -> None:
+    source_url = "https://www.federalreserve.gov/newsevents/pressreleases/monetary20261028a.htm"
+    draft = Draft(
+        title="FOMC statement summary",
+        body=f"## Official statement\n\nThe statement is available at [the Federal Reserve]({source_url}). [source:fed-1]",
+        summary="A summary of the official statement.", keywords=["FOMC statement"], source_ids=["fed-1"],
+    )
+    source = {"id": "fed-1", "url": source_url, "evidence": "Federal Reserve statement.", "rights": "Review required."}
+    checked = inspect(draft, [source], "en", datetime.now(UTC).date().isoformat())
+    assert checked["rule_checks"]["no_fabricated_urls"] is True
+
+
 def test_korean_language_fields_allow_official_english_name_with_korean_text() -> None:
     from woori.grounding import inspect
 

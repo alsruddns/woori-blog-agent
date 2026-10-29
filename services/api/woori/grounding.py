@@ -314,12 +314,19 @@ def inspect(
     allowed_urls = {s["url"].rstrip("/") for s in sources}
     body = draft.title + "\n" + draft.body + "\n" + draft.summary
     prose_body = prose_without_headings(draft.body)
-    found_urls = {u.rstrip("/.,);]") for u in re.findall(r"https?://[^\s<>]+", body)}
+    # Markdown link destinations commonly end immediately before `)`. Strip
+    # presentation punctuation while preserving the canonical URL for matching.
+    found_urls = set(
+        re.findall(r"https?://[A-Za-z0-9._~:/?#\[\]@!$&'*+,;=%-]+", body)
+    )
     evidence = "\n".join(str(s["evidence"]) + " " + str(s.get("published_at", "")) for s in sources)
     unexpected_numbers = sorted(numbers(body) - numbers(evidence + " " + as_of))
     evidence_names = proper_names(evidence)
     output_names = proper_names(draft.title + "\n" + prose_body + "\n" + draft.summary)
-    missing_names = sorted(evidence_names - output_names)
+    missing_names = sorted(
+        name for name in evidence_names - output_names
+        if not any(name in output_name for output_name in output_names)
+    )
     # A shorter exact phrase such as "Federal Reserve" is supported by the
     # source's full name "Federal Reserve Board"; added entity tokens still fail.
     ungrounded_names = sorted(

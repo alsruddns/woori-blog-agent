@@ -452,9 +452,17 @@ def get_content_import(import_id: UUID) -> dict[str, Any]:
             "SELECT id,version_id,outcome,fake_post_id,result,created_at,simulation_only,external_network_calls,real_blog_mutated FROM external_content_import_mock_publications WHERE import_id=%s ORDER BY created_at DESC,id DESC",
             (import_id,),
         ).fetchall()
+        source_verifications = conn.execute(
+            """SELECT DISTINCT ON (payload->>'source_id') payload,created_at
+            FROM audit_events WHERE event_type='research.source.live_document_verified'
+              AND payload->>'import_id'=%s
+            ORDER BY payload->>'source_id',created_at DESC,id DESC""",
+            (str(import_id),),
+        ).fetchall()
         latest_review = next((review for review in reversed(reviews) if latest and str(review["version_id"]) == str(latest["id"])), None)
         return {"item": dict(row), "latest_version": dict(latest) if latest else None,
             "versions": [dict(version) for version in versions], "assessments": [dict(check) for check in assessments],
+            "source_verifications": [dict(event) for event in source_verifications],
             "events": [dict(event) for event in events], "reviews": [dict(review) for review in reviews],
             "editorial_review_status": latest_review["event_type"] if latest_review else "awaiting_human_review",
             "localization_requests": [dict(request) for request in localization],
@@ -683,18 +691,53 @@ def assess_import(import_id: UUID, request: ImportAssessmentRequest) -> dict[str
         seo_input = SeoMetadata.model_validate(seo_raw)
         source_rows = imported["sources"]
         claims = imported["claims"]
+        live_rows = conn.execute(
+            """SELECT DISTINCT ON (payload->>'source_id') payload FROM audit_events
+            WHERE event_type='research.source.live_document_verified' AND payload->>'import_id'=%s
+            ORDER BY payload->>'source_id',created_at DESC,id DESC""",
+            (str(import_id),),
+        ).fetchall()
+        live_by_source = {
+            str(row["payload"].get("source_id")): row["payload"] for row in live_rows
+        }
         source_evidence: dict[str, list[str]] = {str(item["source_id"]): [] for item in source_rows}
         for claim in claims:
             for source_id in claim["source_ids"]:
                 source_evidence.setdefault(str(source_id), []).append(str(claim["evidence_excerpt"]))
+        # Source fetch verification is append-only provenance, not semantic or
+        # rights approval. Use only bounded excerpts recorded for this source ID
+        # to assess the current article revision against the fetched document.
+        for source_id, verification in live_by_source.items():
+            excerpts = verification.get("verified_claim_evidence", [])
+            if isinstance(excerpts, list):
+                source_evidence.setdefault(source_id, []).extend(
+                    excerpt[:1200] for excerpt in excerpts
+                    if isinstance(excerpt, str) and excerpt.strip()
+                )
         quality_sources = []
         for source in source_rows:
+            verification = live_by_source.get(str(source["source_id"]), {})
+            published_at = str(source.get("published_at") or "")
+            if published_at:
+                try:
+                    published_date = datetime.fromisoformat(published_at).date()
+                    published_at = f"{published_date.year}년 {published_date.month}월 {published_date.day}일"
+                except ValueError:
+                    pass
+            normalized_facts = verification.get("normalized_facts", [])
+            normalized_evidence = []
+            if isinstance(normalized_facts, list):
+                normalized_evidence = [
+                    str(fact.get("normalized_value", ""))
+                    for fact in normalized_facts
+                    if isinstance(fact, dict) and fact.get("normalized_value")
+                ]
             quality_sources.append({
                 "id": str(source["source_id"]), "url": str(source["url"]),
                 "source_name": str(source["organization"]),
-                "evidence": " ".join(source_evidence.get(str(source["source_id"]), [])),
+                "evidence": " ".join(source_evidence.get(str(source["source_id"]), []) + normalized_evidence),
                 "rights": str(source["rights_note"]),
-                "published_at": str(source.get("published_at") or ""),
+                "published_at": published_at,
             })
         draft = Draft(
             title=str(version["title"]), body=str(version["body_markdown"]),
@@ -716,7 +759,16 @@ def assess_import(import_id: UUID, request: ImportAssessmentRequest) -> dict[str
             seo_title=seo_input.seo_title, search_description=seo_input.search_description,
             core_question=seo_input.core_question, core_answer=seo_input.core_answer,
             category=str(imported["category"]), blogger_labels=list(version["blogger_labels"]),
-            author=None, official_sources=[SeoSource(title=str(source["title"]),url=str(source["url"]),official_status="unverified") for source in source_rows],
+            author=None, official_sources=[
+                SeoSource(
+                    title=str(source["title"]), url=str(source["url"]),
+                    official_status=("verified" if (
+                        live_by_source.get(str(source["source_id"]), {}).get("url") == str(source["url"])
+                        and live_by_source.get(str(source["source_id"]), {}).get("source_host") == urlsplit(str(source["url"])).hostname
+                        and live_by_source.get(str(source["source_id"]), {}).get("http_status") == 200
+                    ) else "unverified"),
+                ) for source in source_rows
+            ],
             fact_verified_at=None, editorial_status="unknown",
         )
         seo_checks = evaluate_seo_readiness(seo_metadata, title=draft.title, plain_text=plain_text,

@@ -192,6 +192,21 @@ def test_p5_codex_021_fed_article_isolated_import_assessment_and_html(
             assert receipt["provider_called"] is False
             assert receipt["blogger_write_performed"] is False
             assert receipt["content_version_id"]
+            with content_imports.connection() as conn:
+                conn.execute(
+                    "INSERT INTO audit_events(event_type,payload) VALUES (%s,%s)",
+                    ("research.source.live_document_verified", content_imports.Jsonb({
+                        "import_id": receipt["import_id"],
+                        "source_id": "fed-fomc-20261028",
+                        "url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20261028a.htm",
+                        "source_host": "www.federalreserve.gov",
+                        "http_status": 200,
+                        "checked_at": "2026-10-29T13:30:00+09:00",
+                        "verified_claim_evidence": ["The Federal Reserve issued its official statement."],
+                        "independent_source_count": 0,
+                        "rights_approved": False,
+                    })),
+                )
             assessment = client.post(
                 f"/admin/research/content-imports/{receipt['import_id']}/assessment",
                 headers=headers, json={},
@@ -201,12 +216,14 @@ def test_p5_codex_021_fed_article_isolated_import_assessment_and_html(
             assert result["version_id"]
             assert result["publish_ready"] is False
             assert result["independent_source_verification"] is False
+            assert next(check for check in result["seo_checks"] if check["key"] == "official_source_status")["status"] == "ready"
             assert "[source:" not in result["safe_html"].casefold()
             assert "FOMC" in result["safe_html"]
             assert result["safe_html"].startswith('<article class="wb-article"><p>')
             assert not any(token in result["safe_html"].casefold() for token in ("<script", "<iframe", "onerror="))
             detail = client.get(f"/admin/research/content-imports/{receipt['import_id']}", headers=headers)
             assert detail.status_code == 200
+            assert detail.json()["source_verifications"][0]["payload"]["source_id"] == "fed-fomc-20261028"
             assert detail.json()["latest_version"]["content_version_id"] == receipt["content_version_id"]
             assert len(detail.json()["assessments"]) == 1
 

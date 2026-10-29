@@ -6,7 +6,7 @@ import Link from "next/link";
 type Row = Record<string, unknown>;
 type Details = {
   item: Row; latest_version: Row | null; versions: Row[]; assessments: Row[]; reviews: Row[];
-  editorial_review_status: string; localization_requests: Row[]; mock_publications: Row[];
+  source_verifications?: Row[]; editorial_review_status: string; localization_requests: Row[]; mock_publications: Row[];
   publish_ready: false; generation_ready: false;
 };
 type DetailTab = "editor" | "evidence" | "quality" | "preview" | "distribution" | "history";
@@ -211,10 +211,22 @@ export default function ExternalImportWorkspace() {
     </details>
     {detail && latestVersion && <div className="sheet-backdrop import-sheet-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) closeDetail(); }}><section ref={detailDialog} tabIndex={-1} className="detail-sheet import-detail" role="dialog" aria-modal="true" aria-labelledby="import-detail-title" data-testid="import-detail" data-content-id={String(detail.item.external_content_id)}>
       <div className="section-heading import-detail-heading"><div><p className="eyebrow">{languageNames[String(detail.item.language_code)] ?? String(detail.item.language_code)} · {String(detail.item.source_region)} · {categoryNames[String(detail.item.category)] ?? String(detail.item.category)}</p><h2 id="import-detail-title">{String(latestVersion.title)}</h2><p>버전 {String(latestVersion.version_number)} · 수정 {fmt(latestVersion.created_at)} · 상태: {statusNames[reviewState] ?? "사람 검토 대기"}</p></div><button type="button" className="secondary-button" onClick={closeDetail}>닫기</button></div>
-      <p className="quality-held"><strong>근거 상태: 외부 제출 · 독립 검증 미완료</strong> — 제출된 인용문과 검증 상태는 원문을 실제로 확인하기 전까지 주장의 증거로 승인되지 않습니다.</p>
-      <nav className="import-detail-tabs" role="tablist" aria-label="원고 상세 탭">
-        {([["editor", "원고 편집"], ["evidence", "출처·근거"], ["quality", "품질·SEO"], ["preview", "HTML 미리보기"], ["distribution", "다국어·발행"], ["history", "변경 이력"]] as const).map(([id, label]) =>
-          <button key={id} type="button" role="tab" disabled={busy} aria-selected={detailTab === id} onClick={() => setDetailTab(id)}>{label}</button>)}
+      <p className="quality-held import-evidence-status" role="status"><strong>근거 검토 대기</strong> · 공식 원문·주장 연결·독립 근거·이용 권리를 확인하기 전까지 발행 근거로 승인되지 않습니다. 자세한 확인 결과는 출처·근거 탭에 있습니다.</p>
+      <nav className="import-detail-tabs" role="tablist" aria-label="원고 상세 탭" onKeyDown={event => {
+        const ids: DetailTab[] = ["editor", "evidence", "quality", "preview", "distribution", "history"];
+        const current = ids.indexOf(detailTab);
+        const next = event.key === "ArrowRight" ? (current + 1) % ids.length
+          : event.key === "ArrowLeft" ? (current + ids.length - 1) % ids.length
+            : event.key === "Home" ? 0 : event.key === "End" ? ids.length - 1 : -1;
+        if (next >= 0) {
+          event.preventDefault();
+          const target = ids[next];
+          setDetailTab(target);
+          requestAnimationFrame(() => document.getElementById(`import-tab-${target}`)?.focus());
+        }
+      }}>
+        {([['editor', '원고 편집'], ['evidence', '출처·근거'], ['quality', '품질·SEO'], ['preview', 'HTML 미리보기'], ['distribution', '다국어·발행'], ['history', '변경 이력']] as const).map(([id, label]) =>
+          <button key={id} id={`import-tab-${id}`} type="button" role="tab" disabled={busy} aria-controls={`import-panel-${id}`} aria-selected={detailTab === id} tabIndex={detailTab === id ? 0 : -1} onClick={event => { setDetailTab(id); event.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" }); }}>{label}</button>)}
       </nav>
       <div role="tabpanel" aria-label="원고 상세 내용" className="import-detail-content">
         {detailTab === "editor" && <>
@@ -222,8 +234,24 @@ export default function ExternalImportWorkspace() {
             <div className="import-actions"><button type="button" disabled={busy || body.trim().length < 100} onClick={() => void assess()}>{busy ? "검사 중…" : "품질·SEO·HTML 검사"}</button><button type="button" className="secondary-button" disabled={!latestAssessment} onClick={() => { if (latestAssessment) { setPreview({ title: title || String(latestVersion.title ?? detail.item.title ?? ""), safe_html: latestAssessment.safe_html, seo_checks: latestAssessment.seo_checks, html_sha256: latestAssessment.html_sha256 }); setDetailTab("preview"); } }}>게시용 미리보기</button></div>
           </section>
         </>}
-        {detailTab === "evidence" && <section className="workspace-panel" id="import-evidence"><h3>출처와 주장</h3>{(Array.isArray(detail.item.sources) ? detail.item.sources as Row[] : []).map(source => <article className="history-card" key={String(source.source_id)}><a href={String(source.url)} target="_blank" rel="noreferrer">{String(source.title)}</a><p>{String(source.organization)} · 이용권한: {displayState(source.rights_status)} · 독립 검증 전</p></article>)}{(Array.isArray(detail.item.claims) ? detail.item.claims as Row[] : []).map(claim => <article className="history-card" key={String(claim.claim_id)}><strong>{String(claim.claim)}</strong><p>연결된 외부 출처: {Array.isArray(claim.source_ids) ? claim.source_ids.map(sourceId => (Array.isArray(detail.item.sources) ? detail.item.sources as Row[] : []).find(source => source.source_id === sourceId)?.title ?? "출처명 미확인").join(" · ") : "—"} · 제출 상태: {displayState(claim.verification_status)} · 사실 상태 주장: {displayState(claim.factual_state)}</p><details><summary>제출된 발췌문 보기</summary><blockquote>{String(claim.evidence_excerpt)}</blockquote></details></article>)}</section>}
-        {detailTab === "quality" && <section className="workspace-panel" id="import-quality"><h3>품질·SEO 검사</h3>{latestAssessment ? <><p className={latestAssessment.machine_passed ? "quality-ok" : "quality-held"}>{latestAssessment.machine_passed ? "결정론적 규칙 통과" : "기계 검사 보류"}. 이 결과는 사실의 의미적 정확성·권리·자연스러움을 보증하지 않습니다.</p><ul>{((latestAssessment.seo_checks ?? []) as Row[]).map(check => <li key={String(check.key)}>{displayState(check.status)} · {String(check.message)}</li>)}</ul><details><summary>세부 검사 결과</summary><pre>{JSON.stringify(latestAssessment.machine_checks, null, 2)}</pre></details></> : <p className="empty-state">아직 품질·SEO 검사를 실행하지 않았습니다.</p>}</section>}
+        {detailTab === "evidence" && <section className="workspace-panel" id="import-evidence"><h3>출처와 주장</h3>
+          {(detail.source_verifications ?? []).map(record => {
+            const check = record.payload && typeof record.payload === "object" ? record.payload as Row : {};
+            return <article className="source-live-verification" key={`${String(check.source_id)}-${String(record.created_at)}`}>
+              <strong>공식 원문 HTTP {String(check.http_status ?? "미확인")} · {String(check.document_title ?? "문서 제목 미확인")}</strong>
+              <p>확인 시각 {fmt(check.checked_at ?? check.verified_at ?? record.created_at)} · 발표 {fmt(check.published_at)} · 출처 호스트 {String(check.source_host ?? "미확인")}</p>
+              {Boolean(check.url) && <a href={String(check.url)} target="_blank" rel="noopener noreferrer">Federal Reserve 원문 열기</a>}
+              <p>독립 출처 {String(check.independent_source_count ?? 0)}건 · 권리 {String(check.rights_status ?? "미확인")} · 사람의 의미·권리 검토 미완료</p>
+              <p>원문에서 확인한 근거 구간</p>
+              {Array.isArray(check.verified_claim_evidence) && <ul>{(check.verified_claim_evidence as unknown[]).map((excerpt, index) => <li key={index}>{String(excerpt)}</li>)}</ul>}
+              <p>사람의 의미·권리 검토: {String(check.human_semantic_review ?? "대기")} · 권리 승인: {check.rights_approved === true ? "승인 기록 있음" : "미승인"}</p>
+            </article>;
+          })}
+          {!detail.source_verifications?.length && <p className="quality-held">현재 확인 기록 없음 · 수집 시 출처 상태와 실제 원문 확인은 별도입니다.</p>}
+          {(Array.isArray(detail.item.sources) ? detail.item.sources as Row[] : []).map(source => <article className="history-card" key={String(source.source_id)}><a href={String(source.url)} target="_blank" rel="noopener noreferrer">{String(source.title)}</a><p>{String(source.organization)} · 발표 {fmt(source.published_at)} · 이용권한: {displayState(source.rights_status)} · 독립 검증 전</p></article>)}
+          {(Array.isArray(detail.item.claims) ? detail.item.claims as Row[] : []).map(claim => <article className="history-card" key={String(claim.claim_id)}><strong>{String(claim.claim)}</strong><p>연결된 외부 출처: {Array.isArray(claim.source_ids) ? claim.source_ids.map(sourceId => (Array.isArray(detail.item.sources) ? detail.item.sources as Row[] : []).find(source => source.source_id === sourceId)?.title ?? "출처명 미확인").join(" · ") : "—"} · 제출 상태: {displayState(claim.verification_status)} · 사실 상태 주장: {displayState(claim.factual_state)}</p><details><summary>제출된 발췌문 보기</summary><blockquote>{String(claim.evidence_excerpt)}</blockquote></details></article>)}
+        </section>}
+        {detailTab === "quality" && <section className="workspace-panel" id="import-quality"><h3>품질·SEO 검사</h3>{latestAssessment ? <QualityAssessmentPanel assessment={latestAssessment} /> : <p className="empty-state">아직 품질·SEO 검사를 실행하지 않았습니다.</p>}</section>}
         {detailTab === "preview" && <section className="workspace-panel" id="import-preview">{previewDocument ? <><div className="section-heading"><div><h3>게시용 HTML 미리보기</h3><p>디자인 렌더러 결과 · {String(preview?.html_sha256 ?? latestAssessment?.html_sha256 ?? "")} · 실제 Blogger 테마 적용 결과와 다를 수 있습니다.</p></div></div><iframe data-testid="import-html-preview" title="게시용 원고 미리보기" sandbox="" srcDoc={previewDocument} /></> : <p className="empty-state">먼저 원고 편집 탭에서 품질·HTML 검사를 실행하고 게시용 미리보기를 엽니다.</p>}</section>}
         {detailTab === "distribution" && <>
           <section className="workspace-panel" id="import-localization"><h3>다국어 확장</h3><p>생성 Provider가 연결되지 않아 요청은 대기하며 원고를 생성한 것으로 표시하지 않습니다.</p><label>대상 언어<select value={targetLanguage} onChange={event => setTargetLanguage(event.target.value as typeof targetLanguage)}>{languages.filter(language => language !== detail.item.language_code).map(language => <option key={language} value={language}>{languageNames[language]}</option>)}</select></label><button type="button" className="secondary-button" disabled={busy} onClick={() => void run(() => api("localizations", "POST", { target_language: targetLanguage, requester_label: reviewer, reason: "요청한 언어로 외부 원고를 준비하고 사람 검토 대기" }), "다국어 원고 요청을 외부 공급자 대기로 저장했습니다.")}>현지화 원고 요청</button>{detail.localization_requests.map(request => <article className="history-card" key={String(request.target_language)}><p>{languageNames[String(request.target_language)]} · {statusNames[String(request.event_type)] ?? String(request.event_type)} · {fmt(request.created_at)}</p>{request.event_type === "requested" && <button type="button" className="secondary-button" disabled={busy} onClick={() => void run(() => api(`localizations/${encodeURIComponent(String(request.target_language))}/cancel`, "POST", { requester_label: reviewer, reason: "사용자가 다국어 확장 요청을 취소" }), "현지화 요청을 취소 기록으로 저장했습니다.")}>요청 취소</button>}</article>)}</section>
@@ -232,7 +260,26 @@ export default function ExternalImportWorkspace() {
         </>}
         {detailTab === "history" && <section className="workspace-panel" id="import-history"><h3>버전 및 변경 이력</h3>{detail.versions.map(version => <article className="history-card" key={String(version.id)}><strong>v{String(version.version_number)} · {String(version.title)}</strong><p>{fmt(version.created_at)} · {String(version.author_label)} · {String(version.change_reason)}</p>{version.id !== latestVersion.id && <button type="button" className="secondary-button" onClick={() => void openDetail(selectedId)}>최신 버전 새로고침</button>}</article>)}{detail.reviews.map(event => <article className="history-card" key={String(event.version_id) + String(event.created_at)}><strong>{statusNames[String(event.event_type)] ?? String(event.event_type)}</strong><p>{String(event.reviewer_label)} · {fmt(event.created_at)} · {String(event.reason)}</p></article>)}</section>}
       </div>
-      <p className="quality-held">이 가져오기 흐름은 품질·편집 검토·모의 게시까지 제공합니다. 실제 게시 준비에는 별도 승인 경로와 운영 DB 스키마 갱신이 필요합니다.</p>
     </section></div>}
   </main>;
+}
+
+function QualityAssessmentPanel({ assessment }: { assessment: Row }) {
+  const seoChecks = (Array.isArray(assessment.seo_checks) ? assessment.seo_checks : []) as Row[];
+  const machine = assessment.machine_checks && typeof assessment.machine_checks === "object" ? assessment.machine_checks as Row : {};
+  const gates = machine.checks && typeof machine.checks === "object" ? machine.checks as Row : {};
+  const failedMachine = Object.entries(gates).filter(([, passed]) => passed === false).map(([key]) => key.replaceAll("_", " "));
+  const groups = [
+    ["통과", seoChecks.filter(check => check.status === "ready")],
+    ["수정 필요", seoChecks.filter(check => check.status === "failed")],
+    ["사람 검토 필요", seoChecks.filter(check => check.status === "review")],
+    ["미측정", seoChecks.filter(check => check.status === "not_measured")],
+  ] as const;
+  return <>
+    <p className={assessment.machine_passed ? "quality-ok" : "quality-held"}>{assessment.machine_passed ? "규칙 기계 검사 통과" : "기계 검사 보류"} · 이 결과는 사실의 의미적 정확성·권리·자연스러움을 보증하지 않습니다.</p>
+    <p>기계 검사: {Object.values(gates).filter(value => value === true).length}/{Object.keys(gates).length} 통과</p>
+    {failedMachine.length > 0 && <section><h4>수정 필요</h4><ul>{failedMachine.map(name => <li key={name}>{name}</li>)}</ul></section>}
+    <div className="quality-check-groups">{groups.map(([label, checks]) => <section key={label}><h4>{label} <span>{checks.length}</span></h4>{checks.length ? <ul>{checks.map(check => <li key={String(check.key)}>{String(check.message)}</li>)}</ul> : <p>해당 상태 항목 없음</p>}</section>)}</div>
+    <details><summary>개발자용 원시 검사 데이터</summary><pre>{JSON.stringify(assessment.machine_checks, null, 2)}</pre></details>
+  </>;
 }
