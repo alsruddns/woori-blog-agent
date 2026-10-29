@@ -330,6 +330,15 @@ def test_number_only_markdown_headings_are_not_factual_numbers() -> None:
     assert numbers("## 1\n## 2\n## 10") == set()
 
 
+def test_japanese_partial_month_day_matches_full_source_date_without_hiding_day_changes() -> None:
+    assert numbers("10月29日") <= numbers("2026年10月29日")
+    assert not numbers("10月28日").issubset(numbers("2026年10月29日"))
+
+
+def test_japanese_price_per_liter_denominator_does_not_become_an_unsupported_quantity() -> None:
+    assert numbers("支給単価は1リットル52.4円") == numbers("支給単価は52.4円/L")
+
+
 def test_grouped_financial_amounts_normalize_to_the_same_numeric_fact() -> None:
     assert numbers("Revenue was 109417000000 USD") == numbers(
         "Revenue was 109,417,000,000 USD"

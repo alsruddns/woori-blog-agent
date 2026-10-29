@@ -15,6 +15,7 @@ from typing import Any, Literal, cast
 from urllib.parse import urlsplit
 from uuid import UUID
 
+import psycopg
 from fastapi import APIRouter, HTTPException, Query
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
@@ -741,6 +742,32 @@ def record_scheduled_import_origin(
     import_id: UUID, request: ScheduledImportOrigin
 ) -> dict[str, Any]:
     """Append an idempotent audit event for an untrusted scheduled-task claim."""
+    try:
+        return _record_scheduled_import_origin(import_id, request)
+    except psycopg.Error as exc:
+        # Keep the database message, values, and identifiers out of HTTP/audit
+        # output while exposing enough SQLSTATE classification to operate the
+        # retry safely.
+        category = {
+            "42501": "insufficient_privilege",
+            "23503": "foreign_key_conflict",
+            "23505": "duplicate_conflict",
+            "23514": "constraint_conflict",
+            "42703": "schema_mismatch",
+            "42P01": "missing_relation",
+            "40001": "serialization_conflict",
+            "40P01": "deadlock_conflict",
+        }.get(exc.sqlstate or "", "database_operation_unavailable")
+        sqlstate = exc.sqlstate or "unknown"
+        raise HTTPException(
+            503,
+            f"scheduled_origin_database_error:{category}:sqlstate_{sqlstate}",
+        ) from None
+
+
+def _record_scheduled_import_origin(
+    import_id: UUID, request: ScheduledImportOrigin
+) -> dict[str, Any]:
     canonical = request.model_dump_json(exclude_none=False)
     origin_sha256 = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
     event_key = hashlib.sha256(
@@ -749,7 +776,7 @@ def record_scheduled_import_origin(
     target_url = f"https://{urlsplit(str(request.target_blog_url)).hostname}".lower()
     with connection() as conn:
         imported = conn.execute(
-            "SELECT generation_method,language_code FROM external_content_imports WHERE id=%s FOR SHARE",
+            "SELECT generation_method,language_code FROM external_content_imports WHERE id=%s",
             (import_id,),
         ).fetchone()
         if not imported:
@@ -760,7 +787,7 @@ def record_scheduled_import_origin(
             raise HTTPException(409, "Scheduled target language does not match the imported manuscript")
         blog = conn.execute(
             """SELECT id,url,language_code FROM blogger_blogs
-            WHERE blog_id=%s AND language_code=%s AND active FOR SHARE""",
+            WHERE blog_id=%s AND language_code=%s AND active""",
             (request.target_blog_id, request.target_language_code),
         ).fetchone()
         if not blog or str(blog["url"]).rstrip("/").lower() != target_url:
@@ -769,7 +796,7 @@ def record_scheduled_import_origin(
         existing = conn.execute(
             """SELECT id,payload FROM audit_events
             WHERE event_type='content.import.scheduled_origin_recorded'
-              AND payload->>'event_key'=%s FOR UPDATE""",
+              AND payload->>'event_key'=%s""",
             (event_key,),
         ).fetchone()
         if existing:

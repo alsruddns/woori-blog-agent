@@ -70,6 +70,18 @@ def numbers(text: str) -> set[str]:
                 except ValueError:
                     continue
                 dates.add(f"DATE:{normalized_date.isoformat()}")
+                dates.add(f"DATEPART:{month:02d}-{day:02d}")
+                replacements.append(match.span())
+            else:
+                # Japanese and Korean prose often omits the year after it has
+                # already been established in context (e.g. `10月29日`). Keep
+                # the month/day as a date token so it can match a dated source
+                # excerpt without discarding a different explicit year.
+                try:
+                    date(2000, month, day)
+                except ValueError:
+                    continue
+                dates.add(f"DATEPART:{month:02d}-{day:02d}")
                 replacements.append(match.span())
         for start, end in reversed(replacements):
             sentence = sentence[:start] + " " + sentence[end:]
@@ -94,6 +106,7 @@ def numbers(text: str) -> set[str]:
         except ValueError:
             return value
         dates.add(f"DATE:{normalized_date.isoformat()}")
+        dates.add(f"DATEPART:{month:02d}-{day:02d}")
         return " "
         return value
 
@@ -146,6 +159,16 @@ def numbers(text: str) -> set[str]:
         r"(?i)(?:NT\$|TWD\s*)\s*([\d,]+)(?![\d,.])",
         base_twd_amount,
         text,
+    )
+
+    # A leading `1リットル` in a Japanese price-per-liter expression is a
+    # denominator unit, not a factual quantity. The price itself remains in
+    # the numeric ledger and is still compared exactly with the evidence.
+    text = re.sub(
+        r"(?<!\d)1\s*(?:リットル|L)\s*(?:あたり|当たり|につき)?\s*(?=\d[\d,.]*\s*(?:円|JPY))",
+        " ",
+        text,
+        flags=re.IGNORECASE,
     )
 
     text = re.sub(

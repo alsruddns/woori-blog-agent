@@ -17,6 +17,7 @@ function Read-ServerManifest {
         $services[$property.Name] = @{
           pid = [int]$property.Value.pid; runner = [string]$property.Value.runner
           root = [string]$property.Value.root; started_utc = [string]$property.Value.started_utc
+          mode = [string]$property.Value.mode
         }
       }
     }

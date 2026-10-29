@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+import psycopg
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
@@ -19,6 +20,30 @@ from woori.editorial_taxonomy import (
     suggested_labels,
 )
 from woori.main import app
+
+
+def test_scheduled_origin_reports_sanitized_database_error_classification(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def unavailable(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        raise psycopg.errors.InsufficientPrivilege("sensitive database detail")
+
+    monkeypatch.setattr(content_imports, "_record_scheduled_import_origin", unavailable)
+    headers = {"Authorization": "Bearer " + settings().admin_token}
+    with TestClient(app) as client:
+        response = client.post(
+            "/admin/research/content-imports/00000000-0000-0000-0000-000000000001/scheduled-origin",
+            headers=headers,
+            json={"task_type": "trends_major_issue", "task_id": "task-1", "occurrence_id": "occurrence-1",
+                  "executed_at": "2026-10-29T00:00:00Z", "market_date": None,
+                  "target_language_code": "ja", "target_blog_id": "12345678901",
+                  "target_blog_url": "https://trend-ja.blogspot.com", "source_as_of": "2026-10-29T00:00:00Z"},
+        )
+    assert response.status_code == 503
+    assert response.json()["detail"] == (
+        "scheduled_origin_database_error:insufficient_privilege:sqlstate_42501"
+    )
+    assert "sensitive database detail" not in response.text
 
 
 def valid_item(**updates: Any) -> dict[str, Any]:

@@ -46,6 +46,10 @@ try {
     (Join-Path $script:ProjectRoot 'scripts\publication-worker.py') --status
   if ($LASTEXITCODE -eq 0 -and $workerOutput) {
     $workerStatus = ($workerOutput -join "`n") | ConvertFrom-Json
+    $workerProcess = $table | Where-Object Id -eq ([int]$workerStatus.heartbeat.process_id) | Select-Object -First 1
+    $executionMode = if ($workerProcess.CommandLine -match '--operations-scheduled-auto') { 'scheduled-auto' }
+      elseif ($workerProcess.CommandLine -match '--operations-mock-only') { 'mock-only' }
+      else { 'unknown' }
     [pscustomobject]@{
       Service='publication_worker_heartbeat'
       State=if ($workerStatus.heartbeat_fresh) { 'running' } elseif ($workerStatus.heartbeat) { $workerStatus.heartbeat.status } else { 'not_started' }
@@ -59,6 +63,7 @@ try {
       LastJobState=$workerStatus.last_job.publication_state
       LastJobError=$workerStatus.last_job.last_error_category
       IdleReason=$workerStatus.idle_reason_if_processed_false
+      ExecutionMode=$executionMode
       AutoMode=$workerStatus.global_mode.configured_mode
       AutoPolicyActive=$workerStatus.auto_policy_active
     }

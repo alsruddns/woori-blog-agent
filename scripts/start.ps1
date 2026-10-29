@@ -1,7 +1,8 @@
-param([ValidateSet('api','dashboard','publication_worker','all')][string]$Service='all')
+param([ValidateSet('api','dashboard','publication_worker','all')][string]$Service='all',
+  [ValidateSet('mock-only','scheduled-auto')][string]$PublicationMode='mock-only')
 . (Join-Path $PSScriptRoot 'server-common.ps1')
 if ($Service -eq 'publication_worker') {
-  & (Join-Path $PSScriptRoot 'start-publication-worker.ps1')
+  & (Join-Path $PSScriptRoot 'start-publication-worker.ps1') -Mode $PublicationMode
   exit $LASTEXITCODE
 }
 $manifest = Read-ServerManifest

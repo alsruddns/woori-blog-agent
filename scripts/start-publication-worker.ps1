@@ -1,3 +1,4 @@
+param([ValidateSet('mock-only','scheduled-auto')][string]$Mode='mock-only')
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'server-common.ps1')
 $worker = [IO.Path]::GetFullPath((Join-Path $script:ProjectRoot 'scripts\publication-worker.py'))
@@ -9,6 +10,23 @@ if ($existing.Count) {
 }
 if (-not (Test-Path -LiteralPath $python -PathType Leaf) -or -not (Test-Path -LiteralPath $worker -PathType Leaf)) {
   throw 'The project virtual environment or Publication Worker entry point is missing.'
+}
+$modeArgs = if ($Mode -eq 'scheduled-auto') { @('--operations-scheduled-auto','--continuous') }
+  else { @('--operations-mock-only','--continuous') }
+if ($Mode -eq 'scheduled-auto') {
+  $statusOutput = & $python $worker --status 2>$null
+  if ($LASTEXITCODE -ne 0 -or -not $statusOutput) {
+    throw 'Scheduled Auto Worker status could not be verified; no process was started.'
+  }
+  try { $status = ($statusOutput -join "`n") | ConvertFrom-Json }
+  catch { throw 'Scheduled Auto Worker status was not valid JSON; no process was started.' }
+  $policy = $status.scheduled_auto_policy
+  if (-not $policy.enabled -or (-not $policy.first_post_approval -and -not $policy.first_post_confirmed)) {
+    throw 'Scheduled Auto is not dispatchable: its scoped policy or exact first-post approval is missing. No process was started.'
+  }
+  if ($status.global_mode.emergency_stopped) {
+    throw 'The global emergency stop is active; no Scheduled Auto Worker was started.'
+  }
 }
 $runtime = Join-Path $script:ProjectRoot '.runtime'
 if (-not (Test-Path -LiteralPath $runtime)) { New-Item -ItemType Directory -Path $runtime | Out-Null }
@@ -22,7 +40,7 @@ $stderr = Join-Path $logs 'publication-worker.stderr.log'
 $manifest = Read-ServerManifest
 $runner = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'start-publication-worker.ps1'))
 $proc = Start-Process -FilePath $python `
-  -ArgumentList @("`"$worker`"", '--operations-mock-only', '--continuous') `
+  -ArgumentList (@("`"$worker`"") + $modeArgs) `
   -WorkingDirectory $script:ProjectRoot -WindowStyle Hidden -PassThru `
   -RedirectStandardOutput $stdout -RedirectStandardError $stderr
 Start-Sleep -Milliseconds 500
@@ -53,8 +71,9 @@ if (-not $heartbeatVerified) {
   throw "Publication Worker launcher PID $($proc.Id) remains tracked, but its fresh PostgreSQL heartbeat and child identity were not verified. Inspect $stdout and $stderr; it was not force-stopped."
 }
 $manifest.services['publication_worker'] = @{
-  pid=[int]$actualWorker.Id; runner=$runner; root=$script:ProjectRoot
+  pid=[int]$actualWorker.Id; runner=$runner; root=$script:ProjectRoot; mode=$Mode
   started_utc=(Get-ProcessStarted ([int]$actualWorker.Id))
 }
 Write-ServerManifest $manifest
-Write-Output "Publication Worker started in mock-only continuous mode (PID $($actualWorker.Id)); heartbeat verified. Real Blogger writes remain disabled. Logs: $logs"
+$modeLabel = if ($Mode -eq 'scheduled-auto') { 'scheduled-auto live lane' } else { 'mock-only' }
+Write-Output "Publication Worker started in $modeLabel continuous mode (PID $($actualWorker.Id)); heartbeat verified. Logs: $logs"
