@@ -1,10 +1,12 @@
 """Durable diagnostic and internal research worker; no external publication."""
 
+import json
 import os
 import signal
 import threading
 import time
 from collections import Counter
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -18,6 +20,90 @@ from .db import connection
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SCHEDULED_IMPORT_POLL_SECONDS = 60
 WORKER_LOCK_KEYS = {"research_worker": (20261027, 26027), "evaluation_worker": (20261027, 26028)}
+WORKER_STOP_PREFIX = "worker-stop-"
+
+
+def _windows_process_started_at(pid: int) -> datetime | None:
+    """Read the OS creation time so a stop request cannot follow a reused PID."""
+    if os.name != "nt":
+        return None
+    import ctypes
+    from ctypes import wintypes
+
+    class FileTime(ctypes.Structure):
+        _fields_ = [("low", wintypes.DWORD), ("high", wintypes.DWORD)]
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.GetProcessTimes.argtypes = [
+        wintypes.HANDLE, ctypes.POINTER(FileTime), ctypes.POINTER(FileTime),
+        ctypes.POINTER(FileTime), ctypes.POINTER(FileTime),
+    ]
+    kernel32.GetProcessTimes.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+    if not handle:
+        return None
+    try:
+        created, exited, kernel, user = FileTime(), FileTime(), FileTime(), FileTime()
+        if not kernel32.GetProcessTimes(
+            handle, ctypes.byref(created), ctypes.byref(exited),
+            ctypes.byref(kernel), ctypes.byref(user),
+        ):
+            return None
+        ticks = (created.high << 32) | created.low
+        return datetime.fromtimestamp(ticks / 10_000_000 - 11_644_473_600, UTC)
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def _stop_request_path(pid: int) -> Path:
+    return PROJECT_ROOT / ".runtime" / f"{WORKER_STOP_PREFIX}{pid}.json"
+
+
+def worker_stop_request_matches(
+    request: object, *, pid: int, service_name: str, checkout_root: Path,
+    process_started_at: datetime | None,
+) -> bool:
+    if not isinstance(request, dict) or process_started_at is None:
+        return False
+    if request.get("pid") != pid or request.get("service") != service_name:
+        return False
+    try:
+        request_root = Path(str(request.get("checkout_root"))).resolve()
+        requested_start = datetime.fromisoformat(str(request.get("process_started_at")))
+        if requested_start.tzinfo is None:
+            return False
+        requested_start = requested_start.astimezone(UTC)
+    except (OSError, TypeError, ValueError):
+        return False
+    return (
+        str(request_root).casefold() == str(checkout_root.resolve()).casefold()
+        and abs((requested_start - process_started_at.astimezone(UTC)).total_seconds()) <= 2
+    )
+
+
+def consume_worker_stop_request(pid: int | None = None, service_name: str | None = None) -> bool:
+    worker_pid = os.getpid() if pid is None else pid
+    if service_name is None:
+        service_name = "evaluation_worker" if "--evaluation" in os.sys.argv else "research_worker"
+    request_path = _stop_request_path(worker_pid)
+    try:
+        request = json.loads(request_path.read_text(encoding="utf-8-sig"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return False
+    if not worker_stop_request_matches(
+        request,
+        pid=worker_pid,
+        service_name=service_name,
+        checkout_root=PROJECT_ROOT,
+        process_started_at=_windows_process_started_at(worker_pid),
+    ):
+        return False
+    request_path.unlink(missing_ok=True)
+    return True
 
 
 def acquire_process_lock(service_name: str) -> psycopg.Connection:
@@ -243,6 +329,10 @@ def main() -> None:
     heartbeat_thread.start()
     try:
         while not stop.is_set():
+            if consume_worker_stop_request(service_name=service_name):
+                print("Graceful stop requested; worker is idle between work cycles.", flush=True)
+                stop.set()
+                break
             if args.run_seconds and time.monotonic() - started_at >= args.run_seconds:
                 break
             try:
@@ -274,6 +364,12 @@ def main() -> None:
                 print("Database unavailable; reconnecting without logging credentials", flush=True)
             else:
                 degraded.clear()
+            # Work above is synchronous. A stop request arriving mid-cycle is
+            # honored only after every current stage has returned safely.
+            if consume_worker_stop_request(service_name=service_name):
+                print("Graceful stop requested; current work cycle completed.", flush=True)
+                stop.set()
+                break
             if args.once:
                 break
             stop.wait(5)

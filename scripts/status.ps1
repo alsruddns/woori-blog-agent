@@ -18,7 +18,7 @@ foreach ($name in @('dashboard', 'api')) {
 }
 
 $table = Get-ProcessTable
-foreach ($name in @('dashboard','api','worker','publication_worker')) {
+foreach ($name in @('dashboard','api','worker','evaluation_worker','publication_worker')) {
   $knownPort = if ($script:Services.ContainsKey($name)) { [int]$script:Services[$name].Port } else { $null }
   $matched = @(Get-CheckoutServiceProcesses $table $name)
   foreach ($proc in $matched) {
