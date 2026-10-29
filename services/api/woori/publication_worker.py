@@ -25,6 +25,7 @@ from .publication_daily import (
     kst_day_bounds,
 )
 from .publications import FakeBloggerPublisher
+from .scheduled_auto_verification import evaluate_scheduled_evidence
 from .scheduled_duplicates import find_remote_duplicate
 from .worker import (
     acquire_process_lock,
@@ -63,12 +64,12 @@ def _live_attempt(
     )
 
 
-def _scheduled_eligibility(conn: Any, imported: Any, version: Any, blog: Any) -> list[str]:
-    """Require durable source, rights and claim-review evidence for scheduled exports.
+def _scheduled_eligibility(conn: Any, imported: Any, version: Any, blog: Any) -> dict[str, Any]:
+    """Require durable source, rights, claim-span and target evidence for scheduled exports.
 
-    This deliberately does not consult or mutate publish_ready/human publication
-    approvals. Style/SEO recommendations are warnings; evidence, rights, safe
-    HTML, identity, target and duplicate checks remain hard gates.
+    This lane does not modify the general manuscript-review or publish_ready
+    state. Machine-only eligibility requires exact source and reuse-term proof;
+    otherwise the existing human claim/rights attestations are required.
     """
     reasons: list[str] = []
     if imported["generation_method"] != "chatgpt_scheduled_export":
@@ -80,15 +81,7 @@ def _scheduled_eligibility(conn: Any, imported: Any, version: Any, blog: Any) ->
     ).fetchone()
     if not assessment or not assessment["machine_passed"] or not assessment["safe_html"]:
         reasons.append("scheduled_machine_or_html_gate_not_passed")
-    claims = imported["claims"] or []
     sources = imported["sources"] or []
-    source_by_id = {str(source.get("source_id")): source for source in sources}
-    if not claims or any(
-        claim.get("verification_status") not in {"source_span_verified", "corroborated"}
-        or not set(claim.get("source_ids") or []).issubset(source_by_id)
-        for claim in claims
-    ):
-        reasons.append("claim_evidence_incomplete")
     if not sources or any(
         source.get("rights_status") not in {"public_domain", "open_license", "permission_confirmed"}
         or not str(source.get("rights_note") or "").strip()
@@ -101,33 +94,26 @@ def _scheduled_eligibility(conn: Any, imported: Any, version: Any, blog: Any) ->
         ORDER BY payload->>'source_id',id DESC""", (str(imported["id"]),)
     ).fetchall()
     verified_by_id = {str(row["payload"].get("source_id")): row["payload"] for row in verified}
-    for source_id, source in source_by_id.items():
-        proof = verified_by_id.get(source_id)
-        proof_url = (proof or {}).get("source_url") or (proof or {}).get("url")
-        excerpts = (proof or {}).get("verified_claim_evidence", [])
-        if (not proof or proof.get("http_status") != 200 or proof_url != str(source.get("url"))
-                or not isinstance(excerpts, list) or not excerpts):
-            reasons.append("source_live_verification_missing")
-            break
-    for claim in claims:
-        evidence = str(claim.get("evidence_excerpt") or "").strip()
-        attached = [verified_by_id.get(str(source_id), {}) for source_id in claim.get("source_ids", [])]
-        if not evidence or not any(
-            isinstance(item.get("verified_claim_evidence"), list)
-            and any(evidence in str(span) for span in item["verified_claim_evidence"])
-            for item in attached
-        ):
-            reasons.append("claim_span_not_found_in_live_source_evidence")
-            break
     review = conn.execute(
         """SELECT claims_checked,rights_reviewed FROM external_content_import_review_events
-        WHERE import_id=%s AND version_id=%s ORDER BY created_at DESC,id DESC LIMIT 1""",
+        WHERE import_id=%s AND version_id=%s AND event_type='editorial_review_passed'
+        ORDER BY created_at DESC,id DESC LIMIT 1""",
         (imported["id"], version["id"]),
     ).fetchone()
-    if not review or not review["claims_checked"]:
-        reasons.append("claim_review_evidence_missing")
-    if not review or not review["rights_reviewed"]:
-        reasons.append("rights_review_evidence_missing")
+    proof_by_id: dict[str, dict[str, Any]] = {}
+    for source_id, proof in verified_by_id.items():
+        proof_by_id[source_id] = {
+            **proof,
+            "source_url": proof.get("source_url") or proof.get("url"),
+            "source_body_sha256": proof.get("source_body_sha256") or proof.get("body_sha256"),
+        }
+    evidence_result = evaluate_scheduled_evidence(
+        imported,
+        version_sha256=str(imported.get("import_hash") or ""),
+        source_proofs=proof_by_id,
+        human_review=review,
+    )
+    reasons.extend(evidence_result["reasons"])
     origin = conn.execute(
         """SELECT payload FROM audit_events WHERE event_type='content.import.scheduled_origin_recorded'
         AND payload->>'import_id'=%s ORDER BY id DESC LIMIT 1""", (str(imported["id"]),)
@@ -151,7 +137,8 @@ def _scheduled_eligibility(conn: Any, imported: Any, version: Any, blog: Any) ->
         ).fetchone()["duplicate"]
         if duplicate:
             reasons.append("same_event_already_queued_or_published")
-    return list(dict.fromkeys(reasons))
+    unique_reasons = list(dict.fromkeys(reasons))
+    return {"reasons": unique_reasons, "evidence": evidence_result}
 
 
 def enqueue_scheduled_auto_jobs() -> dict[str, Any]:
@@ -196,7 +183,19 @@ def enqueue_scheduled_auto_jobs() -> dict[str, Any]:
             blog = dict(imported)
             if str(blog["blog_record_id"]) not in approved_blogs:
                 continue
-            if not prior_success:
+            duplicate_job = conn.execute(
+                "SELECT id FROM publishing_jobs WHERE blog_id=%s AND content_version_id=%s",
+                (blog["blog_record_id"], imported["content_version_id"]),
+            ).fetchone()
+            if duplicate_job:
+                continue
+            eligibility_blog = {**blog, "id": blog["blog_record_id"]}
+            eligibility = _scheduled_eligibility(conn, imported, {
+                "id": imported["import_version_id"], "content_version_id": imported["content_version_id"],
+            }, eligibility_blog)
+            reasons = eligibility["reasons"]
+            first = None
+            if not reasons and not prior_success:
                 first = conn.execute(
                     """SELECT id FROM scheduled_first_publication_events
                     WHERE action='approved' AND blog_id=%s AND import_id=%s AND import_version_id=%s
@@ -212,19 +211,38 @@ def enqueue_scheduled_auto_jobs() -> dict[str, Any]:
                      imported["content_version_id"], hashlib.sha256(str(imported["body_markdown"]).encode()).hexdigest()),
                 ).fetchone()
                 if not first:
-                    continue
-            else:
-                first = None
-            duplicate_job = conn.execute(
-                "SELECT id FROM publishing_jobs WHERE blog_id=%s AND content_version_id=%s",
-                (blog["blog_record_id"], imported["content_version_id"]),
+                    reasons.append("exact_first_publication_approval_missing")
+            verification_payload = {
+                "import_id": str(imported["id"]),
+                "import_version_id": str(imported["import_version_id"]),
+                "content_version_id": str(imported["content_version_id"]),
+                "version_sha256": str(imported["import_hash"]),
+                "status": "passed" if not reasons else "held",
+                "reasons": reasons,
+                "checks": eligibility["evidence"]["checks"],
+                "source_ids": eligibility["evidence"]["source_ids"],
+                "claim_ids": eligibility["evidence"]["claim_ids"],
+                "source_evidence_sha256": eligibility["evidence"]["source_evidence_sha256"],
+                "claim_count": eligibility["evidence"]["claim_count"],
+                "policy_version": "scheduled-evidence-1",
+                "live_write_performed": False,
+            }
+            prior_assessment = conn.execute(
+                """SELECT 1 FROM audit_events WHERE event_type='publication.scheduled_auto.evidence_assessed'
+                AND payload->>'import_version_id'=%s AND payload->>'version_sha256'=%s
+                AND payload->>'status'=%s AND payload->'reasons'=%s
+                AND payload->'checks'=%s AND payload->'source_ids'=%s AND payload->'claim_ids'=%s
+                AND payload->'source_evidence_sha256'=%s
+                AND payload->>'policy_version'='scheduled-evidence-1' LIMIT 1""",
+                (str(imported["import_version_id"]), str(imported["import_hash"]),
+                 verification_payload["status"], Jsonb(reasons),
+                 Jsonb(eligibility["evidence"]["checks"]),
+                 Jsonb(eligibility["evidence"]["source_ids"]),
+                 Jsonb(eligibility["evidence"]["claim_ids"]),
+                 Jsonb(eligibility["evidence"]["source_evidence_sha256"])),
             ).fetchone()
-            if duplicate_job:
-                continue
-            eligibility_blog = {**blog, "id": blog["blog_record_id"]}
-            reasons = _scheduled_eligibility(conn, imported, {
-                "id": imported["import_version_id"], "content_version_id": imported["content_version_id"],
-            }, eligibility_blog)
+            if not prior_assessment:
+                _append_audit(conn, "publication.scheduled_auto.evidence_assessed", verification_payload)
             if reasons:
                 held += 1
                 continue
@@ -355,7 +373,8 @@ def process_next_live_job(*, scheduled_auto_only: bool = False) -> dict[str, Any
                 (blog_id, version_id),
             ).fetchone()
             eligibility_blog = {**dict(link), "id": link["blog_record_id"]} if link else {}
-            reasons = _scheduled_eligibility(conn, link, link, eligibility_blog) if link else ["scheduled_import_not_found"]
+            eligibility = _scheduled_eligibility(conn, link, link, eligibility_blog) if link else None
+            reasons = eligibility["reasons"] if eligibility else ["scheduled_import_not_found"]
             policy = conn.execute(
                 "SELECT action,approved_blog_ids FROM scheduled_publication_policy_events ORDER BY id DESC LIMIT 1"
             ).fetchone()

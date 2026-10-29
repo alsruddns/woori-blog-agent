@@ -1,0 +1,181 @@
+"""Fail-closed, evidence-bound checks for scheduled manuscript publication.
+
+This module does not create human review or publication approval. It only
+evaluates source retrieval and reuse evidence produced by a reviewed collector.
+"""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Mapping
+from datetime import UTC, datetime
+from typing import Any
+from urllib.parse import urlsplit
+
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_NUMBER = re.compile(r"(?<!\w)[+-]?\d[\d,.]*(?:%|bp)?", re.IGNORECASE)
+
+
+def _compact(value: str) -> str:
+    return re.sub(r"[^\w\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]+", "", value.casefold())
+
+
+def evaluate_scheduled_evidence(
+    imported: Mapping[str, Any],
+    *,
+    version_sha256: str,
+    source_proofs: Mapping[str, Mapping[str, Any]],
+    human_review: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Evaluate machine-verifiable evidence without impersonating a reviewer.
+
+    When a human review exists, its claim/rights attestations remain accepted.
+    Otherwise every source must have exact, current retrieval and reuse-terms
+    proof bound to this immutable manuscript version. The caller separately
+    enforces target, OAuth, duplicate, policy, and Blogger gates.
+    """
+    reasons: list[str] = []
+    claims = imported.get("claims") or []
+    sources = imported.get("sources") or []
+    source_by_id = {
+        str(source.get("source_id")): source
+        for source in sources
+        if isinstance(source, Mapping) and source.get("source_id")
+    }
+    if imported.get("generation_method") != "chatgpt_scheduled_export":
+        reasons.append("not_a_scheduled_export")
+    if not _SHA256.fullmatch(version_sha256):
+        reasons.append("scheduled_version_hash_invalid")
+    if not claims or not sources:
+        reasons.append("claims_or_sources_missing")
+
+    proof_for_source: dict[str, Mapping[str, Any]] = {}
+    for source_id, source in source_by_id.items():
+        proof = source_proofs.get(source_id)
+        if not proof:
+            reasons.append("source_live_verification_missing")
+            continue
+        if (
+            proof.get("http_status") != 200
+            or proof.get("source_url") != str(source.get("url"))
+            or proof.get("import_id") != str(imported.get("id"))
+            or str(proof.get("source_id")) != source_id
+            or not _SHA256.fullmatch(str(proof.get("source_body_sha256") or ""))
+        ):
+            reasons.append("source_live_verification_mismatch")
+            continue
+        spans = proof.get("verified_claim_evidence")
+        if not isinstance(spans, list) or not spans or any(not isinstance(x, str) for x in spans):
+            reasons.append("source_evidence_spans_missing")
+            continue
+        proof_for_source[source_id] = proof
+
+    for claim in claims:
+        if not isinstance(claim, Mapping):
+            reasons.append("claim_schema_invalid")
+            continue
+        source_ids = [str(value) for value in (claim.get("source_ids") or [])]
+        evidence = str(claim.get("evidence_excerpt") or "").strip()
+        if (
+            claim.get("verification_status") not in {"source_span_verified", "corroborated"}
+            or not source_ids
+            or any(source_id not in source_by_id for source_id in source_ids)
+        ):
+            reasons.append("claim_evidence_incomplete")
+            continue
+        attached = [proof_for_source.get(source_id) for source_id in source_ids]
+        if not evidence or not any(
+            proof and any(evidence in str(span) for span in proof.get("verified_claim_evidence", []))
+            for proof in attached
+        ):
+            reasons.append("claim_span_not_found_in_live_source_evidence")
+            continue
+        claim_text = _compact(str(claim.get("claim") or ""))
+        evidence_text = _compact(evidence)
+        if not claim_text or claim_text not in evidence_text:
+            reasons.append("claim_not_supported_by_exact_source_span")
+        evidence_numbers = {
+            token.replace(",", "") for token in _NUMBER.findall(evidence)
+        }
+        claim_numbers = {
+            token.replace(",", "") for token in _NUMBER.findall(str(claim.get("claim") or ""))
+        }
+        if not claim_numbers.issubset(evidence_numbers):
+            reasons.append("claim_contains_unsupported_number")
+        if claim.get("verification_status") == "corroborated":
+            organizations = {
+                str(source_by_id[source_id].get("organization", "")).strip().casefold()
+                for source_id in source_ids
+                if source_id in source_by_id
+            }
+            if len(organizations) < 2:
+                reasons.append("independent_corroboration_missing")
+
+    human_claims_checked = bool(human_review and human_review.get("claims_checked"))
+    human_rights_reviewed = bool(human_review and human_review.get("rights_reviewed"))
+    # Claim-span checks are machine evidence only; the result deliberately
+    # reports whether a separate human semantic review exists.
+    if not human_rights_reviewed:
+        for source_id, source in source_by_id.items():
+            proof = proof_for_source.get(source_id, {})
+            terms_expiry_raw = str(proof.get("reuse_policy_expires_at") or "")
+            try:
+                terms_expiry = datetime.fromisoformat(terms_expiry_raw)
+                terms_current = terms_expiry.tzinfo is not None and terms_expiry > datetime.now(UTC)
+            except ValueError:
+                terms_current = False
+            terms_url = str(proof.get("reuse_terms_url") or "")
+            terms_url_parts = urlsplit(terms_url)
+            if (
+                source.get("rights_status") not in {"public_domain", "open_license", "permission_confirmed"}
+                or not proof.get("reuse_terms_verified")
+                or proof.get("reuse_terms_status") != "allowed"
+                or terms_url_parts.scheme != "https"
+                or not terms_url_parts.hostname
+                or terms_url_parts.username
+                or terms_url_parts.password
+                or not _SHA256.fullmatch(str(proof.get("reuse_terms_sha256") or ""))
+                or not str(proof.get("reuse_policy_id") or "").strip()
+                or not str(proof.get("reuse_policy_version") or "").strip()
+                or not terms_current
+            ):
+                reasons.append("source_rights_not_machine_verified")
+                break
+
+    unique_reasons = list(dict.fromkeys(reasons))
+    evidence_hashes = {
+        source_id: {
+            "source_body_sha256": str(proof_for_source[source_id].get("source_body_sha256")),
+            "reuse_terms_sha256": str(proof_for_source[source_id].get("reuse_terms_sha256") or ""),
+            "reuse_policy_id": str(proof_for_source[source_id].get("reuse_policy_id") or ""),
+            "reuse_policy_version": str(proof_for_source[source_id].get("reuse_policy_version") or ""),
+            "reuse_policy_expires_at": str(proof_for_source[source_id].get("reuse_policy_expires_at") or ""),
+        }
+        for source_id in sorted(proof_for_source)
+    }
+    return {
+        "status": "passed" if not unique_reasons else "held",
+        "reasons": unique_reasons,
+        "version_sha256": version_sha256,
+        "checks": {
+            "source_retrieval_and_hash": not any(
+                reason.startswith("source_live_verification") or reason == "source_evidence_spans_missing"
+                for reason in unique_reasons
+            ),
+            "claim_source_spans": not any(
+                reason.startswith("claim_") or reason == "claim_evidence_incomplete"
+                for reason in unique_reasons
+            ),
+            "independent_corroboration": "independent_corroboration_missing" not in unique_reasons,
+            "rights_terms": "source_rights_not_machine_verified" not in unique_reasons,
+            "human_claim_review_present": human_claims_checked,
+            "human_rights_review_present": human_rights_reviewed,
+        },
+        "source_ids": sorted(source_by_id),
+        "claim_ids": sorted(
+            str(claim.get("claim_id")) for claim in claims
+            if isinstance(claim, Mapping) and claim.get("claim_id")
+        ),
+        "source_evidence_sha256": evidence_hashes,
+        "claim_count": len(claims),
+    }
