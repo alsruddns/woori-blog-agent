@@ -24,6 +24,10 @@ test("publishing reuses detail, keeps filters, and explicit manual confirmation 
   await row.locator("td").first().getByRole("button").click();
   const sheet=page.getByTestId("import-detail");await expect(sheet).toBeVisible();
   expect(new URL(page.url()).pathname).toBe("/publishing");
+  const exactVersion=new URL(page.url()).searchParams.get("open_content_version_id");
+  await page.goBack();await expect(sheet).toHaveCount(0);
+  await page.goForward();await expect(sheet).toBeVisible();
+  expect(new URL(page.url()).searchParams.get("open_content_version_id")).toBe(exactVersion);
   await sheet.getByRole("button",{name:"닫기",exact:true}).click();
   await expect(sheet).toHaveCount(0);await page.waitForTimeout(150);
   expect(new URL(page.url()).searchParams.get("view")).toBe("auto_failure");
@@ -46,5 +50,18 @@ test("publishing reuses detail, keeps filters, and explicit manual confirmation 
   await expect.poll(()=>monitorReads).toBeGreaterThan(before);
   expect(new URL(page.url()).pathname).toBe("/publishing");
   await expect(sheet.getByTestId("manual-publication-submit")).toBeEnabled();
+  await page.keyboard.press("Escape");await expect(sheet).toHaveCount(0);
+  await page.route("**/api/publications/manual-live-requests",async route=>{
+    posts++;await route.fulfill({status:503,json:{error_code:"test_only_unavailable",detail:"Test response, no database write"}});
+  });
+  await row.getByRole("button",{name:"Blogger에 수동 발행"}).click();
+  await expect(sheet.getByTestId("manual-publication-submit")).toBeEnabled();
+  page.once("dialog",dialog=>dialog.accept());
+  await sheet.getByTestId("manual-publication-submit").click();
+  await expect(sheet.getByRole("alert")).toContainText("HTTP 503");
+  await expect(sheet.getByTestId("manual-publication-submit")).toBeDisabled();
+  await expect(sheet.getByRole("button",{name:"발행 상태 다시 확인"})).toBeVisible();
+  await page.waitForTimeout(250);expect(posts).toBe(2);
+  expect(new URL(page.url()).pathname).toBe("/publishing");
   await page.keyboard.press("Escape");await expect(sheet).toHaveCount(0);
 });

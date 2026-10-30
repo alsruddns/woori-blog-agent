@@ -229,14 +229,14 @@ export default function ExternalImportWorkspace({ embedded = false, detailReques
     setSelectedId("");
     const url = new URL(window.location.href);
     const returnTo = url.searchParams.get("return_to");
-    if (returnTo && returnTo.startsWith("/") && !returnTo.startsWith("//") && !returnTo.includes("\\")) {
+    if (!embedded && returnTo && returnTo.startsWith("/") && !returnTo.startsWith("//") && !returnTo.includes("\\")) {
       window.location.assign(returnTo);
       return;
     }
     url.searchParams.delete("open_import_id");
     url.searchParams.delete("open_content_version_id");
     window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
-  }, []);
+  }, [embedded]);
 
   useEffect(() => {
     if (!detail) return;
@@ -255,9 +255,10 @@ export default function ExternalImportWorkspace({ embedded = false, detailReques
 
   useEffect(() => {
     const onPopState = () => {
-      const requestedId = new URLSearchParams(window.location.search).get("open_import_id");
-      if (requestedId) void openDetail(requestedId);
-      else { setDetail(null); setSelectedId(""); }
+      const params = new URLSearchParams(window.location.search);
+      const requestedId = params.get("open_import_id");
+      if (requestedId) void openDetail(requestedId,params.get("open_content_version_id")??"");
+      else { detailRequest.current += 1; autoOpened.current=""; setDetail(null); setSelectedId(""); }
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
