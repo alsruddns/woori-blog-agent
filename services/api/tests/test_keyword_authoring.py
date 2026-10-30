@@ -137,6 +137,16 @@ def test_trends_origin_is_distinct_from_scheduled_and_manual():
     assert envelope.item.claims[0].verification_status=='unverified'
 
 
+def test_trends_output_contract_distinguishes_article_from_insufficient_evidence():
+    declined=keyword_jobs.TrendArticleResult.model_validate({
+        'status':'insufficient_evidence','article':None,'reason':'No accessible primary source confirms the event.'})
+    assert declined.status=='insufficient_evidence'
+    with pytest.raises(ValueError,match='trend_article_result_inconsistent'):
+        keyword_jobs.TrendArticleResult.model_validate({'status':'article','article':None,'reason':None})
+    schema=keyword_jobs.trend_output_schema()
+    assert set(schema['required'])=={'status','article','reason'}
+
+
 @pytest.mark.parametrize('mode',['success','cancel','timeout','limit'])
 def test_runner_bounded_execution_no_shell_or_api_key(monkeypatch,tmp_path,mode):
     import io

@@ -65,8 +65,37 @@ class ArticleOutput(BaseModel):
     seo:SeoMetadata
 
 
+class TrendArticleResult(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    status:Literal['article','insufficient_evidence']
+    article:ArticleOutput|None=None
+    reason:str|None=Field(default=None,max_length=1200)
+    @model_validator(mode='after')
+    def consistent(self) -> TrendArticleResult:
+        if self.status=='article' and (self.article is None or self.reason is not None):
+            raise ValueError('trend_article_result_inconsistent')
+        if self.status=='insufficient_evidence' and (self.article is not None or not (self.reason or '').strip()):
+            raise ValueError('trend_insufficient_evidence_reason_required')
+        return self
+
+
 def output_schema() -> dict[str,Any]:
     schema=ArticleOutput.model_json_schema()
+    def strict(node:Any) -> None:
+        if isinstance(node,dict):
+            node.pop('default',None)
+            node.pop('format',None)
+            if node.get('type')=='object':
+                node['additionalProperties']=False;node['required']=list(node.get('properties',{}))
+            for value in node.values():strict(value)
+        elif isinstance(node,list):
+            for value in node:strict(value)
+    strict(schema)
+    return schema
+
+
+def trend_output_schema() -> dict[str,Any]:
+    schema=TrendArticleResult.model_json_schema()
     def strict(node:Any) -> None:
         if isinstance(node,dict):
             node.pop('default',None)
@@ -286,6 +315,7 @@ def make_envelope(job:dict[str,Any],article:dict[str,Any],evidence:dict[str,Any]
 def generate(job:dict[str,Any]) -> None:
     job_id=job['id']
     work=Path(os.environ.get('LOCALAPPDATA',str(ROOT/'.local')))/'WooriBlogAgent/codex-jobs'/str(job_id)
+    trend_contract=(job.get('options') or {}).get('trend_contract') or {}
     prompt=('Research actual accessible primary sources, opening every source URL, then write a complete original article in the requested language. '
         'Use exact URLs from successfully opened web results, actual dates and a short exact evidence excerpt for every core claim. '
         'Include [source:ID] markers in factual paragraphs. No copied images, tables, long quotations, unsafe HTML, fabricated figures, '
@@ -299,6 +329,15 @@ def generate(job:dict[str,Any]) -> None:
                     'category':job['category'],'origin':job['job_type'],
                     'trend_request_id':str(job['trend_request_id']) if job.get('trend_request_id') else None,
                     'options':job['options'],'current_time':datetime.now(UTC).isoformat()},ensure_ascii=False))
+    if job['job_type']=='google_trends':
+        prompt+=('\nThis is a current Google Trends topic, not a user-keyword request. Research the event or information need behind the query '
+            f"'{job['keyword']}' in source country {trend_contract.get('source_country') or 'unknown'}. Write in {job['language_code']} "
+            f"for the explicitly mapped Blogger audience in {trend_contract.get('target_country') or job['target_country']}. "
+            'Treat search volume and RSS headlines as discovery context only, never as evidence. The source country is distinct from the Blogger audience country. '
+            'Use country-relevant primary sources and reputable reporting; do not assume an event from a person or phrase alone. '
+            'Return the result envelope with status="article", article=<complete ArticleOutput>, reason=null only when a complete, useful, evidence-grounded article is possible. '
+            'If you cannot verify a current event or the available evidence cannot support a useful article, return status="insufficient_evidence", article=null, and a concise reason. '
+            'Never turn the explanation for insufficient evidence into an article or import it as manuscript content.')
     try:
         if work.resolve().is_relative_to(ROOT.resolve()):raise codex_runner.CodexFailure('codex_workspace_must_be_outside_checkout')
         if (job.get('evidence') or {}).get('resume_saved_output'):
@@ -307,8 +346,18 @@ def generate(job:dict[str,Any]) -> None:
             if hashlib.sha256(raw).hexdigest()!=evidence.get('resume_article_sha256'):raise codex_runner.CodexFailure('saved_result_hash_mismatch')
             article=json.loads(raw)
         else:
-            article,evidence=codex_runner.execute(work,prompt,output_schema(),
+            article,evidence=codex_runner.execute(work,prompt,
+                trend_output_schema() if job['job_type']=='google_trends' else output_schema(),
                 lambda phase,data:state(job_id,phase,**data),lambda:cancelled(job_id))
+        if job['job_type']=='google_trends':
+            result=TrendArticleResult.model_validate(article)
+            if result.status=='insufficient_evidence':
+                state(job_id,'failed',error_code='insufficient_evidence',
+                      evidence=Jsonb({**evidence,'outcome_reason':(result.reason or '').strip()}),
+                      completed_at=datetime.now(UTC))
+                return
+            if result.article is None:raise codex_runner.CodexFailure('trend_article_missing')
+            article=result.article.model_dump(mode='json')
         state(job_id,'validating',evidence=Jsonb(evidence))
         envelope=make_envelope(job,article,evidence)
         if evidence.get('draft_curation'):

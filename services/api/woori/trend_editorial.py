@@ -405,11 +405,13 @@ def queue_selected() -> dict[str,int]:
                     WHERE topic_id=t.id ORDER BY id DESC LIMIT 1)e ON true
                 WHERE o.source_volume_lower_bound IS NOT NULL AND o.source_volume_lower_bound>0
                   AND o.trend_started_at IS NOT NULL
-                  AND NOT EXISTS(SELECT 1 FROM trend_generation_requests q JOIN trend_topics prior ON prior.id=q.topic_id
-                    WHERE prior.normalized_key=t.normalized_key AND q.contract->>'target_blog_id'=%s)
                 ORDER BY o.source_volume_lower_bound DESC,o.trend_started_at DESC,o.collected_at DESC,t.id LIMIT 100''',
-                (mapping['geo'],slot,str(mapping['blog_id']))).fetchall()
+                (mapping['geo'],slot)).fetchall()
             for rank,row in enumerate(rows,1):
+                previous=conn.execute('''SELECT 1 FROM trend_generation_requests q JOIN trend_topics prior ON prior.id=q.topic_id
+                    WHERE prior.normalized_key=%s AND q.contract->>'target_blog_id'=%s LIMIT 1''',
+                    (row['normalized_key'],str(mapping['blog_id']))).fetchone()
+                if previous:continue
                 state,code,category=classify(row['representative_query'],row['raw_payload'])
                 if state!='selected' or not (row['category'] or category):continue
                 category=row['category'] or category

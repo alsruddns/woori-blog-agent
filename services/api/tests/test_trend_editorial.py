@@ -174,6 +174,61 @@ def test_country_rank_queue_creates_distinct_jobs_for_one_multicountry_blog(lab,
     assert {r['id'] for r in conn.execute("SELECT * FROM trend_observations WHERE id=ANY(%s)",([us,gb],)).fetchall()}=={us,gb}
 
 
+def test_country_rank_queue_falls_through_after_insufficient_evidence(lab,monkeypatch):
+    conn,_api,_h=bind(lab,monkeypatch)
+    profile=conn.execute("INSERT INTO language_profiles(language_code,target_country) VALUES('ko','KR') ON CONFLICT(language_code,target_country) DO UPDATE SET search_intent=language_profiles.search_intent RETURNING id").fetchone()['id']
+    blog=conn.execute("INSERT INTO blogger_blogs(language_code,url,display_name,blog_id) VALUES('ko',%s,'Rank fallback fixture','1234567902') RETURNING id",('https://fallback-'+uuid4().hex[:8]+'.blogspot.com',)).fetchone()['id']
+    conn.execute("INSERT INTO publishing_policies(language_code,blog_id,profile_id,active) VALUES('ko',%s,%s,false)",(blog,profile))
+    conn.execute("INSERT INTO trend_blog_geo_authoring(blog_id,geo,enabled,processing_order) VALUES(%s,'KR',true,1)",(blog,))
+    observation(conn,'technology launch highest rank','KR',payload={},volume=9000)
+    observation(conn,'software platform product update','KR',payload={},volume=1200)
+    editorial.reconcile()
+    monkeypatch.setattr(keyword_jobs,'targets',lambda _:[{'id':blog,'target_country':'KR','language_code':'ko'}])
+    assert editorial.queue_selected()['created']==1
+    assert editorial.dispatch()['created']==1
+    first=conn.execute("SELECT id,keyword FROM codex_authoring_jobs WHERE job_type='google_trends'").fetchone()
+    assert first['keyword']=='technology launch highest rank'
+    keyword_jobs.state(first['id'],'failed',error_code='insufficient_evidence',completed_at=datetime.now(UTC))
+    assert editorial.queue_selected()['created']==1
+    assert editorial.dispatch()['created']==1
+    second=conn.execute("SELECT id,keyword FROM codex_authoring_jobs WHERE job_type='google_trends' AND id<>%s",(first['id'],)).fetchone()
+    assert second['keyword']=='software platform product update'
+
+
+def test_trends_insufficient_evidence_is_failed_without_ready_import_or_publication(lab,monkeypatch,tmp_path):
+    conn,api,h=bind(lab,monkeypatch)
+    name='technology launch '+uuid4().hex
+    observed=observation(conn,name,payload={})
+    editorial.reconcile()
+    topic=api.get('/admin/research/trend-editorial/'+str(observed),headers=h).json()['topic_id']
+    profile=conn.execute("INSERT INTO language_profiles(language_code,target_country) VALUES('ko','KR') ON CONFLICT(language_code,target_country) DO UPDATE SET search_intent=language_profiles.search_intent RETURNING id").fetchone()['id']
+    blog=conn.execute("INSERT INTO blogger_blogs(language_code,url,display_name,blog_id) VALUES('ko',%s,'Evidence refusal fixture','1234567903') RETURNING id",('https://refusal-'+uuid4().hex[:8]+'.blogspot.com',)).fetchone()['id']
+    conn.execute("INSERT INTO publishing_policies(language_code,blog_id,profile_id,active) VALUES('ko',%s,%s,false)",(blog,profile))
+    conn.execute("INSERT INTO trend_blog_geo_authoring(blog_id,geo,enabled,processing_order) VALUES(%s,'KR',true,1)",(blog,))
+    editorial.decision(topic,editorial.Decision(request_key=uuid4(),action='queue',reason='isolated test',blog_id=blog))
+    assert editorial.dispatch()['created']==1
+    job=conn.execute("SELECT * FROM codex_authoring_jobs WHERE job_type='google_trends' AND trend_request_id IS NOT NULL ORDER BY created_at DESC LIMIT 1").fetchone()
+    monkeypatch.setenv('LOCALAPPDATA',str(tmp_path/'local'))
+    monkeypatch.setattr(keyword_jobs,'ROOT',tmp_path/'project')
+    monkeypatch.setattr(keyword_jobs,'INBOX',tmp_path/'project'/'inbox')
+    def decline(work,prompt,schema,callback,cancelled):
+        assert schema['required']==['status','article','reason']
+        assert 'source country KR' in prompt
+        assert 'insufficient_evidence' in prompt
+        callback('researching',{'execution_id':'isolated-refusal'})
+        return {'status':'insufficient_evidence','article':None,'reason':'No current event was supported by opened sources.'}, {'opened_urls':{},'web_search_count':1,'execution_id':'isolated-refusal'}
+    monkeypatch.setattr(keyword_jobs.codex_runner,'execute',decline)
+    before=conn.execute('SELECT count(*) n FROM publishing_jobs').fetchone()['n']
+    keyword_jobs.generate(dict(job))
+    result=conn.execute('SELECT state,error_code,import_id,content_version_id FROM codex_authoring_jobs WHERE id=%s',(job['id'],)).fetchone()
+    request=conn.execute('SELECT state FROM trend_generation_requests WHERE authoring_job_id=%s',(job['id'],)).fetchone()
+    assert result['state']=='failed' and result['error_code']=='insufficient_evidence'
+    assert result['import_id'] is None and result['content_version_id'] is None
+    assert request['state']=='failed'
+    assert not (keyword_jobs.INBOX/'ready'/f"{job['id']}.ready.json").exists()
+    assert conn.execute('SELECT count(*) n FROM publishing_jobs').fetchone()['n']==before
+
+
 def test_trends_queue_dispatch_has_distinct_provenance_and_no_publication(lab,monkeypatch):
     conn,api,h=bind(lab,monkeypatch)
     name='software technology '+uuid4().hex
