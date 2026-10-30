@@ -40,7 +40,9 @@
 - Dashboard lint and typecheck passed; the one Production Build passed.
 - Operations migration succeeded and schema status verified at 69.
 - PowerShell parse and lifecycle Pester: 31 passed, 0 failed.
-- Final safe service reflection/runtime commit application remains pending.
+- Final committed reflection validation: 206 API tests passed; Ruff, mypy, wheel build, Dashboard lint/typecheck/production build passed.
+- Runtime reflection restarted API, Dashboard, Research Worker, and Publication Worker because the prior runtime baseline lagged at `bf8f49eb`; all stopped gracefully, no force termination. API `/health` and Dashboard `/research` returned HTTP 200. Publication Worker heartbeat is fresh in `operations-scheduled-auto-and-manual-and-trends`; Research Worker heartbeat is fresh. Applied code commit: `0fd95bcd0b0b618f3f05709acd63500d56b27a0e`.
+- Existing P5-CODEX-089 Playwright policy spec passed on the live Dashboard at desktop 1440px and mobile 390px (2/2). The UI reports unlimited volume; policy remains inactive because no policy event exists.
 - No actual Trends Publishing Job or Blogger LIVE result was created; operational LIVE verification is not complete.
 
 ## Files
@@ -62,7 +64,7 @@
 
 ## Remaining
 
-- KR/EN/JP Trends Auto policies are not active. They must remain off until missing current write-safety and zero-cost evidence is supplied and recorded.
+- KR/EN/JP Trends Auto policies are not active. The exact missing prerequisites are non-null `test_publish_verified_at`, a fresh read-only Blogger identity verification, the separate `external.blogger.public_publish.approved` event, verified Blogger Cloud Billing/quota zero-cost status, and a newly generated eligible Trends article. These were not fabricated or bypassed.
 - No new eligible Trends article, Publishing Job, Blogger postId, public URL, or remote LIVE check exists for P092.
 - Blogger per-post search-description and robots settings remain outside this task; prior API review did not establish supported public-write fields.
-- Record final lint/build/browser/runtime/Git results and commit hash before closing this record.
+- Trends Auto activation and LIVE publication remain unverified; preserve the current fail-closed state until the listed prerequisites are verified.
