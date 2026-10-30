@@ -16,6 +16,28 @@ from .publication_daily import (
 def _grouped_counts(conn: Any, query: str) -> dict[str, int]:
     return {str(row["key"]): int(row["count"]) for row in conn.execute(query).fetchall()}
 
+
+def _has_blogger_cost_policy_attestation(conn: Any) -> bool:
+    row = conn.execute(
+        """SELECT event_type,payload FROM audit_events
+        WHERE event_type IN ('external.blogger.cost_policy.approved',
+                             'external.blogger.cost_policy.revoked')
+          AND payload->>'provider'='google_blogger_read'
+        ORDER BY id DESC LIMIT 1"""
+    ).fetchone()
+    if not row or row["event_type"] != "external.blogger.cost_policy.approved":
+        return False
+    payload = row["payload"] or {}
+    return bool(
+        payload.get("policy_version") == 1
+        and payload.get("actor") == "project_owner_attestation_from_user_instruction"
+        and payload.get("evidence") == "PROJECT_OWNER_CONFIRMS_BLOGGER_API_ZERO_COST"
+        and isinstance(payload.get("approved_scope"), list)
+        and set(payload["approved_scope"]) == {
+            "blogger_read", "private_draft_create", "user_approved_post_update",
+        }
+    )
+
 def dashboard_snapshot(conn: Any) -> dict[str, Any]:
     """Return observed state only; configured schedules are not execution proof."""
     # The application role intentionally cannot read schema_migrations. Migration
@@ -350,6 +372,17 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
     live_ready_count = conn.execute(
         "SELECT count(*)::int AS count FROM article_quality_evaluations WHERE publish_ready=true"
     ).fetchone()["count"]
+    verified_write_targets = sum(
+        1 for blog in blogs
+        if blog["active"] and blog["blog_id_registered"]
+        and blog["oauth_status"] == "connected" and blog["write_scope"]
+        and not blog["has_connection_error"]
+    )
+    blogger_cost_policy_attested = _has_blogger_cost_policy_attestation(conn)
+    manual_publish_lane_ready = bool(
+        verified_write_targets and blogger_cost_policy_attested
+        and publication_worker_fresh and not bool(global_config.get("emergency_stopped", False))
+    )
     blocked_live_jobs = sum(
         count for key, count in publication_counts.items()
         if key.startswith(("blocked:", "uncertain:", "failed:"))
@@ -383,8 +416,9 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
         {"key": "content_import", "status": "partial", "detail": f"Import receiver worker 상태 {scheduled_import['worker_status']}; 예약 원고 수신 {scheduled_import['received_total']}건."},
         {"key": "quality_seo_rights", "status": "partial", "detail": f"기계 통과 기록 {quality_counts.get('machine_passed_review_required',0)}건, 사람·권리·독립 출처 승인은 별도입니다."},
         {"key": "version_audit", "status": "ready", "detail": "기존 버전과 감사 이력을 유지하는 저장 경로가 연결되어 있습니다."},
-        {"key": "publish_eligibility", "status": "blocked" if not live_ready_count else "partial", "detail": f"게시 적격 평가 {live_ready_count}건; 사람 검토와 별도 게시 승인은 계속 필요합니다."},
-        {"key": "blogger_live_publisher", "status": "blocked", "detail": "실제 Blogger 쓰기와 공개 게시는 현재 비활성화되어 있습니다."},
+        {"key": "publish_eligibility", "status": "partial", "detail": f"일반 publish_ready 평가 {live_ready_count}건. 이 집계는 수동 원고의 게시 가능 상태를 뜻하지 않으며, 수동 원고는 상세 화면에서 최신 버전·해시·대상 블로그·중복·긴급 정지 조건으로 별도 판정합니다."},
+        {"key": "blogger_live_publisher", "status": "partial" if manual_publish_lane_ready else "blocked",
+         "detail": f"수동 공개 발행 경로: 쓰기 scope 확인 블로그 {verified_write_targets}개, Blogger 운영 정책 기록 {'확인' if blogger_cost_policy_attested else '없음'}, Publication Worker heartbeat {'정상' if publication_worker_fresh else '없음/오래됨'}. Worker 모드는 OS 프로세스 상태에서 별도 확인하며, 이 진단은 Blogger 쓰기 요청을 보내지 않았습니다."},
         {"key": "kst_daily_limits", "status": "partial", "detail": "KST 내부 안전 상한은 코드에 구성됐으나 원격 수동 게시 동기화는 미확인입니다."},
         {"key": "rate_limit_and_serialization", "status": "partial", "detail": "내부 큐·정책을 유지하며 실 Blogger 요청에 대한 제한/복구 검증은 수행하지 않았습니다."},
         {"key": "remote_post_revalidation", "status": "not_tested", "detail": "실제 게시 레코드가 없어 Blogger 원격 GET 재검증 이력이 없습니다."},
@@ -461,6 +495,9 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
             "url_note":"게시 기록에 공개 URL 필드가 없어 링크를 추정하지 않습니다.",
             "queued_mock_jobs":sum(v for k,v in publication_counts.items() if k.startswith("queued:")),
             "live_writes_enabled":False,"auto_enabled":False,"emergency_stopped":bool(global_config.get("emergency_stopped",False)),
+            "manual_publication_available":manual_publish_lane_ready,
+            "manual_publication_write_scope_targets":verified_write_targets,
+            "manual_publication_policy_attested":blogger_cost_policy_attested,
             "configured_global_mode":global_config.get("configured_mode","manual"),"daily":daily_publication},
         "blogs":blogs,
         "schedules":[

@@ -14,6 +14,7 @@ from woori.publications import (
     DisabledRealBloggerPublisher,
     EmergencyStopInput,
     FakeBloggerPublisher,
+    ManualLiveRequestInput,
     PublicationError,
     ScheduleInput,
     _assess,
@@ -23,6 +24,27 @@ from woori.publications import (
 )
 
 lab = shared_lab
+
+
+def test_manual_publish_reason_accepts_concise_korean_confirmation() -> None:
+    payload = {
+        "content_version_id": str(uuid4()),
+        "blog_id": str(uuid4()),
+        "expected_title_sha256": "a" * 64,
+        "expected_body_sha256": "b" * 64,
+        "expected_html_sha256": "c" * 64,
+        "actor_label": "admin",
+        "reason": "확인완료",
+        "reviewed_exact_content": True,
+        "assertions_safe_to_publish": True,
+        "rights_privacy_harm_checked": True,
+        "confirmation": "PUBLISH THIS EXACT MANUSCRIPT PUBLICLY",
+        "idempotency_key": "manual-publish-test-1234",
+    }
+    request = ManualLiveRequestInput.model_validate(payload)
+    assert request.reason == "확인완료"
+    with pytest.raises(ValidationError):
+        ManualLiveRequestInput.model_validate({**payload, "reason": "확인"})
 
 
 def test_same_event_dedup_requires_identical_body() -> None:

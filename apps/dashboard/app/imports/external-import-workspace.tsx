@@ -67,6 +67,7 @@ const manualBlockerNames: Record<string, string> = {
   manual_live_job_already_exists: "이 원고·블로그의 공개 발행 Job이 이미 있습니다.",
   remote_publication_already_recorded: "이 원고는 이미 원격 게시 기록이 있습니다.",
 };
+const MANUAL_PUBLICATION_REASON_MIN_LENGTH = 3;
 const fmt = (value: unknown) => {
   const date = new Date(String(value ?? ""));
   return Number.isNaN(date.valueOf()) ? "—" : new Intl.DateTimeFormat("ko-KR", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Seoul" }).format(date);
@@ -295,6 +296,25 @@ export default function ExternalImportWorkspace() {
     sources_examined: attest.sources, claims_checked: attest.claims, rights_reviewed: attest.rights,
   }), disposition === "editorial_review_passed" ? "편집 검토 이벤트를 기록했습니다. 이 기록은 Blogger 게시 승인과 다릅니다." : "검토 이력을 추가했습니다.");
   const visibleImports = items;
+  const selectedManualTarget = ((detail?.publication?.targets as Row[] | undefined) ?? [])
+    .find(target => String(target.id) === publicationTargetId);
+  const selectedManual = selectedManualTarget?.manual_publication as Row | undefined;
+  const manualPublishDisabledReasons = [
+    ...(busy ? ["발행 요청을 처리 중입니다."] : []),
+    ...(!latestVersion?.content_version_id ? ["게시할 최신 원고 버전을 확인할 수 없습니다."] : []),
+    ...(!publicationTargetId ? ["대상 Blogger를 선택하세요."] : []),
+    ...(approvalActor.trim().length < 2 ? ["게시 승인자 이름을 2자 이상 입력하세요."] : []),
+    ...(approvalReason.trim().length < MANUAL_PUBLICATION_REASON_MIN_LENGTH
+      ? [`게시 사유를 ${MANUAL_PUBLICATION_REASON_MIN_LENGTH}자 이상 입력하세요. (현재 ${approvalReason.trim().length}자)`]
+      : []),
+    ...(!manualAttest.content ? ["최신 제목·본문·HTML 확인을 표시하세요."] : []),
+    ...(!manualAttest.facts ? ["미확인 주장을 사실로 단정하지 않았음을 확인하세요."] : []),
+    ...(!manualAttest.rights ? ["권리·개인정보·위해 확인을 표시하세요."] : []),
+    ...(selectedManual?.eligible !== true
+      ? ((selectedManual?.blockers as string[] | undefined) ?? ["서버에서 수동 발행 적격 상태를 확인할 수 없습니다."])
+        .map(reason => manualBlockerNames[reason] ?? reason)
+      : []),
+  ];
   const submitManualPublication = async () => {
     if (!detail || !latestVersion?.content_version_id || !publicationTargetId) return;
     const target = ((detail.publication?.targets as Row[] | undefined) ?? []).find(item => String(item.id) === publicationTargetId);
@@ -411,9 +431,11 @@ export default function ExternalImportWorkspace() {
               </>;
             })()}
             <label>게시 승인자 표시 이름<input value={approvalActor} onChange={event => setApprovalActor(event.target.value)} minLength={2} maxLength={120} /></label>
-            <label>게시 사유<input value={approvalReason} onChange={event => setApprovalReason(event.target.value)} minLength={10} maxLength={2000} placeholder="이 원고를 지금 공개 게시하는 이유" /></label>
+            <label>게시 사유<input value={approvalReason} onChange={event => setApprovalReason(event.target.value)} minLength={MANUAL_PUBLICATION_REASON_MIN_LENGTH} maxLength={2000} aria-describedby="manual-publication-reason-hint" placeholder="예: 확인완료" /></label>
+            <p id="manual-publication-reason-hint">{MANUAL_PUBLICATION_REASON_MIN_LENGTH}자 이상 입력하면 감사 기록에 원고 해시와 함께 저장됩니다. 현재 {approvalReason.trim().length}자입니다.</p>
             <div className="review-attestations"><label><input type="checkbox" checked={manualAttest.content} onChange={event => setManualAttest({ ...manualAttest, content: event.target.checked })} />위에 표시된 최신 제목·본문·HTML을 확인했습니다.</label><label><input type="checkbox" checked={manualAttest.facts} onChange={event => setManualAttest({ ...manualAttest, facts: event.target.checked })} />미확인 주장을 확인된 사실처럼 단정하지 않았습니다.</label><label><input type="checkbox" checked={manualAttest.rights} onChange={event => setManualAttest({ ...manualAttest, rights: event.target.checked })} />알고 있는 저작권 침해·개인정보 노출·중대한 위해 문제가 없습니다.</label></div>
-            <button type="button" disabled={busy || !latestVersion.content_version_id || !publicationTargetId || approvalActor.trim().length < 2 || approvalReason.trim().length < 10 || !manualAttest.content || !manualAttest.facts || !manualAttest.rights || (((detail.publication?.targets as Row[] | undefined) ?? []).find(target => String(target.id) === publicationTargetId)?.manual_publication as Row | undefined)?.eligible !== true} onClick={() => void submitManualPublication()}>{busy ? "발행 Job 등록 중…" : "Blogger에 공개 게시"}</button>
+            <button type="button" disabled={manualPublishDisabledReasons.length > 0} aria-describedby={manualPublishDisabledReasons.length ? "manual-publication-disabled-reasons" : undefined} onClick={() => void submitManualPublication()}>{busy ? "발행 Job 등록 중…" : "Blogger에 공개 게시"}</button>
+            {manualPublishDisabledReasons.length > 0 && <ul id="manual-publication-disabled-reasons" role="status" className="quality-held">{manualPublishDisabledReasons.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul>}
             <p>클릭 시 정확한 원고 해시·대상 블로그·승인자와 함께 Job이 등록됩니다. Publication Worker가 실제 게시 단계, Blogger 응답, 원격 재확인 결과를 저장하며, 이 화면의 확인만으로 게시 완료라고 표시하지 않습니다.</p>
             {Boolean(detail.publication?.status_error) && <p role="alert" className="quality-held">{String(detail.publication?.status_error)}</p>}
           </section>}

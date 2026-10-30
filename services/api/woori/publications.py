@@ -63,7 +63,9 @@ class ManualLiveRequestInput(BaseModel):
     expected_body_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     expected_html_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     actor_label: str = Field(min_length=2, max_length=120)
-    reason: str = Field(min_length=10, max_length=2000)
+    # A concise reason such as "확인완료" is sufficient alongside the exact
+    # content hashes and the three explicit safety attestations recorded below.
+    reason: str = Field(min_length=3, max_length=2000)
     reviewed_exact_content: Literal[True]
     assertions_safe_to_publish: Literal[True]
     rights_privacy_harm_checked: Literal[True]

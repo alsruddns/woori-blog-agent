@@ -1,0 +1,27 @@
+# P5-CODEX-061 — Manual Blogger publish button and diagnostic alignment
+
+- 작업 시각: 2026-10-30 09:26 KST
+- 브랜치: `develop`
+- 변경 사유: 게시 가능 안내가 표시되어도 수동 공개 게시 버튼이 비활성 상태였고, 운영 진단은 수동 발행 경로를 반영하지 않는 오래된 전역 문구를 표시했다.
+- 기존 문제: UI와 `ManualLiveRequestInput`이 게시 사유를 10자 이상 요구했다. `확인완료`는 4자라서 서버 적격 원고, 승인자 이름, 세 확인 체크가 충족돼도 버튼이 비활성화됐으며 그 이유를 보여주지 않았다. 발행 진단은 `publish_ready` 0건만으로 사람 검토·별도 승인을 일괄 요구하고 Blogger 쓰기는 항상 비활성이라고 고정 표시했다.
+- 변경 목적: 정확한 사용자 확인과 감사 기록을 유지하면서 간결한 사유도 허용하고, 버튼 비활성 조건을 구체적으로 안내한다. 수동 발행과 예약 Auto/전역 Auto 진단을 혼동하지 않는다.
+- 변경 전 상태: 실제 3100 화면에서 한국어 수동 원고 `c3e35c4f-4d79-4772-879f-0232d8bf400a`를 열면 게시 가능·보완 필요 및 Blogger 쓰기 scope가 표시됐지만, 승인 사유 `확인완료` 입력 상태에서 10자 최소 길이 조건으로 버튼이 비활성이었다. API 입력 모델도 같은 요청을 거부할 길이 규칙이었다.
+- 변경 후 상태: 수동 공개 요청 사유 최소 길이를 UI/API 양쪽에서 3자로 맞췄다. 현재 사유 글자 수와 부족한 승인자·사유·체크·대상·서버 적격 blocker를 버튼 아래 표시한다. 운영 진단은 표준 `publish_ready` 집계와 수동 원고 상세의 개별 게시 적격 판정을 분리한다. Blogger 쓰기 scope, 운영 정책 attestation, Worker heartbeat를 관측해 수동 경로 상태를 partial/blocked로 표시하며 진단 자체는 Blogger에 쓰지 않는다.
+- 수정 파일:
+  - `apps/dashboard/app/imports/external-import-workspace.tsx`
+  - `services/api/woori/publications.py`
+  - `services/api/woori/operations_dashboard.py`
+  - `services/api/tests/test_publications.py`
+  - `services/api/tests/test_dashboard_read_models.py`
+- 검증:
+  - API publication 및 dashboard read-model 검사: 36 passed
+  - 간결한 한국어 사유 `확인완료`가 허용되고 2자 사유는 거부됨을 확인
+  - Dashboard ESLint, TypeScript, isolated production build 통과
+  - 실제 운영 API GET에서 수동 Import 상세와 발행 상태 응답 200 확인
+  - Playwright에서 실제 DB 응답을 최신 production build에 공급해 2자 사유는 비활성 + `3자 이상` 안내, `확인완료` 4자 및 승인자/체크 입력 후 버튼 활성 확인
+  - 최신 production build를 프로젝트 스크립트로 3100/8100에 반영; health 200, 3100 실제 브라우저에서 버튼 활성 확인, API GET 200
+  - Research Worker와 Publication Worker는 재시작하지 않았고 큐·실제 게시 수는 각각 0건
+  - 브라우저에서 공개 게시 API POST 0회; 실제 Blogger 게시·postId·URL 생성 없음
+- 커밋 해시: 커밋 후 Git 이력에서 확인
+- 관련 문서: `AGENTS.md`, `docs/development/P5-CODEX-060.md`
+- 남은 문제: 사용자가 버튼을 누르기 전이므로 승인 감사 이벤트와 Publishing Job은 생성되지 않았다. 실제 Blogger 공개 URL은 없다. 최초 Job과 후속 보완/원격 확인은 사용자의 정확한 원고 확인 및 실제 클릭 후에만 실행된다.

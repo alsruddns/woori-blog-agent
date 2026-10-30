@@ -261,6 +261,12 @@ def test_operations_snapshot_reads_migration_marker_without_schema_table_privile
     result = dashboard_snapshot(SnapshotConnection())
     assert result["schema_version"] == 48
     assert result["readiness"]["decision"] == "READY FOR OBSERVATION ONLY"
+    checks = {item["key"]: item for item in result["readiness"]["checks"]}
+    assert checks["publish_eligibility"]["status"] == "partial"
+    assert "수동 원고" in checks["publish_eligibility"]["detail"]
+    assert "사람 검토와 별도 게시 승인" not in checks["publish_eligibility"]["detail"]
+    assert "실제 Blogger 쓰기와 공개 게시는 현재 비활성화" not in checks["blogger_live_publisher"]["detail"]
+    assert result["publishing"]["manual_publication_available"] is False
     assert result["readiness"]["limits"]["global_daily"] == 50
     assert result["readiness"]["modes"][-1]["status"] == "blocked"
     assert result["monitoring"]["alert_delivery_configured"] is False
