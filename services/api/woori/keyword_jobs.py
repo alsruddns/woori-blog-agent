@@ -194,7 +194,7 @@ def make_envelope(job:dict[str,Any],article:dict[str,Any],evidence:dict[str,Any]
     for source in model.sources:
         observed=opened.get(codex_runner.canonical_url(str(source.url)))
         if not observed:raise codex_runner.CodexFailure('source_not_opened_in_this_run')
-        sources.append({**source.model_dump(mode='json'),'observed_at':observed})
+        sources.append({**source.model_dump(mode='json'),'observed_at':observed,'rights_status':'quotation_review_required'})
     now=datetime.now(UTC).isoformat()
     return ImportSubmission.model_validate({'submitted_by':'Codex user keyword authoring','item':{
         'schema_version':'1.0','content_id':str(job['id']),'event_group_id':'user-keyword-'+str(job['id']),
@@ -268,6 +268,8 @@ def import_pending(*,transport:httpx.BaseTransport|None=None,api_url:str='http:/
     with connection() as conn:
         job=conn.execute("SELECT * FROM codex_authoring_jobs WHERE state='import_pending' ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1").fetchone()
         if not job:return
+        if job['cancel_requested']:
+            update(conn,job['id'],'cancelled',completed_at=datetime.now(UTC));return
         try:
             selected=next((b for b in targets(conn) if b['id']==job['blog_id']),None)
             if not selected or selected['language_code']!=job['language_code'] or selected['target_country']!=job['target_country']:
