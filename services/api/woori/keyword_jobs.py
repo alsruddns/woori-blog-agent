@@ -177,7 +177,8 @@ def retry_job(job_id:UUID,request:RetryRequest) -> dict[str,Any]:
     with connection() as conn:
         prior=conn.execute('SELECT * FROM codex_authoring_jobs WHERE id=%s',(job_id,)).fetchone()
         if not prior:raise HTTPException(404,'authoring_job_not_found')
-        imported=conn.execute("SELECT i.id,l.content_version_id FROM external_content_imports i JOIN external_content_import_content_links l ON l.import_id=i.id WHERE i.external_content_id=%s AND i.generation_method='manual_codex_import' ORDER BY l.created_at DESC LIMIT 1",(str(job_id),)).fetchone()
+        expected_origin='codex_trends_export' if prior['job_type']=='google_trends' else 'manual_codex_import'
+        imported=conn.execute("SELECT i.id,l.content_version_id FROM external_content_imports i JOIN external_content_import_content_links l ON l.import_id=i.id WHERE i.external_content_id=%s AND i.generation_method=%s ORDER BY l.created_at DESC LIMIT 1",(str(job_id),expected_origin)).fetchone()
         if imported:
             update(conn,job_id,'imported_review',import_id=imported['id'],content_version_id=imported['content_version_id'],error_code=None,completed_at=datetime.now(UTC))
             restored=conn.execute('SELECT * FROM codex_authoring_jobs WHERE id=%s',(job_id,)).fetchone()
@@ -194,11 +195,19 @@ def retry_job(job_id:UUID,request:RetryRequest) -> dict[str,Any]:
                 evidence['resume_article_sha256']=hashlib.sha256(raw).hexdigest()
                 evidence['resume_saved_output']=True
                 update(conn,job_id,'queued',error_code=None,evidence=Jsonb(evidence))
+                if prior['job_type']=='google_trends':
+                    row=conn.execute("UPDATE trend_generation_requests SET state='generating',updated_at=now() WHERE id=%s AND authoring_job_id=%s RETURNING topic_id",(prior['trend_request_id'],job_id)).fetchone()
+                    if not row:raise HTTPException(409,'trend_provenance_link_missing')
+                    from .trend_editorial import transition
+                    transition(conn,row['topic_id'],'generating','saved_result_retry',
+                        '저장된 Codex 결과를 새 모델 호출 없이 재검증합니다.', 'authenticated_operator',
+                        evidence={'authoring_job_id':str(job_id),'new_model_call':False})
                 audit(conn,job_id,'saved_output_resume_requested',{'request_key':str(request.request_key),'new_model_call':False})
                 restored=conn.execute('SELECT * FROM codex_authoring_jobs WHERE id=%s',(job_id,)).fetchone()
                 assert restored is not None
                 return dict(restored)
         if prior['import_attempts']>0:raise HTTPException(409,'import_status_must_be_reconciled')
+        if prior['job_type']=='google_trends':raise HTTPException(409,'trend_retry_requires_saved_result_or_reconciliation')
         data={**prior['options'],'request_key':str(request.request_key)}
     return create(AuthoringRequest.model_validate(data),parent=job_id)
 

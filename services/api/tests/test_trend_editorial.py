@@ -6,7 +6,7 @@ import pytest
 from psycopg.types.json import Jsonb
 from test_pipeline import lab as shared_lab
 from woori import trend_editorial as editorial
-from woori import trends
+from woori import keyword_jobs, trends
 
 lab=shared_lab
 
@@ -18,6 +18,7 @@ def bind(lab,monkeypatch):
         with conn.transaction():yield conn
     monkeypatch.setattr(editorial,'connection',shared)
     monkeypatch.setattr(trends,'connection',shared)
+    monkeypatch.setattr(keyword_jobs,'connection',shared)
     return conn,api,headers
 
 
@@ -111,3 +112,7 @@ def test_trends_queue_dispatch_has_distinct_provenance_and_no_publication(lab,mo
     assert job['trend_request_id'] and job['state']=='queued'
     assert editorial.dispatch()['created']==0
     assert conn.execute('SELECT count(*) n FROM publishing_jobs').fetchone()['n']==before
+    conn.execute("UPDATE codex_authoring_jobs SET state='failed',error_code='codex_execution_failed' WHERE id=%s",(job['id'],))
+    retry=api.post(f"/admin/keyword-authoring/{job['id']}/retry",headers=h,json={'request_key':str(uuid4())})
+    assert retry.status_code==409 and retry.json()['detail']=='trend_retry_requires_saved_result_or_reconciliation'
+    assert conn.execute('SELECT count(*) n FROM codex_authoring_jobs WHERE parent_job_id=%s',(job['id'],)).fetchone()['n']==0
