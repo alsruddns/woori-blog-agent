@@ -147,9 +147,17 @@ export default function ExternalImportWorkspace() {
     const data = await response.json();
     if (requestId !== detailRequest.current) return;
     if (!response.ok) throw new Error("원고 상세를 불러오지 못했습니다.");
-    const publication = publicationResponse.ok
-      ? await publicationResponse.json() as Row
-      : { status_error: publicationResponse.status === 404 ? "예약 발행 상태 조회 API를 찾을 수 없습니다." : "예약 발행 상태를 조회하지 못했습니다." };
+    let publication: Row;
+    if (publicationResponse.ok) {
+      publication = await publicationResponse.json() as Row;
+    } else {
+      const failure = await publicationResponse.json().catch(() => ({})) as Row;
+      const code = String(failure.error_code ?? failure.error ?? `http_${publicationResponse.status}`);
+      publication = {
+        status_error_code: code,
+        status_error: `발행 상태 조회 실패 (HTTP ${publicationResponse.status} · ${code})`,
+      };
+    }
     if (requestId !== detailRequest.current) return;
     const nextDetail = { ...data, publication } as Details;
     setSelectedId(id); setDetail(nextDetail); setPreview(null); setDetailTab("editor");
@@ -313,7 +321,8 @@ export default function ExternalImportWorkspace() {
     ...(!manualAttest.facts ? ["미확인 주장을 사실로 단정하지 않았음을 확인하세요."] : []),
     ...(!manualAttest.rights ? ["권리·개인정보·위해 확인을 표시하세요."] : []),
     ...(selectedManual?.eligible !== true
-      ? ((selectedManual?.blockers as string[] | undefined) ?? ["서버에서 수동 발행 적격 상태를 확인할 수 없습니다."])
+      ? ((selectedManual?.blockers as string[] | undefined)
+        ?? [String(detail?.publication?.status_error ?? "수동 발행 자격 결과가 응답에 없습니다. 원고 상세를 새로고침하세요.")])
         .map(reason => manualBlockerNames[reason] ?? reason)
       : []),
   ];

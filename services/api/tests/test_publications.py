@@ -192,6 +192,7 @@ def test_scheduled_first_post_status_exposes_exact_blockers_without_writing(monk
     body = "검증된 예약 원고 본문"
     digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
     blog_api_id = "3321654108096579717"
+    generation_method = "chatgpt_scheduled_export"
     class FakeResult:
         def __init__(self, one: Any = None, many: list[Any] | None = None) -> None:
             self.one, self.many = one, many or []
@@ -206,7 +207,7 @@ def test_scheduled_first_post_status_exposes_exact_blockers_without_writing(monk
         def execute(self, sql: str, params: Any = None) -> FakeResult:
             if "FROM external_content_imports i" in sql:
                 return FakeResult({
-                    "id": import_id, "generation_method": "chatgpt_scheduled_export",
+                    "id": import_id, "generation_method": generation_method,
                     "language_code": "ko", "import_title": "테스트 예약 원고",
                     "import_version_id": import_version_id, "version_number": 1,
                     "title": "테스트 예약 원고", "body_markdown": body,
@@ -253,6 +254,13 @@ def test_scheduled_first_post_status_exposes_exact_blockers_without_writing(monk
         yield FakeConnection()
 
     monkeypatch.setattr(publications, "connection", fake_connection)
+    monkeypatch.setattr(publications, "_candidate", lambda *_args: {"content_version_id": content_version_id})
+    monkeypatch.setattr(publications, "_manual_publication_snapshot", lambda *_args: {
+        "title": "테스트 원고", "body": body, "title_sha256": "a" * 64,
+        "body_sha256": digest, "html_sha256": "b" * 64,
+        "generation_method": generation_method, "followups": [],
+    })
+    monkeypatch.setattr(publications, "_manual_publication_blockers", lambda *_args: [])
     monkeypatch.setattr(external_policy, "_blogger_policy_approval", lambda: {"scope": ["test"]})
     monkeypatch.setattr(external_policy, "_scheduled_publication_approval", lambda _blog_id: {"scope": ["test"]})
     result = publications.scheduled_first_post_status(import_id)
@@ -263,6 +271,17 @@ def test_scheduled_first_post_status_exposes_exact_blockers_without_writing(monk
     assert result["first_publication_approval_required"] is False
     assert result["targets"][0]["first_publication_approval_required"] is False
     assert result["targets"][0]["approval_blockers"] == []
+    assert result["targets"][0]["manual_publication"]["status"] == "eligible"
+    assert result["targets"][0]["manual_publication"]["generation_method"] == "chatgpt_scheduled_export"
+
+    # Ordinary manual imports must get the same manual eligibility read model
+    # even when there is no scheduled auto-failure event to recover.
+    generation_method = "manual_codex_import"
+    manual_result = publications.scheduled_first_post_status(import_id)
+    manual_target = manual_result["targets"][0]["manual_publication"]
+    assert manual_result["auto_publication_failure"] is False
+    assert manual_target["status"] == "eligible"
+    assert manual_target["generation_method"] == "manual_codex_import"
 
 
 def test_scheduled_first_post_approval_endpoint_is_retired_without_db_write() -> None:

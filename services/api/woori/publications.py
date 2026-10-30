@@ -533,8 +533,12 @@ def scheduled_first_post_status(import_id: Annotated[UUID, Query()]) -> dict[str
             )
             blog_jobs = [dict(job) for job in jobs]
             manual_publication: dict[str, Any] = {}
-            if (content_version_id and latest_auto_failure
-                    and latest_auto_failure["event_type"] == "publication.auto_failure.recorded"):
+            # Manual eligibility is a read model for every imported manuscript.
+            # Restricting it to scheduled auto-failure events left ordinary
+            # manual imports with an empty object, which the Dashboard reported
+            # as an unavailable eligibility check even though this request
+            # itself succeeded.
+            if content_version_id:
                 manual_candidate = _candidate(conn, UUID(str(content_version_id)), UUID(blog_id))
                 manual_row = dict(manual_candidate) if manual_candidate else None
                 manual_snapshot = _manual_publication_snapshot(conn, manual_row)
@@ -542,6 +546,7 @@ def scheduled_first_post_status(import_id: Annotated[UUID, Query()]) -> dict[str
                     conn, manual_row, manual_snapshot, UUID(blog_id),
                 )
                 manual_publication = {
+                    "status": "eligible" if not manual_blockers else "blocked",
                     "eligible": not manual_blockers,
                     "blockers": manual_blockers,
                     "title": manual_snapshot.get("title"),
