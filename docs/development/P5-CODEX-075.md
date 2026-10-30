@@ -17,3 +17,12 @@
 
 - Focused pytest 61 passed (including four-language exact-country policy, missing-policy safety, manual approval/idempotency, Scheduled Auto queue and Jobless-vs-running read-model regressions). Ruff/mypy and Dashboard ESLint/TypeScript passed.
 - Runtime and final commit results are appended after Production Build and targeted application. Actual manual or scheduled publication is not claimed by this configuration/UI task.
+
+## Runtime follow-up
+
+- Production Build passed in isolated .next-p5-9f4ed2fdad4d; generated tracked config files restored byte-for-byte. Existing ownership-verified stop/start scripts gracefully reflected API and Dashboard only. Code commit 9f4ed2f pushed to origin/develop. API PID 57728, Dashboard PID 32452; new publishing-page HTML contains the actual-Job queue explanation. Both endpoints return HTTP 200.
+- Post-reflection Dashboard proxy manual-eligibility GETs returned HTTP 200 / eligible=true / blockers=[] for both specified Japanese and Chinese Imports. Publication queue/review API HTTP 200; queue empty, review items explicitly have has_publishing_job=false/publishing_job_id=null. Running-vs-queued cases are covered by regression tests; no operational Job was fabricated to demonstrate them.
+- Read-only exact-language/country policy joins select ja/JP policy 6df71e32-05b9-4d91-9b0f-de8518218425 and zh-CN/CN policy 258e904d-9c48-4b02-b4a8-5352a5a00171 for the respective registered blogs. Scheduled Worker uses the same join; DB configuration is read each cycle. Research PID 22828 and Publication PID 51292 remain running without restart; mode operations-scheduled-auto-and-manual unchanged.
+- Japanese/Chinese publication Jobs remain 0. Existing Korean post 8758150505870748115 and English post 3006185544912270190 remain LIVE. No update/delete was issued against their policies, Jobs, content or audit records. No manual-publication POST or Blogger write occurred in this task.
+- UI validation boundary: live server-rendered page and proxy/API data were verified; no browser interaction or publish click was performed. Existing button attestation/confirmation requirements remain; eligible=true removes the missing-policy blocker.
+- Final development record commit follows in Git history and is pushed to origin/develop. Temporary .playwright-mcp directories remain untracked.
