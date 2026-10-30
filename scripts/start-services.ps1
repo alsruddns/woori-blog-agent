@@ -106,11 +106,11 @@ function Ensure-PublicationWorker {
     $table = Get-ProcessTable
     $worker = $table | Where-Object Id -eq ([int]$status.heartbeat.process_id) | Select-Object -First 1
     if ($worker -and (Test-ExactCheckoutServiceProcess $worker 'publication_worker')) {
-      if ([string]$worker.CommandLine -match '--operations-scheduled-auto(?:\s|$)') {
-        Write-LifecycleLog 'publication_worker' 'already_ready' "pid=$($worker.Id) mode=scheduled-auto"
+      if ([string]$worker.CommandLine -match '--operations-scheduled-auto-and-manual(?:\s|$)') {
+        Write-LifecycleLog 'publication_worker' 'already_ready' "pid=$($worker.Id) mode=scheduled-auto-and-manual"
         return
       }
-      Write-LifecycleLog 'publication_worker' 'mode_mismatch' "pid=$($worker.Id) required=scheduled-auto"
+      Write-LifecycleLog 'publication_worker' 'mode_mismatch' "pid=$($worker.Id) required=scheduled-auto-and-manual"
       throw "Publication Worker is already running in a different mode. It was left running; review with scripts/status.ps1 before any safe mode transition."
     }
   }
@@ -122,12 +122,12 @@ function Ensure-PublicationWorker {
   }
   for ($attempt=1; $attempt -le $ServiceAttempts; $attempt++) {
     try {
-      & (Join-Path $PSScriptRoot 'start.ps1') -Service publication_worker -PublicationMode scheduled-auto
+      & (Join-Path $PSScriptRoot 'start.ps1') -Service publication_worker -PublicationMode scheduled-auto-manual
       if ($LASTEXITCODE -eq 0) { return }
     } catch { Write-LifecycleLog 'publication_worker' 'start_attempt_failed' "attempt=$attempt error_type=$($_.Exception.GetType().Name)" }
     if ($attempt -lt $ServiceAttempts) { Start-Sleep -Seconds ([Math]::Min(5 * $attempt,20)) }
   }
-  throw "Publication Worker failed to start in scheduled-auto mode after $ServiceAttempts attempts."
+  throw "Publication Worker failed to start in scheduled-auto-and-manual mode after $ServiceAttempts attempts."
 }
 
 try {

@@ -6,6 +6,26 @@ $python = [IO.Path]::GetFullPath((Join-Path $script:ProjectRoot '.venv\Scripts\p
 $existing = @(Get-CheckoutServiceProcesses (Get-ProcessTable) 'publication_worker')
 if ($existing.Count) {
   $pids = ($existing | ForEach-Object { $_.Id } | Sort-Object -Unique) -join ', '
+  $statusOutput = & $python $worker --status 2>$null
+  $status = $null
+  if ($LASTEXITCODE -eq 0 -and $statusOutput) {
+    try { $status = ($statusOutput -join "`n") | ConvertFrom-Json } catch { }
+  }
+  $heartbeatPid = if ($status -and $status.heartbeat.process_id) { [int]$status.heartbeat.process_id } else { 0 }
+  $actual = $existing | Where-Object { [int]$_.Id -eq $heartbeatPid } | Select-Object -First 1
+  $expectedSwitch = switch ($Mode) {
+    'scheduled-auto' { '--operations-scheduled-auto' }
+    'manual-confirmed' { '--operations-manual-confirmed' }
+    'scheduled-auto-manual' { '--operations-scheduled-auto-and-manual' }
+    default { '--operations-mock-only' }
+  }
+  $expectedSwitchPattern = [regex]::Escape($expectedSwitch) + '(?:\s|$)'
+  if ($actual -and (Test-ExactCheckoutServiceProcess $actual 'publication_worker') -and
+      $status.heartbeat_fresh -and [string]$actual.CommandLine -match $expectedSwitchPattern) {
+    Write-LifecycleLog 'publication_worker' 'already_ready' "pid=$heartbeatPid mode=$Mode"
+    Write-Output "Publication Worker already healthy in $Mode mode (PID $heartbeatPid); no duplicate started."
+    return
+  }
   throw "Publication Worker already exists for this checkout (PID $pids). Use scripts/status.ps1; no duplicate was started."
 }
 if (-not (Test-Path -LiteralPath $python -PathType Leaf) -or -not (Test-Path -LiteralPath $worker -PathType Leaf)) {

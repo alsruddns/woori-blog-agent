@@ -16,7 +16,19 @@ foreach ($name in $targets) {
   $existingProjectProcesses = @(Get-CheckoutServiceProcesses (Get-ProcessTable) $name)
   if ($existingProjectProcesses.Count) {
     $pids = ($existingProjectProcesses | ForEach-Object { $_.Id } | Sort-Object -Unique) -join ', '
-    throw "$name process(es) from this checkout already exist (PID $pids), possibly on alternate ports. Run scripts/status.ps1 and use the original terminal; no duplicate was started."
+    $verified = @(Get-CheckoutServiceProcesses (Get-ProcessTable) $name | Where-Object { Test-ExactCheckoutServiceProcess $_ $name })
+    $listeners = @(Get-Listeners ([int]$script:Services[$name].Port))
+    $listenerOwnersVerified = $listeners.Count -gt 0 -and @($listeners | Where-Object {
+      $listenerPid = [int]$_
+      @($verified | Where-Object { [int]$_.Id -eq $listenerPid }).Count -gt 0
+    }).Count -eq $listeners.Count
+    $healthUrl = if ($name -eq 'api') { 'http://127.0.0.1:8100/health' } else { 'http://127.0.0.1:3100/research' }
+    if ($verified.Count -and $listenerOwnersVerified -and (Test-LoopbackHttp $healthUrl 5)) {
+      Write-LifecycleLog $name 'already_ready' "pids=$($verified.Id -join ',') port=$($script:Services[$name].Port)"
+      Write-Output "$name is already healthy on port $($script:Services[$name].Port); no duplicate was started."
+      continue
+    }
+    throw "$name checkout process(es) already exist (PID $pids) but health/ownership cannot be confirmed. No duplicate was started."
   }
   $port = $script:Services[$name].Port
   $listeners = Get-Listeners $port

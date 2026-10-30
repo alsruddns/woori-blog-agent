@@ -161,8 +161,8 @@ function Get-CheckoutServiceProcesses($ProcessTable, [string]$ServiceName) {
     $checkoutMatch = $command.IndexOf($rootMarker,[StringComparison]::OrdinalIgnoreCase) -ge 0
     if (-not $checkoutMatch) { continue }
     $matchesService = switch ($ServiceName) {
-      'api' { $command -match 'uvicorn\s+woori\.main:app' -and $command -match '\.venv[\\/]Scripts[\\/]python\.exe' }
-      'dashboard' { $command -match 'apps[\\/]dashboard[\\/]node_modules[\\/].*next[\\/]dist[\\/]bin[\\/]next|--prefix\s+apps[\\/]dashboard' }
+      'api' { ($command -match 'scripts[\\/]api-service\.py' -or $command -match 'uvicorn\s+woori\.main:app') -and $command -match '\.venv[\\/]Scripts[\\/]python\.exe' }
+      'dashboard' { $command -match 'scripts[\\/]dashboard-service\.js|apps[\\/]dashboard[\\/]node_modules[\\/].*next[\\/]dist[\\/]bin[\\/]next|--prefix\s+apps[\\/]dashboard' }
       'worker' { $command -match '\.venv[\\/]Scripts[\\/]python\.exe.*-m\s+woori\.worker' }
       'evaluation_worker' { $command -match 'scripts[\\/]run_evaluation_worker\.py' }
       'publication_worker' { $command -match 'scripts[\\/]publication-worker\.py' }
@@ -181,7 +181,10 @@ function Test-ExactCheckoutServiceProcess($ProcessInfo, [string]$ServiceName) {
   $python = [IO.Path]::GetFullPath((Join-Path $script:ProjectRoot '.venv\Scripts\python.exe'))
   switch ($ServiceName) {
     'api' {
-      return $path -ieq $python -and $command -match '(?i)(^|\s)-m\s+uvicorn\s+woori\.main:app(?:\s|$)'
+      return $path -ieq $python -and (
+        $command -match '(?i)(^|\s)scripts[\\/]api-service\.py(?:\s|$)' -or
+        $command -match '(?i)(^|\s)-m\s+uvicorn\s+woori\.main:app(?:\s|$)'
+      )
     }
     'dashboard' {
       $nextPaths = @(
@@ -190,8 +193,9 @@ function Test-ExactCheckoutServiceProcess($ProcessInfo, [string]$ServiceName) {
       )
       $knownNext = @($nextPaths | Where-Object { $command.IndexOf($_,[StringComparison]::OrdinalIgnoreCase) -ge 0 }).Count -gt 0
       if (-not $knownNext) { $knownNext = $command -match '(?i)apps[\\/]dashboard[\\/]node_modules[\\/]\.bin.*next[\\/]dist[\\/]bin[\\/]next' }
-      return [IO.Path]::GetFileName($path) -ieq 'node.exe' -and $knownNext -and
-        $command -match '(?i)(?:^|\s)(dev|start)(?:\s|$)'
+      $managedDashboardRunner = $command -match '(?i)(^|\s)scripts[\\/]dashboard-service\.js(?:\s|$)'
+      return [IO.Path]::GetFileName($path) -ieq 'node.exe' -and ($knownNext -or $managedDashboardRunner) -and
+        ($managedDashboardRunner -or $command -match '(?i)(?:^|\s)(dev|start)(?:\s|$)')
     }
     'worker' {
       $basePython = $null

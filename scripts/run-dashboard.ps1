@@ -10,5 +10,6 @@ if (Test-Path -LiteralPath $validatedSource -PathType Leaf) {
   }
   $env:WOORI_DASHBOARD_DIST_DIR = $buildDir
 }
-& npm.cmd --prefix apps/dashboard run start
+$node = (Get-Command node.exe -ErrorAction Stop).Source
+& $node (Join-Path $PSScriptRoot 'dashboard-service.js')
 exit $LASTEXITCODE

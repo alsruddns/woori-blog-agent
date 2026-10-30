@@ -173,8 +173,13 @@ function Get-ManagedTree([string]$Name, $Runner, $ProcessTable) {
     if ($Name -eq 'api' -and [IO.Path]::GetFileName([string]$item.Path) -ieq 'python.exe' -and
         [string]$item.CommandLine -and
         $item.CommandLine.IndexOf([IO.Path]::GetFullPath((Join-Path $script:ProjectRoot '.venv\Scripts\python.exe')),[StringComparison]::OrdinalIgnoreCase) -ge 0 -and
-        $item.CommandLine -match '(?i)-m\s+uvicorn\s+woori\.main:app(?:\s|$)') {
+        ($item.CommandLine -match '(?i)scripts[\\/]api-service\.py(?:\s|$)' -or
+         $item.CommandLine -match '(?i)-m\s+uvicorn\s+woori\.main:app(?:\s|$)')) {
       $allowed += [pscustomobject]@{ ProcessInfo=$item; Kind='api' }; continue
+    }
+    if ($Name -eq 'dashboard' -and [IO.Path]::GetFileName([string]$item.Path) -ieq 'node.exe' -and
+        [string]$item.CommandLine -match '(?i)scripts[\\/]dashboard-service\.js(?:\s|$)') {
+      $allowed += [pscustomobject]@{ ProcessInfo=$item; Kind='dashboard' }; continue
     }
     if ($Name -eq 'dashboard' -and [IO.Path]::GetFileName([string]$item.Path) -ieq 'cmd.exe') {
       $nextPaths = @(
@@ -258,6 +263,59 @@ function Request-GracefulClose($RunnerSnapshot) {
   if (-not $process -or $process.MainWindowHandle -eq 0) { return $false }
   try { return [bool]$process.CloseMainWindow() }
   catch { return $false }
+}
+
+function Write-HttpServiceStopRequest($Snapshot, [string]$Name) {
+  $runtimeDir = Join-Path $script:ProjectRoot '.runtime'
+  if (-not (Test-Path -LiteralPath $runtimeDir -PathType Container)) { throw '.runtime is missing; refusing a service stop request.' }
+  $runtime = Get-Item -LiteralPath $runtimeDir -Force
+  if ($runtime.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw '.runtime is a reparse point; refusing a service stop request.' }
+  $identityPath = Join-Path $runtimeDir "service-identity-$Name-$($Snapshot.Id).json"
+  $requestPath = Join-Path $runtimeDir "service-stop-$Name-$($Snapshot.Id).json"
+  if ((Test-Path -LiteralPath $identityPath -PathType Leaf) -and
+      ((Get-Item -LiteralPath $identityPath -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+    throw "$Name graceful-stop identity is a reparse point; no process was terminated."
+  }
+  if ((Test-Path -LiteralPath $requestPath -PathType Leaf) -and
+      ((Get-Item -LiteralPath $requestPath -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+    throw "$Name stop request is a reparse point; no request was written."
+  }
+  try { $identity = Get-Content -LiteralPath $identityPath -Raw -Encoding utf8 | ConvertFrom-Json }
+  catch { throw "$Name graceful-stop identity is unavailable; no process was terminated." }
+  if ([int]$identity.pid -ne [int]$Snapshot.Id -or [string]$identity.service -cne $Name -or
+      [string]$identity.checkout_root -ine $script:ProjectRoot -or
+      [string]$identity.instance_id -notmatch '^[a-f0-9]{32,64}$') {
+    throw "$Name graceful-stop identity does not match the verified process; no process was terminated."
+  }
+  if (Test-Path -LiteralPath $requestPath -PathType Leaf) {
+    try { $existing = Get-Content -LiteralPath $requestPath -Raw -Encoding utf8 | ConvertFrom-Json }
+    catch { throw "$Name has an unreadable existing stop request; no overwrite was performed." }
+    if ([int]$existing.pid -ne [int]$identity.pid -or [string]$existing.instance_id -cne [string]$identity.instance_id -or
+        [string]$existing.checkout_root -ine $script:ProjectRoot) {
+      throw "$Name existing stop request belongs to a different process instance."
+    }
+    return @{ path=$requestPath; identity=$identity }
+  }
+  $tempPath = "$requestPath.$([guid]::NewGuid().ToString('N')).tmp"
+  $json = $identity | ConvertTo-Json -Compress
+  [IO.File]::WriteAllText($tempPath,$json,(New-Object System.Text.UTF8Encoding($false)))
+  try { [IO.File]::Move($tempPath,$requestPath) }
+  catch {
+    Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
+    throw "$Name graceful-stop request could not be created."
+  }
+  return @{ path=$requestPath; identity=$identity }
+}
+
+function Remove-HttpServiceStopRequest($Request) {
+  if (-not $Request -or -not (Test-Path -LiteralPath $Request.path -PathType Leaf)) { return }
+  try { $current = Get-Content -LiteralPath $Request.path -Raw -Encoding utf8 | ConvertFrom-Json }
+  catch { return }
+  if ([int]$current.pid -eq [int]$Request.identity.pid -and
+      [string]$current.instance_id -ceq [string]$Request.identity.instance_id -and
+      [string]$current.checkout_root -ieq $script:ProjectRoot) {
+    Remove-Item -LiteralPath $Request.path -Force
+  }
 }
 
 function Write-WorkerStopRequest($Target) {
@@ -387,18 +445,33 @@ function Invoke-ProjectStop {
     }
     $targetText = ($snapshots | ForEach-Object { "PID $($_.Id) [$($_.Kind)] $($_.Path) :: $($_.CommandLine)" }) -join [Environment]::NewLine
     if (-not $PSCmdlet.ShouldProcess($targetText,"Request graceful shutdown of $Name")) { return $false }
-    [void](Request-GracefulClose $runner)
+    $serviceSnapshot = $snapshots | Where-Object { $_.Kind -eq $Name } | Select-Object -First 1
+    $stopRequest = $null
+    $supportsStopFile = $serviceSnapshot -and (
+      ($Name -eq 'api' -and [string]$serviceSnapshot.CommandLine -match '(?i)scripts[\\/]api-service\.py(?:\s|$)') -or
+      ($Name -eq 'dashboard' -and [string]$serviceSnapshot.CommandLine -match '(?i)scripts[\\/]dashboard-service\.js(?:\s|$)')
+    )
+    if ($supportsStopFile) {
+      $stopRequest = Write-HttpServiceStopRequest $serviceSnapshot $Name
+      Write-LifecycleLog $Name 'graceful_stop_requested' "pid=$($serviceSnapshot.Id) channel=identity_bound_local_file"
+    } else {
+      [void](Request-GracefulClose $runner)
+      Write-LifecycleLog $Name 'graceful_stop_requested' "runner_pid=$($runner.Id) channel=window_close_or_legacy"
+    }
     $remaining = @(Wait-ForSnapshotsExit $snapshots $TimeoutSeconds)
     if (-not $remaining.Count) {
+      Remove-HttpServiceStopRequest $stopRequest
       $freshManifest = Read-ServerManifest
       $currentRecord = $freshManifest.services[$Name]
       if (Test-ManifestRecordMatchesRunner $currentRecord $runner $Name) {
         $freshManifest.services.Remove($Name)
         Write-ServerManifest $freshManifest
       }
+      Write-LifecycleLog $Name 'stopped' "runner_pid=$($runner.Id)"
       Write-Host "$Name stopped gracefully; verified service process tree exited."
       return $true
     }
+    Write-LifecycleLog $Name 'graceful_stop_pending' "remaining_pids=$($remaining.Id -join ',')"
     Write-Warning "$Name did not stop gracefully within $TimeoutSeconds seconds. Remaining verified PID(s): $($remaining.Id -join ', ')."
     if (-not $AllowForce -or -not (Confirm-ForceAction $Name $remaining)) {
       Write-Warning "$Name was left running. Re-run with -Force and confirm the exact PID phrase, or use its dedicated service terminal."

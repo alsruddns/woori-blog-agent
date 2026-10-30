@@ -77,6 +77,49 @@ Describe 'Windows service lifecycle ownership and startup policy' {
   $apply | Should Match 'schemaStatus\.schema_version'
   }
 
+  It 'keeps login startup publication mode aligned with the verified combined worker mode' {
+    $bootstrap = Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\start-services.ps1') -Raw
+    $bootstrap | Should Match 'scheduled-auto-and-manual'
+    $bootstrap | Should Match 'start\.ps1.*PublicationMode scheduled-auto-manual'
+    $bootstrap | Should Not Match 'PublicationMode scheduled-auto(?:\s|$)'
+  }
+
+  It 'defines the eight project desktop shortcuts and hides the PowerShell launcher' {
+    $creator = Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\create-desktop-shortcuts.ps1') -Raw
+    $creator | Should Match 'DesktopDirectory'
+    $creator | Should Match 'WindowStyle Hidden'
+    foreach ($action in @('start_all','start_dashboard','start_api','start_research','start_publication','status','stop_all','restart_all')) {
+      $creator | Should Match ([regex]::Escape("Action='$action'"))
+    }
+    $creator | Should Match 'shortcut_created_or_updated'
+  }
+
+  It 'makes whole-start idempotent against already healthy services without requiring reflection restart' {
+    $launcher=Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\shortcut-action.ps1') -Raw
+    $launcher | Should Match 'all_four_services_healthy_no_process_started'
+    $launcher | Should Match 'Test-ExactCheckoutServiceProcess'
+    $launcher | Should Match 'HeartbeatState -ne ''fresh'''
+    $launcher | Should Match 'scheduled-auto-and-manual'
+  }
+
+  It 'uses cooperative identity-bound stop channels for API and Dashboard processes' {
+    $api = Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\api-service.py') -Raw
+    $dashboard = Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\dashboard-service.js') -Raw
+    $stopper = Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\stop.ps1') -Raw
+    $api | Should Match 'server\.should_exit = True'
+    $dashboard | Should Match 'server\.close\('
+    $stopper | Should Match 'Write-HttpServiceStopRequest'
+    $stopper | Should Not Match 'Stop-Process -Id.*\$serviceSnapshot'
+  }
+
+  It 'stops workers before HTTP services and only starts after verified full shutdown' {
+    $stopper = Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\stop-services.ps1') -Raw
+    $restarter = Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\restart-services.ps1') -Raw
+    $stopper.IndexOf("'publication_worker'") | Should BeLessThan $stopper.IndexOf("'dashboard'")
+    $stopper | Should Match 'shutdown_aborted_for_active_worker'
+    $restarter.IndexOf('stop-services.ps1') | Should BeLessThan $restarter.IndexOf('start-services.ps1')
+  }
+
   It 'reads the current commit before any pipeline changes the native exit code' {
     (Get-CurrentGitCommit) | Should Match '^[0-9a-f]{40}$'
   }
