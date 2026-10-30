@@ -144,6 +144,7 @@ export default function ExternalImportWorkspace({ embedded = false, detailReques
   const openDetail = useCallback(async (id: string, expectedContentVersionId = "") => {
     const requestId = ++detailRequest.current;
     setError("");
+    if (autoOpened.current.split(":")[0] !== id) { setNotice(""); setManualOutcomeUnknown(false); }
     autoOpened.current = `${id}:${expectedContentVersionId}`;
     if (!detailDialog.current && document.activeElement instanceof HTMLElement) returnFocus.current = document.activeElement;
     const [response, publicationResponse] = await Promise.all([
@@ -367,7 +368,7 @@ export default function ExternalImportWorkspace({ embedded = false, detailReques
           rights_privacy_harm_checked: true, confirmation: "PUBLISH THIS EXACT MANUSCRIPT PUBLICLY",
           idempotency_key: `manual-publish-${versionKey}-${String(manual.body_sha256).slice(0,24)}` }) });
       const result = await response.json() as Row;
-      if (!response.ok) throw new Error(String(result.detail ?? "공개 발행 요청을 처리하지 못했습니다."));
+      if (!response.ok) throw new Error(`HTTP ${response.status} · ${String(result.error_code ?? "manual_publication_request_failed")} · ${String(result.detail ?? result.error ?? "공개 발행 요청을 처리하지 못했습니다.")}`);
       if (result.recorded === false) throw new Error(`발행이 차단되었습니다: ${Array.isArray(result.reasons) ? result.reasons.map(reason => manualBlockerNames[String(reason)] ?? String(reason)).join(" · ") : "필수 조건 미충족"}`);
       setNotice(`공개 발행 Job ${String(result.id ?? "")}을 등록했습니다. 게시 후 보완 ${String(result.followup_count ?? 0)}건을 준비했습니다. 실제 Blogger 결과는 Worker 처리 후 표시됩니다.`);
       onPublicationRequested?.(String(result.id ?? ""));

@@ -13,7 +13,7 @@ test("publishing reuses detail, keeps filters, and explicit manual confirmation 
   });
   await page.route("**/api/publications/worker-jobs?*",async route=>{monitorReads++;await route.continue();});
   await page.route("**/api/publications/scheduled-auto-state?*",async route=>{
-    const response=await route.fetch();const data=await response.json();
+    const response=await route.fetch({headers:{...route.request().headers(),origin:new URL(route.request().url()).origin}});const data=await response.json();
     for(const target of data.targets??[]){if(target.manual_publication){target.manual_publication.eligible=true;target.manual_publication.blockers=[];target.manual_publication.jobs=[];}}
     await route.fulfill({json:data});
   });
@@ -45,5 +45,6 @@ test("publishing reuses detail, keeps filters, and explicit manual confirmation 
   expect(posts).toBe(1);
   await expect.poll(()=>monitorReads).toBeGreaterThan(before);
   expect(new URL(page.url()).pathname).toBe("/publishing");
+  await expect(sheet.getByTestId("manual-publication-submit")).toBeEnabled();
   await page.keyboard.press("Escape");await expect(sheet).toHaveCount(0);
 });
