@@ -989,6 +989,8 @@ def record_claim_evidence_assessment(import_id: UUID) -> dict[str, Any]:
             (Jsonb({"import_id": str(import_id), "version_id": str((detail["latest_version"] or {}).get("id")),
                     "assessment": result, "claims_promoted": False}),),
         ).fetchone()
+        if event is None:
+            raise HTTPException(503, "Claim evidence audit persistence unavailable")
     return {**result, "audit_event_id": event["id"], "assessed_at": event["created_at"]}
 
 
