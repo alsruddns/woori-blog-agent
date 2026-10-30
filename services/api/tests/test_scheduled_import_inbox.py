@@ -114,10 +114,35 @@ def test_scheduled_envelope_requires_self_reported_task_and_consistent_target() 
     general_article["scheduled_origin"]["task_type"] = "scheduled_article"
     general_article["scheduled_origin"]["market_date"] = None
     assert ScheduledImportEnvelope.model_validate(general_article).scheduled_origin.task_type == "scheduled_article"
+    trends_mislabeled_article = json.loads(json.dumps(general_article))
+    trends_mislabeled_article["scheduled_origin"]["task_type"] = "trends_major_issue"
+    with pytest.raises(ValidationError, match="trends_task_type_must_match_actual_trends_origin"):
+        ScheduledImportEnvelope.model_validate(trends_mislabeled_article)
+    trends_article = json.loads(json.dumps(general_article))
+    trends_article["scheduled_origin"]["task_type"] = "trends_major_issue"
+    trends_article["item"]["google_trends_based"] = True
+    trends_article["item"]["blogger_labels"] = content_imports.suggested_labels(
+        trends_article["item"]["category"], trends_article["item"]["language_code"],
+        google_trends_based=True,
+    )
+    assert ScheduledImportEnvelope.model_validate(trends_article).scheduled_origin.task_type == "trends_major_issue"
     wrong_method = json.loads(json.dumps(payload))
     wrong_method["item"]["generation_method"] = "manual_codex_import"
     with pytest.raises(ValidationError, match="scheduled_envelope_requires_scheduled_export_method"):
         ScheduledImportEnvelope.model_validate(wrong_method)
+
+    derived_occurrence = json.loads(json.dumps(general_article))
+    derived_occurrence["scheduled_origin"].update({
+        "occurrence_id": "codex-slot:automation-3:20261030T1030KST",
+        "occurrence_id_source": "project_derived_kst_slot",
+        "scheduler_occurrence_id": None,
+        "automation_id": "automation-3",
+        "scheduled_slot": "2026-10-30T10:30:00+09:00",
+    })
+    assert ScheduledImportEnvelope.model_validate(derived_occurrence).scheduled_origin.occurrence_id_source == "project_derived_kst_slot"
+    derived_occurrence["scheduled_origin"]["occurrence_id"] = "scheduler-run-claimed"
+    with pytest.raises(ValidationError, match="derived_occurrence_id_does_not_match"):
+        ScheduledImportEnvelope.model_validate(derived_occurrence)
 
 
 def test_scheduled_envelope_requires_taxonomy_labels_and_imported_parent_for_revision() -> None:

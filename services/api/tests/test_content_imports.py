@@ -448,7 +448,11 @@ def test_scheduled_origin_audit_requires_registered_blog_and_is_idempotent(
             import_id = submitted.json()["import_id"]
             origin = {
                 "task_type": "market_close_kr", "task_id": "woori-market-close-kr",
-                "occurrence_id": "woori-market-close-kr-20261028-01",
+                "occurrence_id": "codex-slot:automation-test:20261028T1706KST",
+                "occurrence_id_source": "project_derived_kst_slot",
+                "scheduler_occurrence_id": None,
+                "automation_id": "automation-test",
+                "scheduled_slot": "2026-10-28T17:06:00+09:00",
                 "executed_at": "2026-10-28T08:06:00Z", "market_date": "2026-10-28",
                 "target_language_code": "ko", "target_blog_id": blog_id,
                 "target_blog_url": blog["url"], "source_as_of": "2026-10-28T08:00:00Z",
@@ -479,6 +483,10 @@ def test_scheduled_origin_audit_requires_registered_blog_and_is_idempotent(
             assert len(audit) == 1
             assert audit[0]["payload"]["provenance_self_reported"] is True
             assert audit[0]["payload"]["publish_ready"] is False
+            assert audit[0]["payload"]["occurrence_id_source"] == "project_derived_kst_slot"
+            assert audit[0]["payload"]["scheduler_occurrence_id"] is None
+            assert audit[0]["payload"]["automation_id"] == "automation-test"
+            assert audit[0]["payload"]["occurrence_timezone"] == "Asia/Seoul"
 
 
 def test_import_assessment_versions_review_localization_and_mock_are_fail_closed(

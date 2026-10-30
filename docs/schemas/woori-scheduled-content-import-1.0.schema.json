@@ -21,6 +21,10 @@
         "task_type": {"enum": ["market_close_kr", "market_close_jp", "market_close_cn", "market_close_us", "weekly_finance", "trends_major_issue", "scheduled_article"]},
         "task_id": {"type": "string", "minLength": 3, "maxLength": 128, "pattern": "^[A-Za-z0-9_.:-]+$"},
         "occurrence_id": {"type": "string", "minLength": 8, "maxLength": 160, "pattern": "^[A-Za-z0-9_.:-]+$"},
+        "occurrence_id_source": {"enum": ["scheduler_issued", "project_derived_kst_slot"]},
+        "scheduler_occurrence_id": {"type": ["string", "null"], "minLength": 8, "maxLength": 160, "pattern": "^[A-Za-z0-9_.:-]+$"},
+        "automation_id": {"type": ["string", "null"], "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9_.:-]+$"},
+        "scheduled_slot": {"type": ["string", "null"], "format": "date-time"},
         "executed_at": {"type": "string", "format": "date-time"},
         "market_date": {"type": ["string", "null"], "format": "date"},
         "target_language_code": {"type": "string", "minLength": 2, "maxLength": 35},
@@ -29,7 +33,17 @@
         "source_as_of": {"type": "string", "format": "date-time"},
         "inbox_file_name": {"type": "string", "minLength": 1, "maxLength": 180, "pattern": "^[A-Za-z0-9_.-]+$"},
         "inbox_file_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
-      }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"occurrence_id_source": {"const": "scheduler_issued"}}, "required": ["occurrence_id_source"]},
+          "then": {"required": ["scheduler_occurrence_id"], "properties": {"scheduler_occurrence_id": {"type": "string"}}}
+        },
+        {
+          "if": {"properties": {"occurrence_id_source": {"const": "project_derived_kst_slot"}}, "required": ["occurrence_id_source"]},
+          "then": {"required": ["automation_id", "scheduled_slot"], "properties": {"automation_id": {"type": "string"}, "scheduled_slot": {"type": "string"}}}
+        }
+      ]
     }
   }
 }

@@ -36,6 +36,7 @@ from .editorial_taxonomy import (
     language_candidates,
     suggested_labels,
 )
+from .scheduled_occurrence import validate_occurrence_metadata
 from .topics import OFFICIAL_SOURCE_HOSTS
 
 router = APIRouter(prefix="/admin/research/content-imports")
@@ -200,6 +201,12 @@ class ScheduledImportOrigin(BaseModel):
     ]
     task_id: str = Field(min_length=3, max_length=128, pattern=r"^[A-Za-z0-9_.:-]+$")
     occurrence_id: str = Field(min_length=8, max_length=160, pattern=r"^[A-Za-z0-9_.:-]+$")
+    occurrence_id_source: Literal["scheduler_issued", "project_derived_kst_slot"] | None = None
+    scheduler_occurrence_id: str | None = Field(default=None, min_length=8, max_length=160,
+                                                 pattern=r"^[A-Za-z0-9_.:-]+$")
+    automation_id: str | None = Field(default=None, min_length=1, max_length=128,
+                                       pattern=r"^[A-Za-z0-9_.:-]+$")
+    scheduled_slot: datetime | None = None
     executed_at: datetime
     market_date: date | None = None
     target_language_code: str = Field(min_length=2, max_length=35)
@@ -235,6 +242,13 @@ class ScheduledImportOrigin(BaseModel):
             raise ValueError("market_close_requires_market_date")
         if self.source_as_of > self.executed_at:
             raise ValueError("source_as_of_cannot_follow_scheduled_execution")
+        validate_occurrence_metadata(
+            occurrence_id=self.occurrence_id,
+            occurrence_id_source=self.occurrence_id_source,
+            scheduler_occurrence_id=self.scheduler_occurrence_id,
+            automation_id=self.automation_id,
+            scheduled_slot=self.scheduled_slot,
+        )
         return self
 
 
@@ -259,6 +273,9 @@ class ScheduledImportEnvelope(BaseModel):
         }.get(self.scheduled_origin.task_type)
         if required_language and self.item.language_code != required_language:
             raise ValueError("market_task_language_mismatch")
+        trends_origin = self.scheduled_origin.task_type == "trends_major_issue"
+        if trends_origin != self.item.google_trends_based:
+            raise ValueError("trends_task_type_must_match_actual_trends_origin")
         return self
 
 
@@ -989,6 +1006,11 @@ def _record_scheduled_import_origin(
             "task_type": request.task_type,
             "task_id": request.task_id,
             "occurrence_id": request.occurrence_id,
+            "occurrence_id_source": request.occurrence_id_source or "legacy_self_reported",
+            "scheduler_occurrence_id": request.scheduler_occurrence_id,
+            "automation_id": request.automation_id,
+            "scheduled_slot": request.scheduled_slot.isoformat() if request.scheduled_slot else None,
+            "occurrence_timezone": "Asia/Seoul" if request.occurrence_id_source == "project_derived_kst_slot" else None,
             "executed_at": request.executed_at.isoformat(),
             "market_date": request.market_date.isoformat() if request.market_date else None,
             "target_language_code": request.target_language_code,
