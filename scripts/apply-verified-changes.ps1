@@ -133,6 +133,7 @@ foreach ($path in $paths) {
   if ($path -match '^services/api/woori/') {
     if ($path -match '^services/api/woori/(main|.*_routes|operations_dashboard)\.py$') { [void]$affected.Add('api'); continue }
     [void]$affected.Add('api')
+    if ($path -match '^services/api/woori/(publication_worker|blogger_writes|publications|trends_publication)\.py$') { [void]$affected.Add('publication_worker'); continue }
     if ($path -match '(worker|pipeline|collection|topics|scheduled_import|trends|research|source|content|evidence)') { [void]$affected.Add('research_worker') }
     elseif ($path -match '(publication|blogger|post_publication)') { [void]$affected.Add('publication_worker') }
     else { [void]$affected.Add('research_worker'); [void]$affected.Add('publication_worker') }

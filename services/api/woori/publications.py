@@ -140,7 +140,7 @@ class TrendsAutoPolicyInput(BaseModel):
     blog_id: UUID
     enabled: bool
     allowed_geos: list[str] = Field(default_factory=list, max_length=11)
-    daily_limit: int = Field(default=3, ge=1, le=10)
+    daily_limit: int | None = Field(default=None, ge=1, le=10)
     actor_label: str = Field(min_length=2, max_length=120)
     reason: str = Field(min_length=10, max_length=2000)
     idempotency_key: str = Field(min_length=16, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")

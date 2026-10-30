@@ -55,6 +55,16 @@ def test_cn_cannot_be_added_as_unregistered_trends_region() -> None:
         )
 
 
+def test_trends_auto_policy_defaults_to_unlimited_and_accepts_none() -> None:
+    request = TrendsAutoPolicyInput(
+        blog_id=uuid4(), enabled=True, allowed_geos=["KR"], daily_limit=None,
+        actor_label="operator", reason="P092 explicitly removes Trends volume caps",
+        idempotency_key="trends-policy-unlimited-001",
+        confirmation="ENABLE TRENDS AUTO PUBLICATION",
+    )
+    assert request.daily_limit is None
+
+
 def test_trends_policy_needs_separate_public_write_approval(monkeypatch) -> None:
     monkeypatch.setattr(external_policy, "_blogger_policy_approval", lambda: {"scope": ["blogger_read"]})
     monkeypatch.setattr(external_policy, "_blogger_public_publish_approval", lambda: None)

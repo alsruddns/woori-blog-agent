@@ -6,7 +6,7 @@ type Policy = {
   id: string;
   enabled: boolean;
   allowed_geos: string[];
-  daily_limit: number;
+  daily_limit: number | null;
   created_at: string;
 };
 type Blog = {
@@ -18,7 +18,7 @@ type Blog = {
   policy: Policy | null;
 };
 type State = { policies: Blog[]; supported_geographies: string[] };
-type Draft = { enabled: boolean; geos: string[]; daily_limit: number; reason: string; confirmation: string };
+type Draft = { enabled: boolean; geos: string[]; reason: string; confirmation: string };
 
 export default function TrendsPublicationSettings() {
   const [state, setState] = useState<State | null>(null);
@@ -35,7 +35,6 @@ export default function TrendsPublicationSettings() {
     setDrafts(Object.fromEntries(data.policies.map(blog => [blog.id, {
       enabled: blog.policy?.enabled ?? false,
       geos: blog.policy?.allowed_geos ?? [],
-      daily_limit: blog.policy?.daily_limit ?? 3,
       reason: "",
       confirmation: "",
     }])));
@@ -62,7 +61,7 @@ export default function TrendsPublicationSettings() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           blog_id: blog.id, enabled: draft.enabled,
-          allowed_geos: draft.geos, daily_limit: draft.daily_limit,
+          allowed_geos: draft.geos, daily_limit: null,
           actor_label: actor, reason: draft.reason,
           confirmation, idempotency_key: crypto.randomUUID(),
         }),
@@ -96,13 +95,13 @@ export default function TrendsPublicationSettings() {
             geos: event.target.checked ? [...draft.geos, geo] : draft.geos.filter(value => value !== geo), confirmation: "",
           })} />{geo}
         </label>)}</div>
-        <label>일일 발행 상한<input type="number" min={1} max={10} value={draft.daily_limit} onChange={event => patch(blog.id, { daily_limit: Number(event.target.value), confirmation: "" })} /></label>
+        <p>발행량 상한: 무제한 (검증·중복 방지·최소 발행 간격은 계속 적용)</p>
         <label>변경 사유<input minLength={10} maxLength={2000} value={draft.reason} onChange={event => patch(blog.id, { reason: event.target.value, confirmation: "" })} /></label>
         <label>명시적 확인 문구<input value={draft.confirmation} placeholder={confirmation} onChange={event => patch(blog.id, { confirmation: event.target.value })} /></label>
         <button type="button" className="button button-secondary" disabled={busy !== null || !blog.active || actor.trim().length < 2 || draft.reason.trim().length < 10 || draft.confirmation !== confirmation || (draft.enabled && (!draft.geos.length || !blog.mapped_geos.length))} onClick={() => void save(blog)}>
           {busy === blog.id ? "저장 중…" : "정책 변경 기록"}
         </button>
-        {blog.policy && <small>마지막 변경: {new Intl.DateTimeFormat("ko-KR", { dateStyle: "short", timeStyle: "short", timeZone: "Asia/Seoul" }).format(new Date(blog.policy.created_at))} · 상한 {blog.policy.daily_limit}건</small>}
+        {blog.policy && <small>마지막 변경: {new Intl.DateTimeFormat("ko-KR", { dateStyle: "short", timeStyle: "short", timeZone: "Asia/Seoul" }).format(new Date(blog.policy.created_at))} · 발행량 상한 {blog.policy.daily_limit === null ? "무제한" : `${blog.policy.daily_limit}건`}</small>}
       </fieldset>;
     })}
     {message && <p role="status">{message}</p>}

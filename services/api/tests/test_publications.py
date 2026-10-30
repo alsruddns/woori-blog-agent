@@ -83,6 +83,12 @@ def test_publication_worker_execution_mode_tracks_live_lanes() -> None:
     ) == "operations-scheduled-auto-and-manual-and-trends"
 
 
+def test_volume_caps_are_removed_only_for_trends_auto_lane() -> None:
+    assert not publication_worker.publication_count_limits_apply("trends_auto")
+    assert publication_worker.publication_count_limits_apply("scheduled_auto")
+    assert publication_worker.publication_count_limits_apply("manual")
+
+
 def test_same_event_dedup_requires_identical_body() -> None:
     candidate = "FOMC held the target range.\n[source:statement]"
     assert _has_identical_body(candidate, [candidate])

@@ -194,7 +194,7 @@ class BloggerLivePublisher:
 
     @staticmethod
     @contextmanager
-    def _account_write_guard(target: dict[str, Any]) -> Iterator[None]:
+    def _account_write_guard(target: dict[str, Any], *, enforce_volume_caps: bool = True) -> Iterator[None]:
         """Serialize all writes for the selected OAuth grant and enforce durable spacing."""
         connection_id = str(target["oauth_connection_id"])
         blog_id = str(target["blog_id"])
@@ -224,9 +224,10 @@ class BloggerLivePublisher:
                     raise WriteIntervalWait("account_minimum_interval_not_elapsed", interval_deadline(limits["account_last"], limits["blog_last"], datetime.now(UTC)))
                 if limits["blog_last"] and limits["blog_last"] > datetime.now(UTC) - timedelta(minutes=5):
                     raise WriteIntervalWait("blog_minimum_interval_not_elapsed", interval_deadline(limits["account_last"], limits["blog_last"], datetime.now(UTC)))
-                hourly_limit = LANGUAGE_HOURLY_LIMITS.get(language, 0)
-                if not hourly_limit or int(limits["blog_hourly"] or 0) >= hourly_limit:
-                    raise GoogleFailure("blog_hourly_limit_reached")
+                if enforce_volume_caps:
+                    hourly_limit = LANGUAGE_HOURLY_LIMITS.get(language, 0)
+                    if not hourly_limit or int(limits["blog_hourly"] or 0) >= hourly_limit:
+                        raise GoogleFailure("blog_hourly_limit_reached")
                 yield
             finally:
                 conn.execute(
@@ -269,7 +270,7 @@ class BloggerLivePublisher:
 
     def create_draft(
         self, key: str, blog_record_id: UUID, title: str, html: str,
-        labels: list[str] | None = None,
+        labels: list[str] | None = None, *, enforce_volume_caps: bool = True,
     ) -> dict[str, Any]:
         target = self._target(blog_record_id)
         if not title.strip() or not html.strip() or len(title) > 300 or len(html) > 200_000:
@@ -283,7 +284,9 @@ class BloggerLivePublisher:
         previous = self._existing(key, "create_draft", fingerprint)
         if previous is not None:
             return previous
-        with self._account_write_guard(target):
+        guard = (self._account_write_guard(target) if enforce_volume_caps else
+                 self._account_write_guard(target, enforce_volume_caps=False))
+        with guard:
             previous = self._claim(
                 key, "create_draft", fingerprint, blog_id=target["blog_id"],
                 connection_id=target["oauth_connection_id"],
@@ -342,7 +345,7 @@ class BloggerLivePublisher:
 
     def publish_draft(
         self, key: str, blog_record_id: UUID, post_id: str, *,
-        source_draft_key: str,
+        source_draft_key: str, enforce_volume_caps: bool = True,
     ) -> dict[str, Any]:
         target = self._target(blog_record_id)
         post_id = numeric_id(post_id)
@@ -359,7 +362,9 @@ class BloggerLivePublisher:
         previous = self._existing(key, "publish_draft", fingerprint)
         if previous is not None:
             return previous
-        with self._account_write_guard(target):
+        guard = (self._account_write_guard(target) if enforce_volume_caps else
+                 self._account_write_guard(target, enforce_volume_caps=False))
+        with guard:
             previous = self._claim(
                 key, "publish_draft", fingerprint, blog_id=target["blog_id"],
                 connection_id=target["oauth_connection_id"],

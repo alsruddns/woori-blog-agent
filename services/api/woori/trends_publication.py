@@ -89,7 +89,8 @@ def record_policy(conn: Any, request: Any) -> dict[str, Any]:
     ).fetchone()
     if prior:
         if (bool(prior["enabled"]) != request.enabled
-                or sorted(prior["allowed_geos"]) != geos or int(prior["daily_limit"]) != request.daily_limit):
+                or sorted(prior["allowed_geos"]) != geos
+                or prior["daily_limit"] != request.daily_limit):
             raise HTTPException(409, "Idempotency key conflicts with an earlier Trends policy event")
         return {"event_id": prior["id"], "duplicate": True, "enabled": request.enabled}
     previous = conn.execute(
@@ -372,7 +373,11 @@ def enqueue_trends_auto_jobs() -> dict[str, int]:
                          AND scheduled_at>=date_trunc('day',now() AT TIME ZONE 'Asia/Seoul') AT TIME ZONE 'Asia/Seoul') AS n""",
                     (blog_id, blog_id),
                 ).fetchone()
-                if not count or int(count["n"]) >= int(policy["daily_limit"]):
+                if not count:
+                    held += 1
+                    _record_hold(conn, item, blog_id, ["trends_publication_count_unavailable"])
+                    continue
+                if policy["daily_limit"] is not None and int(count["n"]) >= int(policy["daily_limit"]):
                     held += 1
                     _record_hold(conn, item, blog_id, ["trends_daily_publication_limit"])
                     continue

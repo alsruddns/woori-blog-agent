@@ -84,6 +84,11 @@ def execution_mode(*, private_drafts: bool = False, live: bool = False,
     return "operations-mock-only"
 
 
+def publication_count_limits_apply(lane: str) -> bool:
+    """Trends Auto has no volume ceiling; other publication lanes keep theirs."""
+    return lane != "trends_auto"
+
+
 def _append_audit(conn: Any, event_type: str, payload: dict[str, Any]) -> None:
     conn.execute(
         "INSERT INTO audit_events(event_type,payload) VALUES (%s,%s)",
@@ -879,9 +884,12 @@ def process_next_live_job(
             return {"job_id": str(job_id), "status": "blocked", "reason": "publication_blog_missing",
                     "live_write_performed": False}
         language = str(blog["language_code"])
-        today = __import__("datetime").datetime.now(ZoneInfo("Asia/Seoul")).date()
-        day_start, day_end = kst_day_bounds(today)
-        daily = conn.execute(
+        # Trends Auto has no application daily/hourly count cap. Spacing and
+        # all eligibility, duplicate, emergency-stop, and remote gates remain.
+        if publication_count_limits_apply(lane):
+            today = __import__("datetime").datetime.now(ZoneInfo("Asia/Seoul")).date()
+            day_start, day_end = kst_day_bounds(today)
+            daily = conn.execute(
             """WITH actual AS (
               SELECT b.language_code,count(*)::int AS n FROM publishing_records r
               JOIN blogger_blogs b ON b.id=r.blog_id WHERE r.published_at>=%s AND r.published_at<%s
@@ -897,34 +905,34 @@ def process_next_live_job(
               COALESCE((SELECT n FROM actual WHERE language_code=%s),0)::int AS lang_actual,
               COALESCE((SELECT n FROM reserved WHERE language_code=%s),0)::int AS lang_reserved""",
             (day_start, day_end, day_start, day_end, language, language),
-        ).fetchone()
-        if daily is None:
-            return {"job_id": str(job_id), "status": "blocked", "reason": "daily_publication_count_unavailable",
-                    "live_write_performed": False}
-        language_cap = LANGUAGE_DAILY_LIMITS.get(language)
-        if (int(daily["actual_total"])+int(daily["reserved_total"])>GLOBAL_DAILY_PUBLISH_LIMIT
-                or (language_cap is not None and int(daily["lang_actual"])+int(daily["lang_reserved"])>language_cap)):
-            return {"job_id": str(job_id), "status": "deferred", "reason": "daily_publication_limit",
-                    "live_write_performed": False}
-        hourly_row = conn.execute(
+            ).fetchone()
+            if daily is None:
+                return {"job_id": str(job_id), "status": "blocked", "reason": "daily_publication_count_unavailable",
+                        "live_write_performed": False}
+            language_cap = LANGUAGE_DAILY_LIMITS.get(language)
+            if (int(daily["actual_total"])+int(daily["reserved_total"])>GLOBAL_DAILY_PUBLISH_LIMIT
+                    or (language_cap is not None and int(daily["lang_actual"])+int(daily["lang_reserved"])>language_cap)):
+                return {"job_id": str(job_id), "status": "deferred", "reason": "daily_publication_limit",
+                        "live_write_performed": False}
+            hourly_row = conn.execute(
             """SELECT count(*)::int AS actual FROM publishing_records
             WHERE blog_id=%s AND published_at>=now()-interval '1 hour'""", (blog_id,)
-        ).fetchone()
-        hourly_reserved_row = conn.execute(
+            ).fetchone()
+            hourly_reserved_row = conn.execute(
             """SELECT count(*)::int AS reserved FROM publishing_jobs
             WHERE blog_id=%s AND NOT simulation_only AND adapter_type='blogger_live'
               AND status IN ('queued','running','uncertain') AND scheduled_at>=now()-interval '1 hour'""",
             (blog_id,),
-        ).fetchone()
-        if hourly_row is None or hourly_reserved_row is None:
-            return {"job_id": str(job_id), "status": "blocked", "reason": "hourly_publication_count_unavailable",
-                    "live_write_performed": False}
-        hourly = hourly_row["actual"]
-        hourly_reserved = hourly_reserved_row["reserved"]
-        hourly_cap = LANGUAGE_HOURLY_LIMITS.get(language, 0)
-        if int(hourly)+int(hourly_reserved)>hourly_cap:
-            return {"job_id": str(job_id), "status": "deferred", "reason": "hourly_publication_limit",
-                    "live_write_performed": False}
+            ).fetchone()
+            if hourly_row is None or hourly_reserved_row is None:
+                return {"job_id": str(job_id), "status": "blocked", "reason": "hourly_publication_count_unavailable",
+                        "live_write_performed": False}
+            hourly = hourly_row["actual"]
+            hourly_reserved = hourly_reserved_row["reserved"]
+            hourly_cap = LANGUAGE_HOURLY_LIMITS.get(language, 0)
+            if int(hourly)+int(hourly_reserved)>hourly_cap:
+                return {"job_id": str(job_id), "status": "deferred", "reason": "hourly_publication_limit",
+                        "live_write_performed": False}
 
         attempt_no = int(job["attempts"])+1
         claimed = conn.execute(
@@ -998,6 +1006,7 @@ def process_next_live_job(
                 str(candidate.get("editorial_title") or candidate["title"]),
                 str(candidate["html_body"]),
                 list(candidate.get("blogger_labels") or []),
+                enforce_volume_caps=publication_count_limits_apply(lane),
             )
             with connection() as conn:
                 conn.execute(
@@ -1064,7 +1073,7 @@ def process_next_live_job(
             with external_policy.trends_publication_context(str(blog_id)):
                 result = publisher.publish_draft(
                     write_key, blog_id, str(claimed["remote_post_id"]),
-                    source_draft_key=source_draft_key,
+                    source_draft_key=source_draft_key, enforce_volume_caps=False,
                 )
         elif lane == "manual":
             assert manual_approval is not None

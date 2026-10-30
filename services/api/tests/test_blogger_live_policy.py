@@ -379,6 +379,43 @@ def test_live_publish_requires_remote_live_readback_and_uses_same_post(monkeypat
     assert sum(method == "GET" and path.endswith("/posts/456") for method, path in calls) == 2
 
 
+def test_trends_can_bypass_volume_cap_but_normal_lane_keeps_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    from contextlib import contextmanager
+
+    from woori import blogger_writes
+
+    class Result:
+        def __init__(self, row: dict[str, object]) -> None:
+            self.row = row
+
+        def fetchone(self) -> dict[str, object]:
+            return self.row
+
+    class FakeConnection:
+        def execute(self, query: str, _params: object = None) -> Result:
+            if "pg_try_advisory_lock" in query:
+                return Result({"acquired": True})
+            if "SELECT max(a.created_at)" in query:
+                return Result({"account_last": None, "blog_last": None, "blog_hourly": 500})
+            return Result({"unlocked": True})
+
+    @contextmanager
+    def fake_connection():
+        yield FakeConnection()
+
+    monkeypatch.setattr(blogger_writes, "connection", fake_connection)
+    target = {"oauth_connection_id": "grant", "blog_id": "blog", "language_code": "en"}
+    with blogger_writes.BloggerLivePublisher._account_write_guard(
+        target, enforce_volume_caps=False
+    ):
+        pass
+    with (
+        pytest.raises(blogger_writes.GoogleFailure, match="blog_hourly_limit_reached"),
+        blogger_writes.BloggerLivePublisher._account_write_guard(target),
+    ):
+        pass
+
+
 def test_policy_approval_requires_exact_scoped_append_only_record(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
