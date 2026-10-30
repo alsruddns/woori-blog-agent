@@ -23,13 +23,15 @@
 - Updated `scripts/start-services.ps1`, `scripts/start.ps1`, `scripts/start-publication-worker.ps1`, `scripts/server-common.ps1`, `scripts/run-api.ps1`, `scripts/run-dashboard.ps1`, and `scripts/stop.ps1`.
 - Added `scripts/api-service.py`, `scripts/dashboard-service.js`, `scripts/stop-services.ps1`, `scripts/restart-services.ps1`, `scripts/shortcut-action.ps1`, and `scripts/create-desktop-shortcuts.ps1`.
 - Added lifecycle regression coverage in `scripts/tests/service-lifecycle.Tests.ps1`.
+- Updated `scripts/tests/stop.Tests.ps1` so test lifecycle calls cannot append fixture PID events to the operational lifecycle log.
 - Added this development record.
 
 ## Verification
 
-- PowerShell parser, Node syntax check, Python compilation, 14 Pester lifecycle tests, `git diff --check`, and an isolated Production Build passed. The source-reflection script identified older unreflected service changes and would have restarted active Workers; it was stopped before any stop request. No current service process was changed.
+- PowerShell parser, Node syntax check, Python compilation, 27 Pester lifecycle tests, `git diff --check`, isolated Python wheel verification, and isolated Production Build passed. Runtime source validation recorded the current commit, then the explicit restart prompt was declined. No current service process was changed.
 - A hidden whole-start shortcut invocation against already healthy services verified exact process ownership, HTTP health, fresh Worker heartbeats, and idempotent no-duplicate behavior.
 - Whole-stop/restart are validated by tests and ownership-aware code inspection, not run against live services during this task.
+- Test fixtures previously emitted four synthetic API PID events into the local lifecycle log. They are preserved; a later `test_log_fixture_correction` event identifies them as test-only records. New test runs leave that log unchanged.
 - The existing login task's name, enabled state, logon trigger, and project action are checked after changes.
 - Runtime state, shortcut paths, actual service PIDs/mode, and logs are recorded in the completion report.
 

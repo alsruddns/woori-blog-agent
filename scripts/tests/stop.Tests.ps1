@@ -3,6 +3,7 @@ function Initialize-StopTestContext {
   $script:Root = $script:ProjectRoot
   $script:Python = Join-Path $script:Root '.venv\Scripts\python.exe'
   $script:Started = '2026-10-29T03:00:00.0000000Z'
+  Mock Write-LifecycleLog { }
 }
 
 function Initialize-ManagedApiFixture {
