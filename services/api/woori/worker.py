@@ -14,7 +14,15 @@ from urllib.parse import urlparse
 import psycopg
 from psycopg.types.json import Jsonb
 
-from . import collection, keyword_jobs, pipeline, scheduled_import_inbox, topics, trend_editorial, trends
+from . import (
+    collection,
+    keyword_jobs,
+    pipeline,
+    scheduled_import_inbox,
+    topics,
+    trend_editorial,
+    trends,
+)
 from .config import settings
 from .db import connection
 
@@ -355,6 +363,8 @@ def main() -> None:
                     # Exact-query topic grouping and evidence scoring are local-only;
                     # it never creates a manuscript or publication by itself.
                     collect_trends_and_build_topics()
+                    trend_editorial.expire_pending()
+                    trend_editorial.queue_selected()
                     trend_editorial.dispatch()
                     collection.schedule_tick()
                     collection.tick()

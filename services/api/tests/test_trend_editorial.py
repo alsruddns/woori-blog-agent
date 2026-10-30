@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -23,7 +23,11 @@ def bind(lab,monkeypatch):
 
 
 def observation(conn,query,geo='KR',payload=None):
-    run=conn.execute("INSERT INTO trend_collection_runs(provider,geo,status,item_count) VALUES('google_trends_rss',%s,'succeeded',1) RETURNING id",(geo,)).fetchone()['id']
+    slot=conn.execute('SELECT run_id FROM trend_collection_slots WHERE geo=%s AND slot_at=%s',(geo,editorial.current_slot())).fetchone()
+    if slot:run=slot['run_id']
+    else:
+        run=conn.execute("INSERT INTO trend_collection_runs(provider,geo,status,item_count) VALUES('google_trends_rss',%s,'succeeded',1) RETURNING id",(geo,)).fetchone()['id']
+        conn.execute("INSERT INTO trend_collection_slots(geo,slot_at,run_id,result) VALUES(%s,%s,%s,'{}')",(geo,editorial.current_slot(),run))
     return conn.execute("""INSERT INTO trend_observations(run_id,geo,platform,query,source_url,response_sha256,raw_payload)
         VALUES(%s,%s,'google_trends',%s,'https://trends.google.com/trending/rss',%s,%s) RETURNING id""",
         (run,geo,query,'a'*64,Jsonb(payload or {}))).fetchone()['id']
@@ -93,10 +97,45 @@ def test_same_slot_never_fetches_success_again(lab,monkeypatch):
     assert trends.choose_hourly_geo({}, {}, None,reboot,allow_late=True)[0] is not None
 
 
+def test_old_slot_candidate_expires_without_deleting_observation(lab,monkeypatch):
+    conn,api,h=bind(lab,monkeypatch)
+    name='software launch '+uuid4().hex
+    observed=observation(conn,name,payload={'news_items':[{'title':name,'url':'https://example.gov/news'}]})
+    editorial.reconcile()
+    detail=api.get('/admin/research/trend-editorial/'+str(observed),headers=h).json()
+    assert detail['history'][0]['state']=='selected'
+    prior_slot=editorial.current_slot()
+    assert editorial.slot_is_current(prior_slot.astimezone(trends.SCHEDULE_TIMEZONE).isoformat())
+    monkeypatch.setattr(editorial,'current_slot',lambda:prior_slot+timedelta(hours=1))
+    editorial.reconcile()
+    result=api.get('/admin/research/trend-editorial/'+str(observed),headers=h).json()
+    assert result['history'][0]['reason_code']=='expired_collection_slot'
+    assert result['history'][0]['state']=='discarded'
+    assert conn.execute('SELECT count(*) n FROM trend_observations WHERE id=%s',(observed,)).fetchone()['n']==1
+    assert not editorial.slot_is_current(prior_slot.isoformat())
+
+
+def test_selected_current_slot_queues_once_for_unambiguous_blog(lab,monkeypatch):
+    conn,api,h=bind(lab,monkeypatch)
+    name='software launch '+uuid4().hex
+    observed=observation(conn,name,payload={'news_items':[{'title':name,'url':'https://example.gov/news'}]})
+    editorial.reconcile()
+    topic=api.get('/admin/research/trend-editorial/'+str(observed),headers=h).json()['topic_id']
+    profile=conn.execute("INSERT INTO language_profiles(language_code,target_country) VALUES('ko','KR') ON CONFLICT(language_code,target_country) DO UPDATE SET search_intent=language_profiles.search_intent RETURNING id").fetchone()['id']
+    blog=conn.execute("INSERT INTO blogger_blogs(language_code,url,display_name,blog_id) VALUES('ko',%s,'Slot fixture','1234567892') RETURNING id",('https://slot-'+uuid4().hex[:8]+'.blogspot.com',)).fetchone()['id']
+    conn.execute("INSERT INTO publishing_policies(language_code,blog_id,profile_id,active) VALUES('ko',%s,%s,false)",(blog,profile))
+    monkeypatch.setattr(keyword_jobs,'targets',lambda _:[{'id':blog,'target_country':'KR','language_code':'ko'}])
+    assert editorial.queue_selected()['created']==1
+    assert editorial.queue_selected()['created']==0
+    row=conn.execute('SELECT * FROM trend_generation_requests WHERE topic_id=%s',(topic,)).fetchone()
+    assert editorial.slot_is_current(row['contract']['collection_slot'])
+    assert editorial.dispatch()['created']==1
+
+
 def test_trends_queue_dispatch_has_distinct_provenance_and_no_publication(lab,monkeypatch):
     conn,api,h=bind(lab,monkeypatch)
     name='software technology '+uuid4().hex
-    observation_id=observation(conn,name,payload={'news_items':[{'title':name+' news context'}]})
+    observation_id=observation(conn,name,payload={'news_items':[{'title':name+' news context','url':'https://example.gov/news'}]})
     editorial.reconcile()
     topic=api.get('/admin/research/trend-editorial/'+str(observation_id),headers=h).json()['topic_id']
     profile=conn.execute("INSERT INTO language_profiles(language_code,target_country) VALUES('ko','KR') ON CONFLICT(language_code,target_country) DO UPDATE SET search_intent=language_profiles.search_intent RETURNING id").fetchone()['id']
@@ -116,3 +155,10 @@ def test_trends_queue_dispatch_has_distinct_provenance_and_no_publication(lab,mo
     retry=api.post(f"/admin/keyword-authoring/{job['id']}/retry",headers=h,json={'request_key':str(uuid4())})
     assert retry.status_code==409 and retry.json()['detail']=='trend_retry_requires_saved_result_or_reconciliation'
     assert conn.execute('SELECT count(*) n FROM codex_authoring_jobs WHERE parent_job_id=%s',(job['id'],)).fetchone()['n']==0
+    conn.execute("UPDATE codex_authoring_jobs SET state='queued' WHERE id=%s",(job['id'],))
+    old_slot=editorial.current_slot()
+    monkeypatch.setattr(editorial,'current_slot',lambda:old_slot+timedelta(hours=1))
+    assert editorial.expire_pending()==1
+    expired=conn.execute('SELECT state,error_code FROM codex_authoring_jobs WHERE id=%s',(job['id'],)).fetchone()
+    assert expired['state']=='cancelled' and expired['error_code']=='expired_collection_slot'
+    assert conn.execute('SELECT count(*) n FROM trend_observations WHERE id=%s',(observation_id,)).fetchone()['n']==1

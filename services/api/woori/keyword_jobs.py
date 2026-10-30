@@ -337,6 +337,19 @@ def run_one() -> None:
                     update(conn,old['id'],'failed',error_code='worker_interrupted',completed_at=datetime.now(UTC))
                 job=conn.execute("SELECT * FROM codex_authoring_jobs WHERE state='queued' AND job_type IN ('user_keyword','google_trends') ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1").fetchone()
                 if not job:return
+                if job['job_type']=='google_trends' and not job['execution_id']:
+                    from .trend_editorial import current_observations, slot_is_current, transition
+                    request=conn.execute('SELECT * FROM trend_generation_requests WHERE id=%s FOR UPDATE',(job['trend_request_id'],)).fetchone()
+                    if (not request or request['state']!='generating' or
+                        not slot_is_current(request['contract'].get('collection_slot')) or
+                        not current_observations(conn,request['topic_id'])):
+                        update(conn,job['id'],'cancelled',error_code='expired_collection_slot',completed_at=datetime.now(UTC))
+                        if request:
+                            conn.execute("UPDATE trend_generation_requests SET state='cancelled',updated_at=now() WHERE id=%s",(request['id'],))
+                            transition(conn,request['topic_id'],'discarded','expired_collection_slot',
+                                '수집 회차가 끝나 실행되지 않은 작성 요청을 만료했습니다.',
+                                'system:trend-slot',evidence={'authoring_job_id':str(job['id'])})
+                        return
                 if (job.get('evidence') or {}).get('resume_saved_output'):update(conn,job['id'],'validating')
                 else:update(conn,job['id'],'researching',started_at=datetime.now(UTC))
             generate(dict(job))

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Literal
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
@@ -18,6 +18,27 @@ from .editorial_taxonomy import EDITORIAL_CATEGORIES
 router = APIRouter(prefix='/admin/research/trend-editorial')
 STATES = {'collected','pending_classification','selected','review_candidate','discarded',
           'generation_queued','generating','imported','published','failed'}
+
+
+def current_slot() -> datetime:
+    """The current KST hour, including when the computer missed earlier sweeps."""
+    return datetime.now(trends.SCHEDULE_TIMEZONE).replace(minute=0,second=0,microsecond=0).astimezone(UTC)
+
+
+def slot_is_current(value:Any) -> bool:
+    try:
+        parsed=datetime.fromisoformat(str(value))
+        return parsed.tzinfo is not None and parsed.utcoffset() is not None and parsed.astimezone(UTC)==current_slot()
+    except (ValueError,TypeError):
+        return False
+
+
+def current_observations(conn:Any,topic_id:UUID) -> list[dict[str,Any]]:
+    return [dict(row) for row in conn.execute('''SELECT o.*,s.slot_at FROM trend_topic_memberships m
+        JOIN trend_observations o ON o.id=m.observation_id
+        JOIN trend_collection_slots s ON s.run_id=o.run_id AND s.geo=o.geo
+        WHERE m.topic_id=%s AND s.slot_at=%s ORDER BY o.collected_at DESC LIMIT 100''',
+        (topic_id,current_slot())).fetchall()]
 
 
 def latest(conn: Any, topic_id: UUID) -> dict[str, Any] | None:
@@ -66,6 +87,19 @@ def classify(query: str, payload: dict[str, Any] | None) -> tuple[str,str,str | 
 def reconcile(limit: int = 200) -> dict[str,int]:
     """Bounded backlog, existing exact-query groups; no lexical cross-language auto merges."""
     with connection() as conn:
+        # Expire only candidates which have not started authoring. Never delete
+        # observations or overwrite prior editorial/audit records.
+        stale=conn.execute('''SELECT t.id,e.category FROM trend_topics t
+            JOIN LATERAL(SELECT * FROM trend_editorial_events WHERE topic_id=t.id ORDER BY id DESC LIMIT 1)e ON true
+            WHERE e.state IN ('selected','review_candidate','pending_classification','collected')
+              AND (e.created_at<%s OR NOT EXISTS(SELECT 1 FROM trend_topic_memberships m JOIN trend_observations o ON o.id=m.observation_id
+                JOIN trend_collection_slots s ON s.run_id=o.run_id AND s.geo=o.geo
+                WHERE m.topic_id=t.id AND s.slot_at=%s))
+            ORDER BY e.id LIMIT %s''',(current_slot(),current_slot(),limit)).fetchall()
+        for item in stale:
+            transition(conn,item['id'],'discarded','expired_collection_slot',
+                '이전 회차의 미처리 후보가 만료되었습니다. 원본 관측과 이력은 보존합니다.',
+                'system:trend-slot',category=item['category'],evidence={'current_slot':current_slot().isoformat()})
         rows=conn.execute('''SELECT o.* FROM trend_observations o
             WHERE NOT EXISTS(SELECT 1 FROM trend_topic_memberships m WHERE m.observation_id=o.id)
             ORDER BY collected_at DESC,id LIMIT %s''',(limit,)).fetchall()
@@ -82,12 +116,14 @@ def reconcile(limit: int = 200) -> dict[str,int]:
                 (topic_id,row['id']))
         unclassified=conn.execute('''SELECT t.*,o.raw_payload FROM trend_topics t
             JOIN LATERAL(SELECT o.raw_payload,o.collected_at FROM trend_topic_memberships m JOIN trend_observations o ON o.id=m.observation_id
-              WHERE m.topic_id=t.id ORDER BY o.collected_at DESC LIMIT 1)o ON true
-            LEFT JOIN LATERAL(SELECT id,state,actor,created_at FROM trend_editorial_events e
+              JOIN trend_collection_slots s ON s.run_id=o.run_id AND s.geo=o.geo
+              WHERE m.topic_id=t.id AND s.slot_at=%s ORDER BY o.collected_at DESC LIMIT 1)o ON true
+            LEFT JOIN LATERAL(SELECT id,state,actor,created_at,reason_code FROM trend_editorial_events e
               WHERE e.topic_id=t.id ORDER BY id DESC LIMIT 1)e ON true
             WHERE e.id IS NULL OR (e.state='review_candidate' AND e.actor='system:trend-editorial-v1'
               AND o.collected_at>e.created_at AND o.raw_payload IS NOT NULL)
-            ORDER BY t.created_at DESC LIMIT %s''',(limit,)).fetchall()
+              OR (e.state='discarded' AND e.reason_code='expired_collection_slot')
+            ORDER BY t.created_at DESC LIMIT %s''',(current_slot(),limit)).fetchall()
         counts:dict[str,int]={}
         for topic in unclassified:
             state,code,category=classify(topic['representative_query'],topic['raw_payload'])
@@ -169,25 +205,33 @@ def queue_topic(conn:Any,topic_id:UUID,blog_id:UUID) -> dict[str,Any]:
     from .keyword_jobs import targets
     current=latest(conn,topic_id)
     if not current or current['state'] not in {'selected','generation_queued'}:raise HTTPException(409,'topic_not_selected')
+    if current['created_at']<current_slot():raise HTTPException(409,'expired_collection_slot')
     topic=conn.execute('SELECT * FROM trend_topics WHERE id=%s',(topic_id,)).fetchone()
     blog=next((b for b in targets(conn) if b['id']==blog_id),None)
     if not blog or blog['target_country']!=topic['representative_geo']:
         raise HTTPException(409,'exact_region_blog_policy_required')
     category=current['category']
     if category not in {c['slug'] for c in EDITORIAL_CATEGORIES}:raise HTTPException(409,'editorial_category_required')
-    observations=conn.execute('''SELECT o.* FROM trend_topic_memberships m JOIN trend_observations o ON o.id=m.observation_id
-        WHERE m.topic_id=%s ORDER BY o.collected_at DESC LIMIT 100''',(topic_id,)).fetchall()
-    if not observations:raise HTTPException(409,'topic_observation_missing')
+    observations=current_observations(conn,topic_id)
+    if not observations:raise HTTPException(409,'expired_collection_slot')
     newest=observations[0]
+    news=(newest['raw_payload'] or {}).get('news_items') or []
+    if not any(str(n.get('url') or '').startswith('https://') for n in news if isinstance(n,dict)):
+        raise HTTPException(409,'news_source_url_required')
     # Missing event date is deliberately a review boundary, not an invented event ID.
     event_stamp=newest['trend_started_at'] or newest['collected_at'].astimezone(trends.SCHEDULE_TIMEZONE).date()
     duplicate=hashlib.sha256(f"trend:{topic_id}:{event_stamp}:{blog_id}".encode()).hexdigest()
+    previous=conn.execute('''SELECT id FROM trend_generation_requests WHERE topic_id=%s
+        AND contract->>'target_blog_id'=%s AND duplicate_key<>%s LIMIT 1''',
+        (topic_id,str(blog_id),duplicate)).fetchone()
+    if previous:raise HTTPException(409,'topic_already_requested_for_blog')
     contract={'version':'trend-authoring/1','trend_topic_id':str(topic_id),
         'source_observation_ids':[str(o['id']) for o in observations], 'country':topic['representative_geo'],
         'source_language':topic['source_language'],'target_blog_id':str(blog_id),'target_language':blog['language_code'],
         'target_country':blog['target_country'],'query':newest['query'],'query_group':topic['normalized_key'],
         'search_volume_raw':newest['source_volume_label'],'volume_kind':'bucket_lower_bound; not internationally comparable',
-        'collected_at':newest['collected_at'].isoformat(),'selection_reason':current['reason'],
+        'collected_at':newest['collected_at'].isoformat(),'collection_slot':newest['slot_at'].isoformat(),
+        'selection_reason':current['reason'],
         'raw_material':newest['raw_payload'],'duplicate_key':duplicate,'category':category,
         'content_type':'trends_major_issue','requires_codex_evaluation':True,'remote_duplicate_status':'not_checked'}
     row=conn.execute('''INSERT INTO trend_generation_requests(topic_id,duplicate_key,contract)
@@ -207,6 +251,11 @@ def dispatch(limit:int=1) -> dict[str,int]:
             current=latest(conn,row['topic_id'])
             if not current or current['state']!='generation_queued':continue
             c=row['contract']
+            if not slot_is_current(c.get('collection_slot')) or not current_observations(conn,row['topic_id']):
+                conn.execute("UPDATE trend_generation_requests SET state='cancelled',updated_at=now() WHERE id=%s",(row['id'],))
+                transition(conn,row['topic_id'],'discarded','expired_collection_slot','이전 수집 회차의 미실행 작성 요청을 만료했습니다.',
+                           'system:trend-slot',evidence={'generation_request_id':str(row['id'])})
+                continue
             request_key=uuid5(NAMESPACE_URL,'woori-trend-codex:'+str(row['id']))
             options={'keyword':c['query'],'direction':'Research the actual event independently. Trends RSS headlines are unverified context.',
                 'category':c['category'],'article_type':'news_analysis','length':'default','research_range':'latest',
@@ -226,6 +275,52 @@ def dispatch(limit:int=1) -> dict[str,int]:
     return {'created':created}
 
 
+def queue_selected() -> dict[str,int]:
+    """Queue at most one selected topic per hour for one unambiguous local audience."""
+    from .keyword_jobs import targets
+    with connection() as conn:
+        conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('trend-selected-queue',0))")
+        recent=conn.execute('SELECT count(*) n FROM trend_generation_requests WHERE created_at>=%s',(current_slot(),)).fetchone()
+        if not recent or recent['n']>=1:return {'created':0}
+        rows=conn.execute('''SELECT t.id,t.representative_geo,e.category FROM trend_topics t
+            JOIN LATERAL(SELECT * FROM trend_editorial_events WHERE topic_id=t.id ORDER BY id DESC LIMIT 1)e ON true
+            WHERE e.state='selected' AND NOT EXISTS(SELECT 1 FROM trend_generation_requests q WHERE q.topic_id=t.id)
+            ORDER BY e.id LIMIT 100''').fetchall()
+        blogs=targets(conn)
+        for row in rows:
+            observations=current_observations(conn,row['id'])
+            candidates=[b for b in blogs if b['target_country']==row['representative_geo']]
+            if not observations or len(candidates)!=1:continue
+            news=(observations[0]['raw_payload'] or {}).get('news_items') or []
+            if not any(str(n.get('url') or '').startswith('https://') for n in news if isinstance(n,dict)):continue
+            queued=queue_topic(conn,row['id'],candidates[0]['id'])
+            transition(conn,row['id'],'generation_queued','automatic_queue',
+                '현재 회차 선정 주제를 독립 웹 조사 대상으로 전달했습니다.',
+                'system:trend-slot',category=row['category'],evidence={'generation_request_id':str(queued['id'])})
+            return {'created':1}
+        return {'created':0}
+
+
+def expire_pending(limit:int=100) -> int:
+    """Expire only queued, never-started authoring requests under row locks."""
+    from .keyword_jobs import update
+    count=0
+    with connection() as conn:
+        rows=conn.execute('''SELECT q.id,q.topic_id,q.contract,j.id job_id,j.execution_id
+            FROM trend_generation_requests q JOIN codex_authoring_jobs j ON j.id=q.authoring_job_id
+            WHERE q.state='generating' AND j.state='queued' AND j.execution_id IS NULL
+            ORDER BY q.created_at FOR UPDATE OF q,j SKIP LOCKED LIMIT %s''',(limit,)).fetchall()
+        for row in rows:
+            if slot_is_current(row['contract'].get('collection_slot')) and current_observations(conn,row['topic_id']):continue
+            update(conn,row['job_id'],'cancelled',error_code='expired_collection_slot',completed_at=datetime.now(UTC))
+            conn.execute("UPDATE trend_generation_requests SET state='cancelled',updated_at=now() WHERE id=%s",(row['id'],))
+            transition(conn,row['topic_id'],'discarded','expired_collection_slot',
+                '수집 회차가 끝나 실행되지 않은 작성 요청을 만료했습니다.',
+                'system:trend-slot',evidence={'authoring_job_id':str(row['job_id'])})
+            count+=1
+    return count
+
+
 @router.post('/topics/{topic_id}/decision')
 def decision(topic_id:UUID,request:Decision) -> dict[str,Any]:
     with connection() as conn:
@@ -235,6 +330,8 @@ def decision(topic_id:UUID,request:Decision) -> dict[str,Any]:
         conn.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',('trend-editorial:'+str(topic_id),))
         current=latest(conn,topic_id)
         if current and current['state'] in {'generating','imported','published'}:raise HTTPException(409,'existing_authoring_result_must_be_preserved')
+        if request.action in {'select','reevaluate','queue'} and not current_observations(conn,topic_id):
+            raise HTTPException(409,'expired_collection_slot')
         state={'select':'selected','discard':'discarded','reevaluate':'review_candidate','queue':'generation_queued'}[request.action]
         category=request.category or (current['category'] if current else None)
         if request.action=='queue':
