@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import datetime
 from typing import Any, Literal
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
@@ -187,6 +188,36 @@ def queue_topic(conn:Any,topic_id:UUID,blog_id:UUID) -> dict[str,Any]:
         VALUES(%s,%s,%s) ON CONFLICT(duplicate_key) DO UPDATE SET duplicate_key=EXCLUDED.duplicate_key RETURNING *''',
         (topic_id,duplicate,Jsonb(contract))).fetchone()
     return dict(row)
+
+
+def dispatch(limit:int=1) -> dict[str,int]:
+    """Convert approved research queues to distinct Codex jobs; never enqueue publication."""
+    from . import codex_runner
+    created=0
+    with connection() as conn:
+        conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('trend-codex-dispatch',0))")
+        rows=conn.execute("SELECT * FROM trend_generation_requests WHERE state='generation_queued' AND authoring_job_id IS NULL ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT %s",(limit,)).fetchall()
+        for row in rows:
+            current=latest(conn,row['topic_id'])
+            if not current or current['state']!='generation_queued':continue
+            c=row['contract']
+            request_key=uuid5(NAMESPACE_URL,'woori-trend-codex:'+str(row['id']))
+            options={'keyword':c['query'],'direction':'Research the actual event independently. Trends RSS headlines are unverified context.',
+                'category':c['category'],'article_type':'news_analysis','length':'default','research_range':'latest',
+                'trend_contract':{'trend_topic_id':c['trend_topic_id'],'observation_ids':c['source_observation_ids'],
+                    'selection_reason':c['selection_reason'],'raw_news_items':(c.get('raw_material') or {}).get('news_items',[])[:5]}}
+            digest=hashlib.sha256(json.dumps(options,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
+            job=conn.execute('''INSERT INTO codex_authoring_jobs(request_key,request_sha256,job_type,blog_id,language_code,
+              target_country,category,keyword,options,model,trend_request_id)
+              VALUES(%s,%s,'google_trends',%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(request_key) DO NOTHING RETURNING id''',
+              (request_key,digest,UUID(c['target_blog_id']),c['target_language'],c['target_country'],
+               c['category'],c['query'],Jsonb(options),codex_runner.MODEL,row['id'])).fetchone()
+            if not job:raise RuntimeError('trend_dispatch_identity_conflict')
+            conn.execute("UPDATE trend_generation_requests SET state='generating',authoring_job_id=%s,updated_at=now() WHERE id=%s",(job['id'],row['id']))
+            transition(conn,row['topic_id'],'generating','codex_authoring_queued','기존 Codex Runner 조사·원고 작성을 대기합니다.',
+                'system:trend-codex-dispatch',category=c['category'],evidence={'authoring_job_id':str(job['id'])})
+            created+=1
+    return {'created':created}
 
 
 @router.post('/topics/{topic_id}/decision')

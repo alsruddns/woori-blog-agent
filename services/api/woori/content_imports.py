@@ -133,7 +133,7 @@ class ContentImport(BaseModel):
     fact_checked_at: datetime
     seo: SeoMetadata
     blogger_labels: list[str] = Field(default_factory=list, max_length=8)
-    generation_method: Literal["manual_codex_import", "chatgpt_scheduled_export", "other_external_export"]
+    generation_method: Literal["manual_codex_import", "chatgpt_scheduled_export", "other_external_export", "codex_trends_export"]
     model_name: str | None = Field(default=None, max_length=100)
     generated_at: datetime
     created_by: str = Field(min_length=2, max_length=100)

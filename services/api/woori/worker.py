@@ -355,6 +355,7 @@ def main() -> None:
                     # Exact-query topic grouping and evidence scoring are local-only;
                     # it never creates a manuscript or publication by itself.
                     collect_trends_and_build_topics()
+                    trend_editorial.dispatch()
                     collection.schedule_tick()
                     collection.tick()
                     pipeline.schedule_tick()

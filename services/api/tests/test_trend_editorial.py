@@ -86,3 +86,24 @@ def test_same_slot_never_fetches_success_again(lab,monkeypatch):
     assert result['status']=='already_collected' and result['new_items']==0
     now=datetime(2026,10,30,2,0,tzinfo=UTC)
     assert trends.choose_hourly_geo({}, {}, None,now)[0] is not None
+
+
+def test_trends_queue_dispatch_has_distinct_provenance_and_no_publication(lab,monkeypatch):
+    conn,api,h=bind(lab,monkeypatch)
+    name='software technology '+uuid4().hex
+    observation_id=observation(conn,name,payload={'news_items':[{'title':'Research context'}]})
+    editorial.reconcile()
+    topic=api.get('/admin/research/trend-editorial/'+str(observation_id),headers=h).json()['topic_id']
+    profile=conn.execute("INSERT INTO language_profiles(language_code,target_country) VALUES('ko','KR') ON CONFLICT(language_code,target_country) DO UPDATE SET search_intent=language_profiles.search_intent RETURNING id").fetchone()['id']
+    blog=conn.execute("INSERT INTO blogger_blogs(language_code,url,display_name,blog_id) VALUES('ko',%s,'Trends test blog','1234567890') RETURNING id",('https://trend-'+uuid4().hex[:8]+'.blogspot.com',)).fetchone()['id']
+    conn.execute("INSERT INTO publishing_policies(language_code,blog_id,profile_id,active) VALUES('ko',%s,%s,false)",(blog,profile))
+    request={'request_key':str(uuid4()),'action':'queue','reason':'Exact region research queue for isolated test','blog_id':str(blog)}
+    path=f'/admin/research/trend-editorial/topics/{topic}/decision'
+    assert api.post(path,headers=h,json=request).status_code==200
+    before=conn.execute('SELECT count(*) n FROM publishing_jobs').fetchone()['n']
+    result=editorial.dispatch()
+    assert result['created']==1
+    job=conn.execute("SELECT * FROM codex_authoring_jobs WHERE job_type='google_trends' ORDER BY created_at DESC LIMIT 1").fetchone()
+    assert job['trend_request_id'] and job['state']=='queued'
+    assert editorial.dispatch()['created']==0
+    assert conn.execute('SELECT count(*) n FROM publishing_jobs').fetchone()['n']==before
