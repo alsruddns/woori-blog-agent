@@ -253,6 +253,64 @@ def test_inbox_posts_review_held_item_and_idempotent_origin_then_moves_file(tmp_
     assert (tmp_path / "incoming").is_dir() and (tmp_path / "rejected").is_dir()
 
 
+def test_inbox_imports_explicit_manual_automation_with_manual_provenance_only(tmp_path: Path) -> None:
+    ready = tmp_path / "ready"
+    ready.mkdir()
+    payload = scheduled_payload()
+    payload["schema_version"] = "woori-manual-automation-content-import/1.0"
+    payload["item"]["generation_method"] = "manual_codex_import"  # type: ignore[index]
+    payload["item"]["model_name"] = "Codex Desktop"  # type: ignore[index]
+    payload.pop("scheduled_origin")
+    manual_run_id = "codex-manual:automation-8:" + str(uuid4())
+    payload["manual_origin"] = {  # type: ignore[assignment]
+        "execution_mode": "manual", "automation_id": "automation-8",
+        "manual_run_id": manual_run_id, "session_id": str(uuid4()),
+        "turn_trigger": "automation_cron_run_now", "invoked_at": "2026-10-30T23:17:22+09:00",
+    }
+    source = ready / "automation-8-manual.ready.json"
+    source.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        if request.url.path == "/admin/research/content-imports":
+            submission = json.loads(request.content)
+            assert submission["item"]["generation_method"] == "manual_codex_import"
+            origin = submission["manual_automation_origin"]
+            assert origin["manual_run_id"] == manual_run_id
+            assert origin["turn_trigger"] == "automation_cron_run_now"
+            assert origin["inbox_file_name"] == source.name
+            assert len(origin["inbox_file_sha256"]) == 64
+            assert "scheduled_origin" not in submission
+            return httpx.Response(201, json={"import_id": str(uuid4()), "duplicate": False,
+                "manual_automation_audit_event_id": "audit-manual-1", "state": "awaiting_human_review",
+                "generation_ready": False, "publish_ready": False, "blogger_write_performed": False})
+        if request.url.path.endswith("/live-source-evidence"):
+            return httpx.Response(201, json={"outcomes": [], "blogger_write_performed": False,
+                                             "auto_eligible": False})
+        if request.method == "GET":
+            return httpx.Response(200, json={"latest_version": {"id": "manual-version-1"}, "assessments": []})
+        if request.url.path.endswith("/assessment"):
+            return httpx.Response(201, json={"version_id": "manual-version-1", "machine_passed": False,
+                "independent_source_verification": False, "generation_ready": False, "publish_ready": False})
+        pytest.fail(f"unexpected endpoint {request.url.path}")
+
+    result = process_inbox_once(tmp_path, "http://127.0.0.1:18100", "x" * 32,
+                                transport=httpx.MockTransport(handler))
+    outcome = result["results"][0]
+    assert outcome["status"] == "imported"
+    assert outcome["execution_mode"] == "manual"
+    assert outcome["automation_id"] == "automation-8"
+    assert outcome["automation_run_id"] == manual_run_id
+    assert outcome["audit_event_id"] == "audit-manual-1"
+    assert outcome["publish_ready"] is False and outcome["blogger_write_performed"] is False
+    assert result["blogger_writes"] == 0
+    assert [call.method for call in calls] == ["POST", "POST", "GET", "POST"]
+    assert not any(call.url.path.endswith("/scheduled-origin") for call in calls)
+    assert not (ready / source.name).exists()
+    assert list((tmp_path / "processed").glob("*.processing.json"))
+
+
 def test_inbox_quarantines_invalid_and_ignores_incomplete_files(tmp_path: Path) -> None:
     ready = tmp_path / "ready"
     ready.mkdir()

@@ -364,6 +364,58 @@ def test_import_endpoint_is_admin_only_idempotent_and_always_review_held(
             assert any(item["id"] == result["import_id"] for item in listed.json()["items"])
 
 
+def test_manual_automation_import_is_audited_idempotently_without_publication(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with connection() as conn, conn.transaction(force_rollback=True):
+        @contextmanager
+        def shared() -> Iterator[Any]:
+            with conn.transaction():
+                yield conn
+
+        monkeypatch.setattr(content_imports, "connection", shared)
+        headers = {"Authorization": "Bearer " + settings().admin_token}
+        item = valid_item(content_id="manual-automation-" + str(uuid4()),
+                          event_group_id="politics-kr-" + str(uuid4()))
+        run_id = "codex-manual:automation-8:" + str(uuid4())
+        origin = {
+            "execution_mode": "manual", "automation_id": "automation-8",
+            "manual_run_id": run_id, "session_id": str(uuid4()),
+            "turn_trigger": "automation_cron_run_now", "invoked_at": "2026-10-30T23:17:22+09:00",
+            "recovery_of_session_id": str(uuid4()), "recovery_of_turn_id": str(uuid4()),
+            "recovery_of_scheduled_slot": "2026-10-30T20:00:00+09:00",
+            "recovery_reason_code": "usage_limit_exceeded",
+        }
+        submission = {"submitted_by": "Codex Desktop automation-8 manual run",
+                      "item": item, "manual_automation_origin": origin}
+        with TestClient(app) as client:
+            first = client.post("/admin/research/content-imports", headers=headers, json=submission)
+            assert first.status_code == 201, first.text
+            receipt = first.json()
+            assert receipt["manual_automation_audit_event_id"]
+            assert receipt["publish_ready"] is False and receipt["generation_ready"] is False
+            assert receipt["blogger_write_performed"] is False
+            second = client.post("/admin/research/content-imports", headers=headers, json=submission)
+            assert second.status_code == 201 and second.json()["duplicate"] is True
+            assert second.json()["manual_automation_audit_event_id"] == receipt["manual_automation_audit_event_id"]
+            changed = {**submission, "manual_automation_origin": {
+                **origin, "invoked_at": "2026-10-30T23:17:23+09:00",
+            }}
+            conflict = client.post("/admin/research/content-imports", headers=headers, json=changed)
+            assert conflict.status_code == 409
+        audit = conn.execute(
+            """SELECT payload FROM audit_events
+            WHERE event_type='content.import.manual_automation_origin_recorded'
+              AND payload->>'manual_run_id'=%s""", (run_id,),
+        ).fetchall()
+        assert len(audit) == 1
+        payload = audit[0]["payload"]
+        assert payload["recovery_reason_code"] == "usage_limit_exceeded"
+        assert payload["scheduled_origin_claimed"] is False
+        assert payload["auto_publication_enabled"] is False
+        assert payload["blogger_write_performed"] is False
+
+
 def test_p5_codex_021_fed_article_isolated_import_assessment_and_html(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

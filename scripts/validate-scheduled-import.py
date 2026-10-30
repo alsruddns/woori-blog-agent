@@ -12,11 +12,12 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services" / "api"))
 
 from pydantic import ValidationError
+from woori.content_imports import ManualAutomationImportEnvelope
 from woori.scheduled_import_inbox import validate_envelope
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate one scheduled import envelope without API or DB access")
+    parser = argparse.ArgumentParser(description="Validate one scheduled or explicit manual Automation import envelope without API or DB access")
     parser.add_argument("path", type=Path)
     args = parser.parse_args()
     candidate = args.path.resolve(strict=True)
@@ -40,9 +41,14 @@ def main() -> int:
     except (OSError, ValueError) as exc:
         print(json.dumps({"valid": False, "reason": str(exc)[:200]}, ensure_ascii=False))
         return 1
-    print(json.dumps({"valid": True, "content_id": envelope.item.content_id,
-                      "relation": envelope.item.relation,
-                      "labels": envelope.item.blogger_labels}, ensure_ascii=False))
+    result = {"valid": True, "content_id": envelope.item.content_id,
+              "relation": envelope.item.relation, "labels": envelope.item.blogger_labels}
+    if isinstance(envelope, ManualAutomationImportEnvelope):
+        result.update({"execution_mode": "manual", "manual_run_id": envelope.manual_origin.manual_run_id,
+                       "automation_id": envelope.manual_origin.automation_id})
+    else:
+        result.update({"execution_mode": "scheduled", "occurrence_id": envelope.scheduled_origin.occurrence_id})
+    print(json.dumps(result, ensure_ascii=False))
     return 0
 
 

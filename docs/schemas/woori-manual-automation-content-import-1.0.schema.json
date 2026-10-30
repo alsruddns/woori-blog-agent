@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://woori.local/schemas/manual-automation-content-import/1.0",
+  "title": "Woori manual Codex automation content import envelope",
+  "description": "Explicit Codex Desktop Run now provenance. It is self-reported audit metadata and never grants approval or publication rights.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "submitted_by", "item", "manual_origin"],
+  "properties": {
+    "schema_version": {"const": "woori-manual-automation-content-import/1.0"},
+    "submitted_by": {"type": "string", "minLength": 2, "maxLength": 100},
+    "item": {
+      "$ref": "./woori-content-import-1.0.schema.json#/properties/item",
+      "allOf": [{"properties": {"generation_method": {"const": "manual_codex_import"}}}]
+    },
+    "manual_origin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["execution_mode", "automation_id", "manual_run_id", "session_id", "turn_trigger", "invoked_at"],
+      "properties": {
+        "execution_mode": {"const": "manual"},
+        "automation_id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9_.:-]+$"},
+        "manual_run_id": {"type": "string", "minLength": 20, "maxLength": 180, "pattern": "^codex-manual:[A-Za-z0-9_.:-]+:[0-9a-f-]{36}$"},
+        "session_id": {"type": "string", "format": "uuid"},
+        "turn_trigger": {"const": "automation_cron_run_now"},
+        "invoked_at": {"type": "string", "format": "date-time"},
+        "recovery_of_session_id": {"type": ["string", "null"], "format": "uuid"},
+        "recovery_of_turn_id": {"type": ["string", "null"], "format": "uuid"},
+        "recovery_of_scheduled_slot": {"type": ["string", "null"], "format": "date-time"},
+        "recovery_reason_code": {"enum": ["usage_limit_exceeded", null]},
+        "inbox_file_name": {"type": ["string", "null"], "minLength": 1, "maxLength": 180, "pattern": "^[A-Za-z0-9_.-]+$"},
+        "inbox_file_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"}
+      },
+      "allOf": [
+        {"if": {"anyOf": [{"properties": {"recovery_of_session_id": {"type": "string"}}, "required": ["recovery_of_session_id"]}, {"properties": {"recovery_of_turn_id": {"type": "string"}}, "required": ["recovery_of_turn_id"]}, {"properties": {"recovery_of_scheduled_slot": {"type": "string"}}, "required": ["recovery_of_scheduled_slot"]}, {"properties": {"recovery_reason_code": {"const": "usage_limit_exceeded"}}, "required": ["recovery_reason_code"]}]}, "then": {"required": ["recovery_of_session_id", "recovery_of_turn_id", "recovery_of_scheduled_slot", "recovery_reason_code"]}}
+      ]
+    }
+  }
+}

@@ -264,6 +264,7 @@ def scheduled_import_intake_tick() -> dict[str, object]:
                         "validation_errors",
                         "import_id", "audit_event_id", "duplicate",
                         "machine_assessment_passed", "independent_source_verification",
+                        "execution_mode", "automation_id", "automation_run_id",
                     )
                     if item.get(key) is not None
                 }

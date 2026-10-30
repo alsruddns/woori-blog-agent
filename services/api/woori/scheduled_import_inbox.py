@@ -10,13 +10,13 @@ import re
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlsplit
 
 import httpx
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
-from .content_imports import ScheduledImportEnvelope
+from .content_imports import ManualAutomationImportEnvelope, ScheduledImportEnvelope
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(PROJECT_ROOT / "services" / "api"))
@@ -75,9 +75,13 @@ def _safe_api_error(response: httpx.Response) -> str | None:
     return None
 
 
-def validate_envelope(raw: bytes) -> ScheduledImportEnvelope:
-    """Single schema/cross-field validation entry point for CLI and Worker."""
-    return ScheduledImportEnvelope.model_validate_json(raw)
+ImportEnvelope = ScheduledImportEnvelope | ManualAutomationImportEnvelope
+_ENVELOPE_ADAPTER: TypeAdapter[ImportEnvelope] = TypeAdapter(cast(Any, ImportEnvelope))
+
+
+def validate_envelope(raw: bytes) -> ImportEnvelope:
+    """Validate either a real scheduled export or explicit Desktop Run now envelope."""
+    return _ENVELOPE_ADAPTER.validate_json(raw)
 
 
 def _loopback_api_url(value: str) -> str:
@@ -198,14 +202,24 @@ def retry_quarantined_file(root: Path, filename: str) -> dict[str, Any]:
         ).fetchone()
         if imported:
             raise ValueError("content_already_imported_retry_refused")
-        origin = conn.execute(
-            """SELECT id FROM audit_events
-            WHERE event_type='content.import.scheduled_origin_recorded'
-              AND payload->>'occurrence_id'=%s LIMIT 1""",
-            (envelope.scheduled_origin.occurrence_id,),
-        ).fetchone()
-        if origin:
-            raise ValueError("scheduled_occurrence_already_recorded_retry_refused")
+        if isinstance(envelope, ScheduledImportEnvelope):
+            origin_lookup = conn.execute(
+                """SELECT id FROM audit_events
+                WHERE event_type='content.import.scheduled_origin_recorded'
+                  AND payload->>'occurrence_id'=%s LIMIT 1""",
+                (envelope.scheduled_origin.occurrence_id,),
+            ).fetchone()
+            origin_id_field = {"occurrence_id": envelope.scheduled_origin.occurrence_id}
+        else:
+            origin_lookup = conn.execute(
+                """SELECT id FROM audit_events
+                WHERE event_type='content.import.manual_automation_origin_recorded'
+                  AND payload->>'manual_run_id'=%s LIMIT 1""",
+                (envelope.manual_origin.manual_run_id,),
+            ).fetchone()
+            origin_id_field = {"manual_run_id": envelope.manual_origin.manual_run_id}
+        if origin_lookup:
+            raise ValueError("automation_run_already_recorded_retry_refused")
         conn.execute(
             """INSERT INTO audit_events(event_type,language_code,payload)
             VALUES ('scheduled_import.quarantine_retry_requested',%s,%s)""",
@@ -216,7 +230,8 @@ def retry_quarantined_file(root: Path, filename: str) -> dict[str, Any]:
                 "ready_file": target_name,
                 "prior_outcome_event_id": prior["id"],
                 "content_id": envelope.item.content_id,
-                "occurrence_id": envelope.scheduled_origin.occurrence_id,
+                "execution_mode": "scheduled" if isinstance(envelope, ScheduledImportEnvelope) else "manual",
+                **origin_id_field,
                 "reason": "retry_after_worker_schema_refresh",
                 "blogger_writes": 0,
             })),
@@ -231,7 +246,8 @@ def retry_quarantined_file(root: Path, filename: str) -> dict[str, Any]:
         "file_sha256": file_sha256,
         "prior_outcome_event_id": prior["id"],
         "content_id": envelope.item.content_id,
-        "occurrence_id": envelope.scheduled_origin.occurrence_id,
+        "execution_mode": "scheduled" if isinstance(envelope, ScheduledImportEnvelope) else "manual",
+        **origin_id_field,
         "ready_file": str(target),
         "blogger_writes": 0,
     }
@@ -316,10 +332,15 @@ def process_inbox_once(
                                 "http_status": None, "api_error": _safe_error_text(exc)})
                 continue
 
-            submission = {
+            submission: dict[str, Any] = {
                 "submitted_by": envelope.submitted_by,
                 "item": envelope.item.model_dump(mode="json", exclude_none=False),
             }
+            if isinstance(envelope, ManualAutomationImportEnvelope):
+                submission["manual_automation_origin"] = envelope.manual_origin.model_copy(update={
+                    "inbox_file_name": source.name,
+                    "inbox_file_sha256": file_sha256,
+                }).model_dump(mode="json", exclude_none=False)
             try:
                 imported = client.post(IMPORT_PATH, json=submission)
                 if imported.status_code not in (200, 201):
@@ -340,21 +361,30 @@ def process_inbox_once(
                     _move(processing, directories["ready"] / source.name)
                     results.append({"file_key": file_key, "status": "ready", "reason": "api_receipt_missing"})
                     continue
-                origin = client.post(
-                    f"{IMPORT_PATH}/{import_id}/scheduled-origin",
-                    json=envelope.scheduled_origin.model_copy(update={
-                        "inbox_file_name": source.name,
-                        "inbox_file_sha256": hashlib.sha256(raw).hexdigest(),
-                    }).model_dump(mode="json", exclude_none=False),
-                )
-                if origin.status_code not in (200, 201):
-                    retry_target = "ready" if origin.status_code >= 500 else "rejected"
-                    retry_name = source.name if retry_target == "ready" else processing.name
-                    _move(processing, directories[retry_target] / retry_name)
-                    results.append({"file_key": file_key, "status": retry_target, "reason": "origin_audit_pending",
-                                    "http_status": origin.status_code, "api_error": _safe_api_error(origin)})
-                    continue
-                receipt = origin.json()
+                if isinstance(envelope, ScheduledImportEnvelope):
+                    origin = client.post(
+                        f"{IMPORT_PATH}/{import_id}/scheduled-origin",
+                        json=envelope.scheduled_origin.model_copy(update={
+                            "inbox_file_name": source.name,
+                            "inbox_file_sha256": file_sha256,
+                        }).model_dump(mode="json", exclude_none=False),
+                    )
+                    if origin.status_code not in (200, 201):
+                        retry_target = "ready" if origin.status_code >= 500 else "rejected"
+                        retry_name = source.name if retry_target == "ready" else processing.name
+                        _move(processing, directories[retry_target] / retry_name)
+                        results.append({"file_key": file_key, "status": retry_target, "reason": "origin_audit_pending",
+                                        "http_status": origin.status_code, "api_error": _safe_api_error(origin)})
+                        continue
+                    receipt = origin.json()
+                    origin_audit_event_id = receipt.get("audit_event_id")
+                else:
+                    receipt = import_result
+                    origin_audit_event_id = import_result.get("manual_automation_audit_event_id")
+                    if not origin_audit_event_id:
+                        _move(processing, directories["ready"] / source.name)
+                        results.append({"file_key": file_key, "status": "ready", "reason": "manual_origin_audit_pending"})
+                        continue
                 source_capture: dict[str, Any] = {"status": "not_run"}
                 try:
                     captured = client.post(f"{IMPORT_PATH}/{import_id}/live-source-evidence")
@@ -406,10 +436,19 @@ def process_inbox_once(
                     "file_sha256": file_sha256,
                     "status": "imported",
                     "import_id": import_id,
-                    "audit_event_id": receipt.get("audit_event_id"),
+                    "audit_event_id": origin_audit_event_id,
                     "duplicate": bool(import_result.get("duplicate")),
                     "machine_assessment_passed": bool(assessment.get("machine_passed")),
                     "independent_source_verification": bool(assessment.get("independent_source_verification")),
+                    "execution_mode": "scheduled" if isinstance(envelope, ScheduledImportEnvelope) else "manual",
+                    "automation_id": (
+                        envelope.scheduled_origin.automation_id if isinstance(envelope, ScheduledImportEnvelope)
+                        else envelope.manual_origin.automation_id
+                    ),
+                    "automation_run_id": (
+                        envelope.scheduled_origin.occurrence_id if isinstance(envelope, ScheduledImportEnvelope)
+                        else envelope.manual_origin.manual_run_id
+                    ),
                     "source_evidence_capture": source_capture,
                     "provenance_verified": False,
                     "generation_ready": False,

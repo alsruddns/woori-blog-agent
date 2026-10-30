@@ -189,6 +189,50 @@ class ImportSubmission(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     submitted_by: str = Field(min_length=2, max_length=100)
     item: ContentImport
+    manual_automation_origin: ManualAutomationOrigin | None = None
+
+    @model_validator(mode="after")
+    def manual_origin_matches_item(self) -> ImportSubmission:
+        if self.manual_automation_origin and self.item.generation_method != "manual_codex_import":
+            raise ValueError("manual_automation_origin_requires_manual_codex_import")
+        return self
+
+
+class ManualAutomationOrigin(BaseModel):
+    """Untrusted, locally observed provenance for an explicit Desktop Run now."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    execution_mode: Literal["manual"]
+    automation_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_.:-]+$")
+    manual_run_id: str = Field(min_length=20, max_length=180,
+                               pattern=r"^codex-manual:[A-Za-z0-9_.:-]+:[0-9a-f-]{36}$")
+    session_id: UUID
+    turn_trigger: Literal["automation_cron_run_now"]
+    invoked_at: datetime
+    recovery_of_session_id: UUID | None = None
+    recovery_of_turn_id: UUID | None = None
+    recovery_of_scheduled_slot: datetime | None = None
+    recovery_reason_code: Literal["usage_limit_exceeded"] | None = None
+    inbox_file_name: str | None = Field(default=None, min_length=1, max_length=180,
+                                        pattern=r"^[A-Za-z0-9_.-]+$")
+    inbox_file_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+    @field_validator("invoked_at", "recovery_of_scheduled_slot")
+    @classmethod
+    def manual_timestamp_has_timezone(cls, value: datetime | None) -> datetime | None:
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("manual_automation_timestamp_requires_timezone")
+        return value
+
+    @model_validator(mode="after")
+    def recovery_fields_are_complete(self) -> ManualAutomationOrigin:
+        recovery = (self.recovery_of_session_id, self.recovery_of_turn_id,
+                    self.recovery_of_scheduled_slot, self.recovery_reason_code)
+        if any(value is not None for value in recovery) and any(value is None for value in recovery):
+            raise ValueError("manual_recovery_link_must_be_complete")
+        if not self.manual_run_id.startswith(f"codex-manual:{self.automation_id}:"):
+            raise ValueError("manual_run_id_automation_mismatch")
+        return self
 
 
 class ScheduledImportOrigin(BaseModel):
@@ -312,6 +356,20 @@ class ScheduledImportEnvelope(BaseModel):
         trends_origin = self.scheduled_origin.task_type == "trends_major_issue"
         if trends_origin != self.item.google_trends_based:
             raise ValueError("trends_task_type_must_match_actual_trends_origin")
+        return self
+
+
+class ManualAutomationImportEnvelope(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    schema_version: Literal["woori-manual-automation-content-import/1.0"]
+    submitted_by: str = Field(min_length=2, max_length=100)
+    item: ContentImport
+    manual_origin: ManualAutomationOrigin
+
+    @model_validator(mode="after")
+    def manual_envelope_is_not_scheduled(self) -> ManualAutomationImportEnvelope:
+        if self.item.generation_method != "manual_codex_import":
+            raise ValueError("manual_automation_envelope_requires_manual_codex_import")
         return self
 
 
@@ -1033,13 +1091,78 @@ def submit_content_import(request: ImportSubmission) -> dict[str, Any]:
                 WHERE v.import_id=%s ORDER BY v.version_number DESC LIMIT 1""", (row["id"],),
             ).fetchone()
             content_version_id = existing_link["content_version_id"] if existing_link else None
+        if request.manual_automation_origin:
+            manual_origin_event = _record_manual_automation_origin(
+                conn, import_id=row["id"], content_version_id=content_version_id,
+                language_code=request.item.language_code, origin=request.manual_automation_origin,
+            )
+        else:
+            manual_origin_event = None
         return {"import_id": str(row["id"]), "state": row["state"], "duplicate": duplicate,
             "content_sha256": content_sha256, "category": request.item.category,
             "suggested_labels": labels, "reader_language_decisions": recommendations,
             "generation_ready": False, "publish_ready": False, "provider_called": False,
             "blogger_write_performed": False, "source_fetch_performed": False,
             "human_review_required": True,
-            "content_version_id": str(content_version_id) if content_version_id else None}
+            "content_version_id": str(content_version_id) if content_version_id else None,
+            "manual_automation_audit_event_id": str(manual_origin_event["id"]) if manual_origin_event else None}
+
+
+def _record_manual_automation_origin(
+    conn: psycopg.Connection[dict[str, Any]],
+    *,
+    import_id: UUID,
+    content_version_id: UUID | None,
+    language_code: str,
+    origin: ManualAutomationOrigin,
+) -> dict[str, Any]:
+    """Append one idempotent audit record; manual origin grants no publish rights."""
+    if content_version_id is None:
+        raise HTTPException(409, "Manual automation import has no linked content version")
+    imported = conn.execute(
+        "SELECT generation_method FROM external_content_imports WHERE id=%s", (import_id,)
+    ).fetchone()
+    if not imported or imported["generation_method"] != "manual_codex_import":
+        raise HTTPException(409, "Manual automation provenance requires a manual Codex import")
+    event_key = origin.manual_run_id
+    conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (event_key,))
+    origin_payload = origin.model_dump(mode="json", exclude_none=False)
+    origin_sha256 = hashlib.sha256(
+        json.dumps(origin_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    existing = conn.execute(
+        """SELECT id,payload FROM audit_events
+        WHERE event_type='content.import.manual_automation_origin_recorded'
+          AND payload->>'manual_run_id'=%s""",
+        (event_key,),
+    ).fetchone()
+    if existing:
+        if (existing["payload"].get("origin_sha256") != origin_sha256
+                or existing["payload"].get("import_id") != str(import_id)):
+            raise HTTPException(409, "Manual run ID was already recorded with different import data")
+        return {"id": existing["id"], "duplicate": True}
+    payload = {
+        **origin_payload,
+        "manual_run_id": event_key,
+        "import_id": str(import_id),
+        "content_version_id": str(content_version_id),
+        "language_code": language_code,
+        "origin_sha256": origin_sha256,
+        "provenance_self_reported": True,
+        "execution_context_server_verified": False,
+        "scheduled_origin_claimed": False,
+        "auto_publication_enabled": False,
+        "publish_ready": False,
+        "blogger_write_performed": False,
+    }
+    inserted = conn.execute(
+        """INSERT INTO audit_events(event_type,language_code,payload)
+        VALUES ('content.import.manual_automation_origin_recorded',%s,%s) RETURNING id""",
+        (language_code, Jsonb(payload)),
+    ).fetchone()
+    if not inserted:
+        raise HTTPException(503, "Manual automation audit event could not be stored")
+    return {"id": inserted["id"], "duplicate": False}
 
 
 @router.post("/{import_id}/scheduled-origin", status_code=201)
