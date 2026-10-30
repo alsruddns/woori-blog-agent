@@ -4,6 +4,47 @@ $ErrorActionPreference = 'Stop'
 
 $targets = @('publication_worker', 'research_worker', 'dashboard', 'api')
 $failures = [System.Collections.Generic.List[string]]::new()
+
+function Assert-HttpGracefulStopReady {
+  $table = Get-ProcessTable
+  foreach ($name in @('dashboard','api')) {
+    foreach ($pidValue in (Get-Listeners ([int]$script:Services[$name].Port))) {
+      $process = $table | Where-Object Id -eq ([int]$pidValue) | Select-Object -First 1
+      if (-not $process -or -not (Test-ExactCheckoutServiceProcess $process $name)) {
+        Write-LifecycleLog $name 'shutdown_preflight_blocked' 'listener_owner_not_verified_for_this_checkout'
+        throw "Cannot safely stop all services: $name port owner is not verified as this checkout. No service was stopped."
+      }
+      $supportsStopFile = if ($name -eq 'api') {
+        [string]$process.CommandLine -match '(?i)scripts[\\/]api-service\.py(?:\s|$)'
+      } else {
+        [string]$process.CommandLine -match '(?i)scripts[\\/]dashboard-service\.js(?:\s|$)'
+      }
+      if (-not $supportsStopFile) {
+        Write-LifecycleLog $name 'shutdown_preflight_blocked' 'legacy_process_has_no_identity_bound_stop_channel'
+        throw "Cannot safely stop all services: $name is running without the new cooperative stop channel. No Worker or HTTP service was stopped. Restart this service through the project launcher first."
+      }
+      $identityPath = Join-Path $script:ProjectRoot ".runtime\service-identity-$name-$([int]$pidValue).json"
+      if (-not (Test-Path -LiteralPath $identityPath -PathType Leaf) -or
+          ((Get-Item -LiteralPath $identityPath -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        Write-LifecycleLog $name 'shutdown_preflight_blocked' 'cooperative_identity_missing_or_unsafe'
+        throw "Cannot safely stop all services: $name stop identity is missing or unsafe. No service was stopped."
+      }
+      try { $identity = Get-Content -LiteralPath $identityPath -Raw -Encoding utf8 | ConvertFrom-Json }
+      catch {
+        Write-LifecycleLog $name 'shutdown_preflight_blocked' 'cooperative_identity_unavailable'
+        throw "Cannot safely stop all services: $name stop identity is unavailable. No service was stopped."
+      }
+      if ([int]$identity.pid -ne [int]$pidValue -or [string]$identity.service -cne $name -or
+          [string]$identity.checkout_root -ine $script:ProjectRoot -or
+          [string]$identity.instance_id -notmatch '^[a-f0-9]{32,64}$') {
+        Write-LifecycleLog $name 'shutdown_preflight_blocked' 'cooperative_identity_mismatch'
+        throw "Cannot safely stop all services: $name stop identity does not match its listener. No service was stopped."
+      }
+    }
+  }
+}
+
+Assert-HttpGracefulStopReady
 Write-LifecycleLog 'all_services' 'shutdown_started' "order=$($targets -join ',')"
 
 foreach ($name in $targets) {

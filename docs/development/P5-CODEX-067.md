@@ -12,7 +12,7 @@
 ## Behavior and safety
 
 - Publication startup uses the verified `scheduled-auto-and-manual` mode. Startup is idempotent only when an exact-checkout process and fresh matching heartbeat are found.
-- API and Dashboard stop requests are bound to the recorded PID, checkout, service name, and random process instance ID. A stale, mismatched, reparse-point, or oversized request is rejected. No force termination is used by the whole-stop or whole-restart shortcut.
+- API and Dashboard stop requests are bound to the recorded PID, checkout, service name, and random process instance ID. A stale, mismatched, reparse-point, or oversized request is rejected. Whole-stop preflights both HTTP stop channels before stopping either Worker, so a legacy listener cannot leave only the Workers stopped. No force termination is used by the whole-stop or whole-restart shortcut.
 - Port owners and worker identities are checked against this checkout. Other project processes are left untouched.
 - The service identity check handles Windows' venv launcher shim, where the process image is the base `python.exe` while the command line explicitly names this checkout's `.venv\Scripts\python.exe`.
 - Shortcut actions and lifecycle transitions append sanitized records to `.runtime/logs/service-lifecycle.log`.
@@ -31,6 +31,7 @@
 - PowerShell parser, Node syntax check, Python compilation, 27 Pester lifecycle tests, `git diff --check`, isolated Python wheel verification, and isolated Production Build passed. Runtime source validation recorded the current commit, then the explicit restart prompt was declined. No current service process was changed.
 - A hidden whole-start shortcut invocation against already healthy services verified exact process ownership, HTTP health, fresh Worker heartbeats, and idempotent no-duplicate behavior.
 - All four individual start shortcuts were launched hidden; each returned successfully and the service PIDs remained unchanged.
+- A live hidden invocation of whole-stop safely aborted at the HTTP stop-channel preflight because the current API/Dashboard are legacy instances; all four service PIDs and heartbeats remained unchanged. Their stop/restart links work after these services are next started by the new project launchers.
 - Whole-stop/restart are validated by tests and ownership-aware code inspection, not run against live services during this task.
 - Test fixtures previously emitted four synthetic API PID events into the local lifecycle log. They are preserved; a later `test_log_fixture_correction` event identifies them as test-only records. New test runs leave that log unchanged.
 - The existing login task's name, enabled state, logon trigger, and project action are checked after changes. One manual trigger while services were already running failed closed at API port ownership (`port_conflict`, Task Scheduler result `1`) because the limited task context could not prove the active API listener belonged to this checkout. No service was changed. A real reboot with free ports was not performed.

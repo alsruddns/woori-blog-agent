@@ -125,6 +125,8 @@ Describe 'Windows service lifecycle ownership and startup policy' {
     $restarter = Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\restart-services.ps1') -Raw
     $stopper.IndexOf("'publication_worker'") | Should BeLessThan $stopper.IndexOf("'dashboard'")
     $stopper | Should Match 'shutdown_aborted_for_active_worker'
+    $stopper.IndexOf('Assert-HttpGracefulStopReady') | Should BeLessThan $stopper.IndexOf('foreach ($name in $targets)')
+    $stopper | Should Match 'legacy_process_has_no_identity_bound_stop_channel'
     $restarter.IndexOf('stop-services.ps1') | Should BeLessThan $restarter.IndexOf('start-services.ps1')
   }
 
