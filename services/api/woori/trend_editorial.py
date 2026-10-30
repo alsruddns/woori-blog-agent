@@ -23,7 +23,7 @@ STATES = {'collected','pending_classification','selected','review_candidate','di
 def current_slot() -> datetime:
     """The current KST hour, including when the computer missed earlier sweeps."""
     config=trends.collection_settings()
-    return trends.slot_for(datetime.now(UTC),config['interval_minutes'])
+    return trends.configured_slot(datetime.now(UTC),config)
 
 
 def slot_is_current(value:Any) -> bool:

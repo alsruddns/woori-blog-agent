@@ -175,6 +175,16 @@ def slot_for(now: datetime, interval_minutes: int) -> datetime:
     return local.replace(minute=local.minute//interval_minutes*interval_minutes,second=0,microsecond=0).astimezone(UTC)
 
 
+def configured_slot(now: datetime, config: dict[str, Any]) -> datetime:
+    """Anchor a changed cadence at its scheduled effective boundary."""
+    effective=config.get('effective_at')
+    pending=config.get('pending_interval_minutes')
+    if isinstance(effective,datetime) and isinstance(pending,int) and pending>0 and effective<=now:
+        seconds=int((now-effective).total_seconds())
+        return (effective+timedelta(minutes=(seconds//(pending*60))*pending)).astimezone(UTC)
+    return slot_for(now,int(config['interval_minutes']))
+
+
 def collection_settings() -> dict[str, Any]:
     with connection() as conn:
         row=conn.execute('SELECT * FROM trend_collection_settings WHERE id=1').fetchone()
@@ -187,7 +197,7 @@ def collection_settings() -> dict[str, Any]:
             result['interval_minutes']=row['pending_interval_minutes']
         result['last_run']=latest['last_run'] if latest else None
         result['regions']=regions
-        result['next_run_at']=slot_for(datetime.now(UTC),result['interval_minutes'])+timedelta(minutes=result['interval_minutes'])
+        result['next_run_at']=configured_slot(datetime.now(UTC),result)+timedelta(minutes=result['interval_minutes'])
         result['requested_window_hours']=minutes_to_hours_parameter(result['interval_minutes'])
         result['rss_window_status']='not_verified_not_sent'
         return result
@@ -198,7 +208,7 @@ def collect_geo(geo: str, *, slot_at: datetime | None = None) -> dict[str, Any]:
     if geo not in ALLOWED_GEOS:
         raise ValueError('trend_geo_not_allowlisted')
     config=collection_settings()
-    bucket=slot_at or slot_for(datetime.now(UTC),config['interval_minutes'])
+    bucket=slot_at or configured_slot(datetime.now(UTC),config)
     with connection() as guard:
         locked=guard.execute("SELECT pg_try_advisory_lock(hashtextextended('trend-slot-collection',0)) acquired").fetchone()
         if not locked or not locked['acquired']:return {'status':'busy','geo':geo,'item_count':0}
@@ -642,7 +652,7 @@ def schedule_tick(now: datetime | None = None) -> dict[str, Any]:
     if not config['enabled']:return {'status':'disabled','external_calls':0}
     if config['backoff_until'] and config['backoff_until']>current:
         return {'status':'provider_backoff','external_calls':0,'next_run_at':config['backoff_until'].isoformat()}
-    bucket=slot_for(current,config['interval_minutes'])
+    bucket=configured_slot(current,config)
     with connection() as guard:
         locked=guard.execute('SELECT pg_try_advisory_lock(hashtextextended(%s,0)) acquired',(SCHEDULER_LOCK,)).fetchone()
         if not locked or not locked['acquired']:return {'status':'busy','external_calls':0}
@@ -655,7 +665,7 @@ def schedule_tick(now: datetime | None = None) -> dict[str, Any]:
                 (Jsonb({'slot_at':bucket.isoformat(),'interval_minutes':config['interval_minutes']}),))
             results=[]
             for geo in sorted(ALLOWED_GEOS-attempted):
-                if now is None and slot_for(datetime.now(UTC),config['interval_minutes'])!=bucket:break
+                if now is None and configured_slot(datetime.now(UTC),config)!=bucket:break
                 result=collect_geo(geo,slot_at=bucket);results.append(result)
                 if result.get('status')=='blocked' and result.get('failure_category') in {
                     'provider_backoff','provider_quota_or_rate_limit','external_policy_blocked'}:break

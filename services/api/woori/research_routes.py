@@ -79,7 +79,7 @@ def set_trend_collection_settings(request: TrendCollectionSettingsRequest) -> di
         current_interval=before['interval_minutes']
         if before['pending_interval_minutes'] and before['effective_at'] and before['effective_at']<=now:
             current_interval=before['pending_interval_minutes']
-        effective=trends.slot_for(now,current_interval)+timedelta(minutes=current_interval)
+        effective=trends.configured_slot(now,dict(before))+timedelta(minutes=current_interval)
         after=conn.execute('''UPDATE trend_collection_settings SET enabled=%s,interval_minutes=%s,
             pending_interval_minutes=%s,effective_at=%s,updated_at=now() WHERE id=1 RETURNING *''',
             (request.enabled,current_interval,request.interval_minutes,effective)).fetchone()

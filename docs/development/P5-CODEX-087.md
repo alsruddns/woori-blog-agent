@@ -6,3 +6,5 @@
 - 변경 파일: `scripts/064_trend_collection_settings.sql`, `scripts/migrate.py`, `scripts/provision-test-database.py`, `services/api/woori/trends.py`, `external_policy.py`, `research_routes.py`, `trend_editorial.py`, `worker.py`, `services/api/tests/test_trends.py`, `test_trend_editorial.py`, Dashboard `sources/trend-settings.tsx`, `sources/workspace.tsx`, `api/research/[...path]/route.ts`, `AGENTS.md`, `docs/operations/zero-cost-policy.md`, 이 기록.
 - 검증: 격리 DB 65건, Ruff/mypy, Dashboard lint/typecheck/Production Build 통과. 격리 수집에서 11지역, 일부 실패, 동일 슬롯 중복 방지, 429 보류 및 설정 변경 감사를 확인했다. 실제 운영 migration·수집·브라우저 결과는 후속 기록에 남긴다.
 - 롤백: 서비스 코드를 이전 버전으로 되돌리고 추가 설정 테이블과 감사·수집 이력을 보존한다. 과거 관측값·감사 이벤트를 삭제하지 않는다. 커밋 해시는 git log 참조.
+- 운영 DB 백업 및 archive catalog 확인 후 schema 64 적용. 실제 2026-10-30 23:20 KST와 23:30 KST 두 회차에서 각각 11개 지역 전부 HTTP 성공, 지역당 10건, 총 110건 수집했다. 회차 완료 감사 이벤트와 각 지역 실행 ID를 DB에 보존했다. Dashboard `/sources`에서 10분 선택·저장, 감사 이벤트, 11지역 결과와 다음 23:40 회차 표시를 확인했다.
+- 실제 브라우저 Playwright 데스크톱 및 390px 모바일 2건 통과 (공개 게시 요청 없음). 주기 변경 후 기존 다음 경계를 기준으로 새 간격이 시작되도록 정정했고 5→20분 전환 테스트 포함 격리 DB 66건과 Ruff/mypy 통과. API/Dashboard/Research Worker만 정상 재시작했다. Publication Worker는 중단하지 않았다.

@@ -80,6 +80,14 @@ def test_trend_window_parameter_rejects_invalid_input(minutes):
     with pytest.raises(ValueError):trends.minutes_to_hours_parameter(minutes)
 
 
+def test_changed_interval_starts_at_existing_next_boundary():
+    boundary=datetime(2026,10,30,14,10,tzinfo=UTC)
+    config={'interval_minutes':5,'pending_interval_minutes':20,'effective_at':boundary}
+    assert trends.configured_slot(boundary-timedelta(minutes=1),config)==boundary-timedelta(minutes=5)
+    assert trends.configured_slot(boundary+timedelta(minutes=1),config)==boundary
+    assert trends.configured_slot(boundary+timedelta(minutes=21),config)==boundary+timedelta(minutes=20)
+
+
 def test_google_trends_feed_preserves_source_fields_without_inventing_rank() -> None:
     raw = b"""<?xml version="1.0"?><rss xmlns:ht="https://trends.google.com/trending/rss"><channel>
       <lastBuildDate>Tue, 27 Oct 2026 08:00:00 GMT</lastBuildDate>
