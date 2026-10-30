@@ -412,6 +412,8 @@ def record_scheduled_auto_policy(request: ScheduledAutoPolicyInput) -> dict[str,
             ("enabled" if request.action == "enable" else "disabled", Jsonb(blog_ids),
              request.daily_limit, request.actor_label, request.reason, request.idempotency_key),
         ).fetchone()
+        if saved is None:
+            raise HTTPException(503, "Scheduled publication policy event was not persisted")
         payload = {
             "event_id": saved["id"], "action": request.action,
             "approved_blog_ids": blog_ids, "daily_limit": request.daily_limit,
@@ -619,9 +621,10 @@ def scheduled_first_post_status(import_id: Annotated[UUID, Query()]) -> dict[str
 def create_manual_live_request(request: ManualLiveRequestInput) -> dict[str, Any]:
     """Record a user's exact-version public-publish confirmation and queue a manual job."""
     with connection() as conn:
-        if not conn.execute(
+        migration = conn.execute(
             "SELECT to_regclass('public.manual_publication_approval_events') AS ready"
-        ).fetchone()["ready"]:
+        ).fetchone()
+        if migration is None or not migration["ready"]:
             raise HTTPException(503, "Manual Blogger publication migration 056 is required")
         conn.execute(
             "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
@@ -695,6 +698,8 @@ def create_manual_live_request(request: ManualLiveRequestInput) -> dict[str, Any
              snapshot["html_sha256"], request.actor_label, request.reason,
              request.idempotency_key),
         ).fetchone()
+        if approval is None:
+            raise HTTPException(503, "Manual publication approval event was not persisted")
         review = conn.execute(
             """INSERT INTO post_publication_reviews
             (publishing_job_id,blog_id,content_version_id,import_id,content_id,review_status,review_notes)
@@ -1264,14 +1269,17 @@ def list_publications(
 ) -> dict[str, Any]:
     with connection() as conn:
         mode_data = _mode_settings(conn)
-        raw_latest_count = conn.execute(
+        raw_latest_count_row = conn.execute(
             """SELECT count(*)::int AS count FROM (
               SELECT DISTINCT ON (v.group_id,v.localization_id,b.id) v.group_id,v.localization_id,b.id
               FROM content_versions v JOIN content_localizations l ON l.id=v.localization_id
               JOIN blogger_blogs b ON b.language_code=l.language_code AND b.active
               ORDER BY v.group_id,v.localization_id,b.id,v.version DESC,v.created_at DESC,v.id DESC
             ) latest"""
-        ).fetchone()["count"]
+        ).fetchone()
+        if raw_latest_count_row is None:
+            raise HTTPException(503, "Publication list count is unavailable")
+        raw_latest_count = raw_latest_count_row["count"]
         rows = conn.execute(
             """WITH latest AS (
               SELECT DISTINCT ON (v.group_id,v.localization_id,b.id)
@@ -1359,11 +1367,12 @@ def list_publications(
         ).fetchall()
         live_attempt_relation = conn.execute(
             "SELECT to_regclass('public.live_publication_attempts') AS name"
-        ).fetchone()["name"]
+        ).fetchone()
+        live_attempt_relation_name = live_attempt_relation["name"] if live_attempt_relation else None
         live_attempts = conn.execute(
             """SELECT id,job_id,attempt_no,operation,outcome,remote_post_id,http_status,error_category,created_at
               FROM live_publication_attempts ORDER BY created_at DESC LIMIT 100"""
-        ).fetchall() if live_attempt_relation else []
+        ).fetchall() if live_attempt_relation_name else []
         worker = conn.execute(
             """SELECT process_id,status,last_error_category,last_seen_at,updated_at
             FROM worker_heartbeats WHERE service_name='publication_worker'"""
@@ -1383,6 +1392,8 @@ def list_publications(
             """SELECT count(*)::int AS n FROM publishing_records
               WHERE remote_status='LIVE' AND remote_verified_at IS NOT NULL"""
         ).fetchone()
+        if published_total is None:
+            raise HTTPException(503, "Published count is unavailable")
         latest_candidates: list[dict[str, Any]] = []
         seen_bodies: dict[tuple[str, str], list[tuple[str, str, str]]] = {}
         duplicate_suppressed = 0
@@ -1679,10 +1690,11 @@ def update_post_publication_review(review_id: UUID, request: PostPublicationRevi
         ).fetchone()
         if not previous:
             raise HTTPException(404, "Verified scheduled publication review not found")
-        if request.review_status == "completed" and conn.execute(
+        open_items = conn.execute(
             "SELECT EXISTS(SELECT 1 FROM post_publication_review_items WHERE review_id=%s AND NOT resolved) AS open",
             (review_id,),
-        ).fetchone()["open"]:
+        ).fetchone()
+        if request.review_status == "completed" and open_items is not None and open_items["open"]:
             raise HTTPException(409, "Resolve all open follow-up items before completing the review")
         row = conn.execute(
             """UPDATE post_publication_reviews r SET review_status=%s,review_notes=%s,updated_at=now()
@@ -1738,6 +1750,8 @@ def add_post_publication_review_item(
         else:
             row = conn.execute("""SELECT id,review_id,issue_type,severity,description,resolved,resolved_at,created_at
                 FROM post_publication_review_items WHERE idempotency_key=%s""", (request.idempotency_key,)).fetchone()
+            if row is None:
+                raise HTTPException(503, "Publication review item could not be loaded")
             if str(row["review_id"]) != str(review_id):
                 raise HTTPException(409, "Idempotency key belongs to a different review")
         return dict(row)
@@ -1869,9 +1883,10 @@ def create_request(request: RequestInput) -> dict[str, Any]:
 def create_live_request(request: RequestInput) -> dict[str, Any]:
     """Queue a real Blogger workflow only after exact content and operations gates pass."""
     with connection() as conn:
-        if not conn.execute(
+        migration = conn.execute(
             "SELECT to_regclass('public.live_publication_attempts') AS ready"
-        ).fetchone()["ready"]:
+        ).fetchone()
+        if migration is None or not migration["ready"]:
             raise HTTPException(503, "Blogger live publication migration 049 is required")
         existing = conn.execute(
             "SELECT id,blog_id,content_version_id,status,publication_state,adapter_type,simulation_only FROM publishing_jobs WHERE idempotency_key=%s",

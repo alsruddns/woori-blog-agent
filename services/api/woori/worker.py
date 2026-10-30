@@ -3,6 +3,7 @@
 import json
 import os
 import signal
+import sys
 import threading
 import time
 from collections import Counter
@@ -92,7 +93,7 @@ def worker_stop_request_matches(
 def consume_worker_stop_request(pid: int | None = None, service_name: str | None = None) -> bool:
     worker_pid = os.getpid() if pid is None else pid
     if service_name is None:
-        service_name = "evaluation_worker" if "--evaluation" in os.sys.argv else "research_worker"
+        service_name = "evaluation_worker" if "--evaluation" in sys.argv else "research_worker"
     request_path = _stop_request_path(worker_pid)
     try:
         request = json.loads(request_path.read_text(encoding="utf-8-sig"))
@@ -362,7 +363,9 @@ def main() -> None:
                         next_scheduled_import_poll = time.monotonic() + SCHEDULED_IMPORT_POLL_SECONDS
                         intake = scheduled_import_intake_tick()
                         if intake["processed_count"]:
-                            counts = Counter(result["status"] for result in intake["results"])
+                            results_value = intake.get("results", [])
+                            results = results_value if isinstance(results_value, list) else []
+                            counts = Counter(result["status"] for result in results if isinstance(result, dict))
                             print(
                                 "Scheduled import intake completed: "
                                 + ",".join(f"{status}={count}" for status, count in sorted(counts.items())),

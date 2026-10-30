@@ -771,7 +771,10 @@ def get_content_import(import_id: UUID) -> dict[str, Any]:
         ).fetchone()
         item_result = dict(row)
         item_result["auto_publication_failure"] = bool(auto_failure and auto_failure["event_type"] == "publication.auto_failure.recorded")
-        item_result["auto_failure"] = dict(auto_failure["payload"]) if item_result["auto_publication_failure"] else None
+        item_result["auto_failure"] = (
+            dict(auto_failure["payload"])
+            if auto_failure is not None and item_result["auto_publication_failure"] else None
+        )
         return {"item": item_result, "latest_version": dict(latest) if latest else None,
             "versions": [dict(version) for version in versions],
             "lineage_history": [dict(version) for version in lineage_history],

@@ -371,12 +371,18 @@ def enqueue_scheduled_auto_jobs() -> dict[str, Any]:
                         stage="duplicate_check", reasons=["remote_duplicate_check_unknown"
                             if remote_check["status"] == "unknown" else "remote_duplicate_found"])
                     continue
-            daily = conn.execute(
+            daily_row = conn.execute(
                 """SELECT count(*)::int AS n FROM publishing_jobs WHERE publication_lane='scheduled_auto'
                 AND blog_id=%s AND status IN ('queued','running','uncertain','succeeded')
                 AND scheduled_at >= date_trunc('day',now() AT TIME ZONE 'Asia/Seoul') AT TIME ZONE 'Asia/Seoul'""",
                 (blog["blog_record_id"],),
-            ).fetchone()["n"]
+            ).fetchone()
+            if daily_row is None:
+                held += 1
+                _record_auto_failure(conn, imported=imported, blog=blog,
+                    stage="queue", reasons=["daily_publication_count_unavailable"])
+                continue
+            daily = daily_row["n"]
             if int(daily) >= int(policy["daily_limit"]):
                 held += 1
                 _record_auto_failure(conn, imported=imported, blog=blog,
@@ -643,6 +649,9 @@ def process_next_live_job(
         blog = conn.execute(
             "SELECT language_code,blog_id,url FROM blogger_blogs WHERE id=%s", (blog_id,)
         ).fetchone()
+        if blog is None:
+            return {"job_id": str(job_id), "status": "blocked", "reason": "publication_blog_missing",
+                    "live_write_performed": False}
         language = str(blog["language_code"])
         today = __import__("datetime").datetime.now(ZoneInfo("Asia/Seoul")).date()
         day_start, day_end = kst_day_bounds(today)
@@ -663,21 +672,29 @@ def process_next_live_job(
               COALESCE((SELECT n FROM reserved WHERE language_code=%s),0)::int AS lang_reserved""",
             (day_start, day_end, day_start, day_end, language, language),
         ).fetchone()
+        if daily is None:
+            return {"job_id": str(job_id), "status": "blocked", "reason": "daily_publication_count_unavailable",
+                    "live_write_performed": False}
         language_cap = LANGUAGE_DAILY_LIMITS.get(language)
         if (int(daily["actual_total"])+int(daily["reserved_total"])>GLOBAL_DAILY_PUBLISH_LIMIT
                 or (language_cap is not None and int(daily["lang_actual"])+int(daily["lang_reserved"])>language_cap)):
             return {"job_id": str(job_id), "status": "deferred", "reason": "daily_publication_limit",
                     "live_write_performed": False}
-        hourly = conn.execute(
+        hourly_row = conn.execute(
             """SELECT count(*)::int AS actual FROM publishing_records
             WHERE blog_id=%s AND published_at>=now()-interval '1 hour'""", (blog_id,)
-        ).fetchone()["actual"]
-        hourly_reserved = conn.execute(
+        ).fetchone()
+        hourly_reserved_row = conn.execute(
             """SELECT count(*)::int AS reserved FROM publishing_jobs
             WHERE blog_id=%s AND NOT simulation_only AND adapter_type='blogger_live'
               AND status IN ('queued','running','uncertain') AND scheduled_at>=now()-interval '1 hour'""",
             (blog_id,),
-        ).fetchone()["reserved"]
+        ).fetchone()
+        if hourly_row is None or hourly_reserved_row is None:
+            return {"job_id": str(job_id), "status": "blocked", "reason": "hourly_publication_count_unavailable",
+                    "live_write_performed": False}
+        hourly = hourly_row["actual"]
+        hourly_reserved = hourly_reserved_row["reserved"]
         hourly_cap = LANGUAGE_HOURLY_LIMITS.get(language, 0)
         if int(hourly)+int(hourly_reserved)>hourly_cap:
             return {"job_id": str(job_id), "status": "deferred", "reason": "hourly_publication_limit",
@@ -762,7 +779,7 @@ def process_next_live_job(
                 if lane == "scheduled_auto" and link:
                     _record_auto_failure(
                         conn, imported=link,
-                        blog={"blog_record_id": blog_id, "blog_id": blog.get("blog_id"),
+                        blog={"blog_record_id": blog_id, "blog_id": blog["blog_id"],
                               "blog_language": language},
                         stage="blogger_draft_write", reasons=[exc.category], job_id=job_id,
                         retry_count=int(job.get("retry_count") or 0),
@@ -845,7 +862,7 @@ def process_next_live_job(
             if lane == "scheduled_auto" and link:
                 _record_auto_failure(
                     conn, imported=link,
-                    blog={"blog_record_id": blog_id, "blog_id": blog.get("blog_id"),
+                    blog={"blog_record_id": blog_id, "blog_id": blog["blog_id"],
                           "blog_language": language},
                     stage="posted", reasons=[], job_id=job_id,
                     retry_count=int(job.get("retry_count") or 0),
@@ -943,7 +960,7 @@ def process_next_live_job(
             if lane == "scheduled_auto" and link:
                 _record_auto_failure(
                     conn, imported=link,
-                    blog={"blog_record_id": blog_id, "blog_id": blog.get("blog_id"),
+                    blog={"blog_record_id": blog_id, "blog_id": blog["blog_id"],
                           "blog_language": language},
                     stage="blogger_write", reasons=[exc.category], job_id=job_id,
                     retry_count=int(job.get("retry_count") or 0),
@@ -1260,5 +1277,5 @@ def run_forever(
             heartbeat("stopped", service_name="publication_worker", execution_mode=mode)
         finally:
             release_process_lock(guard, "publication_worker")
-        for signum, handler in old_handlers.items():
-            signal.signal(signum, handler)
+        for restore_signal_number, handler in old_handlers.items():
+            signal.signal(signal.Signals(restore_signal_number), handler)

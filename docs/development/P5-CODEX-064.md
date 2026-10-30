@@ -22,6 +22,7 @@
 - Applied migration 058 through the existing migration runner; operations schema is now 58. The dedicated isolated test DB was provisioned through schema 58.
 - Publication Worker PID 53164 was stopped through `scripts/stop.ps1` after its cycle completed; PID 47840 was started through `scripts/start-publication-worker.ps1 -Mode scheduled-auto-manual`. No other worker was stopped.
 - Focused API tests: 40 passed. Python compile check passed. Dashboard lint and typecheck passed after the final UI typing adjustment.
+- Follow-up changed-file verification: publication/import/worker API regressions passed (61 tests); MyPy and Ruff passed for the changed API modules. Nullable DB reads now fail with explicit service errors rather than unchecked indexing, and the worker restores signal handlers with the correct signal type.
 - Live Blogger queue at the verified snapshot: 0 jobs; no Blogger public POST was made and no public URL/postId was created. No eligible publication was fabricated. The worker now reports its execution lane; actual dispatch remains gated by the existing Blogger operation/owner policy and eligible jobs.
 - Manual publishing remains an explicit user click; this development task did not submit a public-post request.
 
