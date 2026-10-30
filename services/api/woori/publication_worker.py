@@ -486,6 +486,89 @@ def enqueue_scheduled_auto_jobs() -> dict[str, Any]:
                 "first_publication_approval_required": False}
 
 
+def reconcile_manual_draft(job_id: UUID, post_id: str) -> dict[str, Any]:
+    """Recover an approved failed job from an exact remotely verified draft; never POST."""
+    from . import blogger_service, publications
+    from .blogger_writes import BloggerLivePublisher
+
+    with connection() as conn:
+        job = conn.execute("SELECT * FROM publishing_jobs WHERE id=%s", (job_id,)).fetchone()
+        if not job or job['publication_lane'] != 'manual' or job['status'] != 'failed':
+            raise GoogleFailure('manual_failed_job_required')
+        candidate = publications._candidate(conn, job['content_version_id'], job['blog_id'])
+        snapshot = publications._manual_publication_snapshot(conn, candidate)
+    remote = blogger_service.post(job['blog_id'], post_id)
+    target = BloggerLivePublisher._target(job['blog_id'])
+    if (str(remote.get('id')) != post_id or str((remote.get('blog') or {}).get('id')) != target['blog_id']
+            or remote.get('status') != 'DRAFT' or remote.get('title') != snapshot['title']
+            or remote.get('content') != snapshot['safe_html']):
+        raise GoogleFailure('recovery_draft_payload_mismatch')
+    key = 'pubjob-' + str(job_id) + '-draft'
+    payload = {'title': snapshot['title'], 'content': snapshot['safe_html']}
+    if snapshot['blogger_labels']:
+        payload['labels'] = snapshot['blogger_labels']
+    if sorted(remote.get('labels') or []) != sorted(snapshot['blogger_labels']):
+        raise GoogleFailure('recovery_draft_labels_mismatch')
+    fingerprint = BloggerLivePublisher._fingerprint('create_draft', target['blog_id'], payload)
+    result = {'post_id': post_id, 'blog_id': target['blog_id'], 'status': 'DRAFT',
+              'post_verified': True, 'readback_http_status': 200, 'live': True,
+              'simulation_only': False, 'url': None}
+    with connection() as conn:
+        current = conn.execute('SELECT status FROM publishing_jobs WHERE id=%s FOR UPDATE', (job_id,)).fetchone()
+        approval = conn.execute('SELECT * FROM manual_publication_approval_events WHERE job_id=%s', (job_id,)).fetchone()
+        if not current or current['status'] != 'failed' or not approval or any(
+            approval[name] != snapshot[name] for name in ('title_sha256','body_sha256','html_sha256')
+        ):
+            raise GoogleFailure('recovery_approval_or_job_changed')
+        ledger = conn.execute('SELECT * FROM blogger_write_operations WHERE idempotency_key=%s FOR UPDATE', ('live:' + key,)).fetchone()
+        if not ledger or ledger['request_fingerprint'] != fingerprint or ledger['status'] == 'succeeded':
+            raise GoogleFailure('recovery_ledger_conflict')
+        conn.execute("UPDATE blogger_write_operations SET status='succeeded',result=%s WHERE idempotency_key=%s", (Jsonb(result), 'live:' + key))
+        conn.execute("""UPDATE publishing_jobs SET status='queued',publication_state='publication_queued',
+            live_stage='draft_created',remote_post_id=%s,available_at=now(),lease_until=NULL,
+            retry_count=retry_count+1,last_error_category=NULL,updated_at=now() WHERE id=%s""", (post_id,job_id))
+        _append_audit(conn, 'publication.manual_draft.reconciled', {
+            'job_id': str(job_id), 'post_id': post_id, 'exact_payload_verified': True,
+            'body_sha256': snapshot['body_sha256'], 'blogger_write_performed': False})
+    return {'job_id': str(job_id), 'post_id': post_id, 'status': 'queued', 'blogger_write_performed': False}
+
+
+def reconcile_published_manual_job(job_id: UUID) -> dict[str, Any]:
+    """Persist a successful remote publish after a DB failure, without another POST."""
+    from . import blogger_service
+
+    with connection() as conn:
+        job = conn.execute('SELECT * FROM publishing_jobs WHERE id=%s', (job_id,)).fetchone()
+        ledger = conn.execute("SELECT status,result FROM blogger_write_operations WHERE idempotency_key=%s", ('live:pubjob-' + str(job_id) + '-publish',)).fetchone()
+        approval = conn.execute('SELECT * FROM manual_publication_approval_events WHERE job_id=%s', (job_id,)).fetchone()
+        if not job or job['publication_lane'] != 'manual' or not approval or not ledger or ledger['status'] != 'succeeded':
+            raise GoogleFailure('verified_manual_publish_ledger_required')
+        result = ledger['result']
+        candidate = publications._candidate(conn, job['content_version_id'], job['blog_id'])
+        snapshot = publications._manual_publication_snapshot(conn, candidate)
+    remote = blogger_service.post(job['blog_id'], str(result['post_id']))
+    target = BloggerLivePublisher._target(job['blog_id'])
+    if (remote.get('status') != 'LIVE' or str(remote.get('id')) != str(result['post_id'])
+            or str((remote.get('blog') or {}).get('id')) != target['blog_id']
+            or remote.get('url') != result['url'] or remote.get('title') != snapshot['title']
+            or remote.get('content') != snapshot['safe_html']
+            or sorted(remote.get('labels') or []) != sorted(snapshot['blogger_labels'])
+            or any(approval[name] != snapshot[name] for name in ('title_sha256','body_sha256','html_sha256'))):
+        raise GoogleFailure('recovery_live_payload_mismatch')
+    with connection() as conn:
+        conn.execute('SELECT id FROM publishing_jobs WHERE id=%s FOR UPDATE', (job_id,))
+        conn.execute("""INSERT INTO publishing_records(job_id,blog_id,content_version_id,remote_post_id,
+            published_at,remote_url,remote_status,remote_verified_at) VALUES (%s,%s,%s,%s,%s,%s,'LIVE',now())
+            ON CONFLICT(blog_id,content_version_id) DO NOTHING""", (job_id,job['blog_id'],job['content_version_id'],result['post_id'],result['published_at'],result['url']))
+        record = conn.execute('SELECT * FROM publishing_records WHERE blog_id=%s AND content_version_id=%s', (job['blog_id'],job['content_version_id'])).fetchone()
+        if not record or record['remote_post_id'] != result['post_id']:
+            raise GoogleFailure('published_record_conflict')
+        conn.execute("UPDATE publishing_jobs SET status='succeeded',publication_state='published',live_stage='published',remote_post_id=%s,lease_until=NULL,last_error_category=NULL,updated_at=now() WHERE id=%s", (result['post_id'],job_id))
+        conn.execute('UPDATE post_publication_reviews SET publishing_record_id=%s,post_id=%s,updated_at=now() WHERE publishing_job_id=%s AND publishing_record_id IS NULL', (record['id'],result['post_id'],job_id))
+        _append_audit(conn,'publication.manual_live.reconciled', {'job_id':str(job_id), 'post_id':result['post_id'], 'url':result['url'], 'remote_readback_verified':True,'blogger_write_performed':False})
+    return {'job_id':str(job_id),'post_id':result['post_id'],'url':result['url'],'status':'published','blogger_write_performed':False}
+
+
 def process_next_live_job(
     *, scheduled_auto_only: bool = False, manual_confirmed_only: bool = False,
 ) -> dict[str, Any] | None:
@@ -1303,6 +1386,10 @@ def run_forever(
                         "status": "degraded",
                         "error_category": "publication_worker_cycle_failed",
                         "error_type": type(exc).__name__,
+                        "at_utc": datetime.now(UTC).isoformat(),
+                        "sqlstate": exc.sqlstate if isinstance(exc, psycopg.Error) else None,
+                        "db_table": getattr(exc.diag, 'table_name', None) if isinstance(exc, psycopg.Error) else None,
+                        "db_function": getattr(exc.diag, 'source_function', None) if isinstance(exc, psycopg.Error) else None,
                         "retry_number": failures,
                     }),
                     flush=True,

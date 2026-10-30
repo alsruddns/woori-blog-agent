@@ -19,6 +19,13 @@ def test_capture_catalog_is_exact_and_unknown_urls_are_never_fetched() -> None:
         assert source_evidence._fetch(changed, uuid4())["status"] == "not_in_reviewed_catalog"
 
 
+def test_reviewed_fed_statement_catalog_is_resource_bound_not_import_id_bound() -> None:
+    url = 'https://www.federalreserve.gov/newsevents/pressreleases/monetary20261028a.htm'
+    assert source_evidence._catalog_entry(url)['provider'] == 'federal_reserve'
+    assert source_evidence._catalog_entry(url + '?redirect=1') is None
+    assert source_evidence._catalog_entry(url.replace('www.federalreserve.gov','evil.example')) is None
+
+
 def test_ons_source_catalog_is_exact_and_reuse_terms_are_host_bound() -> None:
     from woori.topics import OFFICIAL_SOURCE_HOSTS
 

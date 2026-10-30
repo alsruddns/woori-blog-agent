@@ -868,6 +868,31 @@ def test_manual_live_request_commits_approval_job_and_followups_atomically_in_is
                         (first.json()["id"],)).fetchone()["n"] == 1
     again = api.post("/admin/publications/manual-live-requests", headers=headers, json=payload)
     assert again.status_code == 201 and again.json()["duplicate"] is True
+    recovery_job = UUID(first.json()['id'])
+    draft_payload = {'title': snapshot['title'], 'content': snapshot['safe_html']}
+    fingerprint = publications.BloggerLivePublisher._fingerprint('create_draft', blog_id, draft_payload)
+    conn.execute("INSERT INTO blogger_write_operations(idempotency_key,request_fingerprint,operation,status) VALUES (%s,%s,'create_draft','failed')",
+                 ('live:pubjob-' + str(recovery_job) + '-draft',fingerprint))
+    conn.execute("UPDATE publishing_jobs SET status='failed',publication_state='publication_failed' WHERE id=%s", (recovery_job,))
+    monkeypatch.setattr(publication_worker, 'connection', shared_connection)
+    monkeypatch.setattr(publications.BloggerLivePublisher, '_target', staticmethod(lambda _blog: {'blog_id':blog_id}))
+    monkeypatch.setattr('woori.blogger_service.post', lambda *_: {
+        'id':'123456', 'blog':{'id':blog_id}, 'status':'DRAFT', **draft_payload})
+    recovered = publication_worker.reconcile_manual_draft(recovery_job, '123456')
+    assert recovered['status'] == 'queued' and recovered['blogger_write_performed'] is False
+    with pytest.raises(Exception, match='manual_failed_job_required'):
+        publication_worker.reconcile_manual_draft(recovery_job, '123456')
+    published = {'post_id':'123456', 'blog_id':blog_id, 'status':'LIVE',
+                 'url':'https://manual-transaction-fixture.blogspot.com/verified.html',
+                 'published_at':datetime.now(UTC).isoformat()}
+    conn.execute("INSERT INTO blogger_write_operations(idempotency_key,request_fingerprint,operation,status,result) VALUES (%s,%s,'publish_draft','succeeded',%s)",
+                 ('live:pubjob-' + str(recovery_job) + '-publish','test-publish-fingerprint',Jsonb(published)))
+    monkeypatch.setattr('woori.blogger_service.post', lambda *_: {
+        'id':'123456', 'blog':{'id':blog_id},'status':'LIVE','url':published['url'],**draft_payload})
+    assert publication_worker.reconcile_published_manual_job(recovery_job)['status'] == 'published'
+    assert publication_worker.reconcile_published_manual_job(recovery_job)['status'] == 'published'
+    assert conn.execute('SELECT count(*) n FROM publishing_records WHERE job_id=%s',(recovery_job,)).fetchone()['n'] == 1
+    assert conn.execute('SELECT post_id FROM post_publication_reviews WHERE publishing_job_id=%s',(recovery_job,)).fetchone()['post_id'] == '123456'
     assert conn.execute("SELECT count(*) AS n FROM publishing_jobs WHERE idempotency_key=%s",
                         (payload["idempotency_key"],)).fetchone()["n"] == 1
 

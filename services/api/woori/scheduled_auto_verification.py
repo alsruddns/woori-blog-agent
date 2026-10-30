@@ -261,12 +261,12 @@ def _quantity_facts(text: str) -> set[tuple[str, str]]:
         for match in pattern.finditer(text):
             if any(start <= match.start() and match.end() <= end for start, end in consumed):
                 continue
-            value = (
+            month_value = (
                 int(match.group(group_index))
                 if pattern is _KO_MONTH
                 else _EN_MONTHS[match.group(group_index).casefold()]
             )
-            facts.add(("calendar_month", f"{value:02d}"))
+            facts.add(("calendar_month", f"{month_value:02d}"))
             consumed.append(match.span())
 
     for pattern in (_YEAR_OFFSET_EN, _YEAR_OFFSET_KO):
@@ -285,10 +285,10 @@ def _quantity_facts(text: str) -> set[tuple[str, str]]:
     for match in _NUMBER.finditer(text):
         if any(start <= match.start() and match.end() <= end for start, end in consumed):
             continue
-        value = match.group(0).rstrip("%")
-        if value.casefold().endswith("bp"):
-            value = value[:-2]
-        parsed = _decimal(value)
+        number_text = match.group(0).rstrip("%")
+        if number_text.casefold().endswith("bp"):
+            number_text = number_text[:-2]
+        parsed = _decimal(number_text)
         if parsed.is_finite():
             facts.add(("number", format(parsed.normalize(), "f")))
     return facts
@@ -364,6 +364,9 @@ def evaluate_scheduled_evidence(
             reasons.append("claim_evidence_incomplete")
             continue
         attached = [proof_for_source.get(source_id) for source_id in source_ids]
+        if not any(attached):
+            reasons.append('claim_source_verification_unavailable')
+            continue
         if not evidence or not any(
             proof and any(evidence in str(span) for span in proof.get("verified_claim_evidence", []))
             for proof in attached

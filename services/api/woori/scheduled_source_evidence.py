@@ -194,8 +194,15 @@ def _claim_fact_check(claim: dict[str, Any], paragraphs: list[str]) -> tuple[lis
     }
 
 
+def _catalog_entry(url: str) -> dict[str, str] | None:
+    if re.fullmatch(r'https://www\.federalreserve\.gov/newsevents/pressreleases/monetary[0-9]{8}a\.htm', url):
+        return {'provider': 'federal_reserve', 'source_host': 'www.federalreserve.gov',
+                'source_path': urlsplit(url).path, 'organization': 'Federal Reserve Board'}
+    return _CATALOG.get(url)
+
+
 def _fetch(url: str, run_id: UUID) -> dict[str, Any]:
-    catalog = _CATALOG.get(url)
+    catalog = _catalog_entry(url)
     if not catalog:
         return {"status": "not_in_reviewed_catalog", "source_url": url}
     parts = urlsplit(url)
@@ -299,9 +306,14 @@ def capture_import_sources(import_id: UUID) -> dict[str, Any]:
     for source in sources:
         source_id = str(source.get("source_id") or "")
         source_url = str(source.get("url") or "")
-        catalog = _CATALOG.get(source_url)
-        if not catalog or catalog["source_id"] != source_id:
+        catalog = _catalog_entry(source_url)
+        if not catalog:
             outcomes.append({"source_id": source_id, "status": "not_in_reviewed_catalog"})
+            with connection() as conn:
+                conn.execute("INSERT INTO audit_events(event_type,payload) VALUES ('research.source.live_document_capture_failed',%s)",
+                             (Jsonb({'import_id':str(import_id), 'source_id':source_id,
+                                     'source_url':source_url, 'status':'not_in_reviewed_catalog',
+                                     'http_attempted':False, 'policy_version':CAPTURE_POLICY_VERSION}),))
             continue
         with connection() as conn:
             recent = conn.execute(

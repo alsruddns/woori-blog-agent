@@ -206,6 +206,8 @@ class BloggerLivePublisher:
                       AND a.payload->>'mode'='live'""",
                     (connection_id, blog_id, blog_id),
                 ).fetchone()
+                if limits is None:
+                    raise GoogleFailure('account_limits_unavailable')
                 if limits["account_last"] and limits["account_last"] > datetime.now(UTC) - timedelta(minutes=2):
                     raise GoogleFailure("account_minimum_interval_not_elapsed")
                 if limits["blog_last"] and limits["blog_last"] > datetime.now(UTC) - timedelta(minutes=5):
@@ -282,6 +284,7 @@ class BloggerLivePublisher:
         self, key: str, target: dict[str, Any], title: str, html: str,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
+        result: dict[str, Any] | None = None
         try:
             self._verify_target(target)
             data, status = _live_response(
@@ -302,6 +305,7 @@ class BloggerLivePublisher:
             verified, verify_status = _live_response(
                 connection_id=target["oauth_connection_id"], operation="blogger_read",
                 method="GET", path=f"/blogs/{target['blog_id']}/posts/{post_id}",
+                params={"view": "AUTHOR"},
                 transport=self._transport,
             )
             if (numeric_id(str(verified.get("id", ""))) != post_id
@@ -315,9 +319,13 @@ class BloggerLivePublisher:
             self._finish(key, "create_draft", "succeeded", result, None, status)
             return result
         except GoogleFailure as exc:
-            uncertain = exc.category in {"uncertain_write", "audit_unavailable_after_call"}
+            uncertain = result is not None or exc.category in {"uncertain_write", "audit_unavailable_after_call"}
+            if result is not None:
+                result['readback_error_category'] = exc.category
             self._finish(key, "create_draft", "uncertain" if uncertain else "failed",
-                         None, exc.category, exc.status)
+                         result, exc.category, exc.status)
+            if result is not None:
+                raise GoogleFailure('uncertain_write', exc.status) from None
             raise
 
     def publish_draft(
@@ -351,6 +359,7 @@ class BloggerLivePublisher:
     def _publish_draft_claimed(
         self, key: str, target: dict[str, Any], post_id: str,
     ) -> dict[str, Any]:
+        status: int | None = None
         try:
             self._verify_target(target)
             draft, draft_status = _live_response(

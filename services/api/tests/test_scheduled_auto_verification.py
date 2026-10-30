@@ -3,6 +3,15 @@ from __future__ import annotations
 from woori.scheduled_auto_verification import evaluate_scheduled_evidence
 
 
+def test_missing_capture_is_not_reported_as_a_disproved_claim() -> None:
+    imported, _ = _case()
+    result = evaluate_scheduled_evidence(imported, version_sha256='a'*64,
+        source_proofs={}, human_review=None, scheduled_publish_first=True)
+    assert 'claim_source_verification_unavailable' in result['reasons']
+    assert 'claim_span_not_found_in_live_source_evidence' not in result['reasons']
+    assert result['status'] == 'held'
+
+
 def _case() -> tuple[dict[str, object], dict[str, dict[str, object]]]:
     imported: dict[str, object] = {
         "id": "import-1",

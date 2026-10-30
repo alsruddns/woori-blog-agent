@@ -296,6 +296,7 @@ def test_live_draft_is_read_back_before_success_is_recorded(
         if request.method == "POST":
             submitted.update(json.loads(request.content))
             return httpx.Response(200, json={"id": "456", "blog": {"id": "123"}, "status": "DRAFT"}, request=request)
+        assert request.url.params.get('view') == 'AUTHOR'
         return httpx.Response(200, json={"id": "456", "blog": {"id": "123"}, "status": readback_status, **submitted}, request=request)
 
     publisher = blogger_writes.BloggerLivePublisher(httpx.MockTransport(handler))
@@ -308,9 +309,10 @@ def test_live_draft_is_read_back_before_success_is_recorded(
         assert result["post_verified"] is True
         assert finish_calls[-1][0] == "succeeded"
     else:
-        with pytest.raises(GoogleFailure, match="draft_readback_mismatch"):
+        with pytest.raises(GoogleFailure, match="uncertain_write"):
             publisher.create_draft("draft-once", blog_record_id, "검증 초안", "<p>비공개 검증 초안</p>")
-        assert finish_calls[-1][0] == "failed"
+        assert finish_calls[-1][0] == "uncertain"
+        assert finish_calls[-1][1].obj['post_id'] == '456'
     assert [method for method, _ in calls] == ["GET", "POST", "GET"]
     assert calls[-1][1].endswith("/blogs/123/posts/456")
 
