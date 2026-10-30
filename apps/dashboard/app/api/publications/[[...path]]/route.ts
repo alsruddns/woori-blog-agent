@@ -11,7 +11,7 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path?: s
     : request.method === "POST" && (route === "requests" || route === "live-requests" || route === "manual-live-requests" || /^jobs\/[a-f0-9-]+\/simulate$/.test(route) || /^blogs\/[a-f0-9-]+\/sync-readonly$/.test(route))
       ? true
         : request.method === "POST" && (route === "emergency-stop" || route === "scheduled-auto-policy" || route === "trends-auto-policy"
-          || route === "scheduled-auto-first-post" || route === "scheduled-auto/verify-connections")
+          || route === "scheduled-auto-first-post" || route === "scheduled-auto/verify-connections" || route === "trends-auto/verify-connections")
           ? true
           : request.method === "POST" && /^post-publication-reviews\/[a-f0-9-]+\/items$/.test(route)
             ? true

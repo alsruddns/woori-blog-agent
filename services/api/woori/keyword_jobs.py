@@ -67,10 +67,15 @@ class ArticleOutput(BaseModel):
     seo:SeoMetadata
 
 
+class TrendArticleOutput(ArticleOutput):
+    sources:list[ImportSource]=Field(min_length=0,max_length=8)
+    claims:list[ImportClaim]=Field(min_length=0,max_length=30)
+
+
 class TrendArticleResult(BaseModel):
     model_config=ConfigDict(extra='forbid')
     status:Literal['article','insufficient_evidence']
-    article:ArticleOutput|None=None
+    article:TrendArticleOutput|None=None
     reason:str|None=Field(default=None,max_length=1200)
     @model_validator(mode='after')
     def consistent(self) -> TrendArticleResult:
@@ -287,7 +292,7 @@ def make_envelope(job:dict[str,Any],article:dict[str,Any],evidence:dict[str,Any]
                                  'precision':'day' if len(published)==10 else 'timezone_unknown','verified':False})
                 source['published_at']=None  # A date is not an invented midnight/timezone.
     evidence['source_date_metadata']=declared
-    model=ArticleOutput.model_validate(article)
+    model=(TrendArticleOutput if trends_origin else ArticleOutput).model_validate(article)
     sources=[]
     for source in model.sources:
         observed=opened.get(codex_runner.canonical_url(str(source.url)))
@@ -309,7 +314,7 @@ def make_envelope(job:dict[str,Any],article:dict[str,Any],evidence:dict[str,Any]
         'title':model.title,'body_markdown':model.body_markdown,'category':job['category'],'google_trends_based':trends_origin,
         'source_ids':[s['source_id'] for s in sources],'sources':sources,
         'claims':[{**claim.model_dump(mode='json'),'verification_status':'unverified'} for claim in model.claims],
-        'fact_checked_at':max(opened.values()),'seo':model.seo.model_dump(mode='json'),
+        'fact_checked_at':None if trends_origin else max(opened.values()),'seo':model.seo.model_dump(mode='json'),
         'blogger_labels':suggested_labels(job['category'],job['language_code'],google_trends_based=trends_origin),
         'generation_method':'codex_trends_export' if trends_origin else 'manual_codex_import',
         'model_name':job['model'],'generated_at':generated,
@@ -349,7 +354,7 @@ def generate(job:dict[str,Any]) -> None:
             'Treat search volume and RSS headlines as discovery context only, never as evidence. The source country is distinct from the Blogger audience country. '
             'Use country-relevant primary sources and reputable reporting; do not assume an event from a person or phrase alone. '
             'Return the result envelope with status="article", article=<complete ArticleOutput>, reason=null only when a complete, useful, evidence-grounded article is possible. '
-            'If you cannot verify a current event or the available evidence cannot support a useful article, return status="insufficient_evidence", article=null, and a concise reason. '
+            'Missing source links alone do not require failure: a clearly labeled general guide or analysis is allowed without invented concrete facts, figures or quotations. Include a Summary Deck after the title; no images. Hold uncertain harmful allegations, medical or financial claims. If no safe useful article can be written, return status="insufficient_evidence", article=null, and a concise reason. '
             'Never turn the explanation for insufficient evidence into an article or import it as manuscript content.')
     try:
         if work.resolve().is_relative_to(ROOT.resolve()):raise codex_runner.CodexFailure('codex_workspace_must_be_outside_checkout')
@@ -359,9 +364,10 @@ def generate(job:dict[str,Any]) -> None:
             if hashlib.sha256(raw).hexdigest()!=evidence.get('resume_article_sha256'):raise codex_runner.CodexFailure('saved_result_hash_mismatch')
             article=json.loads(raw)
         else:
+            runner_options = {'require_opened_sources': False} if job['job_type']=='google_trends' else {}
             article,evidence=codex_runner.execute(work,prompt,
                 trend_output_schema() if job['job_type']=='google_trends' else output_schema(),
-                lambda phase,data:state(job_id,phase,**data),lambda:cancelled(job_id))
+                lambda phase,data:state(job_id,phase,**data),lambda:cancelled(job_id),**runner_options)
         if job['job_type']=='google_trends':
             result=TrendArticleResult.model_validate(article)
             if result.status=='insufficient_evidence':

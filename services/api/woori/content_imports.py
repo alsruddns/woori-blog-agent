@@ -81,8 +81,8 @@ class ImportClaim(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     claim_id: str = Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9_.:-]+$")
     claim: str = Field(min_length=8, max_length=1500)
-    source_ids: list[str] = Field(min_length=1, max_length=10)
-    evidence_excerpt: str = Field(min_length=8, max_length=2000)
+    source_ids: list[str] = Field(min_length=0, max_length=10)
+    evidence_excerpt: str = Field(min_length=0, max_length=2000)
     verification_status: Literal["source_span_verified", "corroborated", "conflict", "unverified"]
     factual_state: Literal["proposed", "planned", "approved", "enacted", "paid", "unverified"]
 
@@ -127,10 +127,10 @@ class ContentImport(BaseModel):
     body_markdown: str = Field(min_length=100, max_length=100000)
     category: str
     google_trends_based: bool
-    source_ids: list[str] = Field(min_length=1, max_length=20)
-    sources: list[ImportSource] = Field(min_length=1, max_length=20)
-    claims: list[ImportClaim] = Field(min_length=1, max_length=80)
-    fact_checked_at: datetime
+    source_ids: list[str] = Field(min_length=0, max_length=20)
+    sources: list[ImportSource] = Field(min_length=0, max_length=20)
+    claims: list[ImportClaim] = Field(min_length=0, max_length=80)
+    fact_checked_at: datetime | None
     seo: SeoMetadata
     blogger_labels: list[str] = Field(default_factory=list, max_length=8)
     generation_method: Literal["manual_codex_import", "chatgpt_scheduled_export", "other_external_export", "codex_trends_export"]
@@ -151,13 +151,25 @@ class ContentImport(BaseModel):
 
     @field_validator("fact_checked_at", "generated_at")
     @classmethod
-    def top_level_timestamp_has_timezone(cls, value: datetime) -> datetime:
+    def top_level_timestamp_has_timezone(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("import_timestamp_requires_timezone")
         return value
 
     @model_validator(mode="after")
     def evidence_and_metadata_consistent(self) -> ContentImport:
+        trends = self.generation_method == "codex_trends_export" and self.google_trends_based
+        if trends and re.search(r"insufficient[_ ]evidence|근거\s*부족|정보\s*부족|证据不足|情報不足", self.title, re.IGNORECASE):
+            raise ValueError("insufficient_evidence_is_not_article")
+        if trends and re.match(r"\s*(?:I (?:cannot|could not|am unable to) verify|Unable to verify|No sufficient evidence|검증 가능한 정보가 없습니다|근거를 확보하지 못했습니다)", self.body_markdown, re.IGNORECASE):
+            raise ValueError("insufficient_evidence_is_not_article")
+        if not trends and (not self.sources or not self.claims or not self.source_ids or self.fact_checked_at is None
+                           or any(not c.source_ids or len(c.evidence_excerpt) < 8 for c in self.claims)):
+            raise ValueError("non_trends_evidence_required")
+        if self.generation_method == "codex_trends_export" and not self.google_trends_based:
+            raise ValueError("trends_provenance_required")
         if self.category not in CATEGORY_SLUGS:
             raise ValueError("category_not_in_editorial_taxonomy")
         if self.language_code not in LANGUAGES:

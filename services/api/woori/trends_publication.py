@@ -1,8 +1,9 @@
-"""Fail-closed Trends-only publication policy and enqueue path."""
+"""Explicitly approved Trends publication with post-publication editorial review."""
 
 from __future__ import annotations
 
 import hashlib
+import re
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -12,7 +13,7 @@ from psycopg.types.json import Jsonb
 
 from .db import connection
 
-ALLOWED_GEOGRAPHIES = {"KR", "US", "GB", "CA", "AU", "IN", "JP", "TW", "HK", "SG", "BR"}
+ALLOWED_GEOGRAPHIES = {"KR", "US", "GB", "CA", "AU", "IN", "JP", "TW", "HK", "SG", "PH", "BR"}
 
 
 def collection_after_activation(slot: Any, activated_at: datetime) -> bool:
@@ -38,6 +39,47 @@ def claims_are_publish_verified(claims: Any) -> bool:
 def search_description_is_publishable(value: Any) -> bool:
     description = value.strip() if isinstance(value, str) else ""
     return 30 <= len(description) <= 150
+
+
+def assess_trends_article(item: dict[str, Any], body: str) -> dict[str, Any]:
+    """Post-editing Trends policy: assess format and basic risk, never promote claims."""
+    from .editorial_html import markdown_to_blogger_html, sanitize_editorial_html
+    reasons: list[str] = []
+    title = str(item.get("title") or "").strip()
+    if len(title) < 5 or len(body.strip()) < 300:
+        reasons.append("article_title_or_body_insufficient")
+    if re.search(r"insufficient[_ ]evidence|근거\s*부족|증거\s*부족|情報不足|证据不足", title, re.IGNORECASE):
+        reasons.append("insufficient_evidence_is_not_article")
+    if re.match(r"\s*(?:I (?:cannot|could not|am unable to) verify|Unable to verify|No sufficient evidence|검증 가능한 정보가 없습니다|근거를 확보하지 못했습니다)", body, re.IGNORECASE):
+        reasons.append("insufficient_evidence_is_not_article")
+    if re.search(r"</?[A-Za-z][^>]*>|\x00", body):
+        reasons.append("unsafe_article_format")
+    risk_text = title + " " + body
+    if item.get("category") in {"finance", "health"} or re.search(
+        r"\b(death|died|suicide|murder|fraud|allegation|cancer|diagnosis|investment|stock price)\b"
+        r"|사망|범죄|성폭행|혐의|투자\s*추천|암\s*치료|死亡|犯罪|疑惑|投资建议|治療", risk_text, re.IGNORECASE
+    ):
+        reasons.append("high_impact_topic_requires_review")
+    for claim in item.get("claims") or []:
+        if claim.get("verification_status") in {"conflict", "contradicted", "rejected"}:
+            reasons.append("known_conflicting_claim")
+        excerpt = str(claim.get("evidence_excerpt") or "")
+        if len(excerpt) > 200 and excerpt in body:
+            reasons.append("long_source_copy_requires_review")
+    if any(source.get("rights_status") in {"prohibited", "denied", "permission_denied"}
+           for source in item.get("sources") or []):
+        reasons.append("known_rights_restriction")
+    safe_html = ""
+    try:
+        safe_html = markdown_to_blogger_html(body, post_title=title,
+            summary=str((item.get("seo_metadata") or {}).get("search_description") or ""))
+        safe_html, _ = sanitize_editorial_html(safe_html, post_title=title)
+    except ValueError:
+        reasons.append("unsafe_article_html")
+    return {"reasons": sorted(set(reasons)), "safe_html": safe_html,
+            "html_sha256": hashlib.sha256(safe_html.encode()).hexdigest(),
+            "policy_version": "trends-post-edit-1", "claims_promoted": False,
+            "post_publication_review_required": True}
 
 
 def policy_state(conn: Any) -> dict[str, Any]:
@@ -106,11 +148,11 @@ def record_policy(conn: Any, request: Any) -> dict[str, Any]:
         if external_policy._blogger_policy_approval() is None:
             raise HTTPException(409, "Blogger zero-cost operations approval is unavailable")
     prior = conn.execute(
-        "SELECT id,enabled,allowed_geos,daily_limit FROM trends_publication_policy_events WHERE idempotency_key=%s",
+        "SELECT id,blog_id,enabled,allowed_geos,daily_limit FROM trends_publication_policy_events WHERE idempotency_key=%s",
         (request.idempotency_key,),
     ).fetchone()
     if prior:
-        if (bool(prior["enabled"]) != request.enabled
+        if (str(prior["blog_id"]) != str(request.blog_id) or bool(prior["enabled"]) != request.enabled
                 or sorted(prior["allowed_geos"]) != geos
                 or prior["daily_limit"] != request.daily_limit):
             raise HTTPException(409, "Idempotency key conflicts with an earlier Trends policy event")
@@ -124,6 +166,8 @@ def record_policy(conn: Any, request: Any) -> dict[str, Any]:
                 "actor_label": request.actor_label, "reason": request.reason,
                 "confirmation": request.confirmation, "policy_version": 1,
                 "scope": "trends_auto", "allowed_geos": geos,
+                "content_policy": "trends-post-edit-1", "verified_claim_required": False,
+                "post_publication_review_required": True,
             })))
     previous = conn.execute(
         "SELECT id,enabled,allowed_geos,daily_limit FROM trends_publication_policy_events WHERE blog_id=%s ORDER BY id DESC LIMIT 1",
@@ -141,6 +185,7 @@ def record_policy(conn: Any, request: Any) -> dict[str, Any]:
         "actor_label": request.actor_label, "reason": request.reason,
         "previous": dict(previous) if previous else None,
         "provenance": "codex_trends_export", "public_write_performed": False}
+    payload["content_policy"] = "trends-post-edit-1"
     conn.execute("INSERT INTO audit_events(event_type,blog_id,payload) VALUES(%s,%s,%s)",
         ("publication.trends_auto.policy_changed", request.blog_id, Jsonb(payload)))
     return {"event_id": saved["id"], "created_at": saved["created_at"],
@@ -151,7 +196,8 @@ def _recent_identity_verification(conn: Any, blog_id: UUID, blogger_id: str) -> 
     row = conn.execute(
         """SELECT payload,created_at FROM audit_events
         WHERE event_type IN ('publication.scheduled_auto.connection_check','publication.trends_auto.connection_check')
-        ORDER BY id DESC LIMIT 1"""
+          AND payload->'results' @> %s::jsonb
+        ORDER BY id DESC LIMIT 1""", (Jsonb([{"blog_record_id": str(blog_id)}]),)
     ).fetchone()
     if not row:
         return False
@@ -164,9 +210,9 @@ def _recent_identity_verification(conn: Any, blog_id: UUID, blogger_id: str) -> 
 
 
 def validate_trends_job(conn: Any, blog_id: UUID, content_version_id: UUID) -> dict[str, Any]:
-    """Recheck immutable Trends lineage, review, policy, and current-version gates."""
+    """Recheck Trends lineage, basic article safety, policy, and latest version."""
     row = conn.execute(
-        """SELECT i.*,iv.id AS import_version_id,iv.version_number,iv.content_sha256 AS import_hash,
+        """SELECT i.*,iv.title,iv.body_markdown,iv.id AS import_version_id,iv.version_number,iv.content_sha256 AS import_hash,
           link.content_version_id,j.id AS authoring_job_id,j.job_type,j.state AS authoring_state,
           j.error_code AS authoring_error,q.id AS trend_request_id,q.contract,t.id AS trend_topic_id,
           b.id AS blog_record_id,b.blog_id,b.language_code AS blog_language,b.active,b.connection_verified_at,
@@ -217,48 +263,17 @@ def validate_trends_job(conn: Any, blog_id: UUID, content_version_id: UUID) -> d
     ).fetchone()
     if not latest or str(latest["id"]) != str(content_version_id):
         reasons.append("stale_content_version")
-    if not row["machine_passed"] or not row["safe_html"]:
-        reasons.append("content_assessment_not_publishable")
-    claims = row["claims"] or []
-    sources = row["sources"] or []
-    if not claims_are_publish_verified(claims):
-        reasons.append("claim_verification_incomplete")
-    search_description = str((row.get("seo_metadata") or {}).get("search_description") or "").strip()
-    if not search_description_is_publishable(search_description):
-        reasons.append("search_description_not_publishable")
-    if not sources:
-        reasons.append("source_evidence_missing")
-    review = conn.execute(
-        """SELECT claims_checked,rights_reviewed FROM external_content_import_review_events
-        WHERE import_id=%s AND version_id=%s AND event_type='editorial_review_passed'
-        ORDER BY created_at DESC,id DESC LIMIT 1""", (row["id"], row["import_version_id"]),
-    ).fetchone()
-    if not review or not review["claims_checked"] or not review["rights_reviewed"]:
-        reasons.append("human_claim_and_rights_review_required")
-    proofs = conn.execute(
-        """SELECT payload FROM audit_events WHERE event_type='research.source.live_document_verified'
-        AND payload->>'import_id'=%s ORDER BY id DESC""", (str(row["id"]),),
-    ).fetchall()
-    proof_map = {str(proof["payload"].get("source_id")): proof["payload"] for proof in proofs}
-    if any(str(source.get("source_id")) not in proof_map for source in sources if isinstance(source, dict)):
-        reasons.append("source_live_verification_missing")
     body = conn.execute("SELECT body FROM content_versions WHERE id=%s", (content_version_id,)).fetchone()
-    assessment = None
-    if not reasons:
-        from .scheduled_auto_verification import evaluate_scheduled_evidence
-        assessment = evaluate_scheduled_evidence(
-            {**row, "generation_method": "chatgpt_scheduled_export"},
-            version_sha256=str(row.get("import_hash") or ""), source_proofs=proof_map,
-            human_review=review, scheduled_publish_first=True,
-            article_body=str(body["body"] if body else ""),
-        )
-        reasons.extend(assessment["reasons"])
+    assessment = assess_trends_article(row, str(body["body"] if body else ""))
+    reasons.extend(assessment["reasons"])
+    row["safe_html"] = assessment["safe_html"]
+    row["html_sha256"] = assessment["html_sha256"]
     return {"row": row, "assessment": assessment, "reasons": list(dict.fromkeys(reasons)),
             "policy": dict(policy) if policy else None}
 
 
 def enqueue_trends_auto_jobs() -> dict[str, int]:
-    """Enqueue only reviewed, current, explicitly scoped Trends imports."""
+    """Enqueue current, explicitly scoped Trends imports under the post-edit policy."""
     from . import external_policy
     from .scheduled_duplicates import find_remote_duplicate
 
@@ -281,7 +296,7 @@ def enqueue_trends_auto_jobs() -> dict[str, int]:
             blog_id = UUID(str(policy["blog_id"]))
             allowed_geos = set(policy["allowed_geos"])
             candidates = conn.execute(
-                """SELECT i.*,iv.id AS import_version_id,iv.version_number,iv.content_sha256 AS import_hash,
+                """SELECT i.*,iv.title,iv.body_markdown,iv.id AS import_version_id,iv.version_number,iv.content_sha256 AS import_hash,
                     link.content_version_id,cv.group_id,cv.localization_id,cv.version AS content_version,
                     j.id AS authoring_job_id,j.job_type,j.state AS authoring_state,j.evidence AS authoring_evidence,
                     j.error_code AS authoring_error,q.id AS trend_request_id,q.contract,
@@ -345,46 +360,12 @@ def enqueue_trends_auto_jobs() -> dict[str, int]:
                 if list(item["scopes"] or []) != ["https://www.googleapis.com/auth/blogger"]: reasons.append("blogger_write_oauth_not_verified")
                 if item["content_language"] != item["blog_language"]: reasons.append("blog_language_mismatch")
                 if str(item["target_country"]) != str(item["contract"].get("target_country")): reasons.append("blog_country_mismatch")
-                if not item["machine_passed"] or not item["safe_html"]: reasons.append("content_assessment_not_publishable")
-                claims = item["claims"] or []
-                sources = item["sources"] or []
-                if not claims_are_publish_verified(claims):
-                    reasons.append("claim_verification_incomplete")
-                search_description = str((item.get("seo_metadata") or {}).get("search_description") or "").strip()
-                if not search_description_is_publishable(search_description):
-                    reasons.append("search_description_not_publishable")
-                if not sources: reasons.append("source_evidence_missing")
-                review = conn.execute(
-                    """SELECT claims_checked,rights_reviewed FROM external_content_import_review_events
-                    WHERE import_id=%s AND version_id=%s AND event_type='editorial_review_passed'
-                    ORDER BY created_at DESC,id DESC LIMIT 1""", (item["id"], item["import_version_id"]),
-                ).fetchone()
-                if not review or not review["claims_checked"] or not review["rights_reviewed"]:
-                    reasons.append("human_claim_and_rights_review_required")
-                proofs = conn.execute(
-                    """SELECT payload FROM audit_events WHERE event_type='research.source.live_document_verified'
-                    AND payload->>'import_id'=%s ORDER BY id DESC""", (str(item["id"]),),
-                ).fetchall()
-                proof_map = {str(r["payload"].get("source_id")): r["payload"] for r in proofs}
-                if any(str(source.get("source_id")) not in proof_map for source in sources if isinstance(source, dict)):
-                    reasons.append("source_live_verification_missing")
+                body_row = conn.execute("SELECT body FROM content_versions WHERE id=%s", (item["content_version_id"],)).fetchone()
+                safety = assess_trends_article(dict(item), str(body_row["body"] if body_row else ""))
+                reasons.extend(safety["reasons"])
                 if reasons:
                     held += 1
                     _record_hold(conn, item, blog_id, reasons)
-                    continue
-                # Reviewer attestations are required for Trends even though the
-                # scheduled-auto evaluator permits review follow-ups.
-                from .scheduled_auto_verification import evaluate_scheduled_evidence
-                body_row = conn.execute("SELECT body FROM content_versions WHERE id=%s", (item["content_version_id"],)).fetchone()
-                evidence = evaluate_scheduled_evidence(
-                    {**dict(item), "generation_method": "chatgpt_scheduled_export"},
-                    version_sha256=str(item["import_hash"] or ""), source_proofs=proof_map,
-                    human_review=review, scheduled_publish_first=True,
-                    article_body=str(body_row["body"] if body_row else ""),
-                )
-                if evidence["reasons"]:
-                    held += 1
-                    _record_hold(conn, item, blog_id, list(evidence["reasons"]))
                     continue
                 policy_check = external_policy._blogger_policy_approval()
                 if not policy_check:
@@ -449,6 +430,8 @@ def enqueue_trends_auto_jobs() -> dict[str, int]:
                     "trend_topic_id": topic_id, "trend_request_id": str(item["trend_request_id"]),
                     "collection_slot": slot, "source_country": geo, "blog_record_id": str(blog_id),
                     "policy_event_id": policy["id"], "publication_lane": "trends_auto",
+                    "content_policy": "trends-post-edit-1", "claims_promoted": False,
+                    "unverified_claim_count": sum(c.get("verification_status") == "unverified" for c in item["claims"] or []),
                     "idempotency_key": key, "public_write_performed": False,
                 })
                 conn.execute(

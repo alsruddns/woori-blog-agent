@@ -151,7 +151,7 @@ class TrendsAutoPolicyInput(BaseModel):
         expected = "ENABLE TRENDS AUTO PUBLICATION" if self.enabled else "STOP TRENDS AUTO PUBLICATION"
         if self.confirmation != expected:
             raise ValueError("explicit_trends_publication_confirmation_required")
-        if any(value not in {"KR","US","GB","CA","AU","IN","JP","TW","HK","SG","BR"}
+        if any(value not in {"KR","US","GB","CA","AU","IN","JP","TW","HK","SG","PH","BR"}
                for value in self.allowed_geos):
             raise ValueError("unsupported_trends_geography")
         if len(set(self.allowed_geos)) != len(self.allowed_geos):
@@ -862,6 +862,38 @@ def verify_scheduled_auto_connections(request: ScheduledConnectionCheckInput) ->
         )
     return {"results": results, "all_verified": all(item["verified"] for item in results),
             "blogger_write_performed": False}
+
+
+@router.post("/trends-auto/verify-connections")
+def verify_trends_connections(request: ScheduledConnectionCheckInput) -> dict[str, Any]:
+    """Reuse only real LIVE receipts tied to the currently mapped OAuth grant."""
+    verified = verify_scheduled_auto_connections(request)
+    with connection() as conn:
+        for result in verified["results"]:
+            if not result["verified"]:
+                continue
+            blog_id = UUID(result["blog_record_id"])
+            receipt = conn.execute(
+                """SELECT p.id,p.remote_post_id,p.remote_verified_at,j.oauth_connection_id
+                FROM publishing_records p JOIN publishing_jobs j ON j.id=p.job_id
+                JOIN blogger_blogs b ON b.id=p.blog_id AND b.oauth_connection_id=j.oauth_connection_id
+                JOIN blogger_write_operations w ON w.idempotency_key='live:pubjob-'||j.id::text||'-publish'
+                WHERE b.id=%s AND p.remote_status='LIVE' AND p.remote_verified_at IS NOT NULL
+                  AND j.status='succeeded' AND NOT j.simulation_only AND j.adapter_type='blogger_live'
+                  AND w.status='succeeded' AND w.operation='publish_draft'
+                  AND w.result->>'post_id'=p.remote_post_id AND w.result->>'blog_id'=b.blog_id
+                ORDER BY p.remote_verified_at DESC LIMIT 1""", (blog_id,),
+            ).fetchone()
+            result["write_verified"] = receipt is not None
+            if receipt:
+                conn.execute("UPDATE blogger_blogs SET test_publish_verified_at=%s WHERE id=%s AND oauth_connection_id=%s AND test_publish_verified_at IS NULL",
+                    (receipt["remote_verified_at"], blog_id, receipt["oauth_connection_id"]))
+                conn.execute("INSERT INTO audit_events(event_type,blog_id,payload) VALUES (%s,%s,%s)",
+                    ("publication.trends_auto.historical_write_verified", blog_id, Jsonb({
+                        "publishing_record_id": str(receipt["id"]), "post_id": receipt["remote_post_id"],
+                        "historical_verified_at": receipt["remote_verified_at"].isoformat(),
+                        "actor": "authenticated_admin", "blogger_write_performed": False})))
+    return verified
 
 
 @router.put("/mode-settings")
@@ -1739,7 +1771,7 @@ def list_post_publication_reviews(
             """SELECT r.id,r.review_status,r.review_notes,r.created_at,r.updated_at,
                 p.remote_url,p.remote_post_id,p.published_at,p.remote_verified_at,
                 p.content_version_id,r.content_id,v.title,b.language_code,b.url AS blog_url,
-                i.import_id,COALESCE(open_items.n,0)::int AS open_item_count,
+                i.import_id,i.claims AS claim_verification,COALESCE(open_items.n,0)::int AS open_item_count,
                 COALESCE(open_items.high_count,0)::int AS high_count,
                 COALESCE(items.all_items,'[]'::jsonb) AS review_items
             FROM post_publication_reviews r
@@ -1747,7 +1779,8 @@ def list_post_publication_reviews(
             JOIN publishing_jobs j ON j.id=p.job_id
             JOIN content_versions v ON v.id=p.content_version_id
             JOIN blogger_blogs b ON b.id=p.blog_id
-            LEFT JOIN LATERAL (SELECT link.import_id FROM external_content_import_content_links link
+            LEFT JOIN LATERAL (SELECT link.import_id,imp.claims FROM external_content_import_content_links link
+                JOIN external_content_imports imp ON imp.id=link.import_id
                 WHERE link.content_version_id=p.content_version_id ORDER BY link.created_at DESC LIMIT 1) i ON true
             LEFT JOIN LATERAL (SELECT count(*) FILTER(WHERE NOT resolved) AS n,
                 count(*) FILTER(WHERE NOT resolved AND severity='high') AS high_count
@@ -1785,7 +1818,7 @@ def update_post_publication_review(review_id: UUID, request: PostPublicationRevi
             """UPDATE post_publication_reviews r SET review_status=%s,review_notes=%s,updated_at=now()
             FROM publishing_records p JOIN publishing_jobs j ON j.id=p.job_id
             WHERE r.id=%s AND p.id=r.publishing_record_id AND p.remote_status='LIVE'
-              AND p.remote_verified_at IS NOT NULL AND j.publication_lane IN ('scheduled_auto','manual')
+              AND p.remote_verified_at IS NOT NULL AND j.publication_lane IN ('scheduled_auto','manual','trends_auto')
             RETURNING r.id,r.review_status,r.review_notes,r.updated_at""",
             (request.review_status, request.review_notes, review_id),
         ).fetchone()
@@ -1794,6 +1827,7 @@ def update_post_publication_review(review_id: UUID, request: PostPublicationRevi
         conn.execute("INSERT INTO audit_events(event_type,payload) VALUES (%s,%s)",
             ("publication.post_review.updated", Jsonb({"review_id": str(review_id),
              "previous_status": previous["review_status"], "review_status": row["review_status"],
+             "remote_edit_verified": False,
              "review_notes": row["review_notes"], "actor": "authenticated_dashboard_operator"})))
         return dict(row)
 
@@ -1808,7 +1842,7 @@ def add_post_publication_review_item(
             JOIN publishing_records p ON p.id=r.publishing_record_id
             JOIN publishing_jobs j ON j.id=p.job_id
             WHERE r.id=%s AND p.remote_status='LIVE' AND p.remote_verified_at IS NOT NULL
-              AND j.publication_lane IN ('scheduled_auto','manual') FOR UPDATE OF r""", (review_id,),
+              AND j.publication_lane IN ('scheduled_auto','manual','trends_auto') FOR UPDATE OF r""", (review_id,),
         ).fetchone()
         if not verified:
             raise HTTPException(404, "Verified scheduled publication review not found")
@@ -1851,7 +1885,7 @@ def resolve_post_publication_review_item(review_id: UUID, item_id: UUID) -> dict
             JOIN publishing_jobs j ON j.id=p.job_id
             WHERE x.id=%s AND x.review_id=r.id AND r.id=%s AND NOT x.resolved
               AND p.remote_status='LIVE' AND p.remote_verified_at IS NOT NULL
-              AND j.publication_lane IN ('scheduled_auto','manual')
+              AND j.publication_lane IN ('scheduled_auto','manual','trends_auto')
             RETURNING x.id,x.review_id,x.issue_type,x.severity,x.description,x.resolved,x.resolved_at,x.updated_at""",
             (item_id, review_id),
         ).fetchone()

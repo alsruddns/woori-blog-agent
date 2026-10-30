@@ -7,7 +7,7 @@ import psycopg
 from dotenv import dotenv_values
 
 root = Path(__file__).resolve().parents[1]
-MAX_SUPPORTED_SCHEMA_VERSION = 69
+MAX_SUPPORTED_SCHEMA_VERSION = 72
 parser = argparse.ArgumentParser()
 parser.add_argument("--status", action="store_true", help="Read-only operations schema version check")
 args = parser.parse_args()
@@ -326,4 +326,10 @@ with psycopg.connect(url) as conn:
         conn.execute((root / 'scripts/068_trends_worker_heartbeat_mode.sql').read_text(encoding='utf-8'), prepare=False)
     if current < 69:
         conn.execute((root / 'scripts/069_trends_unlimited_publication.sql').read_text(encoding='utf-8'), prepare=False)
-print("Project migrations through 069 verified")
+    if current < 70:
+        conn.execute((root / 'scripts/070_trends_optional_evidence.sql').read_text(encoding='utf-8'), prepare=False)
+    if current < 71:
+        conn.execute((root / 'scripts/071_trends_ph_publication_geo.sql').read_text(encoding='utf-8'), prepare=False)
+    if current < 72:
+        conn.execute((root / 'scripts/072_trends_post_review_guard.sql').read_text(encoding='utf-8'), prepare=False)
+print("Project migrations through 072 verified")

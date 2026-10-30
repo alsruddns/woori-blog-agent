@@ -441,6 +441,7 @@ def _trends_public_write_approval(blog_id: str) -> dict[str, Any] | None:
         return None
     if (not row or row["payload"].get("policy_version") != 1
             or row["payload"].get("scope") != "trends_auto"
+            or row["payload"].get("content_policy") != "trends-post-edit-1"
             or row["payload"].get("confirmation") != "ENABLE TRENDS AUTO PUBLICATION"
             or row["payload"].get("blog_record_id") != blog_id):
         return None

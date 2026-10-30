@@ -140,7 +140,7 @@ def test_api_only_joins_remote_verified_scheduled_publications() -> None:
     source = (root / "services/api/woori/publications.py").read_text(encoding="utf-8")
     assert "@router.get(\"/post-publication-reviews\")" in source
     assert "p.remote_status='LIVE' AND p.remote_verified_at IS NOT NULL" in source
-    assert "j.publication_lane IN ('scheduled_auto','manual')" in source
+    assert "j.publication_lane IN ('scheduled_auto','manual','trends_auto')" in source
     assert "publication.post_review_item.resolved" in source
     worker = (root / "services/api/woori/publication_worker.py").read_text(encoding="utf-8")
     assert 'if lane == "scheduled_auto":' in worker
