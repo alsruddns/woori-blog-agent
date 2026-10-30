@@ -106,6 +106,24 @@ def test_process_cost_and_permission_boundaries(monkeypatch):
     assert 'features.image_generation=false' in codex_runner.CONFIG
 
 
+def test_source_date_precision_and_unopened_blocks_are_preserved_as_evidence():
+    item=valid_item()
+    article={**{k:item[k] for k in ('title','body_markdown','sources','claims','seo')},'source_region':'ZZ'}
+    article['sources'][0]['published_at']='2026-10-28'
+    missing={**article['sources'][0],'source_id':'unopened','url':'https://example.gov/not-opened'}
+    article['sources'].append(missing)
+    original=article['body_markdown']
+    article['body_markdown']+='\n\nUnsupported standalone paragraph. [source:unopened]'
+    proof={'opened_urls':{'https://example.gov/policy':datetime.now(UTC).isoformat()}}
+    envelope=keyword_jobs.make_envelope({'id':uuid4(),'category':'technology','language_code':'ko','target_country':'KR','model':'gpt-6-luna'},article,proof)
+    assert envelope.item.body_markdown==original.strip()
+    assert envelope.item.sources[0].published_at is None
+    assert article['sources'][0]['published_at']=='2026-10-28'
+    assert proof['source_date_metadata'][0]['precision']=='day'
+    assert proof['draft_curation']['semantic_approval'] is False
+    assert envelope.item.claims[0].verification_status=='unverified'
+
+
 @pytest.mark.parametrize('mode',['success','cancel','timeout','limit'])
 def test_runner_bounded_execution_no_shell_or_api_key(monkeypatch,tmp_path,mode):
     import io

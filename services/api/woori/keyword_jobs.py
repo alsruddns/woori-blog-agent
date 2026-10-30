@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import threading
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -175,6 +176,20 @@ def retry_job(job_id:UUID,request:RetryRequest) -> dict[str,Any]:
             assert restored is not None
             return dict(restored)
         if prior['state'] not in {'failed','cancelled'}:raise HTTPException(409,'existing_result_or_active_request')
+        if prior['error_code']=='json_schema_invalid' and prior['execution_id']:
+            work=Path(os.environ['LOCALAPPDATA'])/'WooriBlogAgent/codex-jobs'/str(job_id)
+            if (work/'article.json').is_file() and (work/'research-evidence.json').is_file():
+                raw=(work/'article.json').read_bytes()
+                if len(raw)>256*1024:raise HTTPException(409,'saved_result_too_large')
+                evidence=json.loads((work/'research-evidence.json').read_text(encoding='utf-8'))
+                if evidence.get('execution_id')!=prior['execution_id']:raise HTTPException(409,'saved_execution_identity_mismatch')
+                evidence['resume_article_sha256']=hashlib.sha256(raw).hexdigest()
+                evidence['resume_saved_output']=True
+                update(conn,job_id,'queued',error_code=None,evidence=Jsonb(evidence))
+                audit(conn,job_id,'saved_output_resume_requested',{'request_key':str(request.request_key),'new_model_call':False})
+                restored=conn.execute('SELECT * FROM codex_authoring_jobs WHERE id=%s',(job_id,)).fetchone()
+                assert restored is not None
+                return dict(restored)
         if prior['import_attempts']>0:raise HTTPException(409,'import_status_must_be_reconciled')
         data={**prior['options'],'request_key':str(request.request_key)}
     return create(AuthoringRequest.model_validate(data),parent=job_id)
@@ -188,14 +203,47 @@ def cancelled(job_id:UUID) -> bool:
 
 
 def make_envelope(job:dict[str,Any],article:dict[str,Any],evidence:dict[str,Any]) -> ImportSubmission:
-    model=ArticleOutput.model_validate(article)
     opened=evidence.get('opened_urls') or {}
+    article=json.loads(json.dumps(article)) # Never mutate the original model artifact.
+    missing={s['source_id'] for s in article.get('sources',[]) if not opened.get(codex_runner.canonical_url(str(s.get('url',''))))}
+    if missing:
+        original=article['body_markdown'];blocks=[];removed=[]
+        marker=re.compile(r'\[source:([A-Za-z0-9_.:-]+)\]')
+        for block in re.split(r'\n\s*\n',original):
+            ids=set(marker.findall(block))
+            if ids & missing and not ids-missing:
+                removed.append(hashlib.sha256(block.encode()).hexdigest());continue
+            blocks.append(marker.sub(lambda m:'' if m.group(1) in missing else m.group(0),block).strip())
+        article['body_markdown']='\n\n'.join(blocks).strip()
+        article['sources']=[s for s in article['sources'] if s['source_id'] not in missing]
+        article['claims']=[{**c,'source_ids':[i for i in c['source_ids'] if i not in missing]} for c in article['claims'] if set(c['source_ids'])-missing]
+        if not article['sources'] or not article['claims'] or len(article['body_markdown'])<100:
+            raise codex_runner.CodexFailure('source_not_opened_in_this_run')
+        evidence['draft_curation']={'removed_source_ids':sorted(missing),'removed_block_hashes':removed,
+            'input_sha256':hashlib.sha256(original.encode()).hexdigest(),
+            'output_sha256':hashlib.sha256(article['body_markdown'].encode()).hexdigest(),'semantic_approval':False}
+    declared=[]
+    for source in article.get('sources',[]):
+        observed=opened.get(codex_runner.canonical_url(str(source.get('url',''))))
+        if not observed:raise codex_runner.CodexFailure('source_not_opened_in_this_run')
+        source['observed_at']=observed
+        published=source.get('published_at')
+        if isinstance(published,str):
+            stamp=datetime.fromisoformat(published)
+            if stamp.tzinfo is None or stamp.utcoffset() is None:
+                declared.append({'source_id':source['source_id'],'author_declared_date':published,
+                                 'precision':'day' if len(published)==10 else 'timezone_unknown','verified':False})
+                source['published_at']=None  # A date is not an invented midnight/timezone.
+    evidence['source_date_metadata']=declared
+    model=ArticleOutput.model_validate(article)
     sources=[]
     for source in model.sources:
         observed=opened.get(codex_runner.canonical_url(str(source.url)))
         if not observed:raise codex_runner.CodexFailure('source_not_opened_in_this_run')
         sources.append({**source.model_dump(mode='json'),'observed_at':observed,'rights_status':'quotation_review_required'})
     now=datetime.now(UTC).isoformat()
+    completed=job.get('completed_at')
+    generated=evidence.get('completed_at') or (completed.isoformat() if completed else now)
     return ImportSubmission.model_validate({'submitted_by':'Codex user keyword authoring','item':{
         'schema_version':'1.0','content_id':str(job['id']),'event_group_id':'user-keyword-'+str(job['id']),
         'relation':'original','parent_content_id':None,'research_package_id':None,'source_region':model.source_region,
@@ -204,9 +252,9 @@ def make_envelope(job:dict[str,Any],article:dict[str,Any],evidence:dict[str,Any]
         'title':model.title,'body_markdown':model.body_markdown,'category':job['category'],'google_trends_based':False,
         'source_ids':[s['source_id'] for s in sources],'sources':sources,
         'claims':[{**claim.model_dump(mode='json'),'verification_status':'unverified'} for claim in model.claims],
-        'fact_checked_at':now,'seo':model.seo.model_dump(mode='json'),
+        'fact_checked_at':max(opened.values()),'seo':model.seo.model_dump(mode='json'),
         'blogger_labels':suggested_labels(job['category'],job['language_code'],google_trends_based=False),
-        'generation_method':'manual_codex_import','model_name':job['model'],'generated_at':now,
+        'generation_method':'manual_codex_import','model_name':job['model'],'generated_at':generated,
         'created_by':'Codex user_keyword Job '+str(job['id'])}})
 
 
@@ -225,10 +273,18 @@ def generate(job:dict[str,Any]) -> None:
                     'category':job['category'],'options':job['options'],'current_time':datetime.now(UTC).isoformat()},ensure_ascii=False))
     try:
         if work.resolve().is_relative_to(ROOT.resolve()):raise codex_runner.CodexFailure('codex_workspace_must_be_outside_checkout')
-        article,evidence=codex_runner.execute(work,prompt,output_schema(),
-            lambda phase,data:state(job_id,phase,**data),lambda:cancelled(job_id))
+        if (job.get('evidence') or {}).get('resume_saved_output'):
+            raw=(work/'article.json').read_bytes()
+            evidence=dict(job['evidence'])
+            if hashlib.sha256(raw).hexdigest()!=evidence.get('resume_article_sha256'):raise codex_runner.CodexFailure('saved_result_hash_mismatch')
+            article=json.loads(raw)
+        else:
+            article,evidence=codex_runner.execute(work,prompt,output_schema(),
+                lambda phase,data:state(job_id,phase,**data),lambda:cancelled(job_id))
         state(job_id,'validating',evidence=Jsonb(evidence))
         envelope=make_envelope(job,article,evidence)
+        if evidence.get('draft_curation'):
+            with connection() as conn:audit(conn,job_id,'draft_curated',evidence['draft_curation'])
         raw=envelope.model_dump_json().encode('utf-8')
         if len(raw)>256*1024:raise codex_runner.CodexFailure('manuscript_file_too_large')
         if cancelled(job_id):raise codex_runner.CodexFailure('cancelled')
@@ -241,7 +297,7 @@ def generate(job:dict[str,Any]) -> None:
         with incoming.open('xb') as stream:
             stream.write(raw);stream.flush();os.fsync(stream.fileno())
         os.link(incoming,ready);incoming.unlink()
-        state(job_id,'import_pending',result_path=str(ready.relative_to(ROOT)),result_sha256=hashlib.sha256(raw).hexdigest())
+        state(job_id,'import_pending',result_path=str(ready.relative_to(ROOT)),result_sha256=hashlib.sha256(raw).hexdigest(),evidence=Jsonb(evidence),error_code=None)
     except (RuntimeError,ValueError,OSError,KeyError,httpx.HTTPError,psycopg.Error) as error:
         code=str(error) if isinstance(error,codex_runner.CodexFailure) else 'json_schema_invalid' if isinstance(error,ValueError) else 'authoring_internal_error'
         state(job_id,'cancelled' if code=='cancelled' else 'failed',error_code=code,completed_at=datetime.now(UTC))
@@ -258,7 +314,8 @@ def run_one() -> None:
                     update(conn,old['id'],'failed',error_code='worker_interrupted',completed_at=datetime.now(UTC))
                 job=conn.execute("SELECT * FROM codex_authoring_jobs WHERE state='queued' AND job_type='user_keyword' ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1").fetchone()
                 if not job:return
-                update(conn,job['id'],'researching',started_at=datetime.now(UTC))
+                if (job.get('evidence') or {}).get('resume_saved_output'):update(conn,job['id'],'validating')
+                else:update(conn,job['id'],'researching',started_at=datetime.now(UTC))
             generate(dict(job))
         finally:guard.execute('SELECT pg_advisory_unlock(20261030,800)')
 

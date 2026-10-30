@@ -172,6 +172,8 @@ def execute(work: Path, prompt: str, schema: dict[str, Any], callback: Callable[
         (work/'research-evidence.json').write_text(json.dumps(evidence,ensure_ascii=False,indent=2),encoding='utf-8')
         return data,evidence
     finally:
+        evidence['completed_at']=datetime.now(UTC).isoformat()
+        (work/'research-evidence.json').write_text(json.dumps(evidence,ensure_ascii=False,indent=2),encoding='utf-8')
         boundary.close()
         if proc.poll() is None:proc.terminate()
         proc.wait(timeout=10)
