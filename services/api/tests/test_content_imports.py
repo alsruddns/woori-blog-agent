@@ -106,14 +106,22 @@ def reviewable_item() -> dict[str, Any]:
     return item
 
 
-def test_eight_editorial_categories_and_overlapping_deduplication_groups() -> None:
+def test_editorial_categories_and_overlapping_deduplication_groups() -> None:
     assert {item["slug"] for item in EDITORIAL_CATEGORIES} == {
         "economy", "finance", "stocks", "crypto", "technology", "semiconductors",
-        "artificial-intelligence", "policy",
+        "artificial-intelligence", "policy", "entertainment",
     }
     categories = {item["slug"]: item for item in EDITORIAL_CATEGORIES}
     assert categories["finance"]["deduplication_group"] == categories["stocks"]["deduplication_group"]
     assert categories["technology"]["deduplication_group"] == categories["semiconductors"]["deduplication_group"]
+
+
+def test_category_schema_registry_and_entertainment_labels_match() -> None:
+    schema = json.loads((Path(__file__).resolve().parents[3] / "docs/schemas/woori-content-import-1.0.schema.json").read_text(encoding="utf-8"))
+    assert set(schema["properties"]["item"]["properties"]["category"]["enum"]) == {c["slug"] for c in EDITORIAL_CATEGORIES}
+    for language, label in {"ko": "엔터테인먼트", "en": "Entertainment", "ja": "エンタメ", "zh-CN": "娱乐"}.items():
+        assert suggested_labels("entertainment", language, google_trends_based=False) == [label]
+        assert suggested_labels("entertainment", language, google_trends_based=True) == [ISSUE_LABELS[language], label]
 
 
 def test_import_list_read_model_returns_latest_lineage_representative(monkeypatch: pytest.MonkeyPatch) -> None:

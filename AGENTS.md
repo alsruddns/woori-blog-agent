@@ -19,6 +19,10 @@
 - Collection, evidence validation, HTML/SEO, editing, human review, publication preparation, and the existing Manual/Auto publishing safeguards remain independent capabilities.
 
 # Codex 개발 규칙
+### P5-CODEX-077 K-POP category and research artifacts
+- Source-led K-POP uses the single canonical `entertainment` category and exact `suggested_labels` output; retain `scheduled_article`, actual occurrence provenance and generation-stage duplicate rules. No music subcategory fields or unrelated-category fallback. Existing task schedules/settings remain unchanged.
+- Never write directly to a final research snapshot: validate nonempty UTF-8 JSON using `scripts/write-research-snapshot.py <staging.part> <unique-name>.research.json` for exclusive atomic publication. Empty/invalid historical snapshots are not evidence and must be preserved. This helper does not create an article, Import or approval.
+
 모든 후속 Codex 작업에 적용한다.
 
 ## Rule 1. 개발 기록 필수

@@ -446,7 +446,8 @@ def test_inbox_limits_files_and_rejects_non_loopback_api(tmp_path: Path) -> None
         process_inbox_once(tmp_path, "http://example.com:18100", "x" * 32)
 
 
-def test_local_inbox_import_and_duplicate_use_isolated_database(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("category", ["stocks", "entertainment"])
+def test_local_inbox_import_and_duplicate_use_isolated_database(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, category: str) -> None:
     with connection() as conn, conn.transaction(force_rollback=True):
         @contextmanager
         def shared():
@@ -475,6 +476,9 @@ def test_local_inbox_import_and_duplicate_use_isolated_database(tmp_path: Path, 
         with TestClient(app) as client:
             root = tmp_path / ".local" / "gpt-scheduled-import"
             payload = scheduled_payload()
+            if category == "entertainment":
+                payload["item"].update(category=category, blogger_labels=["엔터테인먼트"], title="K-POP 공식 공지 기반 원고 Import 시험")
+                payload["scheduled_origin"].update(task_type="scheduled_article", market_date=None)
             origin = payload["scheduled_origin"]
             assert isinstance(origin, dict)
             origin["target_blog_id"] = blog["blog_id"]
@@ -484,6 +488,7 @@ def test_local_inbox_import_and_duplicate_use_isolated_database(tmp_path: Path, 
                 source = root / "incoming" / f"integration-ko-{index}.part"
                 source.parent.mkdir(parents=True, exist_ok=True)
                 staging = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+                assert validate_envelope(staging).item.category == category
                 source.write_bytes(staging)
                 ready = root / "ready" / f"integration-ko-{index}.ready.json"
                 ready.parent.mkdir(parents=True, exist_ok=True)

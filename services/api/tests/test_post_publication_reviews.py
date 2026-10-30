@@ -30,7 +30,7 @@ def test_post_publication_review_migration_is_additive_and_schema_59() -> None:
     assert "insert into schema_migrations(version) values(53)" in migration
     assert "add column content_id text" in identity_migration
     assert "insert into schema_migrations(version) values(54)" in identity_migration
-    assert "MAX_SUPPORTED_SCHEMA_VERSION = 59" in runner
+    assert "scripts/059_verified_publication_record_insert.sql" in runner
     permission = (root / 'scripts/059_verified_publication_record_insert.sql').read_text(encoding='utf-8').casefold()
     assert 'grant insert on publishing_records' in permission
     assert 'grant update' not in permission and 'grant delete' not in permission

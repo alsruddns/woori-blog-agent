@@ -15,6 +15,7 @@ EDITORIAL_CATEGORIES: tuple[dict[str, Any], ...] = (
     {"slug": "semiconductors", "name_ko": "반도체", "name_en": "Semiconductors", "deduplication_group": "technology"},
     {"slug": "artificial-intelligence", "name_ko": "인공지능", "name_en": "Artificial Intelligence", "deduplication_group": "technology"},
     {"slug": "policy", "name_ko": "정치·정책", "name_en": "Politics & Policy", "deduplication_group": "public-policy"},
+    {"slug": "entertainment", "name_ko": "엔터테인먼트", "name_en": "Entertainment", "deduplication_group": "entertainment"},
 )
 
 ISSUE_LABELS = {"ko": "이슈", "en": "Issues", "ja": "話題", "zh-CN": "热点"}
@@ -27,6 +28,7 @@ CATEGORY_LABELS = {
     "semiconductors": {"ko": "반도체", "en": "Semiconductors", "ja": "半導体", "zh-CN": "半导体"},
     "artificial-intelligence": {"ko": "인공지능", "en": "Artificial Intelligence", "ja": "人工知能", "zh-CN": "人工智能"},
     "policy": {"ko": "정치·정책", "en": "Policy", "ja": "政策", "zh-CN": "政策"},
+    "entertainment": {"ko": "엔터테인먼트", "en": "Entertainment", "ja": "エンタメ", "zh-CN": "娱乐"},
 }
 
 
