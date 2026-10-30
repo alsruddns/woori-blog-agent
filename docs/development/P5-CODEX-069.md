@@ -31,10 +31,13 @@
 - Ruff: passed. mypy on `services/api/woori/publications.py`: passed.
 - Dashboard ESLint and TypeScript: passed.
 - Before fix, actual Dashboard proxy responses: detail HTTP 200; publication-state HTTP 200 with the manual field empty. No Blogger POST was issued.
-- Initial live DB status: schema 58; manual Import/version/content IDs above. Runtime application of the fix and post-fix eligibility blockers are to be recorded after the committed-code validation/reflection step.
+- `apply-verified-changes.ps1 -Apply -Confirm:$false`: change-scoped API tests (32 passed), Ruff, mypy, Dashboard ESLint/typecheck, wheel build, and isolated Production Build passed. It safely reflected commit `cea08cf87f9930ab3c45ad6a2735f86838aa452a` to API, Dashboard, and Publication Worker; no Research Worker restart was needed.
+- Post-reflection requests through the actual Dashboard proxy: manuscript detail HTTP 200; `/api/publications/scheduled-auto-state?import_id=b4c45d23-0c74-4b12-92fd-382633093afa` HTTP 200. The exact current version remains v7 / `65133867-88d3-427a-bc24-b6994625eb38`. Manual status is `eligible=true`, blockers 0, follow-ups 6, manual jobs 0, auto failure false, emergency stop false, OAuth write scope true, and Blogger connection verified. This eligibility response did not create an approval, Job, or Blogger request.
+- Runtime: API 8100 and Dashboard 3100 return HTTP 200 and report applied commit `cea08cf87f9930ab3c45ad6a2735f86838aa452a`; Publication Worker PID 13872 is fresh in `scheduled-auto-and-manual` mode; Research Worker PID 56792 remains fresh and was not restarted. Queue and live-job counts remain 0.
+- Browser limitation: the Windows Computer Use bridge reported its native pipe unavailable; a separate Playwright browser launch was rejected by the command execution policy. Therefore this run verified the live API/proxy data and the button's source-level disabled calculation, but did not claim screenshot-backed visual browser validation. With the returned eligible status, `admin`/`확인완료`, and the three attestations checked, the component's disabled predicate is false. No publish button was clicked.
 - Git commit and push are recorded by subsequent Git history. `.playwright-mcp/` remains ignored/untracked and is excluded.
 
 ## Remaining
 
-- Do not call the manual-live-requests POST or Blogger API until the user clicks the exact-content publish confirmation. A prior POST SQLSTATE `P0001` was logged without enough PostgreSQL detail to attribute it to a specific trigger; it is not reproduced by the current read request.
+- Do not call the manual-live-requests POST or Blogger API until the user clicks the exact-content publish confirmation. A prior POST SQLSTATE `P0001` was logged without enough PostgreSQL detail to attribute it to a specific trigger; it is not reproduced by the current read request. This task confirms manual eligibility only; it does not complete Blogger publication.
 - Actual public post ID/URL: none created in this task.
