@@ -16,7 +16,7 @@ from woori.publications import (
 )
 
 
-def test_post_publication_review_migration_is_additive_and_schema_58() -> None:
+def test_post_publication_review_migration_is_additive_and_schema_59() -> None:
     root = Path(__file__).resolve().parents[3]
     migration = (root / "scripts/053_post_publication_review.sql").read_text(encoding="utf-8").casefold()
     identity_migration = (root / "scripts/054_post_publication_content_identity.sql").read_text(encoding="utf-8").casefold()
@@ -30,7 +30,10 @@ def test_post_publication_review_migration_is_additive_and_schema_58() -> None:
     assert "insert into schema_migrations(version) values(53)" in migration
     assert "add column content_id text" in identity_migration
     assert "insert into schema_migrations(version) values(54)" in identity_migration
-    assert "MAX_SUPPORTED_SCHEMA_VERSION = 58" in runner
+    assert "MAX_SUPPORTED_SCHEMA_VERSION = 59" in runner
+    permission = (root / 'scripts/059_verified_publication_record_insert.sql').read_text(encoding='utf-8').casefold()
+    assert 'grant insert on publishing_records' in permission
+    assert 'grant update' not in permission and 'grant delete' not in permission
     assert "053_post_publication_review.sql" in runner
     assert "054_post_publication_content_identity.sql" in runner
     assert "055_scheduled_prepublication_reviews.sql" in runner
