@@ -28,13 +28,17 @@
 - Isolated manual POST integration route: passed after the partial-index conflict target fix. This is not an operational DB POST.
 - Scoped validation: Ruff passed; mypy passed; pytest `50 passed`; `py_compile` passed; `git diff --check` passed.
 - Operations schema remains version 58; no migration was needed.
+- `scripts/apply-verified-changes.ps1 -Apply -Confirm:$false` passed its API tests, Ruff, mypy, wheel build, Dashboard ESLint/typecheck, and isolated Production Build. It gracefully replaced API PID `14620` with `10428`, Dashboard PID `55548` with `50532`, and Publication Worker PID `13872` with `29048`; it did not restart Research Worker PID `56792`.
+- Post-reflection API `http://127.0.0.1:8100/health` and Dashboard `http://127.0.0.1:3100/publishing` both returned HTTP 200. API, Dashboard, and Publication Worker report applied commit `b35388d3362c330709c73a4e3233947b4343298b`; Publication Worker heartbeat is fresh in `scheduled-auto-and-manual`. Research Worker heartbeat remains fresh. Publication queue remains empty (`LiveQueued=0`, `LiveDue=0`); Auto state is unchanged (`AutoMode=manual`, `AutoPolicyActive=false`).
+- The same crypto generation preflight after reflection again returned local `not_found`, `draft_import_allowed=true`, and remote `not_checked`. Crypto article JSON/ready file and Research Worker import remain `0`: the 13:17 invocation was manual and was not falsely promoted to a scheduled execution. The research snapshot remains preserved.
+- Read-only operations DB checks found FOMC jobs `0` and manual approval events `0` for the existing version. No live POST was retried.
 - No existing approval/job/audit rows were deleted or changed. No Blogger POST, OAuth refresh, or publication request was made.
 - Historical `P0001` remains unclassified; the current route's reproducible 503 cause (`42P10`) is fixed. A future database failure now exposes a safe code and correlation request ID so it can be tied to the DB source without exposing content or credentials.
 - Actual FOMC POST, Blogger post ID, and public URL: none. The user must issue a fresh explicit publish click for the exact confirmed article if they still want publication; this task did not create a new request.
-- Tests, commit SHA, and push result are recorded in Git history and the final follow-up section below.
+- The code commit was pushed to `origin/develop`; this record was updated after runtime reflection. The record commit and final push are in the following Git history entry.
 
 ## Final follow-up
 
 - Code commit: `96cfea3` (`Fix : [Publication] Repair manual request transaction`).
-- Development-record commit: recorded in the Git commit containing this file.
+- Development-record commit: recorded in the Git commit containing this final runtime update.
 - Remaining issue: historical `P0001` lacks enough retained diagnostics for exact retrospective attribution; live manual publication has not been retried and no public URL exists.
