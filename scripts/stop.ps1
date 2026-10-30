@@ -161,6 +161,26 @@ function Test-ManifestRecordMatchesRunner($Record, $RunnerSnapshot, [string]$Nam
   } catch { return $false }
 }
 
+function Select-HttpServiceSnapshot([string]$Name, $Snapshots, [int[]]$ListenerPids) {
+  $candidates = @($Snapshots | Where-Object Kind -eq $Name)
+  $listenerMatches = @($candidates | Where-Object { $ListenerPids -contains [int]$_.Id })
+  if ($listenerMatches.Count -eq 1) { return $listenerMatches[0] }
+  if ($listenerMatches.Count -gt 1) { throw "$Name listener PID maps to multiple process snapshots." }
+  $identityMatches = @($candidates | Where-Object {
+    $identityPath = Join-Path $script:ProjectRoot ".runtime\service-identity-$Name-$($_.Id).json"
+    if (-not (Test-Path -LiteralPath $identityPath -PathType Leaf)) { return $false }
+    try {
+      $identity = Get-Content -LiteralPath $identityPath -Raw -Encoding utf8 | ConvertFrom-Json
+      [int]$identity.pid -eq [int]$_.Id -and [string]$identity.service -ceq $Name -and [string]$identity.checkout_root -ieq $script:ProjectRoot
+    } catch { $false }
+  })
+  if ($identityMatches.Count -eq 1) { return $identityMatches[0] }
+  if ($identityMatches.Count -gt 1) { throw "$Name has multiple identity-bound service processes; refusing to choose a stop target." }
+  if ($candidates.Count -eq 1) { return $candidates[0] }
+  if (-not $candidates.Count) { return $null }
+  throw "$Name has multiple candidate processes and no listener/identity match; refusing to choose a stop target."
+}
+
 function Get-ManagedTree([string]$Name, $Runner, $ProcessTable) {
   if (-not $Runner) { return @{ items=@(); safe=$false; reason='no_verified_managed_runner' } }
   $tree = @(Get-ProcessDescendants $ProcessTable $Runner.Id -IncludeAncestor)
@@ -449,7 +469,8 @@ function Invoke-ProjectStop {
     }
     $targetText = ($snapshots | ForEach-Object { "PID $($_.Id) [$($_.Kind)] $($_.Path) :: $($_.CommandLine)" }) -join [Environment]::NewLine
     if (-not $PSCmdlet.ShouldProcess($targetText,"Request graceful shutdown of $Name")) { return $false }
-    $serviceSnapshot = $snapshots | Where-Object { $_.Kind -eq $Name } | Select-Object -First 1
+    $listenerPids = @(Get-Listeners ([int]$script:Services[$Name].Port) | ForEach-Object { [int]$_ })
+    $serviceSnapshot = Select-HttpServiceSnapshot $Name $snapshots $listenerPids
     $stopRequest = $null
     $supportsStopFile = $serviceSnapshot -and (
       ($Name -eq 'api' -and [string]$serviceSnapshot.CommandLine -match '(?i)scripts[\\/]api-service\.py(?:\s|$)') -or

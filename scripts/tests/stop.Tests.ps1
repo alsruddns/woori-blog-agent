@@ -207,6 +207,13 @@ Describe 'Managed API shutdown flow' {
     Assert-MockCalled Write-ServerManifest -Times 1 -Scope It
   }
 
+  It 'selects the exact HTTP listener process when the venv launcher and server are both API candidates' {
+    $launcher=[pscustomobject]@{ Id=601; Kind='api'; CommandLine='venv launcher' }
+    $listener=[pscustomobject]@{ Id=602; Kind='api'; CommandLine='uvicorn listener' }
+    $selected=Select-HttpServiceSnapshot api @($launcher,$listener) @(602)
+    $selected.Id | Should Be 602
+  }
+
   It 'leaves the verified process tree intact when force confirmation is declined' {
     Mock Request-GracefulClose { $false }
     Mock Wait-ForSnapshotsExit { @($script:RunnerProcess) }
