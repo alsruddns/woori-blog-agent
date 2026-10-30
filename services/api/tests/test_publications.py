@@ -27,6 +27,17 @@ from woori.publications import (
 lab = shared_lab
 
 
+@pytest.mark.parametrize(('row','expected'), [
+    ({'active_job_status':'running'},'review_needed'),
+    ({'active_job_id':'job','active_job_status':'queued'},'queued'),
+    ({'active_job_id':'job','active_job_status':'running'},'publishing'),
+    ({'remote_post_id':'post'},'review_needed'),
+    ({'remote_post_id':'post','remote_verified_at':True,'active_job_id':'job','active_job_status':'running'},'published'),
+])
+def test_publication_flow_distinguishes_real_jobs_from_jobless_manuscripts(row: Any, expected: str) -> None:
+    assert publications.publication_list_flow(row) == expected
+
+
 def test_remote_duplicate_unknown_uses_bounded_retry_and_found_never_retries() -> None:
     first = publication_worker.remote_duplicate_retry_plan("unknown", 0, 2)
     exhausted = publication_worker.remote_duplicate_retry_plan("unknown", 2, 2)

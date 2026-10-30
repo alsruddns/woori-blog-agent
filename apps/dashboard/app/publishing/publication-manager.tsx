@@ -7,6 +7,7 @@ type Item = {
   id: string; content_version_id: string; group_id?: string; title: string; language_code: string;
   blog_id: string; blog_name?: string; url: string; topic?: string | null; source_names?: string | null;
   status: string; quality_status?: string | null; eligibility_reasons?: string[];
+  has_publishing_job?: boolean; publishing_job_id?: string | null;
   next_publish_at?: string | null; created_at?: string | null; remote_url?: string | null;
   remote_post_id?: string | null; remote_status?: string | null; remote_verified_at?: string | null;
   simulation_only?: boolean; adapter_type?: string; evaluation_id?: string | null;
@@ -38,7 +39,7 @@ export type PublicationData = {
 };
 const tabs = [["queue", "발행 대기"], ["review", "검토 필요"], ["published", "게시 완료"], ["held", "실패·보류"], ["auto_failure", "자동발행실패"]] as const;
 const languageLabel = (code: string) => ({ko:"한국어",en:"영어",ja:"일본어","zh-CN":"중국어 간체"}[code] ?? code);
-const statusLabel = (status: string) => ({review_needed:"검토 필요",queued:"발행 대기",published:"게시 완료",quality_held:"품질 보류",publication_blocked:"게시 차단",failed:"실패",uncertain:"결과 확인 필요",auto_publication_failed:"자동발행실패"}[status] ?? status);
+const statusLabel = (status: string) => ({review_needed:"검토 필요",queueable:"발행 자격 충족 · Job 없음",queued:"Worker 처리 대기",publishing:"게시 중",published:"게시 완료",quality_held:"품질 보류",publication_blocked:"게시 차단",failed:"실패",uncertain:"결과 확인 필요",auto_publication_failed:"자동발행실패"}[status] ?? status);
 const reasonLabel = (reason: string) => ({
   quality_evaluation_missing:"품질 검사 기록 없음", quality_not_passed:"품질 검사 통과 필요",
   editorial_source_rights_and_publication_review_required:"근거·권리·승인 확인 필요",
@@ -160,6 +161,7 @@ export default function PublicationManager({ initial }: { initial: PublicationDa
       <article><span>실패·보류</span><strong>{counts.held ?? 0}건</strong></article>
     </section>
     <p className="publication-list-note">임시 제목·Mock/Test 표식 {counts.excluded_non_operational??0}건은 후보 목록에서 제외했습니다. 원고·평가·감사 기록은 보존됩니다. 본문 완전 중복 억제 {counts.duplicate_suppressed??0}건.</p>
+    <p className="publication-list-note">발행 대기는 실제 Job이 생성된 원고입니다. 수동 원고는 상세에서 공개 게시를 확인해야 Job이 생성되며, 예약 Auto 원고는 정책과 자격을 충족하면 자동 등록됩니다. 처리 중인 Job은 게시 중으로 표시합니다.</p>
     <nav className="workspace-tabs publication-tabs" role="tablist" aria-label="발행 상태">
       {tabs.map(([key,label]) => <button key={key} role="tab" aria-selected={activeTab===key} onClick={() => void refresh(1,key)}>{label}<span>{counts[key] ?? 0}</span></button>)}
       <button role="tab" aria-selected={activeTab==="settings"} onClick={() => setActiveTab("settings")}>운영 설정</button>

@@ -1264,6 +1264,15 @@ def _manual_publication_blockers(
     return list(dict.fromkeys(reasons))
 
 
+def publication_list_flow(row: dict[str, Any]) -> str:
+    """A Worker wait requires a persisted Job; verified remote state wins."""
+    if row.get('remote_post_id') and row.get('remote_verified_at'):
+        return 'published'
+    if not row.get('active_job_id'):
+        return 'review_needed'
+    return 'publishing' if row.get('active_job_status') == 'running' else 'queued'
+
+
 @router.get("")
 def list_publications(
     view: Literal["queue", "review", "published", "held", "auto_failure"] = Query("review"),
@@ -1433,13 +1442,10 @@ def list_publications(
                 candidate["mode_policy"]["configured_mode"],
                 emergency_stopped=bool(mode_data["emergency_stopped"]),
             )
-            is_published = bool(candidate["remote_post_id"] and candidate["remote_verified_at"])
-            is_queued = bool(candidate["active_job_id"])
-            if is_published:
-                candidate["operational_status"] = "published"
-                candidate["eligibility_reasons"] = []
-            elif is_queued:
-                candidate["operational_status"] = "queued"
+            candidate['has_publishing_job'] = bool(candidate['active_job_id'])
+            candidate['publishing_job_id'] = str(candidate['active_job_id']) if candidate['active_job_id'] else None
+            candidate['operational_status'] = publication_list_flow(candidate)
+            if candidate['operational_status'] in {'published','queued','publishing'}:
                 candidate["eligibility_reasons"] = []
             else:
                 candidate["operational_status"] = "review_needed"
@@ -1492,7 +1498,7 @@ def list_publications(
                 "created_at": candidate["version_created_at"],
                 "remote_url": None,
             }
-            if candidate["operational_status"] in {"queued", "queueable"}:
+            if candidate["operational_status"] in {"queued", "publishing", "queueable"}:
                 queue_items.append(item)
             else:
                 review_items.append(item)
