@@ -12,8 +12,11 @@ type Policy = {
 type Blog = {
   id: string;
   display_name: string;
+  blog_id: string | null;
+  url: string;
   language_code: string;
   active: boolean;
+  activation_blockers?: string[];
   mapped_geos: string[];
   policy: Policy | null;
 };
@@ -88,6 +91,9 @@ export default function TrendsPublicationSettings() {
       const confirmation = draft.enabled ? "ENABLE TRENDS AUTO PUBLICATION" : "STOP TRENDS AUTO PUBLICATION";
       return <fieldset className="trend-blog-geo" key={blog.id}>
         <legend>{blog.display_name} · {blog.language_code}</legend>
+        <p>{blog.url} · Blogger ID: {blog.blog_id ?? "미확인"}</p>
+        <p>활성화 저장은 이 블로그의 매핑 국가에서 생성된 Trends 원고 자동 공개를 승인하고 감사 기록에 남깁니다. 품질·권리·중복·발행 간격 검증을 통과한 원고만 처리합니다.</p>
+        <p>{blog.activation_blockers?.length ? `활성화 준비 미완료: ${blog.activation_blockers.join(", ")}` : "활성화 조건 확인됨"}</p>
         <p>상태: {blog.policy?.enabled ? "활성" : "비활성"} · 연결된 수집 지역: {blog.mapped_geos.length ? blog.mapped_geos.join(", ") : "없음"}</p>
         <label><input type="checkbox" checked={draft.enabled} onChange={event => patch(blog.id, { enabled: event.target.checked, confirmation: "" })} /> Trends 자동 발행 허용</label>
         <div className="trend-geo-options">{blog.mapped_geos.map(geo => <label key={geo}>

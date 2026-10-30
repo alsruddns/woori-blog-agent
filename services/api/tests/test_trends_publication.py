@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
@@ -81,6 +82,19 @@ def test_trends_policy_requires_both_explicit_public_and_trends_scope(monkeypatc
         assert external_policy._blogger_operation_is_approved("blogger_public_publish")
 
 
+def test_authenticated_scoped_trends_consent_never_authorizes_another_lane(monkeypatch) -> None:
+    blog = str(uuid4())
+    monkeypatch.setattr(external_policy, "_blogger_policy_approval", lambda: {"scope": ["blogger_read"]})
+    monkeypatch.setattr(external_policy, "_blogger_public_publish_approval", lambda: None)
+    monkeypatch.setattr(external_policy, "_trends_public_write_approval", lambda value: {"scope": ["trends_auto"]} if value == blog else None)
+    monkeypatch.setattr(external_policy, "_trends_publication_approval", lambda value: {"scope": ["trends_auto"]})
+    with external_policy.trends_publication_context(blog):
+        assert external_policy._blogger_operation_is_approved("blogger_public_publish")
+    with external_policy.trends_publication_context(str(uuid4())):
+        assert not external_policy._blogger_operation_is_approved("blogger_public_publish")
+    assert not external_policy._blogger_operation_is_approved("blogger_public_publish")
+
+
 class _Result:
     def __init__(self, row: Any = None, rows: list[Any] | None = None):
         self.row = row
@@ -112,7 +126,8 @@ class _TrendsEnqueueConnection:
         if "FROM trends_publication_policy_events p JOIN blogger_blogs" in query:
             return _Result(rows=[{"blog_id": self.blog_id, "language_code": "ja",
                                  "blogger_id": "123456", "enabled": True,
-                                 "allowed_geos": ["JP"], "daily_limit": 3}])
+                                 "allowed_geos": ["JP"], "daily_limit": 3,
+                                 "created_at": datetime.fromisoformat("2026-10-31T08:00:00+09:00")}])
         if "FROM external_content_imports i" in query:
             return _Result(rows=[{
                 "id": self.import_id, "external_content_id": "trend-test-1",

@@ -957,12 +957,16 @@ def get_content_import(import_id: UUID) -> dict[str, Any]:
              str(latest.get("content_version_id")) if latest and latest.get("content_version_id") else None),
         ).fetchone()
         item_result = dict(row)
+        from .claim_evidence import assess_claim_evidence
+        claim_evidence = assess_claim_evidence(item_result, {
+            str(event["payload"].get("source_id")): event["payload"] for event in source_verifications
+        })
         item_result["auto_publication_failure"] = bool(auto_failure and auto_failure["event_type"] == "publication.auto_failure.recorded")
         item_result["auto_failure"] = (
             dict(auto_failure["payload"])
             if auto_failure is not None and item_result["auto_publication_failure"] else None
         )
-        return {"item": item_result, "latest_version": dict(latest) if latest else None,
+        return {"item": item_result, "claim_evidence": claim_evidence, "latest_version": dict(latest) if latest else None,
             "versions": [dict(version) for version in versions],
             "lineage_history": [dict(version) for version in lineage_history],
             "duplicate_import_history": duplicate_import_history,
@@ -973,6 +977,19 @@ def get_content_import(import_id: UUID) -> dict[str, Any]:
             "localization_requests": [dict(request) for request in localization],
             "mock_publications": [dict(attempt) for attempt in mock_publications],
             "generator_available": False, "publish_ready": False, "generation_ready": False}
+
+
+@router.post("/{import_id}/claim-evidence-assessments", status_code=201)
+def record_claim_evidence_assessment(import_id: UUID) -> dict[str, Any]:
+    detail = get_content_import(import_id)
+    result = detail["claim_evidence"]
+    with connection() as conn:
+        event = conn.execute(
+            "INSERT INTO audit_events(event_type,payload) VALUES ('content.claim_evidence.assessed',%s) RETURNING id,created_at",
+            (Jsonb({"import_id": str(import_id), "version_id": str((detail["latest_version"] or {}).get("id")),
+                    "assessment": result, "claims_promoted": False}),),
+        ).fetchone()
+    return {**result, "audit_event_id": event["id"], "assessed_at": event["created_at"]}
 
 
 @router.post("", status_code=201)

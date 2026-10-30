@@ -356,9 +356,10 @@ def _blogger_operation_is_approved(operation: str) -> bool:
             return _scheduled_publication_approval(scoped_blog_id) is not None
         trends_blog_id = _trends_publication_blog_id.get()
         if trends_blog_id is not None:
-            # A Trends policy scopes the content lane, but cannot replace the
-            # separate explicit operations approval for public Blogger writes.
-            return (_blogger_public_publish_approval() is not None
+            # Consent must come from an authenticated per-blog enable request
+            # or the existing explicit global operations approval.
+            return ((_blogger_public_publish_approval() is not None
+                     or _trends_public_write_approval(trends_blog_id) is not None)
                     and _trends_publication_approval(trends_blog_id) is not None)
         manual_approval = _manual_publication_approval.get()
         if manual_approval is not None:
@@ -424,6 +425,26 @@ def _scheduled_publication_approval(blog_id: str) -> dict[str, Any] | None:
             or str(blog_id) not in {str(value) for value in row["approved_blog_ids"]}):
         return None
     return {"created_at": row["created_at"], "scope": ["scheduled_publication"]}
+
+
+def _trends_public_write_approval(blog_id: str) -> dict[str, Any] | None:
+    """Public-write consent recorded by an authenticated, exact per-blog policy request."""
+    try:
+        from .db import connection
+        with connection() as conn:
+            row = conn.execute(
+                """SELECT payload,created_at FROM audit_events
+                WHERE event_type='publication.trends_public_write.approved' AND blog_id=%s
+                ORDER BY id DESC LIMIT 1""", (blog_id,),
+            ).fetchone()
+    except (psycopg.Error, OSError):
+        return None
+    if (not row or row["payload"].get("policy_version") != 1
+            or row["payload"].get("scope") != "trends_auto"
+            or row["payload"].get("confirmation") != "ENABLE TRENDS AUTO PUBLICATION"
+            or row["payload"].get("blog_record_id") != blog_id):
+        return None
+    return {"created_at": row["created_at"], "scope": ["trends_auto"]}
 
 
 def _trends_publication_approval(blog_id: str) -> dict[str, Any] | None:

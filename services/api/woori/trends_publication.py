@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -12,6 +13,14 @@ from psycopg.types.json import Jsonb
 from .db import connection
 
 ALLOWED_GEOGRAPHIES = {"KR", "US", "GB", "CA", "AU", "IN", "JP", "TW", "HK", "SG", "BR"}
+
+
+def collection_after_activation(slot: Any, activated_at: datetime) -> bool:
+    try:
+        value = datetime.fromisoformat(str(slot))
+        return value.tzinfo is not None and value >= activated_at
+    except (ValueError, TypeError):
+        return False
 
 
 def claims_are_publish_verified(claims: Any) -> bool:
@@ -47,6 +56,20 @@ def policy_state(conn: Any) -> dict[str, Any]:
         ORDER BY blog_id,id DESC"""
     ).fetchall()
     policies = {str(row["blog_id"]): dict(row) for row in latest}
+    from . import external_policy
+    public_approved = external_policy._blogger_public_publish_approval() is not None
+    for blog in blogs:
+        blockers = []
+        if not blog["mapped_geos"]: blockers.append("country_mapping_required")
+        if blog["oauth_status"] != "connected" or list(blog["scopes"] or []) != ["https://www.googleapis.com/auth/blogger"]:
+            blockers.append("blogger_write_oauth_required")
+        if not blog["test_publish_verified_at"]: blockers.append("actual_write_verification_required")
+        if not _recent_identity_verification(conn, blog["id"], str(blog["blog_id"])):
+            blockers.append("fresh_blog_identity_verification_required")
+        if not public_approved and external_policy._trends_public_write_approval(str(blog["id"])) is None:
+            blockers.append("authenticated_public_publish_approval_required")
+        blog["activation_blockers"] = blockers
+        blog["activation_ready"] = not blockers
     return {"policies": [{**dict(blog), "policy": policies.get(str(blog["id"]))}
                           for blog in blogs],
             "supported_geographies": sorted(ALLOWED_GEOGRAPHIES),
@@ -80,9 +103,8 @@ def record_policy(conn: Any, request: Any) -> dict[str, Any]:
         if not _recent_identity_verification(conn, request.blog_id, str(blog["blog_id"])):
             raise HTTPException(409, "Run a fresh read-only Blogger identity verification before enabling Trends Auto")
         from . import external_policy
-        if (external_policy._blogger_policy_approval() is None
-                or external_policy._blogger_public_publish_approval() is None):
-            raise HTTPException(409, "Separate Blogger public-write operations approval is unavailable")
+        if external_policy._blogger_policy_approval() is None:
+            raise HTTPException(409, "Blogger zero-cost operations approval is unavailable")
     prior = conn.execute(
         "SELECT id,enabled,allowed_geos,daily_limit FROM trends_publication_policy_events WHERE idempotency_key=%s",
         (request.idempotency_key,),
@@ -93,6 +115,16 @@ def record_policy(conn: Any, request: Any) -> dict[str, Any]:
                 or prior["daily_limit"] != request.daily_limit):
             raise HTTPException(409, "Idempotency key conflicts with an earlier Trends policy event")
         return {"event_id": prior["id"], "duplicate": True, "enabled": request.enabled}
+    if request.enabled:
+        # This authenticated API request contains the explicit enable phrase,
+        # actor and reason; never synthesize approval from an agent execution.
+        conn.execute("INSERT INTO audit_events(event_type,blog_id,payload) VALUES (%s,%s,%s)",
+            ("publication.trends_public_write.approved", request.blog_id, Jsonb({
+                "blog_record_id": str(request.blog_id), "blogger_blog_id": str(blog["blog_id"]),
+                "actor_label": request.actor_label, "reason": request.reason,
+                "confirmation": request.confirmation, "policy_version": 1,
+                "scope": "trends_auto", "allowed_geos": geos,
+            })))
     previous = conn.execute(
         "SELECT id,enabled,allowed_geos,daily_limit FROM trends_publication_policy_events WHERE blog_id=%s ORDER BY id DESC LIMIT 1",
         (request.blog_id,),
@@ -280,6 +312,10 @@ def enqueue_trends_auto_jobs() -> dict[str, int]:
                 ORDER BY i.received_at,i.id""", (blog_id, str(blog_id), policy["language_code"]),
             ).fetchall()
             for item in candidates:
+                if not collection_after_activation(item["contract"].get("collection_slot"), policy["created_at"]):
+                    held += 1
+                    _record_hold(conn, item, blog_id, ["collection_predates_policy_activation"])
+                    continue
                 geo = str(item["contract"].get("source_country") or "")
                 if geo not in allowed_geos:
                     continue

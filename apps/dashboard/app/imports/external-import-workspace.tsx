@@ -8,6 +8,7 @@ type Details = {
   item: Row; latest_version: Row | null; versions: Row[]; lineage_history?: Row[]; duplicate_import_history?: Row[]; assessments: Row[]; reviews: Row[];
   source_verifications?: Row[]; editorial_review_status: string; localization_requests: Row[]; mock_publications: Row[];
   publication?: Row; publish_ready: false; generation_ready: false;
+  claim_evidence?: { claim_count: number; source_span_confirmed_count: number; verified_count: number; claims: Row[] };
 };
 type DetailTab = "editor" | "evidence" | "quality" | "preview" | "distribution" | "history";
 const languages = ["ko", "en", "ja", "zh-CN"] as const;
@@ -439,6 +440,7 @@ export default function ExternalImportWorkspace({ embedded = false, detailReques
           })}
           {!detail.source_verifications?.length && <p className="quality-held">현재 확인 기록 없음 · 수집 시 출처 상태와 실제 원문 확인은 별도입니다.</p>}
           {(Array.isArray(detail.item.sources) ? detail.item.sources as Row[] : []).map(source => <article className="history-card" key={String(source.source_id)}><a href={String(source.url)} target="_blank" rel="noopener noreferrer">{String(source.title)}</a><p>{String(source.organization)} · 발표 {fmt(source.published_at)} · 이용권한: {displayState(source.rights_status)} · 독립 검증 전</p></article>)}
+          {detail.claim_evidence && <section><h4>주장 근거 자동 대조</h4><p>전체 {detail.claim_evidence.claim_count}개 · 원문 범위 확인 {detail.claim_evidence.source_span_confirmed_count}개 · 자동 사실 승인 {detail.claim_evidence.verified_count}개. 의미·권리 검토가 필요합니다.</p>{detail.claim_evidence.claims.map((claim, index) => <p key={index}>{String(claim.claim_id)}: {Array.isArray(claim.reasons) ? claim.reasons.map(String).join(", ") : "검토 필요"}</p>)}</section>}
           {(Array.isArray(detail.item.claims) ? detail.item.claims as Row[] : []).map(claim => <article className="history-card" key={String(claim.claim_id)}><strong>{String(claim.claim)}</strong><p>연결된 외부 출처: {Array.isArray(claim.source_ids) ? claim.source_ids.map(sourceId => (Array.isArray(detail.item.sources) ? detail.item.sources as Row[] : []).find(source => source.source_id === sourceId)?.title ?? "출처명 미확인").join(" · ") : "—"} · 제출 상태: {displayState(claim.verification_status)} · 사실 상태 주장: {displayState(claim.factual_state)}</p><details><summary>제출된 발췌문 보기</summary><blockquote>{String(claim.evidence_excerpt)}</blockquote></details></article>)}
         </section>}
         {detailTab === "quality" && <section className="workspace-panel" id="import-quality"><h3>품질·SEO 검사</h3>{latestAssessment ? <QualityAssessmentPanel assessment={latestAssessment} /> : <p className="empty-state">아직 품질·SEO 검사를 실행하지 않았습니다.</p>}</section>}
