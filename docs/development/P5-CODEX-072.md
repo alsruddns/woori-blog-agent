@@ -21,3 +21,10 @@
 - Before repair, operational Job/approval/follow-up-review counts for the target were all 0; no publishing record/postId/URL existed. There was no partial committed request to recover.
 - Publication remains unverified until the user clicks again. Do not call this an operational POST or Blogger publication success.
 - Runtime application and commit are recorded by the subsequent Git/runtime follow-up.
+
+## Runtime follow-up
+
+- Code commit `b9aef3a8886ffcfd50820fb73d8578a6a8e9fa8d` pushed to origin/develop. Existing apply-verified-changes script passed 53 tests, Ruff, mypy, wheel build, ESLint, TypeScript and isolated Production Build before graceful restart.
+- Runtime API listener PID 49236 started 13:43:37 KST; Dashboard listener PID 14304 started 13:43:41; Publication Worker PID 25212 started 13:43:44 in scheduled-auto-and-manual mode with fresh heartbeat. All report code commit b9aef3a. Research Worker PID 56792 was retained. API launcher inserts this checkout's services/api in sys.path before loading woori.main; modified source and actual database trigger were inspected.
+- Same-origin Dashboard proxy GET `/api/publications/scheduled-auto-state?import_id=b4c45d23-0c74-4b12-92fd-382633093afa` returned HTTP 200, Korean target `eligible=true`, blockers `[]`. Candidate selects exact-country policy 83714eb4-2cb6-49e8-b135-62b1e2d21884. Missing Origin on a CLI proxy request correctly returned 403; supplying browser-equivalent same-origin headers returned 200.
+- After application, target approval/Job/follow-up/publishing-record counts remain 0. No operational manual-live-request POST or Blogger remote write/read was performed. No remote publication ID or URL is known. The POST must be verified after the user's next explicit click; do not report final operational 503 resolution yet.
