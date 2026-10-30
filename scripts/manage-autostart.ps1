@@ -60,7 +60,7 @@ switch ($Action) {
     if ($task -and -not (Test-TaskOwnedByProject $task)) { throw "Task '$taskName' exists but its ownership cannot be proved. No task was changed." }
     if ($task) {
       if ($task.Actions[0].Arguments.IndexOf($scriptPath,[StringComparison]::OrdinalIgnoreCase) -ge 0) {
-        if (-not $task.Settings.Enabled) { Enable-ScheduledTask -TaskName $taskName | Out-Null }
+        if (-not $task.Settings.Enabled -and $PSCmdlet.ShouldProcess($taskName,'Enable the existing login auto-start task')) { Enable-ScheduledTask -TaskName $taskName | Out-Null }
         Write-Output "Task '$taskName' already points to this project's startup coordinator; registration was not duplicated."
         break
       }
@@ -85,21 +85,27 @@ switch ($Action) {
   'on' {
     $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
     if (-not (Test-TaskOwnedByProject $task) -or $task.Actions[0].Arguments.IndexOf($scriptPath,[StringComparison]::OrdinalIgnoreCase) -lt 0) { throw 'The verified four-service startup task is not installed; run -Action install first.' }
-    if ($PSCmdlet.ShouldProcess($taskName,'Enable login auto-start')) { Enable-ScheduledTask -TaskName $taskName | Out-Null }
-    Write-Output "Login auto-start is enabled for '$taskName'."
+    if ($PSCmdlet.ShouldProcess($taskName,'Enable login auto-start')) {
+      Enable-ScheduledTask -TaskName $taskName | Out-Null
+      Write-Output "Login auto-start is enabled for '$taskName'."
+    } else { Write-Output "WhatIf only: login auto-start state was not changed for '$taskName'." }
   }
   'off' {
     $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
     if (-not (Test-TaskOwnedByProject $task)) { throw 'The project startup task is absent or ownership cannot be proved.' }
-    if ($PSCmdlet.ShouldProcess($taskName,'Disable login auto-start without stopping running services')) { Disable-ScheduledTask -TaskName $taskName | Out-Null }
-    Write-Output "Login auto-start is disabled. Running services were not stopped."
+    if ($PSCmdlet.ShouldProcess($taskName,'Disable login auto-start without stopping running services')) {
+      Disable-ScheduledTask -TaskName $taskName | Out-Null
+      Write-Output "Login auto-start is disabled. Running services were not stopped."
+    } else { Write-Output 'WhatIf only: auto-start was not disabled and running services were not changed.' }
   }
   'remove' {
     $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
     if (-not (Test-TaskOwnedByProject $task)) { throw 'The project startup task is absent or ownership cannot be proved.' }
     if ($PSCmdlet.ShouldProcess($taskName,'Remove the verified project login task without stopping running services')) {
       Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+      Write-Output "Login task '$taskName' removed; running services were not stopped."
+    } else {
+      Write-Output "WhatIf only: login task '$taskName' remains registered; running services were not stopped."
     }
-    Write-Output "Login task '$taskName' removed; running services were not stopped."
   }
 }
