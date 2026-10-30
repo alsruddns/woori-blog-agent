@@ -47,11 +47,11 @@ try {
   }
   $pubRaw=& (Join-Path $script:ProjectRoot '.venv\Scripts\python.exe') (Join-Path $PSScriptRoot 'publication-worker.py') --status 2>$null
   $pub=($pubRaw -join "`n")|ConvertFrom-Json
-  if(-not $pub.heartbeat_fresh -or $pub.worker_execution_mode -ne 'operations-scheduled-auto-and-manual') { throw 'Publication Worker heartbeat or execution mode verification failed.' }
+  if(-not $pub.heartbeat_fresh -or $pub.worker_execution_mode -ne 'operations-scheduled-auto-and-manual-and-trends') { throw 'Publication Worker heartbeat or execution mode verification failed.' }
   $researchRaw=& (Join-Path $script:ProjectRoot '.venv\Scripts\python.exe') (Join-Path $PSScriptRoot 'service-runtime-status.py') --worker research_worker 2>$null
   $research=($researchRaw -join "`n")|ConvertFrom-Json
   if(-not $research.ready -or [int]$research.process_id -ne [int]$after.research_worker) { throw 'Research Worker heartbeat verification failed.' }
-  Write-LifecycleLog 'all_services' 'restart_complete' "request_id=$requestId old_pids=$($before|ConvertTo-Json -Compress) new_pids=$($after|ConvertTo-Json -Compress) publication_mode=scheduled-auto-and-manual"
+  Write-LifecycleLog 'all_services' 'restart_complete' "request_id=$requestId old_pids=$($before|ConvertTo-Json -Compress) new_pids=$($after|ConvertTo-Json -Compress) publication_mode=scheduled-auto-manual-trends"
   Write-Output 'Restart verified: old PIDs exited, ports were released, PostgreSQL was ready, HTTP health returned 200, and both Worker heartbeats are fresh.'
   [pscustomobject]@{ RequestId=$requestId; OldPids=$before; NewPids=$after; ApiHttp=200; DashboardHttp=200; PublicationMode=$pub.worker_execution_mode }
 } catch {

@@ -97,7 +97,7 @@ Describe 'Windows service lifecycle ownership and startup policy' {
   It 'keeps login startup publication mode aligned with the verified combined worker mode' {
     $bootstrap = Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\start-services.ps1') -Raw
     $bootstrap | Should Match 'scheduled-auto-and-manual'
-    $bootstrap | Should Match 'start\.ps1.*PublicationMode scheduled-auto-manual'
+    $bootstrap | Should Match 'start\.ps1.*PublicationMode scheduled-auto-manual-trends'
     $bootstrap | Should Not Match 'PublicationMode scheduled-auto(?:\s|$)'
   }
 
@@ -116,7 +116,7 @@ Describe 'Windows service lifecycle ownership and startup policy' {
     $launcher | Should Match 'all_four_services_healthy_no_process_started'
     $launcher | Should Match 'Test-ExactCheckoutServiceProcess'
     $launcher | Should Match 'HeartbeatState -ne ''fresh'''
-    $launcher | Should Match 'scheduled-auto-and-manual'
+    $launcher | Should Match 'scheduled-auto-manual-trends'
   }
 
   It 'uses cooperative stop channels when available and bounds verified legacy shutdown' {
@@ -162,7 +162,7 @@ Describe 'Windows service lifecycle ownership and startup policy' {
     $restarter | Should Match 'restart_stop_verified'
     $restarter | Should Match 'old_pids'
     $restarter | Should Match 'new_pids'
-    $restarter | Should Match 'scheduled-auto-and-manual'
+    $restarter | Should Match 'operations-scheduled-auto-and-manual-and-trends'
     $restarter | Should Match 'Test-LoopbackHttp'
   }
 

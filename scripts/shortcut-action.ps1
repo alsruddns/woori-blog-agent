@@ -24,7 +24,7 @@ try {
           if ($state.State -ne 'listening' -or -not (Test-LoopbackHttp $healthUrl 5)) { $allReady = $false; break }
         } elseif ($state.HeartbeatState -ne 'fresh') {
           $allReady = $false; break
-        } elseif ($serviceName -eq 'publication_worker' -and $state.ExecutionMode -ne 'scheduled-auto-and-manual') {
+        } elseif ($serviceName -eq 'publication_worker' -and $state.ExecutionMode -ne 'scheduled-auto-manual-trends') {
           $allReady = $false; break
         } elseif ($serviceName -eq 'research_worker' -and $state.ExecutionMode -ne 'research') {
           $allReady = $false; break
@@ -42,7 +42,7 @@ try {
     'start_research' { Remove-IntentionalStopMarkerForExplicitStart; & (Join-Path $PSScriptRoot 'start.ps1') -Service research_worker }
     'start_publication' {
       Remove-IntentionalStopMarkerForExplicitStart
-      & (Join-Path $PSScriptRoot 'start.ps1') -Service publication_worker -PublicationMode scheduled-auto-manual
+      & (Join-Path $PSScriptRoot 'start.ps1') -Service publication_worker -PublicationMode scheduled-auto-manual-trends
     }
     'status' {
       $status = & (Join-Path $PSScriptRoot 'status.ps1')
