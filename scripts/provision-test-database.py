@@ -53,6 +53,7 @@ MIGRATIONS = [ROOT / "scripts" / f"{i:03d}_{name}.sql" for i, name in [
     (57, "manual_publication_reason_length"), (58, "publication_worker_mode"),
     (59, "verified_publication_record_insert"),
     (60, "entertainment_category"),
+    (61, "codex_authoring_jobs"),
 ]]
 
 

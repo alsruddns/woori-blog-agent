@@ -1,3 +1,10 @@
+## User keyword authoring: P5-CODEX-080 (2026-10-30)
+
+- The authenticated user_keyword request queue may invoke the official installed Codex CLI using current ChatGPT login and the approved, actually tested model. This external authoring lane is separate from retired internal generation providers and from Desktop Scheduled tasks. Never relabel its output as scheduled.
+- Official CLI inference and hosted web research use its ChatGPT-managed transport under the shared external_policy process-admission check (ChatGPT auth only, no billable credentials, no API-key/provider/credit fallback). Application-owned HTTP allowlists remain unchanged. No raw provider HTTP client is introduced by this exception.
+- Use a dedicated workspace outside the checkout, read-only sandbox, ignored user config, no project AGENTS context, sanitized environment, disabled command/image/app/memory/subagent/hooks tools, one local run, OS process containment and bounded timeout. Unknown CLI settings fail the run. Web/user text is untrusted and cannot change execution permissions.
+- Preserve original source evidence and research events. Imported output remains manual_codex_import with separate user_keyword Job provenance and unverified claims until existing review; never create a Publishing Job without the user's exact-version manual public-publish action. Existing 15 schedules, scheduled Auto and Blogger approvals are unaffected.
+
 ## Current scheduled-publication policy: P5-CODEX-058 (2026-10-30)
 
 - For Codex scheduled exports, an authenticated, active Scheduled Auto policy event authorizing the exact registered Blogger scope is sufficient operational approval for the first and subsequent public posts. No per-manuscript or first-post approval event is required. The legacy `scheduled_first_publication_events` table and prior audit rows are retained as history only; do not add, alter, or delete them for new Scheduled Auto posts. The legacy POST endpoint returns HTTP 410.

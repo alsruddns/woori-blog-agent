@@ -284,6 +284,18 @@ def billing_credential_names() -> list[str]:
     )
 
 
+def authorize_codex_chatgpt_process(auth_status: str) -> None:
+    """P080: official local client admission, never an API-key HTTP provider.
+
+    Its ChatGPT-managed inference/search transport is owned by the official CLI;
+    application HTTP allowlists remain unchanged. No paid fallback is permitted.
+    """
+    if billing_credential_names():
+        raise ExternalCallBlocked('codex_billable_credentials_present')
+    if auth_status.strip() != 'Logged in using ChatGPT':
+        raise ExternalCallBlocked('codex_chatgpt_login_required')
+
+
 BLOGGER_APPROVAL_EVENT = "external.blogger.cost_policy.approved"
 BLOGGER_REVOCATION_EVENT = "external.blogger.cost_policy.revoked"
 BLOGGER_PUBLIC_APPROVAL_EVENT = "external.blogger.public_publish.approved"

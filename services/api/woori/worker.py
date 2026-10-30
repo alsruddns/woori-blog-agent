@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 import psycopg
 from psycopg.types.json import Jsonb
 
-from . import collection, pipeline, scheduled_import_inbox, topics, trends
+from . import collection, keyword_jobs, pipeline, scheduled_import_inbox, topics, trends
 from .config import settings
 from .db import connection
 
@@ -359,6 +359,7 @@ def main() -> None:
                     pipeline.schedule_tick()
                     pipeline.tick(evaluation_only=False)
                     tick()
+                    keyword_jobs.tick()
                     if time.monotonic() >= next_scheduled_import_poll:
                         next_scheduled_import_poll = time.monotonic() + SCHEDULED_IMPORT_POLL_SECONDS
                         intake = scheduled_import_intake_tick()
@@ -386,6 +387,7 @@ def main() -> None:
                 break
             stop.wait(5)
     finally:
+        keyword_jobs.shutdown()
         stop.set()
         heartbeat_thread.join(timeout=2)
         try:

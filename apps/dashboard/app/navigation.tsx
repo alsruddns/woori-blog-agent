@@ -21,6 +21,7 @@ const links = [
   { href: "/", label: "대시보드", group: "워크스페이스", icon: "home" },
   { href: "/sources", label: "수집 자료", group: "콘텐츠", icon: "sources" },
   { href: "/manuscripts", label: "원고 관리", group: "콘텐츠", icon: "draft" },
+  { href: "/keyword-authoring", label: "키워드 원고 작성", group: "콘텐츠", icon: "draft" },
   { href: "/publishing", label: "발행 관리", group: "게시", icon: "publish" },
   { href: "/blogger", label: "Blogger 연결", group: "게시", icon: "blogger" },
   { href: "/operations/research", label: "자동화 관리", group: "게시", icon: "automation" },

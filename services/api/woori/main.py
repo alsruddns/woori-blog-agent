@@ -15,6 +15,7 @@ from .config import settings
 from .content_imports import router as content_imports_router
 from .db import connection
 from .google_http import GoogleFailure
+from .keyword_jobs import router as keyword_authoring_router
 from .localized_publications import router as localized_publications_router
 from .multilingual import router
 from .operations import health as operations_health
@@ -40,6 +41,7 @@ app.include_router(content_imports_router, dependencies=[Depends(authorize)])
 app.include_router(router, dependencies=[Depends(authorize)])
 app.include_router(blogger_router, dependencies=[Depends(authorize)])
 app.include_router(publications_router, dependencies=[Depends(authorize)])
+app.include_router(keyword_authoring_router, dependencies=[Depends(authorize)])
 
 
 @app.exception_handler(EngineFailure)
