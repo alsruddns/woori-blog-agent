@@ -5,8 +5,8 @@ from uuid import uuid4
 import pytest
 from psycopg.types.json import Jsonb
 from test_pipeline import lab as shared_lab
-from woori import trend_editorial as editorial
 from woori import keyword_jobs, trends
+from woori import trend_editorial as editorial
 
 lab=shared_lab
 
@@ -35,10 +35,12 @@ def observation(conn,query,geo='KR',payload=None,volume=1000):
 
 @pytest.mark.parametrize(('query','payload','expected'),[
     ('weather',{},('discarded','unclear_search_intent',None)),
-    ('software launch',{'news_items':[{'title':'Software launch context'}]},('selected','specific_topic_with_news_context','technology')),
-    ('software launch',{'news_items':[{'title':'Unrelated weather'}]},('review_candidate','news_context_mismatch','technology')),
+    ('software launch',{'news_items':[{'title':'Software launch context'}]},('selected','specific_topic_requires_independent_research','technology')),
+    ('software launch',{'news_items':[{'title':'Unrelated weather'}]},('selected','specific_topic_requires_independent_research','technology')),
     ('Private rumor',{},('discarded','unverifiable_rumor',None)),
     ('Some celebrity',{},('review_candidate','insufficient_context',None)),
+    ('박현경',{'news_items':[{'title':'박현경 KLPGA 투어 대회 선두'}]},('selected','specific_topic_requires_independent_research','sports')),
+    ('박현경',{'news_items':[{'title':'KBO 프로야구 플레이오프 경기 결과'}]},('review_candidate','insufficient_context',None)),
 ])
 def test_rule_decisions_are_not_fabricated_scores(query,payload,expected):
     assert editorial.classify(query,payload)==expected
@@ -79,7 +81,7 @@ def test_grouping_filters_discard_history_and_queue_contract(lab,monkeypatch):
     assert conn.execute('SELECT count(*) n FROM trend_observations WHERE id=ANY(%s)',([first,second,unrelated],)).fetchone()['n']==3
     request.update(request_key=str(uuid4()),action='reevaluate')
     assert api.post(base,headers=h,json=request).json()['state']=='selected'
-    # An exact registered region/language policy is required; no cross-country fallback.
+    # A registered active Blogger is required; country mapping remains explicit.
     assert api.post(base,headers=h,json={**request,'request_key':str(uuid4()),'action':'queue','blog_id':str(uuid4())}).status_code==409
     assert conn.execute('SELECT count(*) n FROM publishing_jobs').fetchone()['n']==before
 
@@ -126,12 +128,50 @@ def test_selected_current_slot_queues_once_for_unambiguous_blog(lab,monkeypatch)
     profile=conn.execute("INSERT INTO language_profiles(language_code,target_country) VALUES('ko','KR') ON CONFLICT(language_code,target_country) DO UPDATE SET search_intent=language_profiles.search_intent RETURNING id").fetchone()['id']
     blog=conn.execute("INSERT INTO blogger_blogs(language_code,url,display_name,blog_id) VALUES('ko',%s,'Slot fixture','1234567892') RETURNING id",('https://slot-'+uuid4().hex[:8]+'.blogspot.com',)).fetchone()['id']
     conn.execute("INSERT INTO publishing_policies(language_code,blog_id,profile_id,active) VALUES('ko',%s,%s,false)",(blog,profile))
+    conn.execute("INSERT INTO trend_blog_geo_authoring(blog_id,geo,enabled,processing_order) VALUES(%s,'KR',true,1)",(blog,))
     monkeypatch.setattr(keyword_jobs,'targets',lambda _:[{'id':blog,'target_country':'KR','language_code':'ko'}])
     assert editorial.queue_selected()['created']==1
     assert editorial.queue_selected()['created']==0
     row=conn.execute('SELECT * FROM trend_generation_requests WHERE topic_id=%s',(topic,)).fetchone()
+    assert row['contract']['selection_rank']==1 and row['contract']['source_country']=='KR'
     assert editorial.slot_is_current(row['contract']['collection_slot'])
     assert editorial.dispatch()['created']==1
+
+
+def test_blog_geo_mapping_supports_multiple_countries_with_audit(lab,monkeypatch):
+    conn,api,h=bind(lab,monkeypatch)
+    profile=conn.execute("INSERT INTO language_profiles(language_code,target_country) VALUES('en','US') ON CONFLICT(language_code,target_country) DO UPDATE SET search_intent=language_profiles.search_intent RETURNING id").fetchone()['id']
+    blog=conn.execute("INSERT INTO blogger_blogs(language_code,url,display_name,blog_id) VALUES('en',%s,'English mapping fixture','1234567897') RETURNING id",('https://map-'+uuid4().hex[:8]+'.blogspot.com',)).fetchone()['id']
+    conn.execute("INSERT INTO publishing_policies(language_code,blog_id,profile_id,active) VALUES('en',%s,%s,false)",(blog,profile))
+    before=conn.execute("SELECT count(*) n FROM audit_events WHERE event_type='trend.authoring.geo_mappings_changed'").fetchone()['n']
+    result=api.put('/admin/research/trend-editorial/blog-geos',headers=h,json={'mappings':[
+        {'blog_id':str(blog),'geo':'US','enabled':True,'processing_order':1},
+        {'blog_id':str(blog),'geo':'GB','enabled':True,'processing_order':2}]})
+    assert result.status_code==200
+    rows=[m for m in result.json()['mappings'] if m['blog_id']==str(blog)]
+    assert [(m['geo'],m['processing_order']) for m in rows]==[('US',1),('GB',2)]
+    assert conn.execute("SELECT count(*) n FROM audit_events WHERE event_type='trend.authoring.geo_mappings_changed'").fetchone()['n']==before+1
+    duplicate=api.put('/admin/research/trend-editorial/blog-geos',headers=h,json={'mappings':[
+        {'blog_id':str(blog),'geo':'US','enabled':True,'processing_order':1},
+        {'blog_id':str(blog),'geo':'GB','enabled':True,'processing_order':1}]})
+    assert duplicate.status_code==422
+
+
+def test_country_rank_queue_creates_distinct_jobs_for_one_multicountry_blog(lab,monkeypatch):
+    conn,_api,_h=bind(lab,monkeypatch)
+    profile=conn.execute("INSERT INTO language_profiles(language_code,target_country) VALUES('en','US') ON CONFLICT(language_code,target_country) DO UPDATE SET search_intent=language_profiles.search_intent RETURNING id").fetchone()['id']
+    blog=conn.execute("INSERT INTO blogger_blogs(language_code,url,display_name,blog_id) VALUES('en',%s,'Multi-country fixture','1234567901') RETURNING id",('https://multi-'+uuid4().hex[:8]+'.blogspot.com',)).fetchone()['id']
+    conn.execute("INSERT INTO publishing_policies(language_code,blog_id,profile_id,active) VALUES('en',%s,%s,false)",(blog,profile))
+    conn.execute("INSERT INTO trend_blog_geo_authoring(blog_id,geo,enabled,processing_order) VALUES(%s,'US',true,1),(%s,'GB',true,2)",(blog,blog))
+    us=observation(conn,'technology launch united states','US',payload={},volume=9000)
+    gb=observation(conn,'technology launch united kingdom','GB',payload={},volume=1200)
+    editorial.reconcile()
+    monkeypatch.setattr(keyword_jobs,'targets',lambda _:[{'id':blog,'target_country':'US','language_code':'en'}])
+    queued=editorial.queue_selected()
+    assert queued['created']==2
+    contracts=conn.execute("SELECT contract->>'source_country' country,contract->>'target_language' language FROM trend_generation_requests WHERE contract->>'target_blog_id'=%s ORDER BY contract->>'source_country'",(str(blog),)).fetchall()
+    assert [(r['country'],r['language']) for r in contracts]==[('GB','en'),('US','en')]
+    assert {r['id'] for r in conn.execute("SELECT * FROM trend_observations WHERE id=ANY(%s)",([us,gb],)).fetchall()}=={us,gb}
 
 
 def test_trends_queue_dispatch_has_distinct_provenance_and_no_publication(lab,monkeypatch):
@@ -143,6 +183,7 @@ def test_trends_queue_dispatch_has_distinct_provenance_and_no_publication(lab,mo
     profile=conn.execute("INSERT INTO language_profiles(language_code,target_country) VALUES('ko','KR') ON CONFLICT(language_code,target_country) DO UPDATE SET search_intent=language_profiles.search_intent RETURNING id").fetchone()['id']
     blog=conn.execute("INSERT INTO blogger_blogs(language_code,url,display_name,blog_id) VALUES('ko',%s,'Trends test blog','1234567890') RETURNING id",('https://trend-'+uuid4().hex[:8]+'.blogspot.com',)).fetchone()['id']
     conn.execute("INSERT INTO publishing_policies(language_code,blog_id,profile_id,active) VALUES('ko',%s,%s,false)",(blog,profile))
+    conn.execute("INSERT INTO trend_blog_geo_authoring(blog_id,geo,enabled,processing_order) VALUES(%s,'KR',true,1)",(blog,))
     request={'request_key':str(uuid4()),'action':'queue','reason':'Exact region research queue for isolated test','blog_id':str(blog)}
     path=f'/admin/research/trend-editorial/topics/{topic}/decision'
     assert api.post(path,headers=h,json=request).status_code==200

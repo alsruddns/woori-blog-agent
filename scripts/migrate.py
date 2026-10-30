@@ -7,7 +7,7 @@ import psycopg
 from dotenv import dotenv_values
 
 root = Path(__file__).resolve().parents[1]
-MAX_SUPPORTED_SCHEMA_VERSION = 64
+MAX_SUPPORTED_SCHEMA_VERSION = 66
 parser = argparse.ArgumentParser()
 parser.add_argument("--status", action="store_true", help="Read-only operations schema version check")
 args = parser.parse_args()
@@ -316,4 +316,8 @@ with psycopg.connect(url) as conn:
         conn.execute((root / 'scripts/063_trend_codex_provenance.sql').read_text(encoding='utf-8'), prepare=False)
     if current < 64:
         conn.execute((root / 'scripts/064_trend_collection_settings.sql').read_text(encoding='utf-8'), prepare=False)
-print("Project migrations through 064 verified")
+    if current < 65:
+        conn.execute((root / 'scripts/065_trend_blog_geo_authoring.sql').read_text(encoding='utf-8'), prepare=False)
+    if current < 66:
+        conn.execute((root / 'scripts/066_sports_editorial_category.sql').read_text(encoding='utf-8'), prepare=False)
+print("Project migrations through 066 verified")

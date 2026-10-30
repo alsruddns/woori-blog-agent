@@ -109,7 +109,7 @@ def reviewable_item() -> dict[str, Any]:
 def test_editorial_categories_and_overlapping_deduplication_groups() -> None:
     assert {item["slug"] for item in EDITORIAL_CATEGORIES} == {
         "economy", "finance", "stocks", "crypto", "technology", "semiconductors",
-        "artificial-intelligence", "policy", "entertainment",
+        "artificial-intelligence", "policy", "sports", "entertainment",
     }
     categories = {item["slug"]: item for item in EDITORIAL_CATEGORIES}
     assert categories["finance"]["deduplication_group"] == categories["stocks"]["deduplication_group"]

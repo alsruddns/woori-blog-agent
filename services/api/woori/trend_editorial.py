@@ -9,7 +9,7 @@ from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from fastapi import APIRouter, HTTPException, Query
 from psycopg.types.json import Jsonb
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from . import topics, trends
 from .db import connection
@@ -21,7 +21,7 @@ STATES = {'collected','pending_classification','selected','review_candidate','di
 
 
 def current_slot() -> datetime:
-    """The current KST hour, including when the computer missed earlier sweeps."""
+    """The active configured Asia/Seoul collection slot."""
     config=trends.collection_settings()
     return trends.configured_slot(datetime.now(UTC),config)
 
@@ -70,21 +70,90 @@ def transition(conn: Any, topic_id: UUID, state: str, code: str, reason: str,
 
 def classify(query: str, payload: dict[str, Any] | None) -> tuple[str,str,str | None]:
     key=topics.normalize_query(query)
+    news_items=(payload or {}).get('news_items',[])
+    headlines=[topics.normalize_query(str(item.get('title') or '')) for item in news_items if isinstance(item,dict)] if isinstance(news_items,list) else []
+    query_terms=[token for token in key.split() if len(token)>1]
+    relevant=[title for title in headlines if title and (key in title or (query_terms and all(token in title.split() for token in query_terms)))]
     domains=topics.research_domains(query)
+    if not domains and relevant:
+        # Use a related RSS headline only to choose an existing editorial lane;
+        # it remains unverified discovery context, never factual evidence.
+        domains=topics.research_domains(' '.join(relevant))
     if not key or key in topics.BROAD_QUERIES:
         return 'discarded','unclear_search_intent',None
     if any(term in key for term in ('rumor','leaked private','사생활','루머','불륜','열애설')):
         return 'discarded','unverifiable_rumor',None
     category=domains[0] if domains else None
     # Feed headlines provide research context, never factual verification.
-    headlines=[topics.normalize_query(str(n.get('title') or '')) for n in (payload or {}).get('news_items',[]) if isinstance(n,dict)]
-    if domains and any(key in title for title in headlines):
-        return 'selected','specific_topic_with_news_context',category
-    if headlines and not any(key in title for title in headlines):
-        return 'review_candidate','news_context_mismatch',category
-    if domains and len(key)>=8 and len(key.split())>=2:
+    # RSS headlines are optional context, not a required prerequisite. The
+    # Codex research stage opens current sources and the existing Import gates
+    # still keep unsupported claims unverified/held.
+    if domains and (len(key)>=5 or bool(relevant)):
         return 'selected','specific_topic_requires_independent_research',category
     return 'review_candidate','insufficient_context',category
+
+
+class BlogGeoMapping(BaseModel):
+    blog_id: UUID
+    geo: str = Field(pattern=r'^[A-Z]{2}$')
+    enabled: bool
+    processing_order: int = Field(ge=1,le=11)
+
+
+class BlogGeoMappings(BaseModel):
+    mappings: list[BlogGeoMapping] = Field(max_length=44)
+
+    @model_validator(mode='after')
+    def unique_mappings(self) -> BlogGeoMappings:
+        keys=[(row.blog_id,row.geo) for row in self.mappings]
+        active_geos=[row.geo for row in self.mappings if row.enabled]
+        active_orders=[(row.blog_id,row.processing_order) for row in self.mappings if row.enabled]
+        if len(set(keys))!=len(keys) or len(set(active_geos))!=len(active_geos) or len(set(active_orders))!=len(active_orders):
+            raise ValueError('duplicate_trend_blog_geo_mapping')
+        return self
+
+
+@router.get('/blog-geos')
+def get_blog_geo_mappings() -> dict[str,Any]:
+    from .keyword_jobs import targets
+    with connection() as conn:
+        blogs=targets(conn)
+        mappings=conn.execute('''SELECT blog_id,geo,enabled,processing_order,created_at,updated_at
+            FROM trend_blog_geo_authoring ORDER BY blog_id,processing_order,geo''').fetchall()
+    return {'blogs':blogs,'geos':sorted(trends.ALLOWED_GEOS),'mappings':mappings,
+            'same_geo_multiple_blogs':False,'source_geo_is_not_blog_locale_or_publication_country':True}
+
+
+@router.put('/blog-geos')
+def put_blog_geo_mappings(request:BlogGeoMappings) -> dict[str,Any]:
+    from psycopg.types.json import Jsonb
+
+    from .keyword_jobs import targets
+    if any(row.geo not in trends.ALLOWED_GEOS for row in request.mappings):
+        raise HTTPException(422,'trend_geo_not_allowlisted')
+    with connection() as conn:
+        conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('trend-blog-geo-authoring',0))")
+        allowed={row['id']:row for row in targets(conn)}
+        if any(row.blog_id not in allowed for row in request.mappings):
+            raise HTTPException(409,'active_blog_locale_country_policy_required')
+        before=conn.execute('''SELECT blog_id,geo,enabled,processing_order FROM trend_blog_geo_authoring
+            ORDER BY blog_id,geo FOR UPDATE''').fetchall()
+        # Free active ordering/geo indexes before applying a reordered set.
+        conn.execute('UPDATE trend_blog_geo_authoring SET enabled=false,updated_at=now() WHERE enabled')
+        for row in request.mappings:
+            conn.execute('''INSERT INTO trend_blog_geo_authoring(blog_id,geo,enabled,processing_order)
+                VALUES(%s,%s,%s,%s) ON CONFLICT(blog_id,geo) DO UPDATE SET enabled=EXCLUDED.enabled,
+                processing_order=EXCLUDED.processing_order,updated_at=now()''',
+                (row.blog_id,row.geo,row.enabled,row.processing_order))
+        after=conn.execute('''SELECT blog_id,geo,enabled,processing_order FROM trend_blog_geo_authoring
+            ORDER BY blog_id,geo''').fetchall()
+        before_json=[{**dict(r),'blog_id':str(r['blog_id'])} for r in before]
+        after_json=[{**dict(r),'blog_id':str(r['blog_id'])} for r in after]
+        if before_json!=after_json:
+            conn.execute("INSERT INTO audit_events(event_type,payload) VALUES('trend.authoring.geo_mappings_changed',%s)",
+                (Jsonb({'before':before_json,'after':after_json,'actor':'authenticated_operator',
+                        'publication_authority_changed':False}),))
+    return get_blog_geo_mappings()
 
 
 def reconcile(limit: int = 200) -> dict[str,int]:
@@ -176,10 +245,13 @@ def listing(page:int=Query(1,ge=1),page_size:int=Query(25,ge=1,le=100),
           count(*) FILTER(WHERE e.state='generation_queued') generation_queued '''+BASE).fetchone()
         from .keyword_jobs import targets
         blogs=targets(conn)
+        blog_geo_mappings=conn.execute('''SELECT blog_id,geo,enabled,processing_order FROM trend_blog_geo_authoring
+            WHERE enabled ORDER BY blog_id,processing_order,geo''').fetchall()
     return {'items':items,'total':total,'page':page,'page_size':page_size,'summary':summary,'blogs':blogs,
+            'blog_geo_mappings':blog_geo_mappings,
             'geos':sorted(trends.ALLOWED_GEOS),'categories':list(EDITORIAL_CATEGORIES),
             'summary_unit':'observations; one topic may have many observations',
-            'schedule':'KST hourly sweep begins at :00; 5-minute global request spacing; 12/hour hard cap'}
+            'schedule':f"KST every {trends.collection_settings()['interval_minutes']} minutes; current-slot data only"}
 
 
 @router.get('/{observation_id}')
@@ -205,15 +277,18 @@ class Decision(BaseModel):
     blog_id:UUID|None=None
 
 
-def queue_topic(conn:Any,topic_id:UUID,blog_id:UUID) -> dict[str,Any]:
+def queue_topic(conn:Any,topic_id:UUID,blog_id:UUID,*,selection_rank:int|None=None,
+                processing_order:int|None=None) -> dict[str,Any]:
     from .keyword_jobs import targets
     current=latest(conn,topic_id)
     if not current or current['state'] not in {'selected','generation_queued'}:raise HTTPException(409,'topic_not_selected')
     if current['created_at']<current_slot():raise HTTPException(409,'expired_collection_slot')
     topic=conn.execute('SELECT * FROM trend_topics WHERE id=%s',(topic_id,)).fetchone()
     blog=next((b for b in targets(conn) if b['id']==blog_id),None)
-    if not blog or blog['target_country']!=topic['representative_geo']:
-        raise HTTPException(409,'exact_region_blog_policy_required')
+    mapping=conn.execute('''SELECT 1 FROM trend_blog_geo_authoring
+        WHERE blog_id=%s AND geo=%s AND enabled''',(blog_id,topic['representative_geo'])).fetchone()
+    if not blog or not mapping:
+        raise HTTPException(409,'enabled_trend_blog_geo_mapping_required')
     category=current['category']
     if category not in {c['slug'] for c in EDITORIAL_CATEGORIES}:raise HTTPException(409,'editorial_category_required')
     observations=current_observations(conn,topic_id)
@@ -222,18 +297,20 @@ def queue_topic(conn:Any,topic_id:UUID,blog_id:UUID) -> dict[str,Any]:
     # Missing event date is deliberately a review boundary, not an invented event ID.
     event_stamp=newest['trend_started_at'] or newest['collected_at'].astimezone(trends.SCHEDULE_TIMEZONE).date()
     duplicate=hashlib.sha256(f"trend:{topic_id}:{event_stamp}:{blog_id}".encode()).hexdigest()
-    previous=conn.execute('''SELECT id FROM trend_generation_requests WHERE topic_id=%s
-        AND contract->>'target_blog_id'=%s AND duplicate_key<>%s LIMIT 1''',
-        (topic_id,str(blog_id),duplicate)).fetchone()
+    previous=conn.execute('''SELECT q.id FROM trend_generation_requests q JOIN trend_topics prior ON prior.id=q.topic_id
+        WHERE prior.normalized_key=%s AND q.contract->>'target_blog_id'=%s AND q.duplicate_key<>%s LIMIT 1''',
+        (topic['normalized_key'],str(blog_id),duplicate)).fetchone()
     if previous:raise HTTPException(409,'topic_already_requested_for_blog')
-    contract={'version':'trend-authoring/1','trend_topic_id':str(topic_id),
+    contract={'version':'trend-authoring/2','trend_topic_id':str(topic_id),
         'source_observation_ids':[str(o['id']) for o in observations], 'country':topic['representative_geo'],
+        'source_country':topic['representative_geo'],
         'source_language':topic['source_language'],'target_blog_id':str(blog_id),'target_language':blog['language_code'],
         'target_country':blog['target_country'],'query':newest['query'],'query_group':topic['normalized_key'],
         'search_volume_raw':newest['source_volume_label'],'volume_kind':'bucket_lower_bound; not internationally comparable',
         'collected_at':newest['collected_at'].isoformat(),'collection_slot':newest['slot_at'].isoformat(),
         'selection_reason':current['reason'],
         'raw_material':newest['raw_payload'],'duplicate_key':duplicate,'category':category,
+        'selection_rank':selection_rank,'processing_order':processing_order,
         'content_type':'trends_major_issue','requires_codex_evaluation':True,'remote_duplicate_status':'not_checked'}
     row=conn.execute('''INSERT INTO trend_generation_requests(topic_id,duplicate_key,contract)
         VALUES(%s,%s,%s) ON CONFLICT(duplicate_key) DO UPDATE SET duplicate_key=EXCLUDED.duplicate_key RETURNING *''',
@@ -258,9 +335,14 @@ def dispatch(limit:int=1) -> dict[str,int]:
                            'system:trend-slot',evidence={'generation_request_id':str(row['id'])})
                 continue
             request_key=uuid5(NAMESPACE_URL,'woori-trend-codex:'+str(row['id']))
-            options={'keyword':c['query'],'direction':'Research the actual event independently. Trends RSS headlines are unverified context.',
+            options={'keyword':c['query'],'direction':
+                'Write an original article for readers of the selected Blogger language. Directly research why this Google Trends query is active now using live web search; no pre-collected news URL is required. Prioritize primary sources and reputable reporting, verify each material claim, date, number, and quotation, and reject rumor or unsupported interpretation. Trends popularity and RSS headlines are discovery context only, not evidence. If no current verifiable event or useful article can be established, return an insufficient-evidence failure instead of inventing a story.',
                 'category':c['category'],'article_type':'news_analysis','length':'default','research_range':'latest',
                 'trend_contract':{'trend_topic_id':c['trend_topic_id'],'observation_ids':c['source_observation_ids'],
+                    'source_country':c['source_country'],'target_country':c['target_country'],
+                    'target_blog_id':c['target_blog_id'],'target_language':c['target_language'],
+                    'search_volume_raw':c['search_volume_raw'],'collection_slot':c['collection_slot'],
+                    'selection_rank':c.get('selection_rank'),'processing_order':c.get('processing_order'),
                     'selection_reason':c['selection_reason'],'raw_news_items':(c.get('raw_material') or {}).get('news_items',[])[:5]}}
             digest=hashlib.sha256(json.dumps(options,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
             job=conn.execute('''INSERT INTO codex_authoring_jobs(request_key,request_sha256,job_type,blog_id,language_code,
@@ -277,32 +359,76 @@ def dispatch(limit:int=1) -> dict[str,int]:
 
 
 def queue_selected() -> dict[str,int]:
-    """Queue at most one selected topic per hour for one unambiguous local audience."""
+    """Queue current-slot candidates by country rank using explicit blog mappings."""
+    from .config import settings
     from .keyword_jobs import targets
+    slot=current_slot()
     with connection() as conn:
         conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('trend-selected-queue',0))")
-        recent=conn.execute('SELECT count(*) n FROM trend_generation_requests WHERE created_at>=%s',(current_slot(),)).fetchone()
-        if not recent or recent['n']>=1:return {'created':0}
-        rows=conn.execute('''SELECT t.id,t.representative_geo,e.category,o.source_volume_lower_bound,o.trend_started_at FROM trend_topics t
-            JOIN LATERAL(SELECT * FROM trend_editorial_events WHERE topic_id=t.id ORDER BY id DESC LIMIT 1)e ON true
-            JOIN LATERAL(SELECT o.source_volume_lower_bound,o.trend_started_at FROM trend_topic_memberships m
-              JOIN trend_observations o ON o.id=m.observation_id JOIN trend_collection_slots s ON s.run_id=o.run_id AND s.geo=o.geo
-              WHERE m.topic_id=t.id AND s.slot_at=%s ORDER BY o.collected_at DESC LIMIT 1)o ON true
-            WHERE e.state='selected' AND NOT EXISTS(SELECT 1 FROM trend_generation_requests q WHERE q.topic_id=t.id)
-              AND o.source_volume_lower_bound IS NOT NULL AND o.trend_started_at IS NOT NULL
-              AND o.trend_started_at>=now()-interval '10 minutes' AND o.trend_started_at<=now()
-            ORDER BY t.representative_geo,o.source_volume_lower_bound DESC,o.trend_started_at DESC,t.id LIMIT 100''',(current_slot(),)).fetchall()
-        blogs=targets(conn)
-        for row in rows:
-            observations=current_observations(conn,row['id'])
-            candidates=[b for b in blogs if b['target_country']==row['representative_geo']]
-            if not observations or len(candidates)!=1:continue
-            queued=queue_topic(conn,row['id'],candidates[0]['id'])
-            transition(conn,row['id'],'generation_queued','automatic_queue',
-                '현재 회차 선정 주제를 독립 웹 조사 대상으로 전달했습니다.',
-                'system:trend-slot',category=row['category'],evidence={'generation_request_id':str(queued['id'])})
-            return {'created':1}
-        return {'created':0}
+        limit=settings().trend_research_hourly_limit
+        recent=conn.execute('SELECT count(*) n FROM trend_generation_requests WHERE created_at>=now()-interval \'1 hour\'').fetchone()
+        remaining=max(0,limit-int(recent['n'] if recent else 0))
+        if not remaining:return {'created':0,'hourly_capacity':limit}
+        mappings=conn.execute('''SELECT m.blog_id,m.geo,m.processing_order,b.display_name
+            FROM trend_blog_geo_authoring m JOIN blogger_blogs b ON b.id=m.blog_id
+            WHERE m.enabled AND b.active AND b.blog_id IS NOT NULL
+            ORDER BY m.blog_id,m.processing_order,m.geo''').fetchall()
+        blogs={b['id']:b for b in targets(conn)}
+        # Rotate each blog's starting geography by collection slot so a fixed
+        # ordering cannot starve the last country in a multi-country mapping.
+        by_blog:dict[UUID,list[dict[str,Any]]]={}
+        for row in mappings:by_blog.setdefault(row['blog_id'],[]).append(dict(row))
+        interval=int(trends.collection_settings()['interval_minutes'])
+        epoch=int(slot.timestamp()//(interval*60))
+        ordered=[]
+        for blog_id,items in sorted(by_blog.items(),key=lambda pair:str(pair[0])):
+            offset=epoch%len(items) if items else 0
+            ordered.extend(items[offset:]+items[:offset])
+        created=0
+        for mapping in ordered:
+            if created>=remaining:break
+            blog=blogs.get(mapping['blog_id'])
+            if not blog:continue
+            already=conn.execute('''SELECT count(*) n, bool_or(state IN ('generation_queued','generating','imported')) active
+                FROM trend_generation_requests WHERE contract->>'source_country'=%s
+                  AND contract->>'target_blog_id'=%s AND (contract->>'collection_slot')::timestamptz=%s''',
+                (mapping['geo'],str(mapping['blog_id']),slot.isoformat())).fetchone()
+            if already and (already['active'] or already['n']>=3):continue
+            rows=conn.execute('''SELECT t.id,t.representative_query,t.normalized_key,t.source_language,
+                    o.source_volume_lower_bound,o.source_volume_label,o.trend_started_at,o.collected_at,o.raw_payload,
+                    e.state,e.category,e.reason_code
+                FROM trend_topics t
+                JOIN trend_topic_memberships m ON m.topic_id=t.id
+                JOIN trend_observations o ON o.id=m.observation_id AND o.geo=%s
+                JOIN trend_collection_slots s ON s.run_id=o.run_id AND s.geo=o.geo AND s.slot_at=%s
+                LEFT JOIN LATERAL(SELECT state,category,reason_code FROM trend_editorial_events
+                    WHERE topic_id=t.id ORDER BY id DESC LIMIT 1)e ON true
+                WHERE o.source_volume_lower_bound IS NOT NULL AND o.source_volume_lower_bound>0
+                  AND o.trend_started_at IS NOT NULL
+                  AND NOT EXISTS(SELECT 1 FROM trend_generation_requests q JOIN trend_topics prior ON prior.id=q.topic_id
+                    WHERE prior.normalized_key=t.normalized_key AND q.contract->>'target_blog_id'=%s)
+                ORDER BY o.source_volume_lower_bound DESC,o.trend_started_at DESC,o.collected_at DESC,t.id LIMIT 100''',
+                (mapping['geo'],slot,str(mapping['blog_id']))).fetchall()
+            for rank,row in enumerate(rows,1):
+                state,code,category=classify(row['representative_query'],row['raw_payload'])
+                if state!='selected' or not (row['category'] or category):continue
+                category=row['category'] or category
+                current=latest(conn,row['id'])
+                if not current or current['state'] in {'review_candidate','pending_classification','collected'}:
+                    transition(conn,row['id'],'selected',code,
+                        '현재 수집 회차의 검색량·최신성·주제 적합성으로 Codex 독립 조사를 선정했습니다. 근거나 사실 승인으로 간주하지 않습니다.',
+                        'system:trend-country-rank',category=category,evidence={'geo':mapping['geo'],
+                        'volume_lower_bound':row['source_volume_lower_bound'],'trend_started_at':row['trend_started_at'].isoformat(),
+                        'collection_slot':slot.isoformat(),'rank_basis':'within_geo_volume_desc_then_started_desc'})
+                queued=queue_topic(conn,row['id'],mapping['blog_id'],selection_rank=rank,
+                                   processing_order=mapping['processing_order'])
+                transition(conn,row['id'],'generation_queued','automatic_country_rank_queue',
+                    '국가별 검색량 내림차순 후보를 공통 Codex Runner의 웹 조사 큐로 전달했습니다.',
+                    'system:trend-slot',category=category,evidence={'generation_request_id':str(queued['id']),
+                    'geo':mapping['geo'],'blog_id':str(mapping['blog_id']),'processing_order':mapping['processing_order']})
+                created+=1
+                break
+        return {'created':created,'hourly_capacity':limit}
 
 
 def expire_pending(limit:int=100) -> int:

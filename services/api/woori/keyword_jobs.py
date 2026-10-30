@@ -124,7 +124,8 @@ def list_jobs() -> dict[str,Any]:
 def capabilities() -> dict[str,Any]:
     with connection() as conn:
         return {'engine':codex_runner.engine_status(),'blogs':targets(conn),'categories':list(EDITORIAL_CATEGORIES),
-                'manual_only':True,'job_types':['user_keyword'],'future_job_type':'google_trends'}
+                'manual_only':True,'job_types':['user_keyword','google_trends'],
+                'trends_requires_explicit_region_mapping':True,'auto_publish':False}
 
 
 def create(request:AuthoringRequest,parent:UUID|None=None) -> dict[str,Any]:
@@ -262,12 +263,16 @@ def make_envelope(job:dict[str,Any],article:dict[str,Any],evidence:dict[str,Any]
     now=datetime.now(UTC).isoformat()
     completed=job.get('completed_at')
     generated=evidence.get('completed_at') or (completed.isoformat() if completed else now)
+    trend_contract=(job.get('options') or {}).get('trend_contract') or {}
+    reader_relevance=(f"Current Google Trends interest observed in {trend_contract.get('source_country')}; "
+        f"this article is localized for the explicitly mapped {job['language_code']}/{job['target_country']} Blogger. "
+        "Trends popularity is discovery context, not evidence.") if trends_origin else 'User explicitly requested this localized article for the selected audience.'
     return ImportSubmission.model_validate({'submitted_by':'Codex Trends authoring' if trends_origin else 'Codex user keyword authoring','item':{
         'schema_version':'1.0','content_id':str(job['id']),'event_group_id':
         ('trend-'+str(job['trend_request_id']) if trends_origin else 'user-keyword-'+str(job['id'])),
         'relation':'original','parent_content_id':None,'research_package_id':None,'source_region':model.source_region,
         'language_code':job['language_code'],'target_audiences':[{'language_code':job['language_code'],
-        'target_region':job['target_country'],'reader_relevance_reason':'User explicitly requested this localized article for the selected audience.'}],
+        'target_region':job['target_country'],'reader_relevance_reason':reader_relevance}],
         'title':model.title,'body_markdown':model.body_markdown,'category':job['category'],'google_trends_based':trends_origin,
         'source_ids':[s['source_id'] for s in sources],'sources':sources,
         'claims':[{**claim.model_dump(mode='json'),'verification_status':'unverified'} for claim in model.claims],

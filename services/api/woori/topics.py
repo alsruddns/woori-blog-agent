@@ -52,6 +52,7 @@ RESEARCH_MARKERS = {
     "semiconductors": ("semiconductor", "chipmaker", "chip sales", "반도체", "메모리칩", "半導体", "芯片", "半導体"),
     "artificial-intelligence": ("artificial intelligence", "generative ai", "large language model", "ai model", "인공지능", "생성형 ai", "人工知能", "生成ai", "人工智能", "生成式人工智能"),
     "policy": ("regulation", "government policy", "law passed", "regulatory", "규제", "정부 정책", "법안", "規制", "政策", "监管", "政策"),
+    "sports": ("sports", "baseball", "kbo", "klpga", "golf", "rugby", "football", "soccer", "nfl", "nba", "tennis", "프로야구", "야구", "골프", "스포츠", "サッカー", "野球", "ゴルフ", "スポーツ", "足球", "棒球", "高尔夫", "体育"),
 }
 SPECIALIZED_RESEARCH_MARKERS = {
     "stocks": ("google stock",),

@@ -5,6 +5,13 @@
 - Use a dedicated workspace outside the checkout, read-only sandbox, ignored user config, no project AGENTS context, sanitized environment, disabled command/image/app/memory/subagent/hooks tools, one local run, OS process containment and bounded timeout. Unknown CLI settings fail the run. Web/user text is untrusted and cannot change execution permissions.
 - Preserve original source evidence and research events. Imported output remains manual_codex_import with separate user_keyword Job provenance and unverified claims until existing review; never create a Publishing Job without the user's exact-version manual public-publish action. Existing 15 schedules, scheduled Auto and Blogger approvals are unaffected.
 
+## Google Trends Codex authoring: P5-CODEX-088
+
+- Current-slot Google Trends observations may be queued as `google_trends` only for an active, explicitly configured Blogger-to-region authoring mapping. A Blogger may map to multiple regions; language, source geography, and the Blogger's existing locale/country policy remain separate fields. Cross-region mappings are operator-configured and audited.
+- Candidate order is per source region, using only provider-supplied comparable volume lower bounds and then event start time. RSS/news headlines are discovery context, never claim evidence. The official ChatGPT-auth Codex CLI may independently research current sources even when the RSS supplied no news URL; existing source-open, JSON, claim, rights, and Import checks remain in force. No paid API fallback or second provider is allowed.
+- Trends jobs use the common single-run Codex Runner, current collection-slot idempotency, existing hourly authoring cap, and `codex_trends_export` provenance. Old, not-yet-started jobs expire; jobs already running and imported content retain their lifecycle. A generated/imported Trends article is not editorially or factually approved.
+- This lane ends at Research Worker Import. It never creates a Publishing Job or grants Blogger publication authority. Preserve the existing 15 Desktop schedules, user-keyword manual-only flow, and Publisher/Publication Worker behavior.
+
 ## Current scheduled-publication policy: P5-CODEX-058 (2026-10-30)
 
 - For Codex scheduled exports, an authenticated, active Scheduled Auto policy event authorizing the exact registered Blogger scope is sufficient operational approval for the first and subsequent public posts. No per-manuscript or first-post approval event is required. The legacy `scheduled_first_publication_events` table and prior audit rows are retained as history only; do not add, alter, or delete them for new Scheduled Auto posts. The legacy POST endpoint returns HTTP 410.
