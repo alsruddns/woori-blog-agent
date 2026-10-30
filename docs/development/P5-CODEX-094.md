@@ -16,3 +16,13 @@
 - Operational permission: no administrator consent or policy enable event was manufactured by this agent. Actual policy activation awaits the manager's explicit Dashboard save. Therefore no operational Trends Job/postId/URL/LIVE is claimed.
 - Changed files: Trends publication policy, Import models/schema, keyword output/prompt and Codex evidence admission, publication connection verification/post-review API and proxy, Trends settings and post-review UI, migrations/runners, focused tests and zero-cost policy notes.
 - Runtime/build/browser/Git results will be appended after final safe reflection; commit identities are linked through git log.
+
+## Final runtime checkpoint
+
+- Code commit 1dbf7bd reflected through the standard verified lifecycle script. API/Dashboard HTTP checks passed; Research Worker PID 15744 and Publication Worker PID 524 have fresh heartbeats. All stops were graceful; existing Windows startup configuration was retained.
+- Final Ruff, mypy (6 modules), 15 changed tests, wheel, Dashboard lint/typecheck/production build passed. The earlier broader change-scoped suite passed 135 tests, including existing manual/Scheduled, interval and Blogger MockTransport regressions.
+- Actual Dashboard Playwright passed 6/6 on desktop and 390px mobile: scoped policy view, new post-edit consent wording, existing real post-review claim/status display and no horizontal overflow. Tests submitted no administrator approval or review mutation.
+- Installed official CLI: 0.165.0, ChatGPT auth available, gpt-6-luna, no API-key fallback. No real model-generation call was made during P094; actual new Trends generation remains unverified in this task.
+- Operational schema 72 verified via migration-role read. Application-role schema_migrations read was correctly denied during diagnostics; no privilege was changed.
+- Final live policy state: KO/EN/JA have reused verified real write receipts plus fresh identity checks; their sole activation blocker is authenticated administrator policy approval. ZH remains unmapped/off. Enabled Trends events=0; Trends Publishing Jobs=0. No new Blogger postId/public URL/LIVE result exists.
+- No consent event was manufactured. The manager can select target countries and explicitly save the post-edit policy in `/sources`; technical activation blockers repaired here no longer require another development change. Operational LIVE remains incomplete pending that authenticated action and a subsequent eligible new-slot article.
