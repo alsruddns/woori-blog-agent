@@ -110,7 +110,7 @@ Describe 'Windows service lifecycle ownership and startup policy' {
     $launcher | Should Match 'scheduled-auto-and-manual'
   }
 
-  It 'uses cooperative identity-bound stop channels for API and Dashboard processes' {
+  It 'uses cooperative stop channels when available and bounds verified legacy shutdown' {
     $api = Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\api-service.py') -Raw
     $dashboard = Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\dashboard-service.js') -Raw
     $stopper = Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\stop.ps1') -Raw
@@ -118,6 +118,9 @@ Describe 'Windows service lifecycle ownership and startup policy' {
     $dashboard | Should Match 'server\.close\('
     $stopper | Should Match 'Write-HttpServiceStopRequest'
     $stopper | Should Not Match 'Stop-Process -Id.*\$serviceSnapshot'
+    $stopper | Should Match 'AllowVerifiedLegacyFallback'
+    $stopper | Should Match 'verified_legacy_fallback_started'
+    $stopper | Should Match 'Get-ProcessOwner'
   }
 
   It 'stops workers before HTTP services and only starts after verified full shutdown' {
@@ -125,9 +128,29 @@ Describe 'Windows service lifecycle ownership and startup policy' {
     $restarter = Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\restart-services.ps1') -Raw
     $stopper.IndexOf("'publication_worker'") | Should BeLessThan $stopper.IndexOf("'dashboard'")
     $stopper | Should Match 'shutdown_aborted_for_active_worker'
-    $stopper.IndexOf('Assert-HttpGracefulStopReady') | Should BeLessThan $stopper.IndexOf('foreach ($name in $targets)')
-    $stopper | Should Match 'legacy_process_has_no_identity_bound_stop_channel'
+    $stopper.IndexOf('Assert-HttpTreeOwned') | Should BeLessThan $stopper.IndexOf('foreach ($name in $targets)')
+    $stopper | Should Match 'legacy_process_verified_for_graceful_then_bounded_stop'
     $restarter.IndexOf('stop-services.ps1') | Should BeLessThan $restarter.IndexOf('start-services.ps1')
+  }
+
+  It 'suppresses logon recovery after a user stop and only clears it for explicit starts' {
+    $common=Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\server-common.ps1') -Raw
+    $bootstrap=Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\start-services.ps1') -Raw
+    $stopper=Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\stop-services.ps1') -Raw
+    $common | Should Match 'intentional-stop\.json'
+    $common | Should Match 'session_id'
+    $bootstrap | Should Match 'suppressed_after_intentional_stop'
+    $bootstrap | Should Match 'ExplicitUserStart'
+    $stopper | Should Match 'Write-IntentionalStopMarker'
+  }
+
+  It 'verifies full shutdown and new PID replacement before restart success' {
+    $restarter=Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\restart-services.ps1') -Raw
+    $restarter | Should Match 'restart_stop_verified'
+    $restarter | Should Match 'old_pids'
+    $restarter | Should Match 'new_pids'
+    $restarter | Should Match 'scheduled-auto-and-manual'
+    $restarter | Should Match 'Test-LoopbackHttp'
   }
 
   It 'reads the current commit before any pipeline changes the native exit code' {

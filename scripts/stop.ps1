@@ -2,7 +2,8 @@
 param(
   [ValidateSet('api','dashboard','research_worker','worker','evaluation_worker','publication_worker','all')][string]$Service = 'all',
   [ValidateRange(5,3600)][int]$TimeoutSeconds = 60,
-  [switch]$Force
+  [switch]$Force,
+  [switch]$AllowVerifiedLegacyFallback
 )
 
 $ErrorActionPreference = 'Stop'
@@ -205,7 +206,7 @@ function Get-ManagedTree([string]$Name, $Runner, $ProcessTable) {
     [pscustomobject]@{
       Id=[int]$item.Id; ParentId=[int]$item.ParentId; Path=[string]$item.Path
       CommandLine=[string]$item.CommandLine; StartedUtc=(Get-ProcessStarted ([int]$item.Id))
-      Kind=[string]$entry.Kind
+      Owner=(Get-ProcessOwner ([int]$item.Id)); Kind=[string]$entry.Kind
       ProcessInfo=$item
     }
   }
@@ -222,7 +223,9 @@ function Test-SnapshotStillSame($Snapshot) {
     Id=[int]$current.Id; ParentId=[int]$current.ParentId; Path=[string]$current.Path
     CommandLine=[string]$current.CommandLine; StartedUtc=(Get-ProcessStarted ([int]$current.Id))
   }
-  return Test-SameProcessSnapshot $Snapshot $currentSnapshot
+  if (-not (Test-SameProcessSnapshot $Snapshot $currentSnapshot)) { return $false }
+  if ($Snapshot.Owner -and (Get-ProcessOwner ([int]$Snapshot.Id)) -ine [string]$Snapshot.Owner) { return $false }
+  return $true
 }
 
 function Get-EstablishedConnectionCount($ProcessIds) {
@@ -404,12 +407,13 @@ function Invoke-ForceManagedStop([string]$Name, $Snapshots) {
     } else { Test-ExactCheckoutServiceProcess $snapshot.ProcessInfo $Name }
     if (-not $allowed) { throw "PID $($snapshot.Id) no longer matches the verified $Name process identity; refusing force stop." }
     Stop-Process -Id ([int]$snapshot.Id) -ErrorAction Stop
+    Write-LifecycleLog $Name 'verified_legacy_process_terminated' "pid=$($snapshot.Id) kind=$($snapshot.Kind) owner=$($snapshot.Owner)"
   }
 }
 
 function Invoke-ProjectStop {
   [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
-  param([string]$Name, [int]$TimeoutSeconds, [bool]$AllowForce)
+  param([string]$Name, [int]$TimeoutSeconds, [bool]$AllowForce, [bool]$AllowVerifiedLegacyFallback = $false)
   $table = Get-ProcessTable
   $script:StopProcessTable = $table
   $manifest = Read-ServerManifest
@@ -473,9 +477,16 @@ function Invoke-ProjectStop {
     }
     Write-LifecycleLog $Name 'graceful_stop_pending' "remaining_pids=$($remaining.Id -join ',')"
     Write-Warning "$Name did not stop gracefully within $TimeoutSeconds seconds. Remaining verified PID(s): $($remaining.Id -join ', ')."
-    if (-not $AllowForce -or -not (Confirm-ForceAction $Name $remaining)) {
+    $legacyFallbackAllowed = $AllowVerifiedLegacyFallback -and $Name -in @('api','dashboard') -and
+      @($remaining | Where-Object { -not $_.Owner -or $_.Owner -ine "$env:USERDOMAIN\$env:USERNAME" }).Count -eq 0
+    if (-not $legacyFallbackAllowed -and (-not $AllowForce -or -not (Confirm-ForceAction $Name $remaining))) {
       Write-Warning "$Name was left running. Re-run with -Force and confirm the exact PID phrase, or use its dedicated service terminal."
       return $false
+    }
+    if ($legacyFallbackAllowed) {
+      $freshActive = Get-EstablishedConnectionCount @($remaining.Id)
+      if ($freshActive -gt 0) { throw "$Name acquired $freshActive active connection(s) during shutdown; verified fallback was cancelled." }
+      Write-LifecycleLog $Name 'verified_legacy_fallback_started' "pids=$($remaining.Id -join ',') timeout_seconds=$TimeoutSeconds"
     }
     Invoke-ForceManagedStop $Name $remaining
     $afterForce = @(Wait-ForSnapshotsExit $remaining 10)
@@ -529,12 +540,12 @@ function Invoke-ProjectStop {
   return $complete
 }
 
-function Invoke-StopCommand([string]$SelectedService, [int]$Timeout, [bool]$AllowForce) {
+function Invoke-StopCommand([string]$SelectedService, [int]$Timeout, [bool]$AllowForce, [bool]$AllowVerifiedLegacyFallback = $false) {
   $preview = [bool]$WhatIfPreference
   $targets = if ($SelectedService -eq 'all') { @('dashboard','api','research_worker','publication_worker') } else { @($SelectedService) }
   $result = $true
   foreach ($name in $targets) {
-    try { if (-not (Invoke-ProjectStop $name $Timeout $AllowForce)) { $result=$false } }
+    try { if (-not (Invoke-ProjectStop $name $Timeout $AllowForce $AllowVerifiedLegacyFallback)) { $result=$false } }
     catch { Write-Warning "$name stop failed safely: $($_.Exception.Message)"; $result=$false }
   }
   Write-Output 'Post-stop status verification:'
@@ -553,5 +564,5 @@ function Invoke-StopCommand([string]$SelectedService, [int]$Timeout, [bool]$Allo
 }
 
 if ($MyInvocation.InvocationName -ne '.') {
-  Invoke-StopCommand $Service $TimeoutSeconds ([bool]$Force)
+  Invoke-StopCommand $Service $TimeoutSeconds ([bool]$Force) ([bool]$AllowVerifiedLegacyFallback)
 }

@@ -8,6 +8,7 @@ $ErrorActionPreference = 'Stop'
 try {
   switch ($Action) {
     'start_all' {
+      Remove-IntentionalStopMarkerForExplicitStart
       $states = @(& (Join-Path $PSScriptRoot 'status.ps1'))
       $processes = Get-ProcessTable
       $allReady = $true
@@ -33,13 +34,14 @@ try {
         Write-LifecycleLog 'all_services' 'already_ready' 'all_four_services_healthy_no_process_started'
         Write-Output 'All four services are already healthy; no duplicate process was started.'
       } else {
-        & (Join-Path $PSScriptRoot 'start-services.ps1')
+        & (Join-Path $PSScriptRoot 'start-services.ps1') -ExplicitUserStart
       }
     }
-    'start_dashboard' { & (Join-Path $PSScriptRoot 'start.ps1') -Service dashboard }
-    'start_api' { & (Join-Path $PSScriptRoot 'start.ps1') -Service api }
-    'start_research' { & (Join-Path $PSScriptRoot 'start.ps1') -Service research_worker }
+    'start_dashboard' { Remove-IntentionalStopMarkerForExplicitStart; & (Join-Path $PSScriptRoot 'start.ps1') -Service dashboard }
+    'start_api' { Remove-IntentionalStopMarkerForExplicitStart; & (Join-Path $PSScriptRoot 'start.ps1') -Service api }
+    'start_research' { Remove-IntentionalStopMarkerForExplicitStart; & (Join-Path $PSScriptRoot 'start.ps1') -Service research_worker }
     'start_publication' {
+      Remove-IntentionalStopMarkerForExplicitStart
       & (Join-Path $PSScriptRoot 'start.ps1') -Service publication_worker -PublicationMode scheduled-auto-manual
     }
     'status' {
@@ -58,5 +60,18 @@ try {
 } catch {
   $message = ([string]$_.Exception.Message -replace '[\r\n]+',' ') -replace '\s+',' '
   Write-LifecycleLog 'desktop_shortcut' 'action_failed' "action=$Action error_type=$($_.Exception.GetType().Name) detail=$($message.Substring(0,[Math]::Min(300,$message.Length)))"
+  try {
+    Add-Type -AssemblyName System.Windows.Forms
+    $logPath = Join-Path $script:RuntimeDir 'logs\service-lifecycle.log'
+    [void][System.Windows.Forms.MessageBox]::Show("$Action failed`r`n$message`r`n`r`nLog: $logPath",'Woori Blog Agent',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error)
+  } catch { Write-Host "ACTION FAILED: $Action; $message" }
   exit 1
+}
+
+if ($Action -in @('stop_all','restart_all')) {
+  try {
+    Add-Type -AssemblyName System.Windows.Forms
+    $verb = if ($Action -eq 'stop_all') { 'All services stopped' } else { 'All services restarted' }
+    [void][System.Windows.Forms.MessageBox]::Show("$verb`r`nService state and PIDs were recorded in .runtime/logs/service-lifecycle.log",'Woori Blog Agent',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information)
+  } catch { }
 }

@@ -3,6 +3,7 @@ $script:ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $script:RuntimeDir = Join-Path $script:ProjectRoot '.runtime'
 $script:ManifestPath = Join-Path $script:RuntimeDir 'servers.json'
 $script:ValidatedSourcePath = Join-Path $script:RuntimeDir 'validated-source.json'
+$script:IntentionalStopPath = Join-Path $script:RuntimeDir 'intentional-stop.json'
 $script:Services = @{
   api = @{ Port = 8100; Script = (Join-Path $PSScriptRoot 'run-api.ps1') }
   dashboard = @{ Port = 3100; Script = (Join-Path $PSScriptRoot 'run-dashboard.ps1') }
@@ -78,6 +79,42 @@ function Write-LifecycleLog([string]$ServiceName, [string]$Event, [string]$Detai
   [IO.File]::AppendAllText($log, $record + [Environment]::NewLine, (New-Object System.Text.UTF8Encoding($false)))
 }
 
+function Get-CurrentLogonSessionId {
+  try { return [int](Get-Process -Id $PID -ErrorAction Stop).SessionId }
+  catch { throw 'Could not identify the current Windows logon session.' }
+}
+
+function Test-IntentionalStopForCurrentSession {
+  if (-not (Test-Path -LiteralPath $script:IntentionalStopPath -PathType Leaf)) { return $false }
+  $item = Get-Item -LiteralPath $script:IntentionalStopPath -Force
+  if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Intentional-stop marker is a reparse point; inspect it before starting services.' }
+  try { $marker = Get-Content -LiteralPath $script:IntentionalStopPath -Raw -Encoding utf8 | ConvertFrom-Json }
+  catch { throw 'Intentional-stop marker is unreadable; inspect it before starting services.' }
+  if ([string]$marker.checkout_root -ine $script:ProjectRoot -or [string]$marker.owner -ine "$env:USERDOMAIN\$env:USERNAME" -or
+      [int]$marker.session_id -le 0 -or -not [string]$marker.request_id) {
+    throw 'Intentional-stop marker identity is invalid; refusing automatic service startup.'
+  }
+  return [int]$marker.session_id -eq (Get-CurrentLogonSessionId)
+}
+
+function Write-IntentionalStopMarker([string]$RequestId) {
+  $runtime = Get-Item -LiteralPath $script:RuntimeDir -Force
+  if (($runtime.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw '.runtime is a reparse point.' }
+  $payload = [ordered]@{ checkout_root=$script:ProjectRoot; owner="$env:USERDOMAIN\$env:USERNAME"; session_id=(Get-CurrentLogonSessionId); request_id=$RequestId; requested_at_utc=[DateTimeOffset]::UtcNow.ToString('o') }
+  $temp = "$($script:IntentionalStopPath).$([guid]::NewGuid().ToString('N')).tmp"
+  [IO.File]::WriteAllText($temp,($payload | ConvertTo-Json -Compress),(New-Object System.Text.UTF8Encoding($false)))
+  Move-Item -LiteralPath $temp -Destination $script:IntentionalStopPath -Force
+}
+
+function Remove-IntentionalStopMarkerForExplicitStart {
+  if (-not (Test-Path -LiteralPath $script:IntentionalStopPath -PathType Leaf)) { return }
+  $item = Get-Item -LiteralPath $script:IntentionalStopPath -Force
+  if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Intentional-stop marker is a reparse point.' }
+  $marker = Get-Content -LiteralPath $script:IntentionalStopPath -Raw -Encoding utf8 | ConvertFrom-Json
+  if ([string]$marker.checkout_root -ine $script:ProjectRoot -or [string]$marker.owner -ine "$env:USERDOMAIN\$env:USERNAME") { throw 'Intentional-stop marker belongs to another checkout or user.' }
+  Remove-Item -LiteralPath $script:IntentionalStopPath -Force
+}
+
 function Get-ProjectLogDirectory {
   if (-not (Test-Path -LiteralPath $script:RuntimeDir)) { New-Item -ItemType Directory -Path $script:RuntimeDir -Force | Out-Null }
   $runtimeItem = Get-Item -LiteralPath $script:RuntimeDir -Force
@@ -106,6 +143,15 @@ function Get-ProcessTable {
   @(Get-CimInstance Win32_Process | ForEach-Object {
     @{ Id = [int]$_.ProcessId; ParentId = [int]$_.ParentProcessId; Path = [string]$_.ExecutablePath; CommandLine = [string]$_.CommandLine }
   })
+}
+
+function Get-ProcessOwner([int]$Id) {
+  try {
+    $process = Get-CimInstance Win32_Process -Filter "ProcessId=$Id" -ErrorAction Stop
+    $owner = Invoke-CimMethod -InputObject $process -MethodName GetOwner -ErrorAction Stop
+    if ($owner.ReturnValue -ne 0) { return $null }
+    return "$($owner.Domain)\$($owner.User)"
+  } catch { return $null }
 }
 
 function Test-DescendantOf($ProcessTable, [int]$Candidate, [int]$Ancestor) {

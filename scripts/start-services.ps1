@@ -1,6 +1,7 @@
 param(
   [ValidateRange(30,900)][int]$DatabaseTimeoutSeconds = 300,
-  [ValidateRange(1,10)][int]$ServiceAttempts = 3
+  [ValidateRange(1,10)][int]$ServiceAttempts = 3,
+  [switch]$ExplicitUserStart
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'server-common.ps1')
@@ -131,6 +132,15 @@ function Ensure-PublicationWorker {
 }
 
 try {
+  if (Test-IntentionalStopForCurrentSession) {
+    if (-not $ExplicitUserStart) {
+      Write-LifecycleLog 'startup' 'suppressed_after_intentional_stop' 'same_windows_logon_session=true'
+      Write-Output 'Startup skipped: all services were intentionally stopped in this Windows logon session. Use the explicit Start shortcut to start them again.'
+      return
+    }
+    Remove-IntentionalStopMarkerForExplicitStart
+    Write-LifecycleLog 'startup' 'intentional_stop_cleared' 'explicit_user_start=true'
+  }
   $head = Get-CurrentGitCommit
   $validated = Read-ValidatedSource
   $dirty = @(Get-TrackedGitChanges)
