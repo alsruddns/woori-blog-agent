@@ -613,4 +613,5 @@ button,.primary-action,.secondary-button { min-height:40px; padding:8px 13px; bo
 .keyword-authoring-grid,.keyword-job-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr)); gap:1rem; }
 .keyword-authoring-form label { display:flex; flex-direction:column; gap:.45rem; min-width:0; }
 .keyword-authoring-form textarea { min-height:100px; }
+.keyword-authoring-form .keyword-authoring-direction { min-height:190px; max-height:300px; overflow:auto; resize:vertical; white-space:pre-wrap; }
 .keyword-job-grid h3 { overflow-wrap:anywhere; }
