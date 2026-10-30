@@ -592,3 +592,11 @@ button,.primary-action,.secondary-button { min-height:40px; padding:8px 13px; bo
 .worker-monitor-title { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; max-width:340px; overflow-wrap:anywhere; }
 .worker-monitor-id { overflow-wrap:anywhere; max-width:240px; font-size:.8rem; }
 @media(max-width:480px) { .publication-worker-monitor .publishing-summary { grid-template-columns:repeat(2,minmax(0,1fr)); } .worker-monitor-status { grid-template-columns:1fr; } }
+
+@media(max-width:700px) {
+ .publication-worker-monitor td:nth-child(1)::before { content:"\C6D0\ACE0\B7 Blogger"; }
+ .publication-worker-monitor td:nth-child(2)::before { content:"\C0DD\C131\B7\BC1C\D589 \ACBD\B85C"; }
+ .publication-worker-monitor td:nth-child(3)::before { content:"Job\B7\C0C1\D0DC"; }
+ .publication-worker-monitor td:nth-child(4)::before { content:"\C2DC\AC01\B7\C9C4\D589"; }
+ .publication-worker-monitor td:nth-child(5)::before { content:"\C7AC\C2DC\B3C4\B7\C2E4\D328 \C0AC\C720"; }
+}

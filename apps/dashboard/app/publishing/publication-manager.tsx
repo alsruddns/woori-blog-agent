@@ -156,11 +156,11 @@ export default function PublicationManager({ initial }: { initial: PublicationDa
   const globalMode = data.mode_policy.settings.find(x => x.scope_type === "global" && !x.scope_key);
   return <div className="publication-manager">
     <PublicationWorkerPanel />
-    <section className="publishing-summary" aria-label="발행 요약">
+    <section className="publishing-summary" aria-label="원고 목록 요약">
       <article><span>실제 공개 게시</span><strong>{data.actual_published_count ?? counts.published ?? 0}건</strong></article>
-      <article><span>발행 대기</span><strong>{counts.queue ?? 0}건</strong></article>
-      <article><span>검토 필요</span><strong>{counts.review ?? 0}건</strong></article>
-      <article><span>실패·보류</span><strong>{counts.held ?? 0}건</strong></article>
+      <article><span>발행 대기 원고</span><strong>{counts.queue ?? 0}건</strong></article>
+      <article><span>검토 필요 원고</span><strong>{counts.review ?? 0}건</strong></article>
+      <article><span>실패·보류 항목</span><strong>{counts.held ?? 0}건</strong></article>
     </section>
     <p className="publication-list-note">임시 제목·Mock/Test 표식 {counts.excluded_non_operational??0}건은 후보 목록에서 제외했습니다. 원고·평가·감사 기록은 보존됩니다. 본문 완전 중복 억제 {counts.duplicate_suppressed??0}건.</p>
     <p className="publication-list-note">발행 대기는 실제 Job이 생성된 원고입니다. 수동 원고는 상세에서 공개 게시를 확인해야 Job이 생성되며, 예약 Auto 원고는 정책과 자격을 충족하면 자동 등록됩니다. 처리 중인 Job은 게시 중으로 표시합니다.</p>
