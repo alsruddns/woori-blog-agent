@@ -7,3 +7,4 @@
 - 변경 파일: `services/api/woori/publications.py`, `publication_monitor.py`, `services/api/tests/test_publication_monitor.py`, `apps/dashboard/app/publishing/publication-manager.tsx`, 이 문서. DB 변경 및 Blogger 쓰기 없음.
 - 격리 DB 테스트 47건, Ruff/mypy, Dashboard lint/typecheck/Production Build 통과. queued/running/failed/blocked/uncertain에 대한 정확한 연결과 원본 감사 이벤트 보존 검증. 실제 브라우저 및 런타임 결과는 후속 기록 참조.
 - 커밋 해시는 git log 참조. 기존 정책, Worker 및 감사 이력 보존.
+- 운영 적용 후 실제 `/publishing?view=auto_failure`에서 자동발행실패 1건과 Worker 모니터를 확인했다. 예시 Job `aff633b7-9c1c-4b35-852a-03998de54062`은 확인 중 기존 Worker가 처리하여 `succeeded` 및 Blogger LIVE가 되었고 postId `3070602502912721576`, URL `https://trend-ja.blogspot.com/2026/10/lng.html`이 기존 DB에 기록됐다. 이번 검증에서 게시 요청을 새로 만들지 않았다. Dashboard/API만 정상 재시작하고 Worker는 중단하지 않았다. 모바일 viewport 변경은 브라우저에서 실제 CSS 너비가 변경되지 않아 390px 검증으로 보고하지 않는다.
