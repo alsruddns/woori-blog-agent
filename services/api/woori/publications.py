@@ -1264,6 +1264,15 @@ def _manual_publication_blockers(
     return list(dict.fromkeys(reasons))
 
 
+@router.get('/worker-jobs')
+def worker_job_monitor(
+    view: Literal['all','queued','running','published','failed','pre_job_failure'] = 'all',
+    page: int = Query(1, ge=1), page_size: int = Query(25, ge=1, le=100),
+) -> dict[str, Any]:
+    from .publication_monitor import snapshot
+    return snapshot(view,page,page_size)
+
+
 def publication_list_flow(row: dict[str, Any]) -> str:
     """A Worker wait requires a persisted Job; verified remote state wins."""
     if row.get('remote_post_id') and row.get('remote_verified_at'):

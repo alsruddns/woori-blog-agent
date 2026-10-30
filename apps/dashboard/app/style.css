@@ -577,3 +577,18 @@ button,.primary-action,.secondary-button { min-height:40px; padding:8px 13px; bo
 }
 :root[data-theme="dark"] .workspace-list-help { color:var(--muted); }
 :root[data-theme="dark"] .import-title { color:var(--accent-strong); }
+
+/* P5-CODEX-076: bounded Worker monitor, reuse shared theme surfaces. */
+.publication-worker-monitor { min-width:0; margin-bottom:1.5rem; }
+.publication-worker-monitor .section-heading { flex-wrap:wrap; gap:1rem; }
+.publication-worker-monitor .publishing-summary { grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); }
+.worker-monitor-status { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:.25rem 1rem; margin:1rem 0; }
+.worker-monitor-status p { margin:.25rem 0; overflow-wrap:anywhere; }
+.worker-monitor-filters { display:flex; flex-wrap:wrap; align-items:center; gap:.75rem; margin:1rem 0; }
+.publication-worker-monitor .publication-table-scroll { max-width:100%; overflow-x:auto; }
+.publication-worker-monitor table { min-width:1000px; }
+.publication-worker-monitor td { vertical-align:top; }
+.publication-worker-monitor td small { display:block; margin-top:.4rem; }
+.worker-monitor-title { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; max-width:340px; overflow-wrap:anywhere; }
+.worker-monitor-id { overflow-wrap:anywhere; max-width:240px; font-size:.8rem; }
+@media(max-width:480px) { .publication-worker-monitor .publishing-summary { grid-template-columns:repeat(2,minmax(0,1fr)); } .worker-monitor-status { grid-template-columns:1fr; } }

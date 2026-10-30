@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import PostPublicationReviewPanel from "./post-publication-review-panel";
+import PublicationWorkerPanel from "./publication-worker-panel";
 
 type Item = {
   id: string; content_version_id: string; group_id?: string; title: string; language_code: string;
@@ -154,6 +155,7 @@ export default function PublicationManager({ initial }: { initial: PublicationDa
   const shownCount = data.total_count ?? items.length;
   const globalMode = data.mode_policy.settings.find(x => x.scope_type === "global" && !x.scope_key);
   return <div className="publication-manager">
+    <PublicationWorkerPanel />
     <section className="publishing-summary" aria-label="발행 요약">
       <article><span>실제 공개 게시</span><strong>{data.actual_published_count ?? counts.published ?? 0}건</strong></article>
       <article><span>발행 대기</span><strong>{counts.queue ?? 0}건</strong></article>
