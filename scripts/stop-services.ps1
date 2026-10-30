@@ -1,7 +1,9 @@
 param([ValidateRange(5,600)][int]$TimeoutSeconds = 25)
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'server-common.ps1')
-. (Join-Path $PSScriptRoot 'stop.ps1') -Service api
+$wholeStopTimeoutSeconds = $TimeoutSeconds
+. (Join-Path $PSScriptRoot 'stop.ps1') -Service api -TimeoutSeconds $wholeStopTimeoutSeconds
+$TimeoutSeconds = $wholeStopTimeoutSeconds
 
 $targets = @('publication_worker','research_worker','dashboard','api')
 $failures = [System.Collections.Generic.List[string]]::new()

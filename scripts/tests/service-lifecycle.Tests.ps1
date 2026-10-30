@@ -142,6 +142,10 @@ Describe 'Windows service lifecycle ownership and startup policy' {
     $bootstrap | Should Match 'suppressed_after_intentional_stop'
     $bootstrap | Should Match 'ExplicitUserStart'
     $stopper | Should Match 'Write-IntentionalStopMarker'
+    $stopper | Should Match '\$wholeStopTimeoutSeconds = \$TimeoutSeconds'
+    $stopper | Should Match '\$TimeoutSeconds = \$wholeStopTimeoutSeconds'
+    $reflection=Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\apply-verified-changes.ps1') -Raw
+    $reflection | Should Match 'restart_suppressed_after_intentional_stop'
   }
 
   It 'verifies full shutdown and new PID replacement before restart success' {

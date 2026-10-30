@@ -182,6 +182,12 @@ if ($Apply) {
 if (-not $Apply) { return }
 if (-not $PSCmdlet.ShouldProcess("$($targets -join ', ') at $head",'Safely stop and restart only affected services after successful verification')) { return }
 
+if (Test-IntentionalStopForCurrentSession) {
+  Write-LifecycleLog 'service_reflection' 'restart_suppressed_after_intentional_stop' "commit=$head services=$($targets -join ',') same_windows_logon_session=true"
+  Write-Output 'Verification passed, but services remain stopped because the user intentionally stopped them in this Windows logon session. Use the explicit Start shortcut to clear the stop marker.'
+  return
+}
+
 foreach ($name in $targets) {
   $stopName = $name
   try {
