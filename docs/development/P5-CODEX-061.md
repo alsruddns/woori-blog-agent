@@ -22,6 +22,6 @@
   - 최신 production build를 프로젝트 스크립트로 3100/8100에 반영; health 200, 3100 실제 브라우저에서 버튼 활성 확인, API GET 200
   - Research Worker와 Publication Worker는 재시작하지 않았고 큐·실제 게시 수는 각각 0건
   - 브라우저에서 공개 게시 API POST 0회; 실제 Blogger 게시·postId·URL 생성 없음
-- 커밋 해시: 커밋 후 Git 이력에서 확인
+- 구현 커밋 해시: `c53bae7` (전체 해시는 `git log`에서 확인)
 - 관련 문서: `AGENTS.md`, `docs/development/P5-CODEX-060.md`
 - 남은 문제: 사용자가 버튼을 누르기 전이므로 승인 감사 이벤트와 Publishing Job은 생성되지 않았다. 실제 Blogger 공개 URL은 없다. 최초 Job과 후속 보완/원격 확인은 사용자의 정확한 원고 확인 및 실제 클릭 후에만 실행된다.
