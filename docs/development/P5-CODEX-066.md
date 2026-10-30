@@ -73,7 +73,13 @@ review item.
 - Current API runtime: stale; it rejects `stage` with HTTP 422. Reflecting the
   committed API/Worker source through the repository's guarded service
   reflection script is still required before the new preflight is available
-  locally. No Worker was stopped or started during this change.
+  locally. The guarded reflection validated the full API test suite (87 passed),
+  wheel, and Production Build, then aborted because it could not confirm a
+  graceful API stop within 180 seconds. No process was force-stopped, and it
+  cancelled all remaining service restarts. API and both Workers remain on
+  their previous runtime commits with fresh heartbeats; the new generation
+  preflight is not yet usable through localhost until the API is normally
+  stopped from its owning terminal and restarted through the project scripts.
 
 ## Files
 
