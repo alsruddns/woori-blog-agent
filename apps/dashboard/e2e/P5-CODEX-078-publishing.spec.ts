@@ -39,6 +39,7 @@ test("publishing reuses detail, keeps filters, and explicit manual confirmation 
   for(const c of await checks.all())await expect(c).toBeChecked();
   const boxes=await checks.evaluateAll(nodes=>nodes.map(n=>n.getBoundingClientRect().top));
   expect(boxes[1]).toBeGreaterThan(boxes[0]);expect(boxes[2]).toBeGreaterThan(boxes[1]);
+  await sheet.locator(".manual-publication-checks").screenshot({path:`.playwright-mcp/P5-CODEX-078-${test.info().project.name}-checks.png`});
   await expect(sheet.getByLabel("게시 승인자 표시 이름")).toHaveValue("admin");
   expect(posts).toBe(0);
   const before=monitorReads;
