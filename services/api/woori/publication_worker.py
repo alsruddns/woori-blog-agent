@@ -16,7 +16,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from . import blogger_drafts, external_policy, publications
-from .blogger_writes import BloggerLivePublisher
+from .blogger_writes import BloggerLivePublisher, WriteIntervalWait, interval_deadline
 from .db import connection
 from .google_http import GoogleFailure
 from .publication_daily import (
@@ -486,6 +486,59 @@ def enqueue_scheduled_auto_jobs() -> dict[str, Any]:
                 "first_publication_approval_required": False}
 
 
+def defer_interval_job(job_id: UUID, wait: WriteIntervalWait) -> dict[str, Any]:
+    """Preserve stage, approval, idempotency and failure retry budget."""
+    with connection() as conn:
+        changed = conn.execute("""UPDATE publishing_jobs SET status='queued',publication_state='publication_queued',
+            available_at=%s,last_error_category=%s,lease_until=NULL,updated_at=now()
+            WHERE id=%s AND status='running' RETURNING id""", (wait.available_at, wait.category, job_id)).fetchone()
+        if changed:
+            _append_audit(conn, 'publication.live_job.interval_wait', {
+                'job_id':str(job_id),'reason':wait.category,'available_at':wait.available_at.isoformat(),
+                'retry_budget_consumed':False,'blogger_write_performed':False})
+    return {'job_id':str(job_id),'status':'interval_wait','reason':wait.category,
+            'available_at':wait.available_at.isoformat(),'public_write_performed':False}
+
+
+def recover_interval_job(job_id: UUID) -> dict[str, Any]:
+    """Recover only a pre-HTTP failed manual request; never create approval or Job."""
+    with connection() as conn:
+        job = conn.execute('SELECT * FROM publishing_jobs WHERE id=%s', (job_id,)).fetchone()
+        if (not job or job['status'] != 'failed' or job['publication_lane'] != 'manual'
+                or job['live_stage'] != 'draft_needed' or job['remote_post_id']
+                or job['last_error_category'] not in {'account_minimum_interval_not_elapsed','blog_minimum_interval_not_elapsed'}):
+            raise GoogleFailure('interval_recovery_state_invalid')
+        candidate = publications._candidate(conn, job['content_version_id'], job['blog_id'])
+        snapshot = publications._manual_publication_snapshot(conn, candidate)
+        blockers = publications._manual_publication_blockers(conn, candidate, snapshot, job['blog_id'], ignore_job_id=job_id)
+        approval = conn.execute('SELECT * FROM manual_publication_approval_events WHERE job_id=%s', (job_id,)).fetchone()
+        if blockers or not approval or any(approval[k] != snapshot[k] for k in ('title_sha256','body_sha256','html_sha256')) or not all(
+            approval[k] for k in ('reviewed_exact_content','assertions_safe_to_publish','rights_privacy_harm_checked')
+        ):
+            raise GoogleFailure('interval_recovery_approval_invalid')
+    remote = find_remote_duplicate(job['blog_id'], str(snapshot['title']))
+    if remote['status'] != 'clear':
+        raise GoogleFailure('interval_recovery_remote_' + str(remote['status']))
+    with connection() as conn:
+        locked = conn.execute('SELECT * FROM publishing_jobs WHERE id=%s FOR UPDATE', (job_id,)).fetchone()
+        if not locked or locked['status'] != 'failed' or locked['updated_at'] != job['updated_at']:
+            raise GoogleFailure('interval_recovery_job_changed')
+        if conn.execute("SELECT 1 FROM blogger_write_operations WHERE idempotency_key=%s", ('live:pubjob-'+str(job_id)+'-draft',)).fetchone() or conn.execute('SELECT 1 FROM publishing_records WHERE job_id=%s', (job_id,)).fetchone():
+            raise GoogleFailure('interval_recovery_prior_write_requires_reconciliation')
+        limits = conn.execute("""SELECT max(a.created_at) FILTER (WHERE COALESCE(a.payload->>'connection_id',b.oauth_connection_id::text)=%s) account_last,
+            max(a.created_at) FILTER (WHERE a.payload->>'blog_id'=b.blog_id AND b.id=%s) blog_last
+            FROM audit_events a LEFT JOIN blogger_blogs b ON b.blog_id=a.payload->>'blog_id'
+            WHERE a.event_type='blogger.write.requested' AND a.payload->>'mode'='live'""", (str(job['oauth_connection_id']),job['blog_id'])).fetchone()
+        assert limits is not None
+        available = interval_deadline(limits['account_last'],limits['blog_last'],datetime.now(UTC))
+        conn.execute("""UPDATE publishing_jobs SET status='queued',publication_state='publication_queued',
+            available_at=%s,lease_until=NULL,updated_at=now() WHERE id=%s""", (available,job_id))
+        _append_audit(conn,'publication.manual_interval.recovered',{'job_id':str(job_id),
+            'available_at':available.isoformat(),'remote_duplicate_check':'clear','new_approval_created':False,
+            'retry_budget_consumed':False,'blogger_write_performed':False})
+    return {'job_id':str(job_id),'status':'queued','available_at':available.isoformat()}
+
+
 def reconcile_manual_draft(job_id: UUID, post_id: str) -> dict[str, Any]:
     """Recover an approved failed job from an exact remotely verified draft; never POST."""
     from . import blogger_service, publications
@@ -894,6 +947,8 @@ def process_next_live_job(
             return {"job_id": str(job_id), "status": "draft_created", "post_id": result["post_id"],
                     "next_stage_after_minutes": 5, "public_write_performed": False}
         except GoogleFailure as exc:
+            if isinstance(exc, WriteIntervalWait):
+                return defer_interval_job(job_id, exc)
             status = "uncertain" if exc.category in {"uncertain_write", "previous_write_pending_or_uncertain", "idempotency_ledger_unavailable"} else "failed"
             with connection() as conn:
                 conn.execute(
@@ -1074,6 +1129,8 @@ def process_next_live_job(
         return {"job_id": str(job_id), "status": "published", "post_id": result["post_id"],
                 "url": result["url"], "remote_readback_verified": True}
     except GoogleFailure as exc:
+        if isinstance(exc, WriteIntervalWait):
+            return defer_interval_job(job_id, exc)
         status = "uncertain" if exc.category in {"uncertain_write", "previous_write_pending_or_uncertain", "idempotency_ledger_unavailable", "published_readback_mismatch", "published_record_conflict"} else "failed"
         with connection() as conn:
             conn.execute(

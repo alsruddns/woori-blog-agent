@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import ExternalImportWorkspace from "../imports/external-import-workspace";
 import PostPublicationReviewPanel from "./post-publication-review-panel";
 import PublicationWorkerPanel from "./publication-worker-panel";
 
@@ -71,15 +72,18 @@ const reasonLabel = (reason: string) => ({
 }[reason] ?? reason.replaceAll("_", " "));
 const kst = (value?: string | null) => value ? new Intl.DateTimeFormat("ko-KR", { timeZone:"Asia/Seoul", dateStyle:"medium", timeStyle:"short" }).format(new Date(value)) + " KST" : "기록 없음";
 
-export default function PublicationManager({ initial }: { initial: PublicationData }) {
+export default function PublicationManager({ initial,initialFilters={} }: { initial: PublicationData;initialFilters?:Record<string,string> }) {
   const [data, setData] = useState(initial);
   const initialGlobalMode=initial.mode_policy.settings.find(item=>item.scope_type==="global"&&!item.scope_key);
   const [view, setView] = useState<(typeof tabs)[number][0]>((initial.view as (typeof tabs)[number][0]) || "review");
-  const [query, setQuery] = useState(""); const [language, setLanguage] = useState(""); const [blog, setBlog] = useState("");
-  const [page, setPage] = useState(1); const [loading, setLoading] = useState(false); const [error, setError] = useState("");
+  const [query, setQuery] = useState(initialFilters.q??""); const [language, setLanguage] = useState(initialFilters.language_code??""); const [blog, setBlog] = useState(initialFilters.blog_id??"");
+  const [page, setPage] = useState(initial.page??1); const [loading, setLoading] = useState(false); const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState<string>(view);
   const [emergencyBusy, setEmergencyBusy] = useState(false);
   const [notice,setNotice]=useState("");
+  const [monitorRefresh,setMonitorRefresh]=useState(0);
+  const [detailRequest,setDetailRequest]=useState<{id:string;version:string;target:string;publish:boolean;nonce:number}>();
+  const openManuscript=(item:Item,publish=false)=>{if(item.import_id)setDetailRequest(previous=>({id:item.import_id!,version:item.content_version_id,target:item.blog_id,publish,nonce:(previous?.nonce??0)+1}));};
   const [scheduledBlogs,setScheduledBlogs]=useState<string[]>([]);
   const [scheduledActor,setScheduledActor]=useState("운영자");
   const [scheduledBusy,setScheduledBusy]=useState(false);
@@ -98,6 +102,7 @@ export default function PublicationManager({ initial }: { initial: PublicationDa
       const response = await fetch(`/api/publications?${params}`, { cache:"no-store" });
       if (!response.ok) throw new Error("발행 현황을 불러오지 못했습니다.");
       const next = await response.json() as PublicationData; setData(next); setPage(nextPage); setView(nextView); setActiveTab(nextView);
+      const url=new URL(window.location.href);params.forEach((value,key)=>url.searchParams.set(key,value));window.history.replaceState(null,"",url.pathname+url.search);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "연결 오류"); }
     finally { setLoading(false); }
   }
@@ -155,7 +160,8 @@ export default function PublicationManager({ initial }: { initial: PublicationDa
   const shownCount = data.total_count ?? items.length;
   const globalMode = data.mode_policy.settings.find(x => x.scope_type === "global" && !x.scope_key);
   return <div className="publication-manager">
-    <PublicationWorkerPanel />
+    <PublicationWorkerPanel refreshKey={monitorRefresh} onOpenImport={job=>{if(job.import_id)setDetailRequest(previous=>({id:job.import_id!,version:job.content_version_id??"",target:job.blog_id??"",publish:false,nonce:(previous?.nonce??0)+1}));}} />
+    <ExternalImportWorkspace embedded detailRequest={detailRequest} onPublicationRequested={jobId=>{setNotice(`발행 Job ${jobId} 등록 완료 · 실제 게시 결과는 Worker 모니터에서 확인하세요.`);setMonitorRefresh(x=>x+1);void refresh();}} />
     <section className="publishing-summary" aria-label="원고 목록 요약">
       <article><span>실제 공개 게시</span><strong>{data.actual_published_count ?? counts.published ?? 0}건</strong></article>
       <article><span>발행 대기 원고</span><strong>{counts.queue ?? 0}건</strong></article>
@@ -237,17 +243,17 @@ export default function PublicationManager({ initial }: { initial: PublicationDa
       {loading ? <p className="empty-state">불러오는 중…</p> : items.length ? <div className="publication-table-scroll"><table><thead><tr><th>원고</th><th>언어</th><th>대상 블로그</th><th>주제·출처</th><th>상태</th><th>시각</th>{view==="published"&&<th>게시 URL</th>}{view==="auto_failure"&&<th>복구</th>}</tr></thead><tbody>
         {items.map(item=><tr key={`${item.id}-${item.blog_id}`}>
           <td>{item.import_id
-            ? <a href={`/imports?open_import_id=${encodeURIComponent(item.import_id)}&return_to=${encodeURIComponent(`/publishing?view=${view}&page=${page}&q=${query}&language_code=${language}&blog_id=${blog}`)}`}>{item.title || "제목 없음"}</a>
+            ? <button type="button" className="import-title" onClick={()=>openManuscript(item)}>{item.title || "제목 없음"}</button>
             : item.evaluation_id
               ? <a href={`/manuscripts?open_evaluation_id=${encodeURIComponent(item.evaluation_id)}&open_content_version_id=${encodeURIComponent(item.content_version_id)}&return_to=${encodeURIComponent(`/publishing?view=${view}&page=${page}&q=${query}&language_code=${language}&blog_id=${blog}`)}`}>{item.title || "제목 없음"}</a>
               : <span>{item.title || "제목 없음"}</span>}
-            {item.auto_publication_failure && <strong className="status-badge status-warning">자동발행실패</strong>}<small>버전 {item.content_version_id.slice(0,8)} · {item.google_trends_based ? "Google Trends" : item.generation_method === "chatgpt_scheduled_export" ? "Codex 예약" : item.generation_method === "manual_codex_import" ? "수동 Import" : "내부 원고"}</small></td>
+            <small>버전 {item.content_version_id.slice(0,8)} · {item.google_trends_based ? "Google Trends" : item.generation_method === "chatgpt_scheduled_export" ? "Codex 예약" : item.generation_method === "manual_codex_import" ? "수동 Import" : "내부 원고"}</small></td>
           <td>{languageLabel(item.language_code)}</td><td>{item.blog_name || item.url}</td>
           <td>{item.topic || item.source_names || "주제·출처 정보 없음"}</td>
           <td>{statusLabel(item.status)}{item.failure_reason_code && <small>실패 단계 {item.failure_stage ?? "미확인"} · {reasonLabel(item.failure_reason_code)}</small>}{item.retry_count !== undefined && <small>재시도 {item.retry_count}회</small>}{item.eligibility_reasons?.length ? <small>{item.eligibility_reasons.slice(0,2).map(reasonLabel).join(" · ")}</small> : null}{item.simulation_only && <small>모의 작업</small>}</td>
           <td>{kst(item.next_publish_at || item.created_at)}</td>
           {view==="published"&&<td>{item.remote_url&&item.remote_status==="LIVE"&&item.remote_verified_at?<a href={item.remote_url} target="_blank" rel="noreferrer">게시물 열기</a>:"원격 게시 확인 없음"}{item.remote_post_id&&<small>postId {item.remote_post_id}</small>}</td>}
-          {view==="auto_failure"&&<td>{item.import_id ? <a href={`/imports?open_import_id=${encodeURIComponent(item.import_id)}&open_content_version_id=${encodeURIComponent(item.content_version_id)}&return_to=${encodeURIComponent(`/publishing?view=auto_failure&page=${page}&q=${query}&language_code=${language}&blog_id=${blog}`)}`}>Blogger에 수동 발행</a> : "상세 원고 연결 없음"}</td>}
+          {view==="auto_failure"&&<td>{item.import_id ? <button type="button" className="secondary-button" onClick={()=>openManuscript(item,true)}>Blogger에 수동 발행</button> : "상세 원고 연결 없음"}</td>}
         </tr>)}
       </tbody></table></div> : <p className="empty-state">이 상태의 원고가 없습니다.</p>}
       <div className="publication-pagination"><button disabled={page<=1||loading} onClick={()=>void refresh(page-1,view)}>이전</button><span>{page} / {Math.max(data.page_count ?? 0,1)}</span><button disabled={page>=(data.page_count??0)||loading} onClick={()=>void refresh(page+1,view)}>다음</button></div>

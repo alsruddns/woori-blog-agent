@@ -880,6 +880,29 @@ def test_manual_live_request_commits_approval_job_and_followups_atomically_in_is
     again = api.post("/admin/publications/manual-live-requests", headers=headers, json=payload)
     assert again.status_code == 201 and again.json()["duplicate"] is True
     recovery_job = UUID(first.json()['id'])
+    from datetime import timedelta
+
+    from woori.blogger_writes import WriteIntervalWait
+    monkeypatch.setattr(publication_worker, 'connection', shared_connection)
+    conn.execute("UPDATE publishing_jobs SET status='running',publication_state='publishing' WHERE id=%s", (recovery_job,))
+    resume = datetime.now(UTC)+timedelta(minutes=5)
+    deferred = publication_worker.defer_interval_job(recovery_job, WriteIntervalWait('account_minimum_interval_not_elapsed',resume))
+    assert deferred['status'] == 'interval_wait'
+    pending = conn.execute('SELECT status,retry_count,live_stage,available_at FROM publishing_jobs WHERE id=%s',(recovery_job,)).fetchone()
+    assert pending['status']=='queued' and pending['retry_count']==0 and pending['live_stage']=='draft_needed'
+    assert pending['available_at']==resume
+    assert not conn.execute('SELECT 1 FROM publishing_jobs WHERE id=%s AND available_at<=clock_timestamp()',(recovery_job,)).fetchone()
+    conn.execute("UPDATE publishing_jobs SET status='failed',publication_state='publication_failed' WHERE id=%s",(recovery_job,))
+    monkeypatch.setattr(publication_worker,'find_remote_duplicate',lambda *_:{'status':'unknown'})
+    with pytest.raises(Exception,match='interval_recovery_remote_unknown'):
+        publication_worker.recover_interval_job(recovery_job)
+    monkeypatch.setattr(publication_worker,'find_remote_duplicate',lambda *_:{'status':'clear'})
+    interval_recovered=publication_worker.recover_interval_job(recovery_job)
+    assert interval_recovered['status']=='queued'
+    assert conn.execute('SELECT 1 FROM publishing_jobs WHERE id=%s AND available_at<=clock_timestamp()',(recovery_job,)).fetchone()
+    with pytest.raises(Exception,match='interval_recovery_state_invalid'):
+        publication_worker.recover_interval_job(recovery_job)
+    assert conn.execute('SELECT count(*) n FROM manual_publication_approval_events WHERE job_id=%s',(recovery_job,)).fetchone()['n']==1
     draft_payload = {'title': snapshot['title'], 'content': snapshot['safe_html']}
     fingerprint = publications.BloggerLivePublisher._fingerprint('create_draft', blog_id, draft_payload)
     conn.execute("INSERT INTO blogger_write_operations(idempotency_key,request_fingerprint,operation,status) VALUES (%s,%s,'create_draft','failed')",

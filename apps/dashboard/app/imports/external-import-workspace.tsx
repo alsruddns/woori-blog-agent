@@ -102,7 +102,11 @@ export function ExternalImportQueue() {
 
 const categoryNames: Record<string, string> = { economy: "경제", finance: "금융", stocks: "주식", crypto: "암호화폐", technology: "IT", semiconductors: "반도체", ai: "인공지능", policy: "정치·정책" };
 
-export default function ExternalImportWorkspace() {
+export default function ExternalImportWorkspace({ embedded = false, detailRequest: requestedDetail, onPublicationRequested }: {
+  embedded?: boolean;
+  detailRequest?: { id: string; version: string; target: string; publish: boolean; nonce: number };
+  onPublicationRequested?: (jobId: string) => void;
+} = {}) {
   const [items, setItems] = useState<Row[]>([]);
   const [originFilter, setOriginFilter] = useState("all");
   const [listPage, setListPage] = useState(1);
@@ -126,7 +130,9 @@ export default function ExternalImportWorkspace() {
   const [publicationTargetId, setPublicationTargetId] = useState("");
   const [approvalActor, setApprovalActor] = useState("admin");
   const [approvalReason, setApprovalReason] = useState("\uD655\uC778\uC644\uB8CC");
-  const [manualAttest, setManualAttest] = useState({ content: false, facts: false, rights: false });
+  const [manualAttest, setManualAttest] = useState({ content: true, facts: true, rights: true });
+  const manualSubmitting = useRef(false);
+  const [manualOutcomeUnknown,setManualOutcomeUnknown]=useState(false);
   const [targetLanguage, setTargetLanguage] = useState<(typeof languages)[number]>("ko");
   const [detailTab, setDetailTab] = useState<DetailTab>("editor");
   const [preview, setPreview] = useState<Row | null>(null);
@@ -166,7 +172,7 @@ export default function ExternalImportWorkspace() {
     const defaultTarget = publicationTargets.find(target => target.in_scheduled_scope === true)
       ?? publicationTargets[0];
     setPublicationTargetId(String(defaultTarget?.id ?? ""));
-    setManualAttest({ content: false, facts: false, rights: false });
+    setManualAttest({ content: true, facts: true, rights: true });
     setApprovalActor("admin");
     setApprovalReason("\uD655\uC778\uC644\uB8CC");
     const current = data.latest_version ?? data.item;
@@ -183,6 +189,7 @@ export default function ExternalImportWorkspace() {
   }, []);
 
   useEffect(() => {
+    if (embedded) return;
     let active = true;
     const params = new URLSearchParams({ origin: originFilter, page: String(listPage), page_size: "25", q: listSearch });
     void fetch(`/api/research/content-imports?${params.toString()}`, { cache: "no-store" }).then(async response => {
@@ -191,7 +198,18 @@ export default function ExternalImportWorkspace() {
       if (active) { setItems((data.items ?? []) as Row[]); setListPageCount(Number(data.page_count ?? 0)); setListTotal(Number(data.total_count ?? 0)); }
     }).catch(reason => { if (active) setError(reason instanceof Error ? reason.message : "Import list could not be loaded."); });
     return () => { active = false; };
-  }, [originFilter, listPage, listSearch]);
+  }, [embedded, originFilter, listPage, listSearch]);
+
+  useEffect(() => {
+    if (!requestedDetail) return;
+    let active = true;
+    void Promise.resolve().then(()=>active ? openDetail(requestedDetail.id, requestedDetail.version) : undefined).then(() => {
+      if (!active) return;
+      if (requestedDetail.target) setPublicationTargetId(requestedDetail.target);
+      if (requestedDetail.publish) setDetailTab("distribution");
+    }).catch(cause => { if (active) setError(cause instanceof Error ? cause.message : "원고 조회 실패"); });
+    return () => { active = false; };
+  }, [requestedDetail, openDetail]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -203,6 +221,7 @@ export default function ExternalImportWorkspace() {
   }, [items, openDetail]);
 
   const closeDetail = useCallback(() => {
+    if (manualSubmitting.current) return;
     detailRequest.current += 1;
     autoOpened.current = "";
     setDetail(null);
@@ -310,6 +329,7 @@ export default function ExternalImportWorkspace() {
     .find(target => String(target.id) === publicationTargetId);
   const selectedManual = selectedManualTarget?.manual_publication as Row | undefined;
   const manualPublishDisabledReasons = [
+    ...(manualOutcomeUnknown ? ["발행 응답을 확인하지 못했습니다. 상태를 다시 확인한 후 진행하세요."] : []),
     ...(busy ? ["발행 요청을 처리 중입니다."] : []),
     ...(!latestVersion?.content_version_id ? ["게시할 최신 원고 버전을 확인할 수 없습니다."] : []),
     ...(!publicationTargetId ? ["대상 Blogger를 선택하세요."] : []),
@@ -327,6 +347,7 @@ export default function ExternalImportWorkspace() {
       : []),
   ];
   const submitManualPublication = async () => {
+    if (manualSubmitting.current) return;
     if (!detail || !latestVersion?.content_version_id || !publicationTargetId) return;
     const target = ((detail.publication?.targets as Row[] | undefined) ?? []).find(item => String(item.id) === publicationTargetId);
     const manual = target?.manual_publication as Row | undefined;
@@ -334,10 +355,11 @@ export default function ExternalImportWorkspace() {
     const bodyText = String(manual?.body ?? latestVersion.body_markdown ?? "");
     if (!target || manual?.eligible !== true || !manualAttest.content || !manualAttest.facts || !manualAttest.rights) return;
     if (!window.confirm(`다음 원고를 Blogger에 공개 게시하도록 승인합니다.\n\n제목: ${titleText}\nContent Version: ${String(latestVersion.content_version_id)}\n본문 SHA-256: ${String(manual.body_sha256)}\n정제 HTML SHA-256: ${String(manual.html_sha256)}\n대상 Blogger: ${String(target.display_name)} · ${String(target.url)}\n\n게시용 본문을 화면에서 확인했고, 미확인 주장을 사실로 단정하지 않았으며, 알고 있는 권리·개인정보·중대한 위해 문제가 없음을 확인합니다. 이 확인은 정확한 본문 해시와 블로그에만 기록됩니다.`)) return;
+    manualSubmitting.current = true;
     setBusy(true); setError(""); setNotice("");
     try {
       const versionKey = String(latestVersion.content_version_id).replaceAll("-", "");
-      const response = await fetch("/api/publications/manual-live-requests", { method: "POST", headers: { "Content-Type": "application/json" },
+      const response = await fetch("/api/publications/manual-live-requests", { method: "POST", signal:AbortSignal.timeout(30000), headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content_version_id: latestVersion.content_version_id, blog_id: publicationTargetId,
           expected_title_sha256: manual.title_sha256, expected_body_sha256: manual.body_sha256,
           expected_html_sha256: manual.html_sha256, actor_label: approvalActor.trim(),
@@ -348,11 +370,15 @@ export default function ExternalImportWorkspace() {
       if (!response.ok) throw new Error(String(result.detail ?? "공개 발행 요청을 처리하지 못했습니다."));
       if (result.recorded === false) throw new Error(`발행이 차단되었습니다: ${Array.isArray(result.reasons) ? result.reasons.map(reason => manualBlockerNames[String(reason)] ?? String(reason)).join(" · ") : "필수 조건 미충족"}`);
       setNotice(`공개 발행 Job ${String(result.id ?? "")}을 등록했습니다. 게시 후 보완 ${String(result.followup_count ?? 0)}건을 준비했습니다. 실제 Blogger 결과는 Worker 처리 후 표시됩니다.`);
-      await openDetail(selectedId); await refreshListOnly();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "공개 발행 요청 실패"); }
-    finally { setBusy(false); }
+      onPublicationRequested?.(String(result.id ?? ""));
+      await openDetail(selectedId); setDetailTab("distribution");
+      if (!embedded) await refreshListOnly();
+    } catch (cause) { setManualOutcomeUnknown(true);setError((cause instanceof Error ? cause.message : "공개 발행 요청 실패")+" · 자동 재전송하지 않습니다. 기존 Job 상태를 다시 확인하세요."); }
+    finally { manualSubmitting.current = false; setBusy(false); }
   };
-  return <main className="workspace-main import-workspace" data-testid="import-workspace">
+  const Root = embedded ? "div" : "main";
+  return <Root className={embedded ? "embedded-import-detail" : "workspace-main import-workspace"} data-testid="import-workspace">
+    {!embedded && <>
     <div className="page-heading"><div><p className="eyebrow">원고 관리 · 외부 원고</p><h1>원고 가져오기</h1><p><code>woori-content-import/1.0</code> 형식의 원고를 추가합니다. 가져온 원고는 별도 사람 검토 전까지 발행할 수 없습니다.</p></div><Link className="secondary-button" href="/manuscripts?view=external">원고 목록으로</Link></div>
     <div className="quality-held"><strong>발행 차단 유지</strong><p>원고 가져오기와 기계 검사만으로 generation_ready 또는 publish_ready를 변경하지 않습니다. Blogger API 요청·자동 발행·AI Provider 호출은 수행되지 않습니다.</p></div>
     <section className="workspace-panel import-panel"><h2>구조화 원고 가져오기</h2><p>JSON Schema: <code>docs/schemas/woori-content-import-1.0.schema.json</code></p>
@@ -368,8 +394,11 @@ export default function ExternalImportWorkspace() {
     {visibleImports.length ? <div className="publication-table-scroll import-list-scroll"><table><thead><tr><th>제목</th><th>생성 경로</th><th>분야</th><th>언어</th><th>자료 지역</th><th>상태</th><th>접수 시각</th></tr></thead><tbody>{visibleImports.map(item => <tr key={String(item.id)} data-testid="import-row" data-content-id={String(item.external_content_id)}><td><button className="import-title" title={String(item.title)} onClick={() => void openDetail(String(item.id), String(item.content_version_id ?? ""))}>{String(item.title)}</button>{item.auto_publication_failure === true && <span className="status-badge status-warning">자동발행실패</span>}</td><td>{item.google_trends_based === true ? "Google Trends" : item.generation_method === "chatgpt_scheduled_export" ? "Codex 예약" : item.generation_method === "manual_codex_import" ? "수동 작성·Import" : "기타 외부 원고"}</td><td>{categoryNames[String(item.category)] ?? String(item.category)}</td><td>{languageNames[String(item.language_code)] ?? String(item.language_code)}</td><td>{String(item.source_region)}</td><td><span className="status-text">{importReviewLabel(item)}</span></td><td>{fmt(item.received_at)}</td></tr>)}</tbody></table></div> : <p className="empty-state">선택한 생성 경로의 원고가 없습니다.</p>}
     {listPageCount > 1 && <nav aria-label="Import list pages"><button type="button" disabled={listPage <= 1} onClick={() => setListPage(value => value - 1)}>Previous</button><span>{listPage} / {listPageCount} | {listTotal} items</span><button type="button" disabled={listPage >= listPageCount} onClick={() => setListPage(value => value + 1)}>Next</button></nav>}
     </details>
+    </>}
+    {embedded && <>{notice && <p className="quality-ok" role="status">{notice}</p>}{error && <p className="quality-held" role="alert">{error}</p>}</>}
     {detail && latestVersion && <div className="sheet-backdrop import-sheet-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) closeDetail(); }}><section ref={detailDialog} tabIndex={-1} className="detail-sheet import-detail" role="dialog" aria-modal="true" aria-labelledby="import-detail-title" data-testid="import-detail" data-content-id={String(detail.item.external_content_id)}>
       <div className="section-heading import-detail-heading"><div><p className="eyebrow">{languageNames[String(detail.item.language_code)] ?? String(detail.item.language_code)} · {String(detail.item.source_region)} · {categoryNames[String(detail.item.category)] ?? String(detail.item.category)}</p><h2 id="import-detail-title">{String(latestVersion.title)}</h2><p>버전 {String(latestVersion.version_number)} · 수정 {fmt(latestVersion.created_at)} · 상태: {statusNames[reviewState] ?? "사람 검토 대기"}</p></div><button type="button" className="secondary-button" onClick={closeDetail}>닫기</button></div>
+      {notice && <p className="quality-ok" role="status">{notice}</p>}{error && <p className="quality-held" role="alert">{error}</p>}
       <p className="quality-held import-evidence-status" role="status"><strong>근거 검토 대기</strong> · 공식 원문·주장 연결·독립 근거·이용 권리를 확인하기 전까지 발행 근거로 승인되지 않습니다. 자세한 확인 결과는 출처·근거 탭에 있습니다.</p>
       <nav className="import-detail-tabs" role="tablist" aria-label="원고 상세 탭" onKeyDown={event => {
         const ids: DetailTab[] = ["editor", "evidence", "quality", "preview", "distribution", "history"];
@@ -445,7 +474,9 @@ export default function ExternalImportWorkspace() {
             <label>게시 승인자 표시 이름<input value={approvalActor} onChange={event => setApprovalActor(event.target.value)} minLength={2} maxLength={120} /></label>
             <label>게시 사유<input value={approvalReason} onChange={event => setApprovalReason(event.target.value)} minLength={MANUAL_PUBLICATION_REASON_MIN_LENGTH} maxLength={2000} aria-describedby="manual-publication-reason-hint" placeholder="예: 확인완료" /></label>
             <p id="manual-publication-reason-hint">{MANUAL_PUBLICATION_REASON_MIN_LENGTH}자 이상 입력하면 감사 기록에 원고 해시와 함께 저장됩니다. 현재 {approvalReason.trim().length}자입니다.</p>
-            <div className="review-attestations"><label><input type="checkbox" checked={manualAttest.content} onChange={event => setManualAttest({ ...manualAttest, content: event.target.checked })} />위에 표시된 최신 제목·본문·HTML을 확인했습니다.</label><label><input type="checkbox" checked={manualAttest.facts} onChange={event => setManualAttest({ ...manualAttest, facts: event.target.checked })} />미확인 주장을 확인된 사실처럼 단정하지 않았습니다.</label><label><input type="checkbox" checked={manualAttest.rights} onChange={event => setManualAttest({ ...manualAttest, rights: event.target.checked })} />알고 있는 저작권 침해·개인정보 노출·중대한 위해 문제가 없습니다.</label></div>
+            <p>체크 항목은 기본 선택이며 검토 증거로 자동 저장되지 않습니다. 본문과 대상 블로그를 확인하고 공개 게시 버튼 및 최종 확인을 눌러야 발행 승인이 기록됩니다.</p>
+            {manualOutcomeUnknown && <button type="button" className="secondary-button" disabled={busy} onClick={()=>void openDetail(selectedId).then(()=>{setManualOutcomeUnknown(false);setDetailTab("distribution");})}>발행 상태 다시 확인</button>}
+            <div className="review-attestations manual-publication-checks"><label><input type="checkbox" checked={manualAttest.content} onChange={event => setManualAttest({ ...manualAttest, content: event.target.checked })} />위에 표시된 최신 제목·본문·HTML을 확인했습니다.</label><label><input type="checkbox" checked={manualAttest.facts} onChange={event => setManualAttest({ ...manualAttest, facts: event.target.checked })} />미확인 주장을 확인된 사실처럼 단정하지 않았습니다.</label><label><input type="checkbox" checked={manualAttest.rights} onChange={event => setManualAttest({ ...manualAttest, rights: event.target.checked })} />알고 있는 저작권 침해·개인정보 노출·중대한 위해 문제가 없습니다.</label></div>
             <button type="button" disabled={manualPublishDisabledReasons.length > 0} aria-describedby={manualPublishDisabledReasons.length ? "manual-publication-disabled-reasons" : undefined} onClick={() => void submitManualPublication()}>{busy ? "발행 Job 등록 중…" : (detail.item.auto_publication_failure === true || detail.publication?.auto_publication_failure === true) ? "Blogger에 수동 발행" : "Blogger에 공개 게시"}</button>
             {manualPublishDisabledReasons.length > 0 && <ul id="manual-publication-disabled-reasons" role="status" className="quality-held">{manualPublishDisabledReasons.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul>}
             <p>클릭 시 정확한 원고 해시·대상 블로그·승인자와 함께 Job이 등록됩니다. Publication Worker가 실제 게시 단계, Blogger 응답, 원격 재확인 결과를 저장하며, 이 화면의 확인만으로 게시 완료라고 표시하지 않습니다.</p>
@@ -456,7 +487,7 @@ export default function ExternalImportWorkspace() {
         {detailTab === "history" && <section className="workspace-panel" id="import-history"><h3>버전 및 변경 이력</h3>{(detail.duplicate_import_history ?? []).map(version => <article className="history-card" key={String(version.import_version_id)}><strong>Duplicate import record | v{String(version.version_number)} | {String(version.title)}</strong><p>Import {String(version.import_id)} | {fmt(version.received_at)} | body SHA-256 {String(version.body_sha256)}</p><details><summary>View preserved import body</summary><pre>{String(version.body_markdown ?? "")}</pre></details></article>)}{(detail.lineage_history ?? []).filter(version => String(version.import_id) !== String(detail.item.id)).map(version => <article className="history-card" key={String(version.import_version_id)}><strong>원고 계열 이전 버전 · v{String(version.version_number)} · {String(version.title)}</strong><p>{fmt(version.created_at)} · {String(version.author_label)} · {String(version.change_reason)}</p><details><summary>이전 원고 내용 보기</summary><pre>{String(version.body_markdown ?? "")}</pre></details></article>)}{detail.versions.map(version => <article className="history-card" key={String(version.id)}><strong>v{String(version.version_number)} · {String(version.title)}</strong><p>{fmt(version.created_at)} · {String(version.author_label)} · {String(version.change_reason)}</p>{version.id !== latestVersion.id && <button type="button" className="secondary-button" onClick={() => void openDetail(selectedId)}>최신 버전 새로고침</button>}</article>)}{detail.reviews.map(event => <article className="history-card" key={String(event.version_id) + String(event.created_at)}><strong>{statusNames[String(event.event_type)] ?? String(event.event_type)}</strong><p>{String(event.reviewer_label)} · {fmt(event.created_at)} · {String(event.reason)}</p></article>)}</section>}
       </div>
     </section></div>}
-  </main>;
+  </Root>;
 }
 
 function ScheduledBloggerPublication({ detail, selectedTargetId, setSelectedTargetId, busy, onRefresh }: {

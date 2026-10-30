@@ -84,6 +84,18 @@ def _live_response(
     return payload, response.status_code
 
 
+class WriteIntervalWait(GoogleFailure):
+    """A pre-HTTP spacing gate, not an attempted or ambiguous remote write."""
+    def __init__(self, category: str, available_at: datetime) -> None:
+        super().__init__(category)
+        self.available_at = available_at
+
+
+def interval_deadline(account_last: datetime | None, blog_last: datetime | None, now: datetime) -> datetime:
+    return max(now, account_last + timedelta(minutes=2) if account_last else now,
+               blog_last + timedelta(minutes=5) if blog_last else now)
+
+
 class BloggerLivePublisher:
     """Guarded Blogger v3 draft/publication calls with durable idempotency.
 
@@ -209,9 +221,9 @@ class BloggerLivePublisher:
                 if limits is None:
                     raise GoogleFailure('account_limits_unavailable')
                 if limits["account_last"] and limits["account_last"] > datetime.now(UTC) - timedelta(minutes=2):
-                    raise GoogleFailure("account_minimum_interval_not_elapsed")
+                    raise WriteIntervalWait("account_minimum_interval_not_elapsed", interval_deadline(limits["account_last"], limits["blog_last"], datetime.now(UTC)))
                 if limits["blog_last"] and limits["blog_last"] > datetime.now(UTC) - timedelta(minutes=5):
-                    raise GoogleFailure("blog_minimum_interval_not_elapsed")
+                    raise WriteIntervalWait("blog_minimum_interval_not_elapsed", interval_deadline(limits["account_last"], limits["blog_last"], datetime.now(UTC)))
                 hourly_limit = LANGUAGE_HOURLY_LIMITS.get(language, 0)
                 if not hourly_limit or int(limits["blog_hourly"] or 0) >= hourly_limit:
                     raise GoogleFailure("blog_hourly_limit_reached")
