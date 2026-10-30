@@ -640,6 +640,8 @@ def schedule_tick(now: datetime | None = None) -> dict[str, Any]:
     if current.tzinfo is None:raise ValueError('scheduler_time_must_be_timezone_aware')
     config=collection_settings()
     if not config['enabled']:return {'status':'disabled','external_calls':0}
+    if config['backoff_until'] and config['backoff_until']>current:
+        return {'status':'provider_backoff','external_calls':0,'next_run_at':config['backoff_until'].isoformat()}
     bucket=slot_for(current,config['interval_minutes'])
     with connection() as guard:
         locked=guard.execute('SELECT pg_try_advisory_lock(hashtextextended(%s,0)) acquired',(SCHEDULER_LOCK,)).fetchone()
