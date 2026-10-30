@@ -625,6 +625,7 @@ def process_next_live_job(
         if lane == "scheduled_auto":
             link = conn.execute(
                 """SELECT i.*,v.id AS import_version_id,v.version_number,link.content_version_id,
+                v.content_sha256 AS import_hash,v.title AS version_title,v.blogger_labels AS version_labels,
                 blog.id AS blog_record_id,blog.blog_id,blog.language_code AS blog_language,blog.url,
                 blog.oauth_connection_id,blog.active,blog.connection_verified_at,g.status AS oauth_status
                 FROM external_content_imports i
@@ -636,7 +637,8 @@ def process_next_live_job(
                 (blog_id, version_id),
             ).fetchone()
             eligibility_blog = {**dict(link), "id": link["blog_record_id"]} if link else {}
-            eligibility = _scheduled_eligibility(conn, link, link, eligibility_blog) if link else None
+            eligibility_version = {**dict(link), 'id':link['import_version_id']} if link else {}
+            eligibility = _scheduled_eligibility(conn, link, eligibility_version, eligibility_blog) if link else None
             reasons = eligibility["reasons"] if eligibility else ["scheduled_import_not_found"]
             policy = conn.execute(
                 "SELECT action,approved_blog_ids FROM scheduled_publication_policy_events ORDER BY id DESC LIMIT 1"
@@ -652,9 +654,9 @@ def process_next_live_job(
                 ).fetchone()
                 if assessment:
                     candidate = dict(candidate)
-                    candidate.update({"title": link["title"], "editorial_title": link["title"],
+                    candidate.update({"title": link["version_title"], "editorial_title": link["version_title"],
                                       "html_body": assessment["safe_html"],
-                                      "blogger_labels": link["blogger_labels"]})
+                                      "blogger_labels": link["version_labels"]})
         elif lane == "manual":
             manual_approval = conn.execute(
                 """SELECT * FROM manual_publication_approval_events

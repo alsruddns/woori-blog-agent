@@ -30,11 +30,13 @@ def test_retained_version_manifest_scopes_sanitizer_before_evidence_evaluation()
     class Connection:
         def execute(self, query, params=None):
             if 'external_content_import_assessments' in query:
+                assert params == ('import-1', 'version')
                 return Result({'safe_html':'<p>Verified</p>','seo_checks':[]})
             if 'live_document_verified' in query:
                 return Result(rows=[{'payload':proofs['source-1']}])
             if 'SELECT body FROM content_versions' in query: return Result({'body':body})
             if 'sanitization_revision_created' in query:
+                assert params[0] == 'version'
                 assert params[1] == sha256(body.encode()).hexdigest()
                 return Result({'payload':{'retained_claim_ids':['claim-1']}})
             if 'scheduled_origin_recorded' in query:
