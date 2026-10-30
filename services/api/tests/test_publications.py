@@ -903,6 +903,9 @@ def test_manual_live_request_commits_approval_job_and_followups_atomically_in_is
     with pytest.raises(Exception,match='interval_recovery_state_invalid'):
         publication_worker.recover_interval_job(recovery_job)
     assert conn.execute('SELECT count(*) n FROM manual_publication_approval_events WHERE job_id=%s',(recovery_job,)).fetchone()['n']==1
+    publication_worker._live_attempt(conn,recovery_job,1,'create_draft','same-remote-write-key','failed')
+    publication_worker._live_attempt(conn,recovery_job,2,'create_draft','same-remote-write-key','succeeded')
+    assert conn.execute('SELECT count(*) n FROM live_publication_attempts WHERE job_id=%s',(recovery_job,)).fetchone()['n']==2
     draft_payload = {'title': snapshot['title'], 'content': snapshot['safe_html']}
     fingerprint = publications.BloggerLivePublisher._fingerprint('create_draft', blog_id, draft_payload)
     conn.execute("INSERT INTO blogger_write_operations(idempotency_key,request_fingerprint,operation,status) VALUES (%s,%s,'create_draft','failed')",

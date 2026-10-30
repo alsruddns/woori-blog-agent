@@ -39,8 +39,8 @@ test("publishing reuses detail, keeps filters, and explicit manual confirmation 
   expect(posts).toBe(0);
   const before=monitorReads;
   page.once("dialog",dialog=>dialog.accept());
-  await sheet.getByRole("button",{name:"Blogger에 공개 게시",exact:true}).click();
-  await expect(sheet.getByRole("button",{name:"Blogger에 공개 게시",exact:true})).toBeDisabled();
+  await sheet.getByTestId("manual-publication-submit").click();
+  await expect(sheet.getByTestId("manual-publication-submit")).toBeDisabled();
   await expect(sheet.getByRole("status").filter({hasText:"test-only-job"})).toBeVisible();
   expect(posts).toBe(1);
   await expect.poll(()=>monitorReads).toBeGreaterThan(before);

@@ -134,8 +134,8 @@ def _live_attempt(
         """INSERT INTO live_publication_attempts(job_id,attempt_no,operation,idempotency_key,
         outcome,remote_post_id,http_status,error_category,metadata)
         VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(job_id,attempt_no,operation) DO NOTHING""",
-        (job_id, attempt_no, operation, key, outcome, post_id, status, category,
-         Jsonb(metadata or {})),
+        (job_id, attempt_no, operation, key + ':attempt:' + str(attempt_no), outcome, post_id, status, category,
+         Jsonb({**(metadata or {}),'write_idempotency_key':key})),
     )
 
 
@@ -490,7 +490,7 @@ def defer_interval_job(job_id: UUID, wait: WriteIntervalWait) -> dict[str, Any]:
     """Preserve stage, approval, idempotency and failure retry budget."""
     with connection() as conn:
         changed = conn.execute("""UPDATE publishing_jobs SET status='queued',publication_state='publication_queued',
-            available_at=%s,last_error_category=%s,lease_until=NULL,updated_at=now()
+            available_at=%s,last_error_category=%s,lease_until=NULL,attempts=GREATEST(attempts-1,0),updated_at=now()
             WHERE id=%s AND status='running' RETURNING id""", (wait.available_at, wait.category, job_id)).fetchone()
         if changed:
             _append_audit(conn, 'publication.live_job.interval_wait', {
@@ -537,6 +537,38 @@ def recover_interval_job(job_id: UUID) -> dict[str, Any]:
             'available_at':available.isoformat(),'remote_duplicate_check':'clear','new_approval_created':False,
             'retry_budget_consumed':False,'blogger_write_performed':False})
     return {'job_id':str(job_id),'status':'queued','available_at':available.isoformat()}
+
+
+def reconcile_interval_draft(job_id: UUID) -> dict[str, Any]:
+    """Attach a successful ledger draft after interrupted DB bookkeeping, with no POST."""
+    from . import blogger_service
+    with connection() as conn:
+        job=conn.execute('SELECT * FROM publishing_jobs WHERE id=%s',(job_id,)).fetchone()
+        if not job or job['publication_lane']!='manual' or job['live_stage']!='draft_needed' or job['status'] not in {'uncertain','running'} or (job['lease_until'] and job['lease_until']>datetime.now(UTC)):
+            raise GoogleFailure('draft_reconciliation_job_not_idle')
+        key='pubjob-'+str(job_id)+'-draft'
+        ledger=conn.execute('SELECT * FROM blogger_write_operations WHERE idempotency_key=%s',('live:'+key,)).fetchone()
+        if not ledger or ledger['status']!='succeeded' or not ledger['result'].get('post_verified'):
+            raise GoogleFailure('verified_draft_ledger_required')
+        snapshot=publications._manual_publication_snapshot(conn,publications._candidate(conn,job['content_version_id'],job['blog_id']))
+        approval=conn.execute('SELECT * FROM manual_publication_approval_events WHERE job_id=%s',(job_id,)).fetchone()
+        if not approval or any(approval[k]!=snapshot[k] for k in ('title_sha256','body_sha256','html_sha256')):
+            raise GoogleFailure('draft_reconciliation_approval_changed')
+    remote=blogger_service.post(job['blog_id'],str(ledger['result']['post_id']))
+    target=BloggerLivePublisher._target(job['blog_id'])
+    if remote.get('status')!='DRAFT' or str((remote.get('blog') or {}).get('id'))!=target['blog_id'] or remote.get('title')!=snapshot['title'] or remote.get('content')!=snapshot['safe_html'] or sorted(remote.get('labels') or [])!=sorted(snapshot['blogger_labels']):
+        raise GoogleFailure('draft_reconciliation_remote_mismatch')
+    with connection() as conn:
+        current=conn.execute('SELECT * FROM publishing_jobs WHERE id=%s FOR UPDATE',(job_id,)).fetchone()
+        if not current or current['updated_at']!=job['updated_at']:
+            raise GoogleFailure('draft_reconciliation_job_changed')
+        created=conn.execute("SELECT max(created_at) t FROM audit_events WHERE event_type='blogger.write.requested' AND payload->>'idempotency_key_hash'=%s",(hashlib.sha256(('live:'+key).encode()).hexdigest(),)).fetchone()
+        available=max(datetime.now(UTC),created['t']+timedelta(minutes=5)) if created and created['t'] else datetime.now(UTC)
+        conn.execute("""UPDATE publishing_jobs SET status='queued',publication_state='publication_queued',
+            live_stage='draft_created',remote_post_id=%s,lease_until=NULL,available_at=%s,last_error_category=NULL,updated_at=now() WHERE id=%s""",(str(remote['id']),available,job_id))
+        _live_attempt(conn,job_id,int(job['attempts']),'create_draft',key,'succeeded',post_id=str(remote['id']),metadata={'reconciled_remote_draft':True})
+        _append_audit(conn,'publication.manual_interval.draft_reconciled',{'job_id':str(job_id),'post_id':str(remote['id']),'available_at':available.isoformat(),'blogger_write_performed':False})
+    return {'job_id':str(job_id),'status':'queued','post_id':str(remote['id']),'available_at':available.isoformat()}
 
 
 def reconcile_manual_draft(job_id: UUID, post_id: str) -> dict[str, Any]:
