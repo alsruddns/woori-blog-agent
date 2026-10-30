@@ -158,6 +158,9 @@ def test_trends_queue_dispatch_has_distinct_provenance_and_no_publication(lab,mo
     conn.execute("UPDATE codex_authoring_jobs SET state='queued' WHERE id=%s",(job['id'],))
     old_slot=editorial.current_slot()
     monkeypatch.setattr(editorial,'current_slot',lambda:old_slot+timedelta(hours=1))
+    conn.execute("UPDATE codex_authoring_jobs SET state='researching',execution_id='already-started' WHERE id=%s",(job['id'],))
+    assert editorial.expire_pending()==0
+    conn.execute("UPDATE codex_authoring_jobs SET state='queued',execution_id=NULL WHERE id=%s",(job['id'],))
     assert editorial.expire_pending()==1
     expired=conn.execute('SELECT state,error_code FROM codex_authoring_jobs WHERE id=%s',(job['id'],)).fetchone()
     assert expired['state']=='cancelled' and expired['error_code']=='expired_collection_slot'
