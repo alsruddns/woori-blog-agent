@@ -1552,7 +1552,9 @@ def list_publications(
             "research_package_id": None, "source_names": None,
         } for row in held_jobs]
 
-        auto_failure_items = [item for item in held_items if item.get("auto_publication_failure")]
+        # Once a real job exists its current state belongs in the job views;
+        # the historical pre-job failure remains in the append-only audit log.
+        auto_failure_items: list[dict[str, Any]] = []
         failure_events = conn.execute(
             """WITH latest AS (
               SELECT DISTINCT ON (payload->>'import_id',payload->>'content_version_id',payload->>'blog_record_id')
@@ -1569,6 +1571,12 @@ def list_publications(
             LEFT JOIN content_versions v ON v.id=NULLIF(e.payload->>'content_version_id','')::uuid
             LEFT JOIN blogger_blogs b ON b.id=NULLIF(e.payload->>'blog_record_id','')::uuid
             WHERE e.event_type='publication.auto_failure.recorded'
+              AND NOT EXISTS (SELECT 1 FROM publishing_jobs j
+                JOIN external_content_import_content_links l
+                  ON l.content_version_id=j.content_version_id AND l.import_id=i.id
+                WHERE j.blog_id=b.id AND j.content_version_id=v.id
+                  AND j.adapter_type='blogger_live' AND NOT j.simulation_only
+                  AND j.status IN ('queued','running','failed','blocked','uncertain'))
               AND NOT EXISTS (SELECT 1 FROM publishing_records r WHERE r.blog_id=b.id
                 AND r.content_version_id=v.id AND r.remote_status='LIVE' AND r.remote_verified_at IS NOT NULL)
             ORDER BY e.id DESC"""

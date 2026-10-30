@@ -41,17 +41,22 @@ def snapshot(view: str, page: int, page_size: int) -> dict[str, Any]:
           WHERE j.adapter_type='blogger_live' AND NOT j.simulation_only
           ORDER BY j.updated_at DESC,j.id DESC""").fetchall()
         failures = conn.execute("""WITH latest AS (
-            SELECT DISTINCT ON(payload->>'import_id',payload->>'blog_record_id') event_type,payload,created_at
+            SELECT DISTINCT ON(payload->>'import_id',payload->>'content_version_id',payload->>'blog_record_id') event_type,payload,created_at
             FROM audit_events WHERE event_type IN ('publication.auto_failure.recorded','publication.auto_failure.cleared')
-            ORDER BY payload->>'import_id',payload->>'blog_record_id',id DESC)
+            ORDER BY payload->>'import_id',payload->>'content_version_id',payload->>'blog_record_id',id DESC)
           SELECT i.title,i.generation_method,i.id import_id,e.payload,e.created_at,
             b.display_name blog_name,b.blog_id blogger_blog_id
           FROM latest e JOIN external_content_imports i ON i.id::text=e.payload->>'import_id'
           LEFT JOIN blogger_blogs b ON b.id::text=e.payload->>'blog_record_id'
           WHERE e.event_type='publication.auto_failure.recorded' AND NOT EXISTS (
-            SELECT 1 FROM publishing_jobs j WHERE j.blog_id=b.id
-              AND (j.id::text=e.payload->>'job_id' OR j.content_version_id::text=e.payload->>'content_version_id')
-              AND j.adapter_type='blogger_live' AND NOT j.simulation_only)
+            SELECT 1 FROM publishing_jobs j JOIN external_content_import_content_links l
+              ON l.content_version_id=j.content_version_id AND l.import_id=i.id
+            WHERE j.blog_id=b.id AND j.content_version_id::text=e.payload->>'content_version_id'
+              AND j.adapter_type='blogger_live' AND NOT j.simulation_only
+              AND j.status IN ('queued','running','failed','blocked','uncertain'))
+          AND NOT EXISTS (SELECT 1 FROM publishing_records r WHERE r.blog_id=b.id
+            AND r.content_version_id::text=e.payload->>'content_version_id'
+            AND r.remote_status='LIVE' AND r.remote_verified_at IS NOT NULL)
           ORDER BY e.created_at DESC""").fetchall()
         worker = conn.execute("SELECT * FROM worker_heartbeats WHERE service_name='publication_worker'").fetchone()
     items = []

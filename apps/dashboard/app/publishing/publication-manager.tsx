@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import ExternalImportWorkspace from "../imports/external-import-workspace";
 import PostPublicationReviewPanel from "./post-publication-review-panel";
 import PublicationWorkerPanel from "./publication-worker-panel";
@@ -101,11 +101,29 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
     try {
       const response = await fetch(`/api/publications?${params}`, { cache:"no-store" });
       if (!response.ok) throw new Error("발행 현황을 불러오지 못했습니다.");
-      const next = await response.json() as PublicationData; setData(next); setPage(nextPage); setView(nextView); setActiveTab(nextView);
+      let next = await response.json() as PublicationData;
+      if (nextPage > Math.max(next.page_count ?? 1, 1)) {
+        nextPage = Math.max(next.page_count ?? 1, 1); params.set("page", String(nextPage));
+        const corrected = await fetch(`/api/publications?${params}`, {cache:"no-store"});
+        if (!corrected.ok) throw new Error("발행 현황을 갱신하지 못했습니다.");
+        next = await corrected.json() as PublicationData;
+      }
+      setData(next); setPage(nextPage); setView(nextView); setActiveTab(nextView);
       const url=new URL(window.location.href);params.forEach((value,key)=>url.searchParams.set(key,value));window.history.replaceState(null,"",url.pathname+url.search);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "연결 오류"); }
     finally { setLoading(false); }
   }
+  useEffect(() => {
+    let pending=false; const controller=new AbortController();
+    const poll=async()=>{if(pending||document.visibilityState!=="visible")return;pending=true;
+      try {const params=new URLSearchParams({view,q:query,language_code:language,blog_id:blog,page:String(page),page_size:"25"});
+        const response=await fetch(`/api/publications?${params}`,{cache:"no-store",signal:controller.signal});
+        if(!response.ok)throw new Error("발행 현황 자동 갱신에 실패했습니다.");
+        const next=await response.json() as PublicationData;
+        if(page>Math.max(next.page_count??1,1))setPage(Math.max(next.page_count??1,1));else setData(next);
+      }catch(cause){if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:"발행 현황 갱신 실패");}finally{pending=false;}};
+    const timer=setInterval(()=>void poll(),10000);return()=>{clearInterval(timer);controller.abort();};
+  },[view,query,language,blog,page]);
   async function emergencyStop() {
     setEmergencyBusy(true); setError("");
     try { const r = await fetch("/api/publications/emergency-stop", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({enabled:true}) });
