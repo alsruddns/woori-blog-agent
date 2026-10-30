@@ -14,6 +14,7 @@
 - Publication startup uses the verified `scheduled-auto-and-manual` mode. Startup is idempotent only when an exact-checkout process and fresh matching heartbeat are found.
 - API and Dashboard stop requests are bound to the recorded PID, checkout, service name, and random process instance ID. A stale, mismatched, reparse-point, or oversized request is rejected. No force termination is used by the whole-stop or whole-restart shortcut.
 - Port owners and worker identities are checked against this checkout. Other project processes are left untouched.
+- The service identity check handles Windows' venv launcher shim, where the process image is the base `python.exe` while the command line explicitly names this checkout's `.venv\Scripts\python.exe`.
 - Shortcut actions and lifecycle transitions append sanitized records to `.runtime/logs/service-lifecycle.log`.
 - The existing `WooriBlogAgent-Worker` logon task is not duplicated or removed.
 
@@ -26,8 +27,8 @@
 
 ## Verification
 
-- PowerShell parser, Node syntax check, Python compilation, Pester lifecycle tests, `git diff --check`, isolated production build, and repository validation are required before reflecting the source marker.
-- Existing dashboard/API/workers are not stopped for verification. A hidden whole-start shortcut invocation is used against already healthy services to prove idempotent no-duplicate behavior.
+- PowerShell parser, Node syntax check, Python compilation, 14 Pester lifecycle tests, `git diff --check`, and an isolated Production Build passed. The source-reflection script identified older unreflected service changes and would have restarted active Workers; it was stopped before any stop request. No current service process was changed.
+- A hidden whole-start shortcut invocation against already healthy services verified exact process ownership, HTTP health, fresh Worker heartbeats, and idempotent no-duplicate behavior.
 - Whole-stop/restart are validated by tests and ownership-aware code inspection, not run against live services during this task.
 - The existing login task's name, enabled state, logon trigger, and project action are checked after changes.
 - Runtime state, shortcut paths, actual service PIDs/mode, and logs are recorded in the completion report.

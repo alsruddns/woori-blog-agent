@@ -11,6 +11,14 @@ Describe 'Windows service lifecycle ownership and startup policy' {
     (Test-ExactCheckoutServiceProcess $foreign 'worker') | Should Be $false
   }
 
+  It 'recognizes the Windows venv Python shim using its exact checkout command path' {
+    $venv = Join-Path $script:ProjectRoot '.venv\Scripts\python.exe'
+    $basePython = [pscustomobject]@{ Id=412; ParentId=1; Path='C:\Users\achie\AppData\Local\Programs\Python\Python313\python.exe'; CommandLine="`"$venv`" -m uvicorn woori.main:app --host 127.0.0.1 --port 8100" }
+    (Test-ExactCheckoutServiceProcess $basePython 'api') | Should Be $true
+    $basePython.CommandLine = '"C:\other\.venv\Scripts\python.exe" -m uvicorn woori.main:app'
+    (Test-ExactCheckoutServiceProcess $basePython 'api') | Should Be $false
+  }
+
   It 'does not count a Python launcher ancestor as a second Worker process' {
     $table = @(
       [pscustomobject]@{ Id=420; ParentId=1; Path='C:\Python\python.exe'; CommandLine='"C:\repo\.venv\Scripts\python.exe" -m woori.worker' },

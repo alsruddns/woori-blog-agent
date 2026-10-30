@@ -181,7 +181,10 @@ function Test-ExactCheckoutServiceProcess($ProcessInfo, [string]$ServiceName) {
   $python = [IO.Path]::GetFullPath((Join-Path $script:ProjectRoot '.venv\Scripts\python.exe'))
   switch ($ServiceName) {
     'api' {
-      return $path -ieq $python -and (
+      $venvPythonCommand = $command -match ('(?i)^"' + [regex]::Escape($python) + '"\s+')
+      $expectedInterpreter = $path -ieq $python -or
+        ([IO.Path]::GetFileName($path) -ieq 'python.exe' -and $venvPythonCommand)
+      return $expectedInterpreter -and (
         $command -match '(?i)(^|\s)scripts[\\/]api-service\.py(?:\s|$)' -or
         $command -match '(?i)(^|\s)-m\s+uvicorn\s+woori\.main:app(?:\s|$)'
       )
