@@ -137,6 +137,24 @@ def sanitize_scheduled_body(
     }
 
 
+def excerpt_supported(excerpt: str, spans: list[str]) -> bool:
+    """Trace abbreviated quotations to ordered exact source fragments, not similarity."""
+    text = ' '.join(' '.join(spans).split())
+    excerpt = ' '.join(excerpt.split())
+    if excerpt and excerpt in text:
+        return True
+    fragments = [part.strip().rstrip(';').strip() for part in re.split(r'\.{3}|…|;', excerpt) if part.strip()]
+    if len(fragments) < 2 or sum(map(len, fragments)) < 40 or any(len(x) < 5 for x in fragments):
+        return False
+    cursor = 0
+    for fragment in fragments:
+        position = text.find(fragment, cursor)
+        if position < 0:
+            return False
+        cursor = position + len(fragment)
+    return True
+
+
 def verified_scheduled_claim_ids(
     imported: Mapping[str, Any], source_proofs: Mapping[str, Mapping[str, Any]],
 ) -> set[str]:
@@ -164,7 +182,7 @@ def verified_scheduled_claim_ids(
                 and proof.get("import_id") == str(imported.get("id"))
                 and str(proof.get("source_id")) == source_id
                 and _SHA256.fullmatch(str(proof.get("source_body_sha256") or ""))
-                and any(excerpt in str(span) for span in proof.get("verified_claim_evidence", []) if isinstance(span, str))):
+                and excerpt_supported(excerpt, list(proof.get("verified_claim_evidence", [])))):
                 matched.append(source_id)
         if not matched or not _quantity_facts(excerpt).issuperset(_quantity_facts(str(claim.get("claim") or ""))):
             continue
@@ -368,7 +386,7 @@ def evaluate_scheduled_evidence(
             reasons.append('claim_source_verification_unavailable')
             continue
         if not evidence or not any(
-            proof and any(evidence in str(span) for span in proof.get("verified_claim_evidence", []))
+            proof and excerpt_supported(evidence, list(proof.get("verified_claim_evidence", [])))
             for proof in attached
         ):
             reasons.append("claim_span_not_found_in_live_source_evidence")

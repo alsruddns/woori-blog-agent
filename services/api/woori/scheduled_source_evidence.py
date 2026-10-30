@@ -20,11 +20,11 @@ from psycopg.types.json import Jsonb
 from . import external_policy
 from .db import connection
 from .external_policy import external_run
-from .scheduled_auto_verification import _quantity_facts
+from .scheduled_auto_verification import _quantity_facts, excerpt_supported
 
 MAX_RESPONSE_BYTES = 1024 * 1024
 MAX_CAPTURE_SECONDS = 20
-CAPTURE_POLICY_VERSION = "scheduled-live-source-capture-3"
+CAPTURE_POLICY_VERSION = "scheduled-live-source-capture-4"
 _CATALOG: dict[str, dict[str, str]] = {
     "https://www.nenryo-teigakuhikisage.go.jp/": {
         "source_id": "S5",
@@ -178,6 +178,9 @@ def _fetch_ons_reuse_terms(url: str, run_id: UUID) -> dict[str, Any]:
 def _claim_fact_check(claim: dict[str, Any], paragraphs: list[str]) -> tuple[list[str], dict[str, Any]]:
     excerpt = str(claim.get("evidence_excerpt") or "")
     matched = [paragraph for paragraph in paragraphs if excerpt and excerpt in paragraph]
+    if not matched and excerpt_supported(excerpt, paragraphs):
+        fragments = [part.strip().rstrip(';').strip() for part in re.split(r'\.{3}|…|;', excerpt) if part.strip()]
+        matched = [paragraph for paragraph in paragraphs if any(fragment in ' '.join(paragraph.split()) for fragment in fragments)]
     context = "\n".join(matched)
     claim_text = str(claim.get("claim") or "")
     claim_quantities = _quantity_facts(claim_text)

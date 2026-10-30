@@ -365,7 +365,7 @@ def test_scheduled_auto_job_is_enqueued_without_any_first_post_event(
                 return Result(None)
             if "SELECT count(*)::int AS n FROM publishing_jobs WHERE publication_lane='scheduled_auto'" in sql:
                 return Result({"n": 0})
-            if "SELECT id FROM publishing_policies" in sql:
+            if "SELECT p.id FROM publishing_policies p JOIN language_profiles" in sql:
                 return Result({"id": uuid4()})
             if "INSERT INTO publishing_jobs" in sql:
                 return Result({"id": job_id})

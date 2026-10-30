@@ -1,6 +1,50 @@
 from __future__ import annotations
 
-from woori.scheduled_auto_verification import evaluate_scheduled_evidence
+from woori.scheduled_auto_verification import evaluate_scheduled_evidence, excerpt_supported
+
+
+def test_abbreviated_evidence_requires_every_fragment_in_source_order() -> None:
+    spans = ['Voting against the action were Cook and Hammack, who preferred to raise the rate by 1/4 percentage point.']
+    assert excerpt_supported('Voting against ... were Cook and Hammack, who preferred to raise ... by 1/4 percentage point.', spans)
+    assert not excerpt_supported('Voting against ... were Cook and Hammack, who preferred to lower ... by 1/4 percentage point.', spans)
+    assert not excerpt_supported('by 1/4 percentage point ... Voting against the action', spans)
+    assert not excerpt_supported('Voting against ... by 1/2 percentage point.', spans)
+
+
+def test_retained_version_manifest_scopes_sanitizer_before_evidence_evaluation() -> None:
+    from hashlib import sha256
+
+    from woori.publication_worker import _scheduled_eligibility
+
+    imported, proofs = _case()
+    imported.update(language_code='en',event_group_id='',import_hash='c'*64)
+    imported['claims'].append({'claim_id':'unsupported', 'claim':'Unverified claim',
+        'source_ids':['source-1'],'verification_status':'unverified'})
+    body = 'According to the agency, the reported figure was 12.5 percent. [source:source-1]\n\nThe reported figure is attributed to the agency. [source:source-1]'
+
+    class Result:
+        def __init__(self, row=None, rows=None): self.row,self.rows=row,rows
+        def fetchone(self): return self.row
+        def fetchall(self): return self.rows
+
+    class Connection:
+        def execute(self, query, params=None):
+            if 'external_content_import_assessments' in query:
+                return Result({'safe_html':'<p>Verified</p>','seo_checks':[]})
+            if 'live_document_verified' in query:
+                return Result(rows=[{'payload':proofs['source-1']}])
+            if 'SELECT body FROM content_versions' in query: return Result({'body':body})
+            if 'sanitization_revision_created' in query:
+                assert params[1] == sha256(body.encode()).hexdigest()
+                return Result({'payload':{'retained_claim_ids':['claim-1']}})
+            if 'scheduled_origin_recorded' in query:
+                return Result({'payload':{'target_blog_id':'12345','target_language_code':'en'}})
+            return Result()
+
+    result = _scheduled_eligibility(Connection(), imported, {'id':'version','content_version_id':'content'},
+        {'id':'blog','blog_id':'12345','language_code':'en','active':True,'connection_verified_at':True,'oauth_status':'connected'})
+    assert result['reasons'] == [], result
+    assert result['sanitizer']['substantive_blocks_remaining'] == 2
 
 
 def test_missing_capture_is_not_reported_as_a_disproved_claim() -> None:

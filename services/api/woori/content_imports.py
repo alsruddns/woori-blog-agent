@@ -1379,8 +1379,17 @@ def prepare_scheduled_publishable_version(import_id: UUID) -> dict[str, Any]:
             "source_body_sha256": proof.get("source_body_sha256") or proof.get("body_sha256"),
         } for source_id, proof in proof_by_id.items()}
         verified_claim_ids = verified_scheduled_claim_ids(imported, normalized_proofs)
+        manifest = conn.execute(
+            """SELECT payload FROM audit_events WHERE event_type='publication.scheduled_auto.sanitization_revision_created'
+            AND payload->>'output_version_id'=%s AND payload->>'output_sha256'=%s ORDER BY id DESC LIMIT 1""",
+            (str(latest['id']), hashlib.sha256(str(latest['body_markdown']).encode('utf-8')).hexdigest()),
+        ).fetchone()
+        retained_claims = imported['claims'] or []
+        if manifest:
+            retained_ids = set(manifest['payload'].get('retained_claim_ids', []))
+            retained_claims = [claim for claim in retained_claims if claim.get('claim_id') in retained_ids]
         sanitized = sanitize_scheduled_body(
-            str(latest["body_markdown"]), imported["claims"] or [],
+            str(latest["body_markdown"]), retained_claims,
             verified_claim_ids=verified_claim_ids,
         )
         if not sanitized["changed"]:

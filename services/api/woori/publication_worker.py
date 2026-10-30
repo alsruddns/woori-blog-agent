@@ -177,19 +177,12 @@ def _scheduled_eligibility(conn: Any, imported: Any, version: Any, blog: Any) ->
     ).fetchone()
     body = str(article_body["body"]) if article_body else ""
     verified_claim_ids = verified_scheduled_claim_ids(imported, proof_by_id)
-    sanitizer = sanitize_scheduled_body(
-        body, imported.get("claims") or [], verified_claim_ids=verified_claim_ids,
-    )
     manifest = conn.execute(
         """SELECT payload FROM audit_events
         WHERE event_type='publication.scheduled_auto.sanitization_revision_created'
           AND payload->>'output_version_id'=%s AND payload->>'output_sha256'=%s
         ORDER BY id DESC LIMIT 1""", (str(version["id"]), hashlib.sha256(body.encode("utf-8")).hexdigest()),
     ).fetchone()
-    if sanitizer["changed"]:
-        reasons.append("scheduled_sanitized_revision_required"
-                       if sanitizer["substantive_blocks_remaining"] >= 2
-                       else "no_supported_body_after_sanitization")
     cited_source_ids = set(re.findall(r"\[source:([A-Za-z0-9_-]+)\]", body))
     claims = imported.get("claims") or []
     if manifest:
@@ -197,6 +190,10 @@ def _scheduled_eligibility(conn: Any, imported: Any, version: Any, blog: Any) ->
         claims = [claim for claim in claims if str(claim.get("claim_id")) in retained_claim_ids]
     else:
         claims = [claim for claim in claims if {str(value) for value in claim.get("source_ids") or []}.issubset(cited_source_ids)]
+    sanitizer = sanitize_scheduled_body(body, claims, verified_claim_ids=verified_claim_ids)
+    if sanitizer['changed']:
+        reasons.append('scheduled_sanitized_revision_required' if sanitizer['substantive_blocks_remaining'] >= 2
+                       else 'no_supported_body_after_sanitization')
     used_sources = [source for source in sources if str(source.get("source_id")) in cited_source_ids]
     filtered_import = {**dict(imported), "claims": claims, "sources": used_sources}
     evidence_result = evaluate_scheduled_evidence(
@@ -407,8 +404,11 @@ def enqueue_scheduled_auto_jobs() -> dict[str, Any]:
                                      stage="policy", reasons=["daily_publication_limit"])
                 continue
             policy_row = conn.execute(
-                "SELECT id FROM publishing_policies WHERE blog_id=%s ORDER BY active DESC,id LIMIT 1",
-                (blog["blog_record_id"],),
+                """SELECT p.id FROM publishing_policies p JOIN language_profiles profile ON profile.id=p.profile_id
+                JOIN content_versions cv ON cv.id=%s JOIN content_localizations locale ON locale.id=cv.localization_id
+                WHERE p.blog_id=%s AND profile.language_code=locale.language_code
+                  AND profile.target_country=locale.target_country ORDER BY p.active DESC,p.id LIMIT 1""",
+                (imported['content_version_id'], blog["blog_record_id"]),
             ).fetchone()
             if not policy_row:
                 held += 1
