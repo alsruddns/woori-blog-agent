@@ -92,6 +92,14 @@ def test_pre_job_failure_yields_to_exact_real_job(lab,monkeypatch):
     assert any(x['import_id']==payload['import_id'] and x['content_version_id']==payload['content_version_id'] for x in failures())
     assert any(x['import_id']==payload['import_id'] and x['content_version_id']==payload['content_version_id'] for x in listed())
     oauth=conn.execute("INSERT INTO google_connections(label) VALUES('isolated retry fixture') RETURNING id").fetchone()['id']
+    other_blog=conn.execute("INSERT INTO blogger_blogs(language_code,url,display_name,blog_id) VALUES(%s,%s,'Other blog','1234567891') RETURNING id",
+        (row['language_code'],'https://test-'+uuid4().hex[:12]+'.blogspot.com')).fetchone()['id']
+    other_policy=conn.execute('INSERT INTO publishing_policies(language_code,blog_id,profile_id,active) VALUES(%s,%s,%s,false) RETURNING id',
+        (row['language_code'],other_blog,profile)).fetchone()['id']
+    conn.execute("""INSERT INTO publishing_jobs(policy_id,blog_id,content_version_id,idempotency_key,scheduled_at,status,adapter_type,simulation_only,oauth_connection_id,live_stage)
+       VALUES(%s,%s,%s,%s,now(),'queued','blogger_live',false,%s,'draft_needed')""",
+       (other_policy,other_blog,row['content_version_id'],str(uuid4()),oauth))
+    assert any(x['import_id']==payload['import_id'] and x['content_version_id']==payload['content_version_id'] for x in listed())
     job=conn.execute("""INSERT INTO publishing_jobs(policy_id,blog_id,content_version_id,idempotency_key,scheduled_at,status,adapter_type,simulation_only,oauth_connection_id,live_stage)
        VALUES(%s,%s,%s,%s,now(),'queued','blogger_live',false,%s,'draft_needed') RETURNING id""",
        (row['policy_id'],row['blog_id'],row['content_version_id'],str(uuid4()),oauth)).fetchone()['id']
