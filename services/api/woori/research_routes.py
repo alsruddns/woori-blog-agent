@@ -548,7 +548,9 @@ def manuscript_list(
     clauses = ["content_version_id IS NOT NULL"]
     params: list[Any] = []
     if not include_retired_models:
-        clauses.append("lower(COALESCE(model,'')) NOT LIKE '%qwen%' AND lower(COALESCE(model,'')) NOT LIKE '%llama%'")
+        # Avoid literal percent patterns in a psycopg query that also uses
+        # ``%s`` placeholders; psycopg parses ``%q`` as an invalid placeholder.
+        clauses.append("position('qwen' in lower(COALESCE(model,'')))=0 AND position('llama' in lower(COALESCE(model,'')))=0")
     if q.strip():
         clauses.append("(strpos(lower(title),lower(%s))>0 OR strpos(lower(topic),lower(%s))>0)")
         term = q.strip()
@@ -588,7 +590,8 @@ def manuscript_list(
                     CASE WHEN q.topic ILIKE 'Apple Inc. 10-Q%%' THEN 'stocks' ELSE 'finance' END AS category_slug
                   FROM article_quality_evaluations q JOIN content_versions v ON v.id=q.content_version_id
                   LEFT JOIN version_roots root ON root.id=v.id
-                  WHERE (q.topic ILIKE 'Federal Reserve%%' OR q.topic ILIKE 'Apple Inc. 10-Q%%')
+                  WHERE (left(q.topic, length('Federal Reserve'))='Federal Reserve'
+                    OR left(q.topic, length('Apple Inc. 10-Q'))='Apple Inc. 10-Q')
                   ORDER BY q.content_version_id,q.created_at DESC,q.id DESC
                 ), ranked_representatives AS (
                   SELECT latest_evaluations.*,

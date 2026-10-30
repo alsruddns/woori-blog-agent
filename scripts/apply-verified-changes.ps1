@@ -205,7 +205,7 @@ foreach ($name in $targets) {
       'dashboard' { & (Join-Path $PSScriptRoot 'start.ps1') -Service dashboard }
       'api' { & (Join-Path $PSScriptRoot 'start.ps1') -Service api }
       'research_worker' { & (Join-Path $PSScriptRoot 'start.ps1') -Service research_worker }
-      'publication_worker' { & (Join-Path $PSScriptRoot 'start.ps1') -Service publication_worker -PublicationMode scheduled-auto-manual }
+      'publication_worker' { & (Join-Path $PSScriptRoot 'start.ps1') -Service publication_worker -PublicationMode scheduled-auto-manual-trends }
     }
     if ($LASTEXITCODE -ne 0) { throw 'start_script_failed' }
     Write-LifecycleLog $name 'source_reflected' "commit=$head"

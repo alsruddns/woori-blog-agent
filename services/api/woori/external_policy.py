@@ -209,6 +209,9 @@ _external_run_id: ContextVar[str | None] = ContextVar("external_run_id", default
 _scheduled_publication_blog_id: ContextVar[str | None] = ContextVar(
     "scheduled_publication_blog_id", default=None
 )
+_trends_publication_blog_id: ContextVar[str | None] = ContextVar(
+    "trends_publication_blog_id", default=None
+)
 _manual_publication_approval: ContextVar[tuple[str, str, str, str, str, str] | None] = ContextVar(
     "manual_publication_approval", default=None
 )
@@ -231,6 +234,16 @@ def scheduled_publication_context(blog_id: str) -> Iterator[None]:
         yield
     finally:
         _scheduled_publication_blog_id.reset(token)
+
+
+@contextmanager
+def trends_publication_context(blog_id: str) -> Iterator[None]:
+    """Scope a Trends public-write approval to one enabled policy and Blogger."""
+    token = _trends_publication_blog_id.set(blog_id)
+    try:
+        yield
+    finally:
+        _trends_publication_blog_id.reset(token)
 
 
 @contextmanager
@@ -341,6 +354,12 @@ def _blogger_operation_is_approved(operation: str) -> bool:
         scoped_blog_id = _scheduled_publication_blog_id.get()
         if scoped_blog_id is not None:
             return _scheduled_publication_approval(scoped_blog_id) is not None
+        trends_blog_id = _trends_publication_blog_id.get()
+        if trends_blog_id is not None:
+            # A Trends policy scopes the content lane, but cannot replace the
+            # separate explicit operations approval for public Blogger writes.
+            return (_blogger_public_publish_approval() is not None
+                    and _trends_publication_approval(trends_blog_id) is not None)
         manual_approval = _manual_publication_approval.get()
         if manual_approval is not None:
             # The manual worker sets this context only after checking the
@@ -405,6 +424,24 @@ def _scheduled_publication_approval(blog_id: str) -> dict[str, Any] | None:
             or str(blog_id) not in {str(value) for value in row["approved_blog_ids"]}):
         return None
     return {"created_at": row["created_at"], "scope": ["scheduled_publication"]}
+
+
+def _trends_publication_approval(blog_id: str) -> dict[str, Any] | None:
+    """Trends Auto is authorized only by the latest enabled per-blog event."""
+    try:
+        from .db import connection
+
+        with connection() as conn:
+            row = conn.execute(
+                """SELECT enabled,allowed_geos,created_at FROM trends_publication_policy_events
+                WHERE blog_id=%s ORDER BY id DESC LIMIT 1""", (blog_id,),
+            ).fetchone()
+    except (psycopg.Error, OSError):
+        return None
+    if not row or not row["enabled"] or not row["allowed_geos"]:
+        return None
+    return {"created_at": row["created_at"], "scope": ["trends_auto"],
+            "allowed_geos": list(row["allowed_geos"])}
 
 
 def status() -> dict[str, Any]:

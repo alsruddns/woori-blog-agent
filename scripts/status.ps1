@@ -69,7 +69,8 @@ foreach ($name in @('worker','evaluation_worker','publication_worker')) {
     [pscustomobject]@{
       Service=$name; Port=($ports -join ','); State=$state; PID=[int]$proc.Id
       Executable=$proc.Path; StartedUtc=(Get-ProcessStarted ([int]$proc.Id)); ProjectOwned=$true
-      ExecutionMode=if ($name -eq 'publication_worker' -and $proc.CommandLine -match '--operations-scheduled-auto-and-manual') { 'scheduled-auto-and-manual' }
+      ExecutionMode=if ($name -eq 'publication_worker' -and $proc.CommandLine -match '--operations-scheduled-auto-and-manual-and-trends') { 'scheduled-auto-manual-trends' }
+        elseif ($name -eq 'publication_worker' -and $proc.CommandLine -match '--operations-scheduled-auto-and-manual') { 'scheduled-auto-and-manual' }
         elseif ($name -eq 'publication_worker' -and $proc.CommandLine -match '--operations-scheduled-auto') { 'scheduled-auto' }
         elseif ($name -eq 'publication_worker' -and $proc.CommandLine -match '--operations-manual-confirmed') { 'manual-confirmed' }
         elseif ($name -eq 'publication_worker' -and $proc.CommandLine -match '--operations-mock-only') { 'mock-only' }
@@ -100,7 +101,8 @@ try {
   if ($LASTEXITCODE -eq 0 -and $workerOutput) {
     $workerStatus = ($workerOutput -join "`n") | ConvertFrom-Json
     $workerProcess = $table | Where-Object Id -eq ([int]$workerStatus.heartbeat.process_id) | Select-Object -First 1
-    $executionMode = if ($workerProcess.CommandLine -match '--operations-scheduled-auto-and-manual') { 'scheduled-auto-manual' }
+    $executionMode = if ($workerProcess.CommandLine -match '--operations-scheduled-auto-and-manual-and-trends') { 'scheduled-auto-manual-trends' }
+      elseif ($workerProcess.CommandLine -match '--operations-scheduled-auto-and-manual') { 'scheduled-auto-manual' }
       elseif ($workerProcess.CommandLine -match '--operations-manual-confirmed') { 'manual-confirmed' }
       elseif ($workerProcess.CommandLine -match '--operations-scheduled-auto') { 'scheduled-auto' }
       elseif ($workerProcess.CommandLine -match '--operations-mock-only') { 'mock-only' }

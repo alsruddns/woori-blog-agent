@@ -1,5 +1,5 @@
 param([ValidateSet('api','dashboard','worker','research_worker','publication_worker','all')][string]$Service='all',
-  [ValidateSet('mock-only','scheduled-auto','manual-confirmed','scheduled-auto-manual')][string]$PublicationMode='mock-only')
+  [ValidateSet('mock-only','scheduled-auto','manual-confirmed','scheduled-auto-manual','scheduled-auto-manual-trends')][string]$PublicationMode='mock-only')
 . (Join-Path $PSScriptRoot 'server-common.ps1')
 if ($Service -eq 'publication_worker') {
   & (Join-Path $PSScriptRoot 'start-publication-worker.ps1') -Mode $PublicationMode

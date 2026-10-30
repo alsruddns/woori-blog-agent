@@ -67,7 +67,10 @@ def remote_duplicate_retry_plan(status: str, retry_count: int, max_retries: int)
 
 
 def execution_mode(*, private_drafts: bool = False, live: bool = False,
-                   scheduled_auto: bool = False, manual_confirmed: bool = False) -> str:
+                   scheduled_auto: bool = False, manual_confirmed: bool = False,
+                   trends_auto: bool = False) -> str:
+    if scheduled_auto and manual_confirmed and trends_auto:
+        return "operations-scheduled-auto-and-manual-and-trends"
     if scheduled_auto and manual_confirmed:
         return "operations-scheduled-auto-and-manual"
     if scheduled_auto:
@@ -656,9 +659,13 @@ def reconcile_published_manual_job(job_id: UUID) -> dict[str, Any]:
 
 def process_next_live_job(
     *, scheduled_auto_only: bool = False, manual_confirmed_only: bool = False,
+    trends_auto_only: bool = False,
 ) -> dict[str, Any] | None:
     """Process one fully approved Blogger job; all absent approvals fail closed."""
     enqueue_scheduled_auto_jobs()
+    if trends_auto_only:
+        from .trends_publication import enqueue_trends_auto_jobs
+        enqueue_trends_auto_jobs()
     with connection() as conn:
         relation = conn.execute(
             "SELECT to_regclass('public.live_publication_attempts') AS ready"
@@ -694,10 +701,12 @@ def process_next_live_job(
               AND (%s=false OR (j.publication_lane='manual' AND EXISTS (
                 SELECT 1 FROM manual_publication_approval_events a WHERE a.job_id=j.id
               )))
+              AND (j.publication_lane<>'trends_auto' OR %s=true)
+              AND (%s=false OR j.publication_lane='trends_auto')
               AND j.status='queued' AND j.scheduled_at<=now() AND j.available_at<=now()
             ORDER BY CASE WHEN (SELECT language_code FROM blogger_blogs bb WHERE bb.id=j.blog_id)='en'
             THEN 0 ELSE 1 END,j.scheduled_at,j.id FOR UPDATE OF j SKIP LOCKED LIMIT 1""",
-            (scheduled_auto_only, manual_confirmed_only),
+            (scheduled_auto_only, manual_confirmed_only, trends_auto_only, trends_auto_only),
         ).fetchone()
         if job is None:
             return None
@@ -742,6 +751,30 @@ def process_next_live_job(
                     candidate.update({"title": link["version_title"], "editorial_title": link["version_title"],
                                       "html_body": assessment["safe_html"],
                                       "blogger_labels": link["version_labels"]})
+        elif lane == "trends_auto":
+            from .trends_publication import validate_trends_job
+            checked = validate_trends_job(conn, blog_id, version_id)
+            link = checked["row"]
+            reasons = list(checked["reasons"])
+            if not link:
+                reasons.append("trends_provenance_or_import_link_missing")
+            with external_policy.trends_publication_context(str(blog_id)):
+                if not external_policy._blogger_operation_is_approved("blogger_public_publish"):
+                    reasons.append("trends_publication_policy_inactive_or_revoked")
+            settings = conn.execute(
+                "SELECT emergency_stopped FROM publication_mode_settings WHERE scope_type='global' AND scope_key=''")
+            emergency = settings.fetchone()
+            if not emergency or emergency["emergency_stopped"]:
+                reasons.append("global_emergency_stop_or_policy_missing")
+            if candidate is not None and link:
+                assessment = {"safe_html": link["safe_html"], "html_sha256": link["html_sha256"],
+                              "seo_checks": []}
+                candidate = dict(candidate)
+                candidate.update({"title": link["title"], "editorial_title": link["title"],
+                                  "html_body": link["safe_html"],
+                                  "blogger_labels": link["blogger_labels"],
+                                  "seo_description": (link.get("seo_metadata") or {}).get("search_description"),
+                                  "robots_policy": "all"})
         elif lane == "manual":
             manual_approval = conn.execute(
                 """SELECT * FROM manual_publication_approval_events
@@ -783,6 +816,11 @@ def process_next_live_job(
                 publish_operation_approved = external_policy._blogger_operation_is_approved(
                     "blogger_public_publish"
                 )
+        elif lane == "trends_auto":
+            with external_policy.trends_publication_context(str(blog_id)):
+                publish_operation_approved = external_policy._blogger_operation_is_approved(
+                    "blogger_public_publish"
+                )
         elif lane == "manual":
             publish_operation_approved = bool(
                 manual_approval
@@ -800,11 +838,11 @@ def process_next_live_job(
             )
         if not publish_operation_approved:
             reasons.append("separate_public_publish_operations_approval_required")
-        settings = conn.execute(
+        emergency_settings = conn.execute(
             """SELECT emergency_stopped FROM publication_mode_settings
             WHERE scope_type='global' AND scope_key=''"""
         ).fetchone()
-        if not settings or settings["emergency_stopped"]:
+        if not emergency_settings or emergency_settings["emergency_stopped"]:
             reasons.append("global_emergency_stop_or_policy_missing")
         if reasons:
             final_reasons = sorted(set(reasons))
@@ -822,7 +860,7 @@ def process_next_live_job(
                 "job_id": str(job_id), "content_version_id": str(version_id),
                 "reasons": final_reasons, "network_calls": 0,
             })
-            if lane == "scheduled_auto" and link:
+            if lane in {"scheduled_auto", "trends_auto"} and link:
                 _record_auto_failure(
                     conn, imported=link,
                     blog={"blog_record_id": blog_id, "blog_id": link.get("blog_id"),
@@ -905,7 +943,7 @@ def process_next_live_job(
 
     publisher = BloggerLivePublisher()
     stage = str(claimed["live_stage"])
-    if lane in {"scheduled_auto", "manual"}:
+    if lane in {"scheduled_auto", "trends_auto", "manual"}:
         remote_check = find_remote_duplicate(
             blog_id, str(candidate.get("editorial_title") or candidate["title"]),
         )
@@ -993,7 +1031,7 @@ def process_next_live_job(
                     "job_id": str(job_id), "error_category": exc.category,
                     "http_status": exc.status, "post_write_replayed": False,
                 })
-                if lane == "scheduled_auto" and link:
+                if lane in {"scheduled_auto", "trends_auto"} and link:
                     _record_auto_failure(
                         conn, imported=link,
                         blog={"blog_record_id": blog_id, "blog_id": blog["blog_id"],
@@ -1018,6 +1056,12 @@ def process_next_live_job(
     try:
         if lane == "scheduled_auto":
             with external_policy.scheduled_publication_context(str(blog_id)):
+                result = publisher.publish_draft(
+                    write_key, blog_id, str(claimed["remote_post_id"]),
+                    source_draft_key=source_draft_key,
+                )
+        elif lane == "trends_auto":
+            with external_policy.trends_publication_context(str(blog_id)):
                 result = publisher.publish_draft(
                     write_key, blog_id, str(claimed["remote_post_id"]),
                     source_draft_key=source_draft_key,
@@ -1076,7 +1120,7 @@ def process_next_live_job(
                 "url": result["url"], "published_at": result["published_at"],
                 "remote_readback_verified": True,
             })
-            if lane == "scheduled_auto" and link:
+            if lane in {"scheduled_auto", "trends_auto"} and link:
                 _record_auto_failure(
                     conn, imported=link,
                     blog={"blog_record_id": blog_id, "blog_id": blog["blog_id"],
@@ -1084,18 +1128,18 @@ def process_next_live_job(
                     stage="posted", reasons=[], job_id=job_id,
                     retry_count=int(job.get("retry_count") or 0),
                 )
-            if lane in {"scheduled_auto", "manual"}:
+            if lane in {"scheduled_auto", "trends_auto", "manual"}:
                 review = conn.execute(
                     """UPDATE post_publication_reviews SET publishing_record_id=%s,post_id=%s,updated_at=now()
                     WHERE publishing_job_id=%s AND publishing_record_id IS NULL RETURNING id""",
                     (record["id"], result["post_id"], job_id),
                 ).fetchone()
                 linked_existing = bool(review)
-                review_import_id = str(link["id"]) if lane == "scheduled_auto" and link else (
+                review_import_id = str(link["id"]) if lane in {"scheduled_auto", "trends_auto"} and link else (
                     snapshot.get("import_id") if lane == "manual" and snapshot else None
                 )
                 review_content_id = (
-                    str(link.get("external_content_id")) if lane == "scheduled_auto" and link
+                    str(link.get("external_content_id")) if lane in {"scheduled_auto", "trends_auto"} and link
                     and link.get("external_content_id") else
                     snapshot.get("external_content_id") if lane == "manual" and snapshot else None
                 )
@@ -1191,11 +1235,16 @@ def process_next_live_job(
 def tick(
     backoff_seconds: int = 30, *, allow_private_drafts: bool = False,
     allow_live_publications: bool = False, allow_scheduled_auto_publications: bool = False,
-    allow_manual_confirmed_publications: bool = False,
+    allow_manual_confirmed_publications: bool = False, allow_trends_auto_publications: bool = False,
 ) -> dict[str, Any] | None:
     """Process one explicitly approved private draft or one due fake job."""
     if not 0 <= backoff_seconds <= 3600:
         raise ValueError("invalid_backoff")
+    if allow_trends_auto_publications:
+        live = process_next_live_job(trends_auto_only=True)
+        if live is not None:
+            return {"job_type": "trends_auto_blogger_live", **live,
+                    "simulation_only": False, "auto_enabled": True}
     if allow_scheduled_auto_publications:
         live = process_next_live_job(scheduled_auto_only=True)
         if live is not None:
@@ -1367,16 +1416,19 @@ def run_once(
     backoff_seconds: int = 30, *, allow_private_drafts: bool = False,
     allow_live_publications: bool = False, allow_scheduled_auto_publications: bool = False,
     allow_manual_confirmed_publications: bool = False,
+    allow_trends_auto_publications: bool = False,
 ) -> dict[str, Any]:
     mode = execution_mode(private_drafts=allow_private_drafts, live=allow_live_publications,
                          scheduled_auto=allow_scheduled_auto_publications,
-                         manual_confirmed=allow_manual_confirmed_publications)
+                         manual_confirmed=allow_manual_confirmed_publications,
+                         trends_auto=allow_trends_auto_publications)
     heartbeat("running", service_name="publication_worker", execution_mode=mode)
     try:
         result = tick(backoff_seconds, allow_private_drafts=allow_private_drafts,
                       allow_live_publications=allow_live_publications,
                       allow_scheduled_auto_publications=allow_scheduled_auto_publications,
-                      allow_manual_confirmed_publications=allow_manual_confirmed_publications)
+                      allow_manual_confirmed_publications=allow_manual_confirmed_publications,
+                      allow_trends_auto_publications=allow_trends_auto_publications)
         return {
             "processed": result is not None,
             "result": result,
@@ -1385,6 +1437,7 @@ def run_once(
             "live_publication_dispatch_enabled": allow_live_publications,
             "scheduled_auto_publication_dispatch_enabled": allow_scheduled_auto_publications,
             "manual_confirmed_publication_dispatch_enabled": allow_manual_confirmed_publications,
+            "trends_auto_publication_dispatch_enabled": allow_trends_auto_publications,
         }
     except Exception:
         heartbeat("degraded", "publication_worker_failed", "publication_worker", mode)
@@ -1401,6 +1454,7 @@ def run_forever(
     allow_live_publications: bool = False,
     allow_scheduled_auto_publications: bool = False,
     allow_manual_confirmed_publications: bool = False,
+    allow_trends_auto_publications: bool = False,
     cycle_limit: int | None = None,
 ) -> None:
     """Run queue polling under a PostgreSQL singleton lock and live heartbeat.
@@ -1423,7 +1477,8 @@ def run_forever(
 
     mode = execution_mode(private_drafts=allow_private_drafts, live=allow_live_publications,
                          scheduled_auto=allow_scheduled_auto_publications,
-                         manual_confirmed=allow_manual_confirmed_publications)
+                         manual_confirmed=allow_manual_confirmed_publications,
+                         trends_auto=allow_trends_auto_publications)
 
     for signum in (signal.SIGINT, signal.SIGTERM):
         try:
@@ -1464,6 +1519,7 @@ def run_forever(
                     allow_live_publications=allow_live_publications,
                     allow_scheduled_auto_publications=allow_scheduled_auto_publications,
                     allow_manual_confirmed_publications=allow_manual_confirmed_publications,
+                    allow_trends_auto_publications=allow_trends_auto_publications,
                 )
                 failures = 0
                 degraded.clear()

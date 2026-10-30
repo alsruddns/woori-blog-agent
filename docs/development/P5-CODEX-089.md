@@ -1,0 +1,37 @@
+# P5-CODEX-089 — Trends auto-publication and Blogger SEO metadata
+
+- Work ID: P5-CODEX-089
+- Work date: 2026-10-31 (Asia/Seoul)
+- Branch/base: `develop`, initial HEAD `bf3979ffdb216f220fcc4a2e44c1ea1dd2050c85`
+- Reason: connect imported `google_trends` content to the existing Publisher while preserving publication approval, evidence, duplicate, and OAuth safeguards; diagnose the manuscript evaluation-list 503; assess Blogger SEO support.
+- Prior state: schema 66 had no Trends-specific publication lane/policy; the Publication Worker ignored that lane. Blogger posts created through the v3 API did not expose documented per-post search-description or robots fields. Manuscript evaluation list SQL contained `%qwen%`/`%llama%`, which psycopg interpreted as unsupported placeholders.
+- After state: additive schema 67 provides an append-only, per-Blogger Trends policy history and `trends_auto` lane. The API saves and reads the explicit policy; the existing Worker can enqueue and revalidate only eligible Trends imports, rechecking policy, mapped geography, OAuth write scope, source/claim review, evidence and duplicates before using the existing publication engine. Separate explicit operations approval remains mandatory. No policy was activated and no live request was made. The evaluation-list predicate now uses `position()` and no longer contains malformed percent placeholders.
+- Safety: policies default to absent/off; no CN geography was added. Existing KR/US/JP Trends imports with unverified claims remain ineligible. In particular `b0f2a399-4b6a-4fc3-9181-84040ad87aad` had 7/7 unverified claims and is blocked. No old post, content version, Publishing Job, or audit event was edited or removed.
+- SEO: Blogger's official Posts resource reference documents fields such as title/content/labels/status, but no per-post `searchDescription` or robots setting. The Trends path validates and forwards stored 30–150-character `seo_metadata.search_description` and records `robots_policy=all` as local publication metadata; this is not proof of Blogger UI/API application. No unsupported Blogger fields or injected `<meta>` tags were added. Remote description/robots results therefore remain unverified and manual Blogger UI configuration may be required.
+- Operations backup: `backups/20261030T162417Z.dump` (custom-format archive, 5,417,873 bytes; archive catalog verified). Additive migration 067 applied to the operations DB and isolated test DB; operations schema now 67. Historical data retained.
+- Modified files:
+  - `scripts/067_trends_publication_policy.sql`
+  - `scripts/migrate.py`
+  - `scripts/provision-test-database.py`
+  - `scripts/publication-worker.py`
+  - `scripts/start-publication-worker.ps1`
+  - `scripts/start-services.ps1`
+  - `scripts/start.ps1`
+  - `scripts/status.ps1`
+  - `scripts/apply-verified-changes.ps1`
+  - `services/api/woori/trends_publication.py`
+  - `services/api/woori/publications.py`
+  - `services/api/woori/publication_worker.py`
+  - `services/api/woori/external_policy.py`
+  - `services/api/woori/research_routes.py`
+  - `services/api/tests/test_trends_publication.py`
+  - `services/api/tests/test_publications.py`
+  - `services/api/tests/test_dashboard_read_models.py`
+  - `apps/dashboard/app/api/publications/[[...path]]/route.ts`
+  - `apps/dashboard/app/sources/workspace.tsx`
+  - `apps/dashboard/app/sources/trends-publication-settings.tsx`
+- Verification: isolated schema 67 provisioned with test app denied CONNECT on the operational DB; focused API suite 58 passed; Ruff and mypy passed; final Dashboard lint, typecheck, and production build passed after the UTF-8 text correction; `git diff --check` passed. No Blogger live POST or Codex generation was run.
+- Runtime before reflection: API and Dashboard were running older commits; Research Worker and Publication Worker heartbeats were fresh. Publication Worker was `scheduled-auto-and-manual`, with no queued/due live job. Services have not yet been restarted for this change.
+- Remaining: reflect the committed version to the affected API, Dashboard, and Publication Worker using `scripts/apply-verified-changes.ps1`; verify new policy GET over the Dashboard proxy and fresh heartbeat/mode; run a safe isolated queue/worker contract test. Actual Trends LIVE is not verified. SEO metadata and robots policy are not remotely applied/verified through Blogger's documented API.
+- Related docs: P5-CODEX-087, P5-CODEX-088, `docs/operations/zero-cost-policy.md`, Google Blogger Posts API reference.
+- Commit: to be added after commit; link the immutable commit via `git log`.

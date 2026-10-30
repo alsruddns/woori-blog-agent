@@ -41,11 +41,14 @@ def _live_write_capability(
                  and datetime.now(UTC) - heartbeat["last_seen_at"] <= timedelta(seconds=45))
     mode = heartbeat.get("execution_mode") if heartbeat else None
     scheduled_worker = fresh and mode in {
-        "operations-scheduled-auto", "operations-scheduled-auto-and-manual"
+        "operations-scheduled-auto", "operations-scheduled-auto-and-manual",
+        "operations-scheduled-auto-and-manual-and-trends"
     }
     manual_worker = fresh and mode in {
-        "operations-manual-confirmed", "operations-scheduled-auto-and-manual"
+        "operations-manual-confirmed", "operations-scheduled-auto-and-manual",
+        "operations-scheduled-auto-and-manual-and-trends"
     }
+    trends_worker = fresh and mode == "operations-scheduled-auto-and-manual-and-trends"
     owner_policy = external_policy._blogger_policy_approval() is not None
     no_billable_credentials = not external_policy.billing_credential_names()
     approved = [str(value) for value in (policy.get("policy_event") or {}).get("approved_blog_ids", [])]
@@ -59,8 +62,21 @@ def _live_write_capability(
                      and owner_policy and scheduled_worker and not emergency_stopped
                      and no_billable_credentials)
     manual = bool(owner_policy and manual_worker and not emergency_stopped and no_billable_credentials)
+    trends_policies = conn.execute(
+        """SELECT DISTINCT ON(p.blog_id) p.blog_id,p.enabled,p.allowed_geos,b.active,
+          b.oauth_connection_id,g.status AS oauth_status,g.scopes
+        FROM trends_publication_policy_events p JOIN blogger_blogs b ON b.id=p.blog_id
+        LEFT JOIN google_connections g ON g.id=b.oauth_connection_id
+        ORDER BY p.blog_id,p.id DESC"""
+    ).fetchall()
+    trends = bool(owner_policy and external_policy._blogger_public_publish_approval()
+                  and trends_worker and not emergency_stopped and no_billable_credentials
+                  and any(p["enabled"] and p["allowed_geos"] and p["active"]
+                          and p["oauth_status"] == "connected"
+                          and list(p["scopes"] or []) == ["https://www.googleapis.com/auth/blogger"]
+                          for p in trends_policies))
     reason = None
-    if not (scheduled or manual):
+    if not (scheduled or manual or trends):
         if not fresh or not mode:
             reason = "worker_heartbeat_stale_or_mode_missing"
         elif not owner_policy:
@@ -73,7 +89,7 @@ def _live_write_capability(
             reason = "scheduled_blog_or_oauth_scope_unavailable"
         else:
             reason = "worker_mode_or_scheduled_policy_not_enabled"
-    return {"scheduled_auto": scheduled, "manual_confirmed": manual,
+    return {"scheduled_auto": scheduled, "manual_confirmed": manual, "trends_auto": trends,
             "live_dispatch": bool(scheduled_worker or manual_worker),
             "reason": reason, "worker_fresh": fresh, "execution_mode": mode}
 
@@ -117,6 +133,46 @@ class ManualLiveRequestInput(BaseModel):
     rights_privacy_harm_checked: Literal[True]
     confirmation: Literal["PUBLISH THIS EXACT MANUSCRIPT PUBLICLY"]
     idempotency_key: str = Field(min_length=16, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+
+
+class TrendsAutoPolicyInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    blog_id: UUID
+    enabled: bool
+    allowed_geos: list[str] = Field(default_factory=list, max_length=11)
+    daily_limit: int = Field(default=3, ge=1, le=10)
+    actor_label: str = Field(min_length=2, max_length=120)
+    reason: str = Field(min_length=10, max_length=2000)
+    idempotency_key: str = Field(min_length=16, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+    confirmation: Literal["ENABLE TRENDS AUTO PUBLICATION", "STOP TRENDS AUTO PUBLICATION"]
+
+    @model_validator(mode="after")
+    def action_confirmation_matches(self) -> TrendsAutoPolicyInput:
+        expected = "ENABLE TRENDS AUTO PUBLICATION" if self.enabled else "STOP TRENDS AUTO PUBLICATION"
+        if self.confirmation != expected:
+            raise ValueError("explicit_trends_publication_confirmation_required")
+        if any(value not in {"KR","US","GB","CA","AU","IN","JP","TW","HK","SG","BR"}
+               for value in self.allowed_geos):
+            raise ValueError("unsupported_trends_geography")
+        if len(set(self.allowed_geos)) != len(self.allowed_geos):
+            raise ValueError("duplicate_trends_geography")
+        return self
+
+
+@router.get("/trends-auto-policy")
+def get_trends_auto_policy() -> dict[str, Any]:
+    from .trends_publication import policy_state
+    with connection() as conn:
+        return policy_state(conn)
+
+
+@router.post("/trends-auto-policy", status_code=201)
+def save_trends_auto_policy(request: TrendsAutoPolicyInput) -> dict[str, Any]:
+    from .trends_publication import record_policy
+    with connection() as conn:
+        conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('trends-publication-policy',0))")
+        result = record_policy(conn, request)
+        return result
 
 
 class SimulationInput(BaseModel):

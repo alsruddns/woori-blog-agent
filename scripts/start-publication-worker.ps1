@@ -1,4 +1,4 @@
-param([ValidateSet('mock-only','scheduled-auto','manual-confirmed','scheduled-auto-manual')][string]$Mode='mock-only')
+param([ValidateSet('mock-only','scheduled-auto','manual-confirmed','scheduled-auto-manual','scheduled-auto-manual-trends')][string]$Mode='mock-only')
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'server-common.ps1')
 $worker = [IO.Path]::GetFullPath((Join-Path $script:ProjectRoot 'scripts\publication-worker.py'))
@@ -17,6 +17,7 @@ if ($existing.Count) {
     'scheduled-auto' { '--operations-scheduled-auto' }
     'manual-confirmed' { '--operations-manual-confirmed' }
     'scheduled-auto-manual' { '--operations-scheduled-auto-and-manual' }
+  'scheduled-auto-manual-trends' { '--operations-scheduled-auto-and-manual-and-trends' }
     default { '--operations-mock-only' }
   }
   $expectedSwitchPattern = [regex]::Escape($expectedSwitch) + '(?:\s|$)'
@@ -35,6 +36,7 @@ $modeArgs = switch ($Mode) {
   'scheduled-auto' { @('--operations-scheduled-auto','--continuous') }
   'manual-confirmed' { @('--operations-manual-confirmed','--continuous') }
   'scheduled-auto-manual' { @('--operations-scheduled-auto-and-manual','--continuous') }
+  'scheduled-auto-manual-trends' { @('--operations-scheduled-auto-and-manual-and-trends','--continuous') }
   default { @('--operations-mock-only','--continuous') }
 }
 if ($Mode -in @('scheduled-auto','scheduled-auto-manual')) {
@@ -104,6 +106,7 @@ $modeLabel = switch ($Mode) {
   'scheduled-auto' { 'scheduled-auto live lane' }
   'manual-confirmed' { 'exactly user-confirmed manual live lane' }
   'scheduled-auto-manual' { 'scheduled-auto plus exactly user-confirmed manual lanes' }
+  'scheduled-auto-manual-trends' { 'scheduled-auto and exact-confirmed manual plus separately scoped Trends Auto lanes' }
   default { 'mock-only' }
 }
 Write-Output "Publication Worker started in $modeLabel continuous mode (PID $($actualWorker.Id)); heartbeat verified. Logs: $logs"

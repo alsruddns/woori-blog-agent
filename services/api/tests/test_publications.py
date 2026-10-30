@@ -78,6 +78,9 @@ def test_publication_worker_execution_mode_tracks_live_lanes() -> None:
     assert publication_worker.execution_mode(scheduled_auto=True) == "operations-scheduled-auto"
     assert publication_worker.execution_mode(manual_confirmed=True) == "operations-manual-confirmed"
     assert publication_worker.execution_mode(scheduled_auto=True, manual_confirmed=True) == "operations-scheduled-auto-and-manual"
+    assert publication_worker.execution_mode(
+        scheduled_auto=True, manual_confirmed=True, trends_auto=True
+    ) == "operations-scheduled-auto-and-manual-and-trends"
 
 
 def test_same_event_dedup_requires_identical_body() -> None:
@@ -674,7 +677,8 @@ def test_publication_worker_continuous_loop_has_singleton_and_graceful_idle_stop
     assert ticks == [{"args": (30,), "allow_private_drafts": False,
                       "allow_live_publications": False,
                       "allow_scheduled_auto_publications": False,
-                      "allow_manual_confirmed_publications": False}]
+                      "allow_manual_confirmed_publications": False,
+                      "allow_trends_auto_publications": False}]
     assert events[0] == "lock"
     assert "running" in events
     assert events[-2:] == ["stopped", "unlock"]

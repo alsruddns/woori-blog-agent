@@ -41,7 +41,7 @@ class _EvaluationConnection:
         if "current_database()" in query:
             return _Cursor([{"db": "woori_blog_agent_eval", "role": "woori_eval_reader"}])
         if "count(*)::int AS total" in query:
-            return _Cursor([{"total": 0 if "lower(COALESCE(model" in query else 1}])
+            return _Cursor([{"total": 0 if "position('qwen' in lower(COALESCE(model" in query else 1}])
         if "FROM research_experiment_evaluations e" in query:
             return _Cursor([{
                 "id": self.evaluation_id,
@@ -62,7 +62,7 @@ class _EvaluationConnection:
         if "DISTINCT category_slug" in query:
             return _Cursor([{"category_slug": "finance"}])
         if "SELECT * FROM (" in query:
-            if "lower(COALESCE(model" in query:
+            if "position('qwen' in lower(COALESCE(model" in query:
                 return _Cursor([])
             return _Cursor([{
                 "evaluation_id": self.evaluation_id,

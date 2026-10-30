@@ -2,6 +2,7 @@
 import {useEffect,useRef,useState} from "react";
 import LegacyWorkspace from "./legacy-workspace";
 import TrendSettings from "./trend-settings";
+import TrendsPublicationSettings from "./trends-publication-settings";
 type Row=Record<string,unknown>;
 type Blog={id:string;display_name:string;language_code:string;target_country:string};
 type Data={items:Row[];total:number;summary:Record<string,number>;geos:string[];categories:{slug:string;name_ko:string}[];blogs:Blog[];blog_geo_mappings:{blog_id:string;geo:string;enabled:boolean;processing_order:number}[];schedule:string};
@@ -23,7 +24,7 @@ export default function SourceWorkspace(){
  const history=(detail?.history??[]) as Row[];
  async function act(action:string){if(busy||!detail)return;setBusy(true);try{const r=await fetch(`/api/research/trend-editorial/topics/${value(detail,"topic_id")}/decision`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({request_key:crypto.randomUUID(),action,reason,category:choice||null,blog_id:target||null})});const result=await r.json();if(!r.ok)throw new Error(`${r.status} · ${result.detail??result.error??"처리 실패"}`);setRevision(v=>v+1);const fresh=await fetch("/api/research/trend-editorial/"+value(observation,"id"),{cache:"no-store"});if(fresh.ok)setDetail(await fresh.json());setError("");}catch(e){setError(String(e));}finally{setBusy(false);}}
  return <><div className="toolbar"><button className="button button-secondary" onClick={()=>setLegacy(false)}>수집·분류 관리</button><button className="button button-secondary" onClick={()=>setLegacy(true)}>기존 근거·분류 상세</button></div>
- {legacy?<LegacyWorkspace/>:<><TrendSettings/>
+ {legacy?<LegacyWorkspace/>:<><TrendSettings/><TrendsPublicationSettings/>
  <p>관측값과 원고는 별개입니다. 검색량은 Google의 원문 구간값이며 국가 간 비교나 사건 사실의 근거로 사용하지 않습니다.</p>
  <div className="kpi-grid">{[["total","전체 관측값"],["last24","최근 24시간 관측값"],["selected","선정 관측값"],["discarded","폐기 관측값"],["pending","분류·검토 대기"],["generation_queued","작성 대기 관측값"]].map(([k,label])=><article className="kpi-card" key={k}><span>{label}</span><strong>{data?Number(data.summary[k]??0).toLocaleString():"—"}</strong></article>)}</div>
  <section className="workspace-panel"><p>설정한 KST 회차마다 11개 지역 전체를 조회합니다. PC가 꺼진 동안의 과거 RSS는 복원하지 않습니다.</p>

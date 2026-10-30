@@ -1,0 +1,446 @@
+"""Fail-closed Trends-only publication policy and enqueue path."""
+
+from __future__ import annotations
+
+import hashlib
+from typing import Any
+from uuid import UUID
+
+from fastapi import HTTPException
+from psycopg.types.json import Jsonb
+
+from .db import connection
+
+ALLOWED_GEOGRAPHIES = {"KR", "US", "GB", "CA", "AU", "IN", "JP", "TW", "HK", "SG", "BR"}
+
+
+def claims_are_publish_verified(claims: Any) -> bool:
+    """Require every imported factual claim to retain an explicit verified state."""
+    return bool(isinstance(claims, list) and claims) and all(
+        isinstance(claim, dict)
+        and bool(claim.get("claim_id"))
+        and bool(claim.get("source_ids"))
+        and claim.get("verification_status") in {"source_span_verified", "corroborated"}
+        and claim.get("factual_state") != "unverified"
+        for claim in claims
+    )
+
+
+def search_description_is_publishable(value: Any) -> bool:
+    description = value.strip() if isinstance(value, str) else ""
+    return 30 <= len(description) <= 150
+
+
+def policy_state(conn: Any) -> dict[str, Any]:
+    blogs = conn.execute(
+        """SELECT b.id,b.blog_id,b.display_name,b.language_code,b.url,b.active,
+          b.oauth_connection_id,b.connection_verified_at,b.test_publish_verified_at,
+          g.status AS oauth_status,g.scopes,
+          COALESCE(array_agg(DISTINCT m.geo) FILTER (WHERE m.enabled),ARRAY[]::text[]) AS mapped_geos
+        FROM blogger_blogs b LEFT JOIN google_connections g ON g.id=b.oauth_connection_id
+        LEFT JOIN trend_blog_geo_authoring m ON m.blog_id=b.id
+        GROUP BY b.id,g.status,g.scopes ORDER BY b.display_name,b.id"""
+    ).fetchall()
+    latest = conn.execute(
+        """SELECT DISTINCT ON(blog_id) id,blog_id,enabled,allowed_geos,daily_limit,
+          actor_label,reason,created_at FROM trends_publication_policy_events
+        ORDER BY blog_id,id DESC"""
+    ).fetchall()
+    policies = {str(row["blog_id"]): dict(row) for row in latest}
+    return {"policies": [{**dict(blog), "policy": policies.get(str(blog["id"]))}
+                          for blog in blogs],
+            "supported_geographies": sorted(ALLOWED_GEOGRAPHIES),
+            "provenance": "codex_trends_export", "publication_lane": "trends_auto"}
+
+
+def record_policy(conn: Any, request: Any) -> dict[str, Any]:
+    expected = "ENABLE TRENDS AUTO PUBLICATION" if request.enabled else "STOP TRENDS AUTO PUBLICATION"
+    if request.confirmation != expected:
+        raise HTTPException(422, "Explicit Trends publication confirmation is required")
+    blog = conn.execute(
+        """SELECT b.id,b.blog_id,b.language_code,b.active,b.oauth_connection_id,
+          b.connection_verified_at,b.test_publish_verified_at,g.status AS oauth_status,g.scopes
+        FROM blogger_blogs b LEFT JOIN google_connections g ON g.id=b.oauth_connection_id
+        WHERE b.id=%s""", (request.blog_id,),
+    ).fetchone()
+    if not blog or not blog["active"]:
+        raise HTTPException(404, "Active registered Blogger target not found")
+    mapped = {str(row["geo"]) for row in conn.execute(
+        "SELECT geo FROM trend_blog_geo_authoring WHERE blog_id=%s AND enabled", (request.blog_id,)
+    ).fetchall()}
+    geos = sorted(set(request.allowed_geos))
+    if not set(geos).issubset(ALLOWED_GEOGRAPHIES) or not set(geos).issubset(mapped):
+        raise HTTPException(409, "Trends countries must be explicitly mapped to this Blogger first")
+    if request.enabled:
+        from .google_http import WRITE_SCOPE
+        if (not geos or not blog["blog_id"] or not blog["connection_verified_at"]
+                or not blog["test_publish_verified_at"] or blog["oauth_status"] != "connected"
+                or list(blog["scopes"] or []) != [WRITE_SCOPE]):
+            raise HTTPException(409, "Enabled policy requires a verified Blogger write connection and explicit country mapping")
+        if not _recent_identity_verification(conn, request.blog_id, str(blog["blog_id"])):
+            raise HTTPException(409, "Run a fresh read-only Blogger identity verification before enabling Trends Auto")
+        from . import external_policy
+        if (external_policy._blogger_policy_approval() is None
+                or external_policy._blogger_public_publish_approval() is None):
+            raise HTTPException(409, "Separate Blogger public-write operations approval is unavailable")
+    prior = conn.execute(
+        "SELECT id,enabled,allowed_geos,daily_limit FROM trends_publication_policy_events WHERE idempotency_key=%s",
+        (request.idempotency_key,),
+    ).fetchone()
+    if prior:
+        if (bool(prior["enabled"]) != request.enabled
+                or sorted(prior["allowed_geos"]) != geos or int(prior["daily_limit"]) != request.daily_limit):
+            raise HTTPException(409, "Idempotency key conflicts with an earlier Trends policy event")
+        return {"event_id": prior["id"], "duplicate": True, "enabled": request.enabled}
+    previous = conn.execute(
+        "SELECT id,enabled,allowed_geos,daily_limit FROM trends_publication_policy_events WHERE blog_id=%s ORDER BY id DESC LIMIT 1",
+        (request.blog_id,),
+    ).fetchone()
+    saved = conn.execute(
+        """INSERT INTO trends_publication_policy_events(blog_id,enabled,allowed_geos,daily_limit,
+          actor_label,reason,idempotency_key) VALUES(%s,%s,%s,%s,%s,%s,%s) RETURNING id,created_at""",
+        (request.blog_id, request.enabled, geos, request.daily_limit,
+         request.actor_label, request.reason, request.idempotency_key),
+    ).fetchone()
+    payload = {"event_id": saved["id"], "blog_record_id": str(request.blog_id),
+        "blogger_blog_id": str(blog["blog_id"]), "enabled": request.enabled,
+        "allowed_geos": geos, "daily_limit": request.daily_limit,
+        "actor_label": request.actor_label, "reason": request.reason,
+        "previous": dict(previous) if previous else None,
+        "provenance": "codex_trends_export", "public_write_performed": False}
+    conn.execute("INSERT INTO audit_events(event_type,blog_id,payload) VALUES(%s,%s,%s)",
+        ("publication.trends_auto.policy_changed", request.blog_id, Jsonb(payload)))
+    return {"event_id": saved["id"], "created_at": saved["created_at"],
+            "enabled": request.enabled, "allowed_geos": geos, "daily_limit": request.daily_limit}
+
+
+def _recent_identity_verification(conn: Any, blog_id: UUID, blogger_id: str) -> bool:
+    row = conn.execute(
+        """SELECT payload,created_at FROM audit_events
+        WHERE event_type IN ('publication.scheduled_auto.connection_check','publication.trends_auto.connection_check')
+        ORDER BY id DESC LIMIT 1"""
+    ).fetchone()
+    if not row:
+        return False
+    from datetime import UTC, datetime, timedelta
+    if row["created_at"] < datetime.now(UTC) - timedelta(hours=24):
+        return False
+    return any(str(item.get("blog_record_id")) == str(blog_id) and item.get("verified")
+               and str(item.get("remote_blog_id")) == blogger_id
+               for item in row["payload"].get("results", []) if isinstance(item, dict))
+
+
+def validate_trends_job(conn: Any, blog_id: UUID, content_version_id: UUID) -> dict[str, Any]:
+    """Recheck immutable Trends lineage, review, policy, and current-version gates."""
+    row = conn.execute(
+        """SELECT i.*,iv.id AS import_version_id,iv.version_number,iv.content_sha256 AS import_hash,
+          link.content_version_id,j.id AS authoring_job_id,j.job_type,j.state AS authoring_state,
+          j.error_code AS authoring_error,q.id AS trend_request_id,q.contract,t.id AS trend_topic_id,
+          b.id AS blog_record_id,b.blog_id,b.language_code AS blog_language,b.active,b.connection_verified_at,
+          b.oauth_connection_id,g.status AS oauth_status,g.scopes,a.machine_passed,a.safe_html,a.html_sha256,
+          locale.language_code AS content_language,locale.target_country,cv.group_id,cv.localization_id
+        FROM external_content_imports i
+        JOIN external_content_import_content_links link ON link.import_id=i.id
+        JOIN external_content_import_versions iv ON iv.id=link.import_version_id AND iv.import_id=i.id
+        JOIN content_versions cv ON cv.id=link.content_version_id
+        JOIN codex_authoring_jobs j ON j.import_id=i.id AND j.content_version_id=link.content_version_id
+        JOIN trend_generation_requests q ON q.authoring_job_id=j.id
+        JOIN trend_topics t ON t.id=q.topic_id
+        JOIN blogger_blogs b ON b.id=%s JOIN google_connections g ON g.id=b.oauth_connection_id
+        JOIN content_localizations locale ON locale.id=cv.localization_id
+        LEFT JOIN LATERAL (SELECT machine_passed,safe_html,html_sha256 FROM external_content_import_assessments
+          WHERE import_id=i.id AND version_id=iv.id ORDER BY assessed_at DESC,id DESC LIMIT 1) a ON true
+        WHERE link.content_version_id=%s AND i.generation_method='codex_trends_export'
+          AND j.job_type='google_trends' AND j.state='imported_review'
+          AND j.error_code IS NULL AND q.state='imported'
+          AND iv.version_number=(SELECT max(v2.version_number) FROM external_content_import_versions v2 WHERE v2.import_id=i.id)
+        ORDER BY i.received_at DESC,i.id DESC LIMIT 1""", (blog_id, content_version_id),
+    ).fetchone()
+    reasons: list[str] = []
+    if not row:
+        return {"row": None, "assessment": None, "reasons": ["trends_provenance_or_import_link_missing"]}
+    row = dict(row)
+    policy = conn.execute(
+        "SELECT id,enabled,allowed_geos,daily_limit FROM trends_publication_policy_events WHERE blog_id=%s ORDER BY id DESC LIMIT 1",
+        (blog_id,),
+    ).fetchone()
+    geo = str(row["contract"].get("source_country") or "")
+    if not policy or not policy["enabled"] or geo not in set(policy["allowed_geos"] or []):
+        reasons.append("trends_publication_policy_inactive_or_geo_not_allowed")
+    if (str(row["contract"].get("target_blog_id")) != str(blog_id)
+            or str(row["contract"].get("target_language")) != str(row["blog_language"])
+            or str(row["contract"].get("target_country")) != str(row["target_country"])):
+        reasons.append("trends_target_mapping_mismatch")
+    if not conn.execute("SELECT 1 FROM trend_blog_geo_authoring WHERE blog_id=%s AND geo=%s AND enabled",
+                        (blog_id, geo)).fetchone():
+        reasons.append("enabled_trend_blog_geo_mapping_required")
+    if not row["active"] or not row["connection_verified_at"] or row["oauth_status"] != "connected":
+        reasons.append("blog_or_oauth_not_verified")
+    if list(row["scopes"] or []) != ["https://www.googleapis.com/auth/blogger"]:
+        reasons.append("blogger_write_oauth_not_verified")
+    latest = conn.execute(
+        "SELECT id FROM content_versions WHERE group_id=%s AND localization_id=%s ORDER BY version DESC,created_at DESC,id DESC LIMIT 1",
+        (row["group_id"], row["localization_id"]),
+    ).fetchone()
+    if not latest or str(latest["id"]) != str(content_version_id):
+        reasons.append("stale_content_version")
+    if not row["machine_passed"] or not row["safe_html"]:
+        reasons.append("content_assessment_not_publishable")
+    claims = row["claims"] or []
+    sources = row["sources"] or []
+    if not claims_are_publish_verified(claims):
+        reasons.append("claim_verification_incomplete")
+    search_description = str((row.get("seo_metadata") or {}).get("search_description") or "").strip()
+    if not search_description_is_publishable(search_description):
+        reasons.append("search_description_not_publishable")
+    if not sources:
+        reasons.append("source_evidence_missing")
+    review = conn.execute(
+        """SELECT claims_checked,rights_reviewed FROM external_content_import_review_events
+        WHERE import_id=%s AND version_id=%s AND event_type='editorial_review_passed'
+        ORDER BY created_at DESC,id DESC LIMIT 1""", (row["id"], row["import_version_id"]),
+    ).fetchone()
+    if not review or not review["claims_checked"] or not review["rights_reviewed"]:
+        reasons.append("human_claim_and_rights_review_required")
+    proofs = conn.execute(
+        """SELECT payload FROM audit_events WHERE event_type='research.source.live_document_verified'
+        AND payload->>'import_id'=%s ORDER BY id DESC""", (str(row["id"]),),
+    ).fetchall()
+    proof_map = {str(proof["payload"].get("source_id")): proof["payload"] for proof in proofs}
+    if any(str(source.get("source_id")) not in proof_map for source in sources if isinstance(source, dict)):
+        reasons.append("source_live_verification_missing")
+    body = conn.execute("SELECT body FROM content_versions WHERE id=%s", (content_version_id,)).fetchone()
+    assessment = None
+    if not reasons:
+        from .scheduled_auto_verification import evaluate_scheduled_evidence
+        assessment = evaluate_scheduled_evidence(
+            {**row, "generation_method": "chatgpt_scheduled_export"},
+            version_sha256=str(row.get("import_hash") or ""), source_proofs=proof_map,
+            human_review=review, scheduled_publish_first=True,
+            article_body=str(body["body"] if body else ""),
+        )
+        reasons.extend(assessment["reasons"])
+    return {"row": row, "assessment": assessment, "reasons": list(dict.fromkeys(reasons)),
+            "policy": dict(policy) if policy else None}
+
+
+def enqueue_trends_auto_jobs() -> dict[str, int]:
+    """Enqueue only reviewed, current, explicitly scoped Trends imports."""
+    from . import external_policy
+    from .scheduled_duplicates import find_remote_duplicate
+
+    created = held = 0
+    with connection() as conn:
+        conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('trends-publication-enqueue',0))")
+        emergency = conn.execute(
+            "SELECT emergency_stopped FROM publication_mode_settings WHERE scope_type='global' AND scope_key=''"
+        ).fetchone()
+        if not emergency or emergency["emergency_stopped"]:
+            return {"created": 0, "held": 0}
+        policies = conn.execute(
+            """SELECT DISTINCT ON(p.blog_id) p.*,b.language_code,b.blog_id AS blogger_id
+            FROM trends_publication_policy_events p JOIN blogger_blogs b ON b.id=p.blog_id
+            ORDER BY p.blog_id,p.id DESC"""
+        ).fetchall()
+        for policy in policies:
+            if not policy["enabled"]:
+                continue
+            blog_id = UUID(str(policy["blog_id"]))
+            allowed_geos = set(policy["allowed_geos"])
+            candidates = conn.execute(
+                """SELECT i.*,iv.id AS import_version_id,iv.version_number,iv.content_sha256 AS import_hash,
+                    link.content_version_id,cv.group_id,cv.localization_id,cv.version AS content_version,
+                    j.id AS authoring_job_id,j.job_type,j.state AS authoring_state,j.evidence AS authoring_evidence,
+                    j.error_code AS authoring_error,q.id AS trend_request_id,q.contract,
+                    t.id AS trend_topic_id,b.id AS blog_record_id,b.blog_id,
+                    b.language_code AS blog_language,b.active,b.connection_verified_at,b.test_publish_verified_at,
+                    b.oauth_connection_id,g.status AS oauth_status,g.scopes,
+                    a.machine_passed,a.safe_html,a.html_sha256,a.seo_checks,
+                    locale.language_code AS content_language,locale.target_country
+                FROM external_content_imports i
+                JOIN external_content_import_content_links link ON link.import_id=i.id
+                JOIN external_content_import_versions iv ON iv.id=link.import_version_id AND iv.import_id=i.id
+                JOIN content_versions cv ON cv.id=link.content_version_id
+                JOIN codex_authoring_jobs j ON j.import_id=i.id
+                JOIN trend_generation_requests q ON q.authoring_job_id=j.id AND q.state='imported'
+                JOIN trend_topics t ON t.id=q.topic_id
+                JOIN blogger_blogs b ON b.id=%s
+                JOIN google_connections g ON g.id=b.oauth_connection_id
+                JOIN content_localizations locale ON locale.id=cv.localization_id
+                LEFT JOIN LATERAL (SELECT machine_passed,safe_html,html_sha256,seo_checks
+                  FROM external_content_import_assessments WHERE import_id=i.id AND version_id=iv.id
+                  ORDER BY assessed_at DESC,id DESC LIMIT 1) a ON true
+                WHERE i.generation_method='codex_trends_export' AND j.job_type='google_trends'
+                  AND j.state='imported_review' AND j.error_code IS NULL
+                  AND iv.version_number=(SELECT max(i2.version_number) FROM external_content_import_versions i2 WHERE i2.import_id=i.id)
+                  AND link.content_version_id=j.content_version_id
+                  AND q.contract->>'target_blog_id'=%s
+                  AND q.contract->>'target_language'=%s
+                ORDER BY i.received_at,i.id""", (blog_id, str(blog_id), policy["language_code"]),
+            ).fetchall()
+            for item in candidates:
+                geo = str(item["contract"].get("source_country") or "")
+                if geo not in allowed_geos:
+                    continue
+                # Require an explicitly enabled authoring map as well as the
+                # separate Trends publication scope. CN is never inferred.
+                mapped = conn.execute("SELECT 1 FROM trend_blog_geo_authoring WHERE blog_id=%s AND geo=%s AND enabled",
+                    (blog_id, geo)).fetchone()
+                if not mapped:
+                    held += 1
+                    continue
+                existing = conn.execute(
+                    """SELECT id,status FROM publishing_jobs WHERE blog_id=%s AND content_version_id=%s
+                    AND NOT simulation_only AND adapter_type='blogger_live' AND status IN
+                      ('queued','running','uncertain','succeeded') ORDER BY updated_at DESC,id DESC LIMIT 1""",
+                    (blog_id, item["content_version_id"]),
+                ).fetchone()
+                if existing:
+                    continue
+                latest = conn.execute(
+                    """SELECT id FROM content_versions WHERE group_id=%s AND localization_id=%s
+                    ORDER BY version DESC,created_at DESC,id DESC LIMIT 1""",
+                    (item["group_id"], item["localization_id"]),
+                ).fetchone()
+                reasons: list[str] = []
+                if not latest or str(latest["id"]) != str(item["content_version_id"]): reasons.append("stale_content_version")
+                if not item["active"] or not item["connection_verified_at"] or item["oauth_status"] != "connected": reasons.append("blog_or_oauth_not_verified")
+                if list(item["scopes"] or []) != ["https://www.googleapis.com/auth/blogger"]: reasons.append("blogger_write_oauth_not_verified")
+                if item["content_language"] != item["blog_language"]: reasons.append("blog_language_mismatch")
+                if str(item["target_country"]) != str(item["contract"].get("target_country")): reasons.append("blog_country_mismatch")
+                if not item["machine_passed"] or not item["safe_html"]: reasons.append("content_assessment_not_publishable")
+                claims = item["claims"] or []
+                sources = item["sources"] or []
+                if not claims_are_publish_verified(claims):
+                    reasons.append("claim_verification_incomplete")
+                search_description = str((item.get("seo_metadata") or {}).get("search_description") or "").strip()
+                if not search_description_is_publishable(search_description):
+                    reasons.append("search_description_not_publishable")
+                if not sources: reasons.append("source_evidence_missing")
+                review = conn.execute(
+                    """SELECT claims_checked,rights_reviewed FROM external_content_import_review_events
+                    WHERE import_id=%s AND version_id=%s AND event_type='editorial_review_passed'
+                    ORDER BY created_at DESC,id DESC LIMIT 1""", (item["id"], item["import_version_id"]),
+                ).fetchone()
+                if not review or not review["claims_checked"] or not review["rights_reviewed"]:
+                    reasons.append("human_claim_and_rights_review_required")
+                proofs = conn.execute(
+                    """SELECT payload FROM audit_events WHERE event_type='research.source.live_document_verified'
+                    AND payload->>'import_id'=%s ORDER BY id DESC""", (str(item["id"]),),
+                ).fetchall()
+                proof_map = {str(r["payload"].get("source_id")): r["payload"] for r in proofs}
+                if any(str(source.get("source_id")) not in proof_map for source in sources if isinstance(source, dict)):
+                    reasons.append("source_live_verification_missing")
+                if reasons:
+                    held += 1
+                    _record_hold(conn, item, blog_id, reasons)
+                    continue
+                # Reviewer attestations are required for Trends even though the
+                # scheduled-auto evaluator permits review follow-ups.
+                from .scheduled_auto_verification import evaluate_scheduled_evidence
+                body_row = conn.execute("SELECT body FROM content_versions WHERE id=%s", (item["content_version_id"],)).fetchone()
+                evidence = evaluate_scheduled_evidence(
+                    {**dict(item), "generation_method": "chatgpt_scheduled_export"},
+                    version_sha256=str(item["import_hash"] or ""), source_proofs=proof_map,
+                    human_review=review, scheduled_publish_first=True,
+                    article_body=str(body_row["body"] if body_row else ""),
+                )
+                if evidence["reasons"]:
+                    held += 1
+                    _record_hold(conn, item, blog_id, list(evidence["reasons"]))
+                    continue
+                policy_check = external_policy._blogger_policy_approval()
+                if not policy_check:
+                    held += 1
+                    _record_hold(conn, item, blog_id, ["blogger_zero_cost_policy_required"])
+                    continue
+                with external_policy.trends_publication_context(str(blog_id)):
+                    if not external_policy._blogger_operation_is_approved("blogger_public_publish"):
+                        held += 1
+                        _record_hold(conn, item, blog_id, ["trends_publication_policy_inactive"])
+                        continue
+                remote = find_remote_duplicate(blog_id, str(item["title"]))
+                if remote["status"] != "clear":
+                    held += 1
+                    _record_hold(conn, item, blog_id, ["remote_duplicate_found" if remote["status"] == "found" else "remote_duplicate_check_unknown"])
+                    continue
+                count = conn.execute(
+                    """SELECT (SELECT count(*) FROM publishing_records WHERE blog_id=%s
+                         AND published_at>=date_trunc('day',now() AT TIME ZONE 'Asia/Seoul') AT TIME ZONE 'Asia/Seoul')+
+                       (SELECT count(*) FROM publishing_jobs WHERE blog_id=%s AND publication_lane='trends_auto'
+                         AND status IN ('queued','running','uncertain','succeeded')
+                         AND scheduled_at>=date_trunc('day',now() AT TIME ZONE 'Asia/Seoul') AT TIME ZONE 'Asia/Seoul') AS n""",
+                    (blog_id, blog_id),
+                ).fetchone()
+                if not count or int(count["n"]) >= int(policy["daily_limit"]):
+                    held += 1
+                    _record_hold(conn, item, blog_id, ["trends_daily_publication_limit"])
+                    continue
+                policy_row = conn.execute(
+                    """SELECT p.id FROM publishing_policies p JOIN language_profiles profile ON profile.id=p.profile_id
+                    WHERE p.blog_id=%s AND profile.language_code=%s AND profile.target_country=%s
+                    ORDER BY p.active DESC,p.id LIMIT 1""",
+                    (blog_id, item["content_language"], item["target_country"]),
+                ).fetchone()
+                if not policy_row:
+                    held += 1
+                    _record_hold(conn, item, blog_id, ["publication_policy_missing"])
+                    continue
+                topic_id = str(item["trend_topic_id"])
+                slot = str(item["contract"].get("collection_slot") or "")
+                key = hashlib.sha256(f"trends-auto:{blog_id}:{item['content_version_id']}:{topic_id}:{slot}".encode()).hexdigest()
+                job = conn.execute(
+                    """INSERT INTO publishing_jobs(policy_id,blog_id,content_version_id,idempotency_key,
+                    scheduled_at,status,publication_state,adapter_type,simulation_only,oauth_connection_id,
+                    live_stage,publication_lane)
+                    VALUES(%s,%s,%s,%s,now(),'queued','publication_queued','blogger_live',false,%s,'draft_needed','trends_auto')
+                    ON CONFLICT(idempotency_key) DO NOTHING RETURNING id""",
+                    (policy_row["id"], blog_id, item["content_version_id"], key, item["oauth_connection_id"]),
+                ).fetchone()
+                if not job:
+                    continue
+                created += 1
+                _record_hold(conn, item, blog_id, [], job_id=job["id"])
+                _append_audit(conn, "publication.trends_auto_job.queued", {
+                    "job_id": str(job["id"]), "import_id": str(item["id"]),
+                    "import_version_id": str(item["import_version_id"]),
+                    "content_version_id": str(item["content_version_id"]),
+                    "trend_topic_id": topic_id, "trend_request_id": str(item["trend_request_id"]),
+                    "collection_slot": slot, "source_country": geo, "blog_record_id": str(blog_id),
+                    "policy_event_id": policy["id"], "publication_lane": "trends_auto",
+                    "idempotency_key": key, "public_write_performed": False,
+                })
+                conn.execute(
+                    """INSERT INTO post_publication_reviews(publishing_job_id,blog_id,content_version_id,
+                    import_id,content_id,review_notes) VALUES(%s,%s,%s,%s,%s,'Trends auto publication follow-up review')
+                    ON CONFLICT(publishing_job_id) WHERE publishing_job_id IS NOT NULL DO NOTHING""",
+                    (job["id"], blog_id, item["content_version_id"], item["id"], item["external_content_id"]),
+                )
+    return {"created": created, "held": held}
+
+
+def _record_hold(conn: Any, item: Any, blog_id: UUID, reasons: list[str], job_id: UUID | None = None) -> None:
+    event = "publication.auto_failure.cleared" if job_id else "publication.auto_failure.recorded"
+    codes = sorted(set(reasons))
+    previous = conn.execute(
+        """SELECT event_type,payload FROM audit_events WHERE event_type IN
+        ('publication.auto_failure.recorded','publication.auto_failure.cleared')
+        AND payload->>'import_id'=%s AND payload->>'content_version_id'=%s
+        AND payload->>'blog_record_id'=%s ORDER BY id DESC LIMIT 1""",
+        (str(item["id"]), str(item.get("content_version_id") or ""), str(blog_id)),
+    ).fetchone()
+    if previous and previous["event_type"] == event:
+        prior = previous["payload"]
+        if (prior.get("reason_codes") == codes
+                and prior.get("stage") == ("queued" if job_id else "eligibility")):
+            return
+    conn.execute("INSERT INTO audit_events(event_type,payload) VALUES(%s,%s)",
+        (event, Jsonb({"import_id": str(item["id"]), "content_version_id": str(item.get("content_version_id") or ""),
+          "blog_record_id": str(blog_id), "stage": "queued" if job_id else "eligibility",
+          "reason_codes": codes, "failure_reason_code": codes[0] if codes else None,
+          "job_id": str(job_id) if job_id else None, "manual_publication_available": True,
+          "occurred_at": __import__("datetime").datetime.now(__import__("datetime").UTC).isoformat()})))
+
+
+def _append_audit(conn: Any, event: str, payload: dict[str, Any]) -> None:
+    conn.execute("INSERT INTO audit_events(event_type,payload) VALUES(%s,%s)", (event, Jsonb(payload)))
