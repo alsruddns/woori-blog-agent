@@ -30,6 +30,12 @@ function Invoke-IsolatedDashboardBuild {
 function Invoke-RepositoryValidation([string]$BuildDirectory, [string[]]$ChangedPaths, [string[]]$Targets) {
   $hadValue = Test-Path Env:WOORI_DASHBOARD_DIST_DIR
   $oldValue = $env:WOORI_DASHBOARD_DIST_DIR
+  $generatedFiles = @('apps/dashboard/next-env.d.ts','apps/dashboard/tsconfig.json')
+  $snapshots = @{}
+  foreach ($relative in $generatedFiles) {
+    $path = Join-Path $script:ProjectRoot $relative
+    if (Test-Path -LiteralPath $path -PathType Leaf) { $snapshots[$path] = [IO.File]::ReadAllBytes($path) }
+  }
   $env:WOORI_DASHBOARD_DIST_DIR = $BuildDirectory
   try {
     $python = Join-Path $script:ProjectRoot '.venv\Scripts\python.exe'
@@ -52,8 +58,16 @@ function Invoke-RepositoryValidation([string]$BuildDirectory, [string[]]$Changed
 
     if (@($Targets | Where-Object { $_ -in @('api','research_worker','publication_worker') }).Count -or @($ChangedPaths | Where-Object { $_ -match '^services/api/' }).Count) {
       Invoke-CheckedCommand $python @('-m','ruff','check',(Join-Path $script:ProjectRoot 'services/api/woori'))
-      Invoke-CheckedCommand $python @('-m','mypy',(Join-Path $script:ProjectRoot 'services/api/woori'))
-      Invoke-CheckedCommand $python @('-m','pytest','-q')
+      $changedPythonModules = @($ChangedPaths | Where-Object { $_ -match '^services/api/woori/.*\.py$' } | ForEach-Object { Join-Path $script:ProjectRoot $_ })
+      if ($changedPythonModules.Count) {
+        Invoke-CheckedCommand $python (@('-m','mypy','--follow-imports=silent') + $changedPythonModules)
+      }
+      $changedApiTests = @($ChangedPaths | Where-Object { $_ -match '^services/api/tests/test_[^/]+\.py$' } | ForEach-Object { Join-Path $script:ProjectRoot $_ })
+      if ($changedApiTests.Count) {
+        Invoke-CheckedCommand $python (@('-m','pytest','-q') + $changedApiTests)
+      } else {
+        Invoke-CheckedCommand $python @('-m','pytest','-q')
+      }
       Invoke-CheckedCommand $python @('scripts/build-wheel.py')
     }
 
@@ -67,6 +81,7 @@ function Invoke-RepositoryValidation([string]$BuildDirectory, [string[]]$Changed
     Invoke-IsolatedDashboardBuild
     $script:RepositoryVerificationExitCode = 0
   } finally {
+    foreach ($path in $snapshots.Keys) { [IO.File]::WriteAllBytes($path,[byte[]]$snapshots[$path]) }
     if ($hadValue) { $env:WOORI_DASHBOARD_DIST_DIR = $oldValue }
     else { Remove-Item Env:WOORI_DASHBOARD_DIST_DIR -ErrorAction SilentlyContinue }
   }
@@ -99,8 +114,17 @@ if (-not $paths.Count) {
   Write-Output "No committed source changes since runtime baseline $base; no service was restarted."
   return
 }
-if (@($paths | Where-Object { $_ -match '(^|/)\d{3}_[^/]+\.sql$|(^|/)migrations?/' }).Count) {
-  throw 'A database migration is present in the diff. Create/verify a backup and run the migration through its dedicated procedure; no service was stopped.'
+ $migrationPaths = @($paths | Where-Object { $_ -match '(^|/)\d{3}_[^/]+\.sql$|(^|/)migrations?/' })
+if ($migrationPaths.Count) {
+  $requiredVersion = ($migrationPaths | ForEach-Object { [int]([regex]::Match($_,'(?:^|/)(\d{3})_').Groups[1].Value) } | Measure-Object -Maximum).Maximum
+  $python = Join-Path $script:ProjectRoot '.venv\Scripts\python.exe'
+  $statusOutput = & $python (Join-Path $script:ProjectRoot 'scripts\migrate.py') --status
+  if ($LASTEXITCODE -ne 0) { throw 'Could not verify the operations schema version; no service was stopped.' }
+  try { $schemaStatus = ($statusOutput -join "`n") | ConvertFrom-Json }
+  catch { throw 'Operations schema status was not valid JSON; no service was stopped.' }
+  if ($schemaStatus.database -cne 'woori_blog_agent' -or [int]$schemaStatus.schema_version -lt [int]$requiredVersion) {
+    throw "Migration $requiredVersion is not applied to the expected operations database; run the backed-up migration procedure before service reflection. No service was stopped."
+  }
 }
 
 $affected = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)

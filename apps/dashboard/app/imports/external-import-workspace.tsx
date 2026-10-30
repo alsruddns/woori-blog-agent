@@ -124,8 +124,8 @@ export default function ExternalImportWorkspace() {
   const [reviewer, setReviewer] = useState("편집 담당자");
   const [attest, setAttest] = useState({ sources: false, claims: false, rights: false });
   const [publicationTargetId, setPublicationTargetId] = useState("");
-  const [approvalActor, setApprovalActor] = useState("");
-  const [approvalReason, setApprovalReason] = useState("");
+  const [approvalActor, setApprovalActor] = useState("admin");
+  const [approvalReason, setApprovalReason] = useState("\uD655\uC778\uC644\uB8CC");
   const [manualAttest, setManualAttest] = useState({ content: false, facts: false, rights: false });
   const [targetLanguage, setTargetLanguage] = useState<(typeof languages)[number]>("ko");
   const [detailTab, setDetailTab] = useState<DetailTab>("editor");
@@ -159,6 +159,8 @@ export default function ExternalImportWorkspace() {
       ?? publicationTargets[0];
     setPublicationTargetId(String(defaultTarget?.id ?? ""));
     setManualAttest({ content: false, facts: false, rights: false });
+    setApprovalActor("admin");
+    setApprovalReason("\uD655\uC778\uC644\uB8CC");
     const current = data.latest_version ?? data.item;
     setTitle(String(current.title ?? "")); setBody(String(current.body_markdown ?? ""));
     setSeo(current.seo_metadata ?? data.item.seo_metadata ?? {});

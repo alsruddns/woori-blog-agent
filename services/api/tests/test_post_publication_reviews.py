@@ -1,10 +1,13 @@
+import asyncio
+import logging
 from pathlib import Path
 
 import pytest
+from fastapi import Request
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from woori.config import settings
-from woori.main import app
+from woori.main import app, database_error
 from woori.publications import (
     ManualLiveRequestInput,
     PostPublicationReviewItemInput,
@@ -12,12 +15,13 @@ from woori.publications import (
 )
 
 
-def test_post_publication_review_migration_is_additive_and_schema_56() -> None:
+def test_post_publication_review_migration_is_additive_and_schema_57() -> None:
     root = Path(__file__).resolve().parents[3]
     migration = (root / "scripts/053_post_publication_review.sql").read_text(encoding="utf-8").casefold()
     identity_migration = (root / "scripts/054_post_publication_content_identity.sql").read_text(encoding="utf-8").casefold()
     prepublication_migration = (root / "scripts/055_scheduled_prepublication_reviews.sql").read_text(encoding="utf-8").casefold()
     manual_migration = (root / "scripts/056_manual_publication_approval.sql").read_text(encoding="utf-8").casefold()
+    reason_migration = (root / "scripts/057_manual_publication_reason_length.sql").read_text(encoding="utf-8").casefold()
     runner = (root / "scripts/migrate.py").read_text(encoding="utf-8")
     provisioner = (root / "scripts/provision-test-database.py").read_text(encoding="utf-8")
     assert "references publishing_records(id)" in migration
@@ -25,7 +29,7 @@ def test_post_publication_review_migration_is_additive_and_schema_56() -> None:
     assert "insert into schema_migrations(version) values(53)" in migration
     assert "add column content_id text" in identity_migration
     assert "insert into schema_migrations(version) values(54)" in identity_migration
-    assert "MAX_SUPPORTED_SCHEMA_VERSION = 56" in runner
+    assert "MAX_SUPPORTED_SCHEMA_VERSION = 57" in runner
     assert "053_post_publication_review.sql" in runner
     assert "054_post_publication_content_identity.sql" in runner
     assert "055_scheduled_prepublication_reviews.sql" in runner
@@ -41,6 +45,13 @@ def test_post_publication_review_migration_is_additive_and_schema_56() -> None:
     assert "prepublication_review_requires_manual_user_confirmation" in manual_migration
     assert "insert into schema_migrations(version) values(56)" in manual_migration
     assert '(56, "manual_publication_approval")' in provisioner
+    assert "drop constraint manual_publication_approval_events_reason_check" in reason_migration
+    assert "reason_min_3_check" in reason_migration
+    assert "length(trim(reason)) between 3 and 2000" in reason_migration
+    assert "insert into schema_migrations(version) values (57)" in reason_migration
+    assert '(57, "manual_publication_reason_length")' in provisioner
+    assert "delete from" not in reason_migration
+    assert "update manual_publication_approval_events" not in reason_migration
 
 
 def test_review_input_types_are_bounded_and_explicit() -> None:
@@ -82,6 +93,19 @@ def test_manual_publication_requires_exact_payload_attestations_and_confirmation
     ):
         with pytest.raises(ValidationError):
             ManualLiveRequestInput(**{**values, field: value})
+
+
+def test_manual_publication_defaults_are_sent_and_match_reason_constraint() -> None:
+    root = Path(__file__).resolve().parents[3]
+    ui = (root / "apps/dashboard/app/imports/external-import-workspace.tsx").read_text(encoding="utf-8")
+    migration = (root / "scripts/057_manual_publication_reason_length.sql").read_text(encoding="utf-8").casefold()
+    assert 'useState("admin")' in ui
+    assert 'useState("\\uD655\\uC778\\uC644\\uB8CC")' in ui
+    assert 'setApprovalActor("admin")' in ui
+    assert 'setApprovalReason("\\uD655\\uC778\\uC644\\uB8CC")' in ui
+    assert 'reason: approvalReason.trim()' in ui
+    assert "const MANUAL_PUBLICATION_REASON_MIN_LENGTH = 3" in ui
+    assert "length(trim(reason)) between 3 and 2000" in migration
 
 
 def test_manual_live_route_keeps_quality_gaps_as_followups_and_has_no_write_call() -> None:
@@ -134,3 +158,29 @@ def test_post_publication_review_api_reads_isolated_schema_without_fake_posts() 
     assert response.status_code == 200, response.text
     assert response.json()["verified_live_only"] is True
     assert response.json()["total"] == 0
+
+
+def test_database_error_log_records_sqlstate_and_constraint_without_error_payload(caplog: pytest.LogCaptureFixture) -> None:
+    class Diagnostic:
+        schema_name = "public"
+        table_name = "manual_publication_approval_events"
+        column_name = ""
+        constraint_name = "manual_publication_approval_events_reason_min_3_check"
+
+    class DatabaseFailure:
+        sqlstate = "23514"
+        diag = Diagnostic()
+
+    scope = {
+        "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
+        "method": "POST", "scheme": "http", "path": "/admin/publications/manual-live-requests",
+        "raw_path": b"/admin/publications/manual-live-requests", "query_string": b"",
+        "headers": [], "server": ("127.0.0.1", 8100), "client": ("127.0.0.1", 12345),
+    }
+    request = Request(scope)
+    with caplog.at_level(logging.ERROR, logger="woori.api.database"):
+        response = asyncio.run(database_error(request, DatabaseFailure()))
+    assert response.status_code == 503
+    assert response.body == b'{"error":"Database operation unavailable"}'
+    assert "sqlstate=23514" in caplog.text
+    assert "manual_publication_approval_events_reason_min_3_check" in caplog.text

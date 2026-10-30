@@ -14,3 +14,6 @@ def test_migration_runner_guard_matches_latest_migration_script() -> None:
     ]
     assert supported_version == max(migration_versions)
     assert "if current > MAX_SUPPORTED_SCHEMA_VERSION:" in runner
+    assert 'parser.add_argument("--status"' in runner
+    assert 'SET TRANSACTION READ ONLY' in runner
+    assert '"schema_version": version or 0' in runner

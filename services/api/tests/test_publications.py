@@ -34,7 +34,7 @@ def test_manual_publish_reason_accepts_concise_korean_confirmation() -> None:
         "expected_body_sha256": "b" * 64,
         "expected_html_sha256": "c" * 64,
         "actor_label": "admin",
-        "reason": "확인완료",
+        "reason": "\uD655\uC778\uC644\uB8CC",
         "reviewed_exact_content": True,
         "assertions_safe_to_publish": True,
         "rights_privacy_harm_checked": True,
@@ -42,7 +42,7 @@ def test_manual_publish_reason_accepts_concise_korean_confirmation() -> None:
         "idempotency_key": "manual-publish-test-1234",
     }
     request = ManualLiveRequestInput.model_validate(payload)
-    assert request.reason == "확인완료"
+    assert request.reason == "\uD655\uC778\uC644\uB8CC"
     with pytest.raises(ValidationError):
         ManualLiveRequestInput.model_validate({**payload, "reason": "확인"})
 

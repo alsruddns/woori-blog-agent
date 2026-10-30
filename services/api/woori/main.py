@@ -1,3 +1,4 @@
+import logging
 import secrets
 from typing import Annotated, Any
 
@@ -21,6 +22,7 @@ from .publications import router as publications_router
 from .research_routes import router as research_router
 
 app = FastAPI(title="Woori Blog Agent", docs_url=None, redoc_url=None, openapi_url=None)
+logger = logging.getLogger("woori.api.database")
 bearer = HTTPBearer(auto_error=False)
 
 
@@ -54,6 +56,17 @@ async def google_error(request: Request, exc: GoogleFailure) -> JSONResponse:
 
 @app.exception_handler(psycopg.Error)
 async def database_error(request: Request, exc: psycopg.Error) -> JSONResponse:
+    diag = exc.diag
+    logger.error(
+        "Database request failed: path=%s method=%s sqlstate=%s schema=%s table=%s column=%s constraint=%s",
+        request.url.path,
+        request.method,
+        exc.sqlstate or "unknown",
+        getattr(diag, "schema_name", None) or "unknown",
+        getattr(diag, "table_name", None) or "unknown",
+        getattr(diag, "column_name", None) or "unknown",
+        getattr(diag, "constraint_name", None) or "unknown",
+    )
     return JSONResponse({"error": "Database operation unavailable"}, status_code=503)
 
 

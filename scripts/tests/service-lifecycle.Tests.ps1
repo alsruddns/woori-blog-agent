@@ -73,6 +73,8 @@ Describe 'Windows service lifecycle ownership and startup policy' {
     $apply.IndexOf('Invoke-RepositoryValidation $dashboardBuildDir $paths $targets') | Should BeLessThan $apply.IndexOf("'stop.ps1'")
     $apply | Should Match "branch.*develop"
     $apply | Should Match 'migrations?'
+  $apply | Should Match 'migrate\.py.*--status'
+  $apply | Should Match 'schemaStatus\.schema_version'
   }
 
   It 'reads the current commit before any pipeline changes the native exit code' {

@@ -1,3 +1,5 @@
+import argparse
+import json
 import os
 from pathlib import Path
 
@@ -5,7 +7,10 @@ import psycopg
 from dotenv import dotenv_values
 
 root = Path(__file__).resolve().parents[1]
-MAX_SUPPORTED_SCHEMA_VERSION = 56
+MAX_SUPPORTED_SCHEMA_VERSION = 57
+parser = argparse.ArgumentParser()
+parser.add_argument("--status", action="store_true", help="Read-only operations schema version check")
+args = parser.parse_args()
 url = (
     os.environ.get("MIGRATION_DATABASE_URL")
     or dotenv_values(root / ".env.migration")["MIGRATION_DATABASE_URL"]
@@ -13,6 +18,12 @@ url = (
 with psycopg.connect(url) as conn:
     if conn.info.dbname != "woori_blog_agent":
         raise SystemExit("Refusing non-project database")
+    if args.status:
+        conn.execute("SET TRANSACTION READ ONLY")
+        exists = conn.execute("SELECT to_regclass('public.schema_migrations')").fetchone()[0]
+        version = conn.execute("SELECT max(version) FROM schema_migrations").fetchone()[0] if exists else 0
+        print(json.dumps({"database": conn.info.dbname, "schema_version": version or 0}))
+        raise SystemExit(0)
     conn.execute("SELECT pg_advisory_xact_lock(813219)")
     exists = conn.execute("SELECT to_regclass('public.schema_migrations')").fetchone()[0]
     if not exists:
@@ -283,4 +294,9 @@ with psycopg.connect(url) as conn:
             (root / "scripts/056_manual_publication_approval.sql").read_text(encoding="utf-8"),
             prepare=False,
         )
-print("Project migrations through 056 verified")
+    if current < 57:
+        conn.execute(
+            (root / "scripts/057_manual_publication_reason_length.sql").read_text(encoding="utf-8"),
+            prepare=False,
+        )
+print("Project migrations through 057 verified")
