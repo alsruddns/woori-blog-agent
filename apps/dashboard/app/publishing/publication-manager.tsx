@@ -11,18 +11,22 @@ type Item = {
   remote_post_id?: string | null; remote_status?: string | null; remote_verified_at?: string | null;
   simulation_only?: boolean; adapter_type?: string; evaluation_id?: string | null;
   import_id?: string | null; generation_method?: string | null; google_trends_based?: boolean;
+  auto_publication_failure?: boolean; failure_stage?: string | null; failure_reason_code?: string | null;
+  manual_publication_available?: boolean; retry_count?: number;
 };
 type ModeSetting = { scope_type: string; scope_key: string; configured_mode: string; daily_auto_limit: number; minimum_interval_minutes: number; allowed_start_hour?:number; allowed_end_hour?:number; timezone?:string; allowed_categories?:string[]; excluded_topics?:string[]; max_source_age_hours?:number; retry_limit?:number };
 export type PublicationData = {
   candidates: Item[]; items?: Item[]; view?: string; summary?: Record<string, number>; total_count?: number;
   page?: number; page_size?: number; page_count?: number; jobs: Array<Record<string, unknown>>;
   worker: { process_id: number; status: string; last_seen_at: string } | null; queued_mock_jobs: number;
-  queued_confirmed_private_drafts?: number; actual_published_count?: number; real_writes_enabled: false;
+  queued_confirmed_private_drafts?: number; actual_published_count?: number; real_writes_enabled: boolean;
   publish_ready_enabled: false; adapter_available: string;
   mode_policy: { migration_required: boolean; default_mode: string; settings: ModeSetting[];
     languages: { code: string; display_name: string; active: boolean }[];
     blogs: { id: string; language_code: string; url: string; display_name: string; active: boolean }[];
-    emergency_stopped: boolean; operations_auto_approved: false; live_auto_enabled: false; real_writes_enabled: false;
+    emergency_stopped: boolean; operations_auto_approved: false; live_auto_enabled: boolean; real_writes_enabled: boolean;
+    scoped_write_capability?: { scheduled_auto?: boolean; manual_confirmed?: boolean; reason?: string | null };
+    publication_worker?: { execution_mode?: string | null; status?: string; last_seen_at?: string } | null;
     scheduled_auto_policy?: { enabled: boolean;
       policy_event?: { id?: number; action?: string; approved_blog_ids?: string[]; daily_limit?: number; actor_label?: string; reason?: string; created_at?: string } | null;
       first_publication_approval_required?: false;
@@ -32,10 +36,37 @@ export type PublicationData = {
   auto_candidate_count: number; auto_runtime_status: string;
   operational_limits?: {timezone:string;global_daily:number;language_daily:Record<string,number|null>;language_hourly:Record<string,number>;english_daily_policy:string;blog_minimum_interval_minutes:number;account_minimum_interval_minutes:number};
 };
-const tabs = [["queue", "발행 대기"], ["review", "검토 필요"], ["published", "게시 완료"], ["held", "실패·보류"]] as const;
+const tabs = [["queue", "발행 대기"], ["review", "검토 필요"], ["published", "게시 완료"], ["held", "실패·보류"], ["auto_failure", "자동발행실패"]] as const;
 const languageLabel = (code: string) => ({ko:"한국어",en:"영어",ja:"일본어","zh-CN":"중국어 간체"}[code] ?? code);
-const statusLabel = (status: string) => ({review_needed:"검토 필요",queued:"발행 대기",published:"게시 완료",quality_held:"품질 보류",publication_blocked:"게시 차단",failed:"실패",uncertain:"결과 확인 필요"}[status] ?? status);
-const reasonLabel = (reason: string) => ({quality_evaluation_missing:"품질 검사 기록 없음",quality_not_passed:"품질 검사 통과 필요",editorial_source_rights_and_publication_review_required:"근거·권리·승인 확인 필요",automatic_publication_policy_inactive:"자동 발행 정책 비활성"}[reason] ?? "상세 검토 필요");
+const statusLabel = (status: string) => ({review_needed:"검토 필요",queued:"발행 대기",published:"게시 완료",quality_held:"품질 보류",publication_blocked:"게시 차단",failed:"실패",uncertain:"결과 확인 필요",auto_publication_failed:"자동발행실패"}[status] ?? status);
+const reasonLabel = (reason: string) => ({
+  quality_evaluation_missing:"품질 검사 기록 없음", quality_not_passed:"품질 검사 통과 필요",
+  editorial_source_rights_and_publication_review_required:"근거·권리·승인 확인 필요",
+  automatic_publication_policy_inactive:"자동 발행 정책 비활성",
+  remote_duplicate_found:"같은 Blogger 게시물 확인됨", remote_duplicate_check_unknown:"중복 여부 확인 필요",
+  not_a_scheduled_export:"예약 Export 원고가 아님", scheduled_sanitized_revision_required:"원고 본문 보정 필요",
+  no_supported_body_after_sanitization:"검증된 본문을 구성할 수 없음", scheduled_origin_target_mismatch:"예약 작업의 대상 블로그와 다름",
+  blog_or_oauth_not_verified:"Blogger 연결 또는 OAuth 확인 필요", scheduled_language_blog_mismatch:"원고 언어와 Blogger 언어가 다름",
+  same_event_already_queued_or_published:"같은 사건이 이미 대기 또는 게시됨", scheduled_import_not_found:"예약 원고 Import 기록 없음",
+  source_evidence_missing:"출처 근거 확인 필요", claim_evidence_mismatch:"주장과 근거 연결 확인 필요",
+  scheduled_version_hash_invalid:"원고 버전 해시 확인 필요", claims_or_sources_missing:"주장 또는 출처 자료 부족",
+  source_live_verification_missing:"출처 원문 확인 필요", source_live_verification_mismatch:"출처 원문과 등록 정보 불일치",
+  source_evidence_spans_missing:"출처 근거 구간 부족", claim_schema_invalid:"주장 근거 형식 오류",
+  claim_evidence_incomplete:"주장별 근거 연결 미완료", claim_span_not_found_in_live_source_evidence:"주장 근거가 확인된 원문에 없음",
+  claim_contains_unsupported_number_or_unit:"검증되지 않은 수치 또는 단위 포함", independent_corroboration_missing:"독립 교차 확인 필요",
+  semantic_claim_review_required:"핵심 주장 의미 확인 필요", source_rights_not_machine_verified:"출처 이용 권리 확인 필요",
+  uncited_paragraph:"출처 연결이 없는 본문 문단", source_has_unverified_claim:"출처에서 확인되지 않은 주장 포함",
+  source_excerpt_copy_removed:"원문과 유사한 문장을 제외하고 보정 필요", embedded_image_removed:"이미지 제외 후 확인 필요",
+  direct_quote_removed:"직접 인용 제외 후 확인 필요",
+  daily_publication_limit:"오늘 발행 한도 도달", publication_policy_missing:"발행 대상 정책 없음",
+  scheduled_auto_policy_not_active_for_blog:"대상 블로그의 예약 Auto 범위 밖",
+  blog_oauth_mapping_changed:"Blogger 연결이 변경됨",
+  separate_public_publish_operations_approval_required:"실제 Blogger 쓰기 운영 승인 필요",
+  global_emergency_stop_or_policy_missing:"긴급 정지 또는 운영 정책 확인 필요",
+  published_readback_mismatch:"게시 후 Blogger 확인 불일치", published_record_conflict:"게시 기록 충돌",
+  blogger_write_scope_required:"Blogger 쓰기 권한 없음", invalid_grant:"Google 인증 갱신 필요",
+  transport_error:"Blogger 연결 오류", timeout:"Blogger 응답 시간 초과",
+}[reason] ?? reason.replaceAll("_", " "));
 const kst = (value?: string | null) => value ? new Intl.DateTimeFormat("ko-KR", { timeZone:"Asia/Seoul", dateStyle:"medium", timeStyle:"short" }).format(new Date(value)) + " KST" : "기록 없음";
 
 export default function PublicationManager({ initial }: { initial: PublicationData }) {
@@ -164,7 +195,7 @@ export default function PublicationManager({ initial }: { initial: PublicationDa
       <h2>현재 운영 설정</h2><dl className="publication-settings-list">
         <div><dt>운영 모드</dt><dd>{globalMode?.configured_mode === "auto" ? "Auto 정책 설정" : "수동"} · 실제 쓰기 {data.real_writes_enabled ? "허용" : "차단"}</dd></div>
         <div><dt>긴급 정지</dt><dd>{data.mode_policy.emergency_stopped ? "활성" : "해제"}</dd></div>
-        <div><dt>Worker</dt><dd>{data.worker ? `${data.worker.status} · ${kst(data.worker.last_seen_at)}` : "실행 기록 없음"}</dd></div>
+        <div><dt>Worker</dt><dd>{data.worker ? `${data.worker.status} · ${data.mode_policy.publication_worker?.execution_mode ?? "실행 모드 미기록"} · ${kst(data.worker.last_seen_at)}` : "실행 기록 없음"}</dd></div>
         <div><dt>모의 대기 작업</dt><dd>{data.queued_mock_jobs}건 (실제 게시와 별도)</dd></div>
         <div><dt>확인된 비공개 초안 요청</dt><dd>{data.queued_confirmed_private_drafts ?? 0}건</dd></div>
         <div><dt>자동 후보</dt><dd>{data.auto_candidate_count}건 · 자동 발행은 비활성</dd></div>
@@ -199,19 +230,20 @@ export default function PublicationManager({ initial }: { initial: PublicationDa
         <label>블로그<select value={blog} onChange={e=>setBlog(e.target.value)}><option value="">모든 블로그</option>{data.mode_policy.blogs.map(x=><option key={x.id} value={x.id}>{x.display_name}</option>)}</select></label>
         <button type="submit" disabled={loading}>검색</button>
       </form>
-      {loading ? <p className="empty-state">불러오는 중…</p> : items.length ? <div className="publication-table-scroll"><table><thead><tr><th>원고</th><th>언어</th><th>대상 블로그</th><th>주제·출처</th><th>상태</th><th>시각</th>{view==="published"&&<th>게시 URL</th>}</tr></thead><tbody>
+      {loading ? <p className="empty-state">불러오는 중…</p> : items.length ? <div className="publication-table-scroll"><table><thead><tr><th>원고</th><th>언어</th><th>대상 블로그</th><th>주제·출처</th><th>상태</th><th>시각</th>{view==="published"&&<th>게시 URL</th>}{view==="auto_failure"&&<th>복구</th>}</tr></thead><tbody>
         {items.map(item=><tr key={`${item.id}-${item.blog_id}`}>
           <td>{item.import_id
             ? <a href={`/imports?open_import_id=${encodeURIComponent(item.import_id)}&return_to=${encodeURIComponent(`/publishing?view=${view}&page=${page}&q=${query}&language_code=${language}&blog_id=${blog}`)}`}>{item.title || "제목 없음"}</a>
             : item.evaluation_id
               ? <a href={`/manuscripts?open_evaluation_id=${encodeURIComponent(item.evaluation_id)}&open_content_version_id=${encodeURIComponent(item.content_version_id)}&return_to=${encodeURIComponent(`/publishing?view=${view}&page=${page}&q=${query}&language_code=${language}&blog_id=${blog}`)}`}>{item.title || "제목 없음"}</a>
               : <span>{item.title || "제목 없음"}</span>}
-            <small>버전 {item.content_version_id.slice(0,8)} · {item.google_trends_based ? "Google Trends" : item.generation_method === "chatgpt_scheduled_export" ? "Codex 예약" : item.generation_method === "manual_codex_import" ? "수동 Import" : "내부 원고"}</small></td>
+            {item.auto_publication_failure && <strong className="status-badge status-warning">자동발행실패</strong>}<small>버전 {item.content_version_id.slice(0,8)} · {item.google_trends_based ? "Google Trends" : item.generation_method === "chatgpt_scheduled_export" ? "Codex 예약" : item.generation_method === "manual_codex_import" ? "수동 Import" : "내부 원고"}</small></td>
           <td>{languageLabel(item.language_code)}</td><td>{item.blog_name || item.url}</td>
           <td>{item.topic || item.source_names || "주제·출처 정보 없음"}</td>
-          <td>{statusLabel(item.status)}{item.eligibility_reasons?.length ? <small>{item.eligibility_reasons.slice(0,2).map(reasonLabel).join(" · ")}</small> : null}{item.simulation_only && <small>모의 작업</small>}</td>
+          <td>{statusLabel(item.status)}{item.failure_reason_code && <small>실패 단계 {item.failure_stage ?? "미확인"} · {reasonLabel(item.failure_reason_code)}</small>}{item.retry_count !== undefined && <small>재시도 {item.retry_count}회</small>}{item.eligibility_reasons?.length ? <small>{item.eligibility_reasons.slice(0,2).map(reasonLabel).join(" · ")}</small> : null}{item.simulation_only && <small>모의 작업</small>}</td>
           <td>{kst(item.next_publish_at || item.created_at)}</td>
           {view==="published"&&<td>{item.remote_url&&item.remote_status==="LIVE"&&item.remote_verified_at?<a href={item.remote_url} target="_blank" rel="noreferrer">게시물 열기</a>:"원격 게시 확인 없음"}{item.remote_post_id&&<small>postId {item.remote_post_id}</small>}</td>}
+          {view==="auto_failure"&&<td>{item.import_id ? <a href={`/imports?open_import_id=${encodeURIComponent(item.import_id)}&open_content_version_id=${encodeURIComponent(item.content_version_id)}&return_to=${encodeURIComponent(`/publishing?view=auto_failure&page=${page}&q=${query}&language_code=${language}&blog_id=${blog}`)}`}>Blogger에 수동 발행</a> : "상세 원고 연결 없음"}</td>}
         </tr>)}
       </tbody></table></div> : <p className="empty-state">이 상태의 원고가 없습니다.</p>}
       <div className="publication-pagination"><button disabled={page<=1||loading} onClick={()=>void refresh(page-1,view)}>이전</button><span>{page} / {Math.max(data.page_count ?? 0,1)}</span><button disabled={page>=(data.page_count??0)||loading} onClick={()=>void refresh(page+1,view)}>다음</button></div>

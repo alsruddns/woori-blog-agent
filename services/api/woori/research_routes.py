@@ -1756,6 +1756,11 @@ def _evaluation_article(evaluation_id: UUID, content_version_id: UUID) -> dict[s
 
 
 def _prepublication_snapshot(conn: Any) -> dict[str, Any]:
+    # Reuse the live capability calculation so diagnostics do not report a
+    # permanent write block after the scoped scheduled lane is enabled.
+    from .publications import _mode_settings
+
+    publication_mode = _mode_settings(conn)
     blogs = conn.execute(
         """SELECT b.id,b.language_code,b.url,b.blog_id,b.active,
             b.connection_verified_at,b.last_checked_at,b.connection_error,
@@ -1791,7 +1796,12 @@ def _prepublication_snapshot(conn: Any) -> dict[str, Any]:
         "historical_read_verifications": [dict(event) for event in verification_events],
         "safety": dict(safety),
         "real_blogger_sync_verified": False,
-        "real_writes_enabled": False,
+        "real_writes_enabled": bool(publication_mode.get("real_writes_enabled")),
+        "scheduled_auto_write_enabled": bool(
+            (publication_mode.get("scoped_write_capability") or {}).get("scheduled_auto")
+        ),
+        "write_capability_reason": (publication_mode.get("scoped_write_capability") or {}).get("reason"),
+        "scheduled_auto_policy": publication_mode.get("scheduled_auto_policy"),
     }
 
 
@@ -1894,9 +1904,9 @@ def _operational_readiness_snapshot(conn: Any, state: dict[str, Any]) -> dict[st
         {"key": "blogger_read_connection", "status": "configured_live_read_blocked" if mapped_readonly == len(blogs) and mapped_readonly > 0 and not (state.get("prepublication") or {}).get("real_blogger_sync_verified") else "incomplete", "evidence": f"readonly DB mappings={mapped_readonly}/{len(blogs)}; live GET is independently gated by cost policy"},
         {"key": "publication_mock", "status": "verified_historical" if mock["attempts"] > 0 and mock["non_mock_attempts"] == 0 else "not_verified", "evidence": {"fake_attempts": mock["attempts"], "mock_successes": mock["mock_successes"], "mock_non_successes": mock["mock_non_successes"], "non_mock_attempts": mock["non_mock_attempts"], "captured_at": mock.get("latest_attempt_at"), "scope": "historical mock evidence; not a live readiness claim"}},
         {"key": "worker_recovery", "status": "verified_historical" if worker_evidence.get("passed") else "not_verified", "evidence": worker_evidence},
-        {"key": "operating_write_block", "status": "blocked_safe" if not (state.get("prepublication") or {}).get("real_writes_enabled") and safety.get("non_mock_jobs") == 0 and safety.get("real_publishing_records") == 0 else "needs_investigation", "evidence": {"real_writes_enabled": False, "non_mock_jobs": safety.get("non_mock_jobs"), "real_publishing_records": safety.get("real_publishing_records"), "publish_ready_evaluations": safety.get("publish_ready_evaluations")}},
+        {"key": "operating_write_block", "status": "scoped_scheduled_auto_ready" if (state.get("prepublication") or {}).get("scheduled_auto_write_enabled") else "scoped_write_unavailable", "evidence": {"real_writes_enabled": (state.get("prepublication") or {}).get("real_writes_enabled", False), "scheduled_auto_write_enabled": (state.get("prepublication") or {}).get("scheduled_auto_write_enabled", False), "write_capability_reason": (state.get("prepublication") or {}).get("write_capability_reason"), "non_mock_jobs": safety.get("non_mock_jobs"), "real_publishing_records": safety.get("real_publishing_records"), "publish_ready_evaluations": safety.get("publish_ready_evaluations")}},
         {"key": "additional_cost_block", "status": "policy_active" if not cost_policy.get("blocked_credential_names") else "blocked_credentials_detected", "evidence": {"blocked_credential_names": cost_policy.get("blocked_credential_names", []), "paid_provider_allowlist_entries": 0}},
-        {"key": "separate_live_publication_approval", "status": "required_not_granted", "evidence": {"publishing_enabled": False, "publish_ready": False}},
+        {"key": "separate_live_publication_approval", "status": "not_required_for_scoped_scheduled_auto", "evidence": {"scheduled_auto_enabled": (state.get("prepublication") or {}).get("scheduled_auto_policy", {}).get("enabled", False), "first_publication_approval_required": False, "global_auto_unchanged": True}},
     ]
     return {"captured_from": "current operations DB and isolated evaluation DB snapshot", "items": items}
 

@@ -48,11 +48,63 @@ def retryable(outcome: str, scenario: str, retry_count: int, max_retries: int) -
     )
 
 
+def execution_mode(*, private_drafts: bool = False, live: bool = False,
+                   scheduled_auto: bool = False, manual_confirmed: bool = False) -> str:
+    if scheduled_auto and manual_confirmed:
+        return "operations-scheduled-auto-and-manual"
+    if scheduled_auto:
+        return "operations-scheduled-auto"
+    if manual_confirmed:
+        return "operations-manual-confirmed"
+    if live:
+        return "operations-approved-live-publications"
+    if private_drafts:
+        return "operations-confirmed-private-drafts"
+    return "operations-mock-only"
+
+
 def _append_audit(conn: Any, event_type: str, payload: dict[str, Any]) -> None:
     conn.execute(
         "INSERT INTO audit_events(event_type,payload) VALUES (%s,%s)",
         (event_type, Jsonb(payload)),
     )
+
+
+def _record_auto_failure(
+    conn: Any, *, imported: Any, blog: Any, stage: str, reasons: list[str],
+    job_id: UUID | None = None, retry_count: int = 0,
+) -> None:
+    """Append a failure/hold only when its current state changes; history stays immutable."""
+    codes = sorted({str(reason) for reason in reasons}) or ["automatic_publication_not_completed"]
+    key = (str(imported.get("id") or imported.get("import_id")),
+           str(imported.get("content_version_id") or ""), str(blog.get("blog_record_id") or blog.get("id")))
+    previous = conn.execute(
+        """SELECT event_type,payload FROM audit_events
+        WHERE event_type IN ('publication.auto_failure.recorded','publication.auto_failure.cleared')
+          AND payload->>'import_id'=%s AND payload->>'content_version_id'=%s
+          AND payload->>'blog_record_id'=%s ORDER BY id DESC LIMIT 1""", key,
+    ).fetchone()
+    phase_state = "cleared" if stage in {"queued", "posted"} else "failed"
+    if previous and previous["event_type"].endswith("cleared") and phase_state == "cleared":
+        return
+    if previous and previous["event_type"].endswith("recorded"):
+        prior = previous["payload"]
+        if (prior.get("stage") == stage and prior.get("reason_codes") == codes
+                and int(prior.get("retry_count") or 0) == max(0, retry_count)):
+            return
+    event_type = "publication.auto_failure.cleared" if phase_state == "cleared" else "publication.auto_failure.recorded"
+    _append_audit(conn, event_type, {
+        "import_id": key[0], "content_version_id": key[1],
+        "import_version_id": str(imported.get("import_version_id") or ""),
+        "blog_record_id": key[2], "blogger_blog_id": str(blog.get("blog_id") or ""),
+        "language_code": str(blog.get("blog_language") or blog.get("language_code") or ""),
+        "stage": stage, "reason_codes": codes, "failure_reason_code": codes[0],
+        "occurred_at": datetime.now(UTC).isoformat(), "job_id": str(job_id) if job_id else None,
+        "retry_count": max(0, retry_count),
+        "last_retry_at": datetime.now(UTC).isoformat() if retry_count else None,
+        "manual_publication_available": phase_state != "cleared",
+        "tag": "자동발행실패" if phase_state == "failed" else None,
+    })
 
 
 def _live_attempt(
@@ -286,6 +338,8 @@ def enqueue_scheduled_auto_jobs() -> dict[str, Any]:
                 _append_audit(conn, "publication.scheduled_auto.evidence_assessed", verification_payload)
             if reasons:
                 held += 1
+                _record_auto_failure(conn, imported=imported, blog=blog,
+                                     stage="eligibility", reasons=reasons)
                 continue
             recent_check = conn.execute(
                 """SELECT payload,created_at FROM audit_events
@@ -296,6 +350,8 @@ def enqueue_scheduled_auto_jobs() -> dict[str, Any]:
             ).fetchone()
             if (recent_check and recent_check["payload"].get("result") == "found"):
                 held += 1
+                _record_auto_failure(conn, imported=imported, blog=blog,
+                                     stage="duplicate_check", reasons=["remote_duplicate_found"])
                 continue
             if not (recent_check and recent_check["payload"].get("result") == "clear"
                     and recent_check["created_at"] >= datetime.now(UTC) - timedelta(minutes=30)):
@@ -311,6 +367,9 @@ def enqueue_scheduled_auto_jobs() -> dict[str, Any]:
                 )
                 if remote_check["status"] != "clear":
                     held += 1
+                    _record_auto_failure(conn, imported=imported, blog=blog,
+                        stage="duplicate_check", reasons=["remote_duplicate_check_unknown"
+                            if remote_check["status"] == "unknown" else "remote_duplicate_found"])
                     continue
             daily = conn.execute(
                 """SELECT count(*)::int AS n FROM publishing_jobs WHERE publication_lane='scheduled_auto'
@@ -320,6 +379,8 @@ def enqueue_scheduled_auto_jobs() -> dict[str, Any]:
             ).fetchone()["n"]
             if int(daily) >= int(policy["daily_limit"]):
                 held += 1
+                _record_auto_failure(conn, imported=imported, blog=blog,
+                                     stage="policy", reasons=["daily_publication_limit"])
                 continue
             policy_row = conn.execute(
                 "SELECT id FROM publishing_policies WHERE blog_id=%s ORDER BY active DESC,id LIMIT 1",
@@ -327,6 +388,8 @@ def enqueue_scheduled_auto_jobs() -> dict[str, Any]:
             ).fetchone()
             if not policy_row:
                 held += 1
+                _record_auto_failure(conn, imported=imported, blog=blog,
+                                     stage="queue", reasons=["publication_policy_missing"])
                 continue
             job_key = hashlib.sha256(
                 f"scheduled-auto:{blog['blog_record_id']}:{imported['content_version_id']}:{imported['import_hash']}".encode()
@@ -342,6 +405,8 @@ def enqueue_scheduled_auto_jobs() -> dict[str, Any]:
             ).fetchone()
             if job:
                 created += 1
+                _record_auto_failure(conn, imported=imported, blog=blog,
+                                     stage="queued", reasons=[], job_id=job["id"])
                 _append_audit(conn, "publication.scheduled_auto_job.queued", {
                     "job_id": str(job["id"]), "import_id": str(imported["id"]),
                     "import_version_id": str(imported["import_version_id"]),
@@ -563,6 +628,14 @@ def process_next_live_job(
                 "job_id": str(job_id), "content_version_id": str(version_id),
                 "reasons": final_reasons, "network_calls": 0,
             })
+            if lane == "scheduled_auto" and link:
+                _record_auto_failure(
+                    conn, imported=link,
+                    blog={"blog_record_id": blog_id, "blog_id": link.get("blog_id"),
+                          "blog_language": link.get("blog_language")},
+                    stage="worker_eligibility", reasons=final_reasons, job_id=job_id,
+                    retry_count=int(job.get("retry_count") or 0),
+                )
             return {"job_id": str(job_id), "status": "blocked", "reasons": final_reasons,
                     "live_write_performed": False}
 
@@ -686,6 +759,14 @@ def process_next_live_job(
                     "job_id": str(job_id), "error_category": exc.category,
                     "http_status": exc.status, "post_write_replayed": False,
                 })
+                if lane == "scheduled_auto" and link:
+                    _record_auto_failure(
+                        conn, imported=link,
+                        blog={"blog_record_id": blog_id, "blog_id": blog.get("blog_id"),
+                              "blog_language": language},
+                        stage="blogger_draft_write", reasons=[exc.category], job_id=job_id,
+                        retry_count=int(job.get("retry_count") or 0),
+                    )
             return {"job_id": str(job_id), "status": status, "reason": exc.category,
                     "public_write_performed": False}
 
@@ -761,6 +842,14 @@ def process_next_live_job(
                 "url": result["url"], "published_at": result["published_at"],
                 "remote_readback_verified": True,
             })
+            if lane == "scheduled_auto" and link:
+                _record_auto_failure(
+                    conn, imported=link,
+                    blog={"blog_record_id": blog_id, "blog_id": blog.get("blog_id"),
+                          "blog_language": language},
+                    stage="posted", reasons=[], job_id=job_id,
+                    retry_count=int(job.get("retry_count") or 0),
+                )
             if lane in {"scheduled_auto", "manual"}:
                 review = conn.execute(
                     """UPDATE post_publication_reviews SET publishing_record_id=%s,post_id=%s,updated_at=now()
@@ -851,6 +940,14 @@ def process_next_live_job(
                 "job_id": str(job_id), "error_category": exc.category,
                 "http_status": exc.status, "post_write_replayed": False,
             })
+            if lane == "scheduled_auto" and link:
+                _record_auto_failure(
+                    conn, imported=link,
+                    blog={"blog_record_id": blog_id, "blog_id": blog.get("blog_id"),
+                          "blog_language": language},
+                    stage="blogger_write", reasons=[exc.category], job_id=job_id,
+                    retry_count=int(job.get("retry_count") or 0),
+                )
         return {"job_id": str(job_id), "status": status, "reason": exc.category,
                 "public_write_performed": False}
 
@@ -1035,7 +1132,10 @@ def run_once(
     allow_live_publications: bool = False, allow_scheduled_auto_publications: bool = False,
     allow_manual_confirmed_publications: bool = False,
 ) -> dict[str, Any]:
-    heartbeat("running", service_name="publication_worker")
+    mode = execution_mode(private_drafts=allow_private_drafts, live=allow_live_publications,
+                         scheduled_auto=allow_scheduled_auto_publications,
+                         manual_confirmed=allow_manual_confirmed_publications)
+    heartbeat("running", service_name="publication_worker", execution_mode=mode)
     try:
         result = tick(backoff_seconds, allow_private_drafts=allow_private_drafts,
                       allow_live_publications=allow_live_publications,
@@ -1051,10 +1151,10 @@ def run_once(
             "manual_confirmed_publication_dispatch_enabled": allow_manual_confirmed_publications,
         }
     except Exception:
-        heartbeat("degraded", "publication_worker_failed", "publication_worker")
+        heartbeat("degraded", "publication_worker_failed", "publication_worker", mode)
         raise
     finally:
-        heartbeat("stopped", service_name="publication_worker")
+        heartbeat("stopped", service_name="publication_worker", execution_mode=mode)
 
 
 def run_forever(
@@ -1085,6 +1185,10 @@ def run_forever(
     def request_stop(_signum: int, _frame: object) -> None:
         stop.set()
 
+    mode = execution_mode(private_drafts=allow_private_drafts, live=allow_live_publications,
+                         scheduled_auto=allow_scheduled_auto_publications,
+                         manual_confirmed=allow_manual_confirmed_publications)
+
     for signum in (signal.SIGINT, signal.SIGTERM):
         try:
             old_handlers[signum] = signal.signal(signum, request_stop)
@@ -1100,6 +1204,7 @@ def run_forever(
                     "degraded" if degraded.is_set() else "running",
                     "publication_worker_cycle_failed" if degraded.is_set() else None,
                     "publication_worker",
+                    mode,
                 )
             except psycopg.Error:
                 degraded.set()
@@ -1152,7 +1257,7 @@ def run_forever(
         stop.set()
         heartbeat_thread.join(timeout=3)
         try:
-            heartbeat("stopped", service_name="publication_worker")
+            heartbeat("stopped", service_name="publication_worker", execution_mode=mode)
         finally:
             release_process_lock(guard, "publication_worker")
         for signum, handler in old_handlers.items():

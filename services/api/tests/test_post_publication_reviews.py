@@ -15,7 +15,7 @@ from woori.publications import (
 )
 
 
-def test_post_publication_review_migration_is_additive_and_schema_57() -> None:
+def test_post_publication_review_migration_is_additive_and_schema_58() -> None:
     root = Path(__file__).resolve().parents[3]
     migration = (root / "scripts/053_post_publication_review.sql").read_text(encoding="utf-8").casefold()
     identity_migration = (root / "scripts/054_post_publication_content_identity.sql").read_text(encoding="utf-8").casefold()
@@ -29,7 +29,7 @@ def test_post_publication_review_migration_is_additive_and_schema_57() -> None:
     assert "insert into schema_migrations(version) values(53)" in migration
     assert "add column content_id text" in identity_migration
     assert "insert into schema_migrations(version) values(54)" in identity_migration
-    assert "MAX_SUPPORTED_SCHEMA_VERSION = 57" in runner
+    assert "MAX_SUPPORTED_SCHEMA_VERSION = 58" in runner
     assert "053_post_publication_review.sql" in runner
     assert "054_post_publication_content_identity.sql" in runner
     assert "055_scheduled_prepublication_reviews.sql" in runner
@@ -50,6 +50,8 @@ def test_post_publication_review_migration_is_additive_and_schema_57() -> None:
     assert "length(trim(reason)) between 3 and 2000" in reason_migration
     assert "insert into schema_migrations(version) values (57)" in reason_migration
     assert '(57, "manual_publication_reason_length")' in provisioner
+    assert "058_publication_worker_mode.sql" in runner
+    assert "add column execution_mode text" in (root / "scripts/058_publication_worker_mode.sql").read_text(encoding="utf-8").casefold()
     assert "delete from" not in reason_migration
     assert "update manual_publication_approval_events" not in reason_migration
 
@@ -117,7 +119,8 @@ def test_manual_live_route_keeps_quality_gaps_as_followups_and_has_no_write_call
     assert 'followup("source"' in snapshot
     assert 'followup("copyright"' in snapshot
     assert "machine_passed" not in blockers and "publish_ready" not in blockers
-    assert "manual_codex_import_origin_required" in snapshot
+    assert 'blockers.append("content_import_link_required")' in snapshot
+    assert 'imported["generation_method"] != "manual_codex_import"' not in snapshot
     assert "expected_html_sha256" in request
     assert "manual_publication_approval_events" in request
     assert "ORDER BY j.updated_at DESC" in request

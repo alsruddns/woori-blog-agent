@@ -47,6 +47,13 @@ def test_manual_publish_reason_accepts_concise_korean_confirmation() -> None:
         ManualLiveRequestInput.model_validate({**payload, "reason": "확인"})
 
 
+def test_publication_worker_execution_mode_tracks_live_lanes() -> None:
+    assert publication_worker.execution_mode() == "operations-mock-only"
+    assert publication_worker.execution_mode(scheduled_auto=True) == "operations-scheduled-auto"
+    assert publication_worker.execution_mode(manual_confirmed=True) == "operations-manual-confirmed"
+    assert publication_worker.execution_mode(scheduled_auto=True, manual_confirmed=True) == "operations-scheduled-auto-and-manual"
+
+
 def test_same_event_dedup_requires_identical_body() -> None:
     candidate = "FOMC held the target range.\n[source:statement]"
     assert _has_identical_body(candidate, [candidate])
@@ -213,6 +220,8 @@ def test_scheduled_first_post_status_exposes_exact_blockers_without_writing(monk
                 return FakeResult({"emergency_stopped": False})
             if "FROM audit_events" in sql and "publication.scheduled_auto.evidence_assessed" in sql:
                 return FakeResult({"payload": {"status": "passed", "reasons": []}, "created_at": datetime.now(UTC)})
+            if "publication.auto_failure.recorded" in sql and "publication.auto_failure.cleared" in sql:
+                return FakeResult(None)
             if "FROM blogger_blogs b LEFT JOIN google_connections" in sql:
                 from woori.google_http import WRITE_SCOPE
                 return FakeResult(many=[{

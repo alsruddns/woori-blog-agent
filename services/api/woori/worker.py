@@ -141,6 +141,7 @@ def release_process_lock(guard: psycopg.Connection, service_name: str) -> None:
 def heartbeat(
     status: str = "running", error_category: str | None = None,
     service_name: str = "research_worker",
+    execution_mode: str | None = None,
 ) -> None:
     if status not in {"running", "degraded", "stopped"}:
         raise ValueError("invalid_worker_status")
@@ -148,25 +149,28 @@ def heartbeat(
         raise ValueError("invalid_worker_service")
     with connection() as conn:
         previous = conn.execute(
-            "SELECT process_id,status,last_error_category FROM worker_heartbeats WHERE service_name=%s",
+            "SELECT process_id,status,last_error_category,execution_mode FROM worker_heartbeats WHERE service_name=%s",
             (service_name,),
         ).fetchone()
         conn.execute(
-            """INSERT INTO worker_heartbeats(service_name,process_id,status,last_error_category,last_seen_at,updated_at)
-            VALUES (%s,%s,%s,%s,now(),now())
+            """INSERT INTO worker_heartbeats(service_name,process_id,status,last_error_category,last_seen_at,updated_at,execution_mode)
+            VALUES (%s,%s,%s,%s,now(),now(),%s)
             ON CONFLICT(service_name) DO UPDATE SET process_id=EXCLUDED.process_id,status=EXCLUDED.status,
-              last_error_category=EXCLUDED.last_error_category,last_seen_at=now(),updated_at=now()""",
-            (service_name, os.getpid(), status, error_category),
+              last_error_category=EXCLUDED.last_error_category,last_seen_at=now(),updated_at=now(),
+              execution_mode=EXCLUDED.execution_mode""",
+            (service_name, os.getpid(), status, error_category, execution_mode),
         )
         if previous is None or (
             int(previous["process_id"]) != os.getpid()
             or previous["status"] != status
             or previous["last_error_category"] != error_category
+            or previous.get("execution_mode") != execution_mode
         ):
             conn.execute(
                 "INSERT INTO audit_events(event_type,payload) VALUES ('worker.status.changed',%s)",
                 (Jsonb({"service": service_name, "status": status,
-                        "error_category": error_category, "process_id": os.getpid()}),),
+                        "error_category": error_category, "process_id": os.getpid(),
+                        "execution_mode": execution_mode}),),
             )
 
 

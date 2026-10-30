@@ -50,7 +50,7 @@ MIGRATIONS = [ROOT / "scripts" / f"{i:03d}_{name}.sql" for i, name in [
     (51, "trend_approx_traffic"), (52, "scheduled_publication_approval"),
     (53, "post_publication_review"), (54, "post_publication_content_identity"),
     (55, "scheduled_prepublication_reviews"), (56, "manual_publication_approval"),
-    (57, "manual_publication_reason_length"),
+    (57, "manual_publication_reason_length"), (58, "publication_worker_mode"),
 ]]
 
 

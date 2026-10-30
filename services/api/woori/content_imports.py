@@ -574,7 +574,8 @@ def list_content_imports(
                 COALESCE(review.event_type,'awaiting_human_review') AS editorial_review_status,
                 COALESCE(assessment.machine_passed,false) AS machine_passed,
                 COALESCE(scheduled.target_blog_id,sole_blog.blog_id::text) AS target_blog_id,
-                COALESCE(cv.group_id::text,lineage.root_content_id,i.external_content_id) AS representative_group
+                COALESCE(cv.group_id::text,lineage.root_content_id,i.external_content_id) AS representative_group,
+                failure.event_type AS auto_failure_event_type,failure.payload AS auto_failure_payload
               FROM external_content_imports i
               LEFT JOIN import_lineage lineage ON lineage.id=i.id
               LEFT JOIN LATERAL (
@@ -607,6 +608,12 @@ def list_content_imports(
                 SELECT CASE WHEN count(*)=1 THEN min(blog_id) END AS blog_id
                 FROM blogger_blogs WHERE active AND language_code=i.language_code
               ) sole_blog ON true
+              LEFT JOIN LATERAL (
+                SELECT event_type,payload FROM audit_events
+                WHERE event_type IN ('publication.auto_failure.recorded','publication.auto_failure.cleared')
+                  AND payload->>'import_id'=i.id::text
+                ORDER BY id DESC LIMIT 1
+              ) failure ON true
             ), ranked AS (
               SELECT latest_imports.*,row_number() OVER (
                 PARTITION BY COALESCE(group_id::text,root_content_id,external_content_id),language_code,
@@ -619,7 +626,7 @@ def list_content_imports(
             SELECT id,external_content_id,event_group_id,language_code,source_region,category,title,
               content_sha256,state,received_at,generation_method,model_name,google_trends_based,
               content_version_id,content_version_number,import_version_id,editorial_review_status,machine_passed,
-              body_markdown,target_blog_id,representative_group
+              body_markdown,target_blog_id,representative_group,auto_failure_event_type,auto_failure_payload
             FROM ranked WHERE representative_rank=1
             ORDER BY received_at DESC,id DESC"""
         ).fetchall()
@@ -628,6 +635,9 @@ def list_content_imports(
         for candidate in representatives:
             candidate.pop("body_markdown", None)
             candidate.pop("representative_group", None)
+            candidate["auto_publication_failure"] = candidate.get("auto_failure_event_type") == "publication.auto_failure.recorded"
+            candidate["auto_failure"] = candidate.pop("auto_failure_payload", None) if candidate["auto_publication_failure"] else None
+            candidate.pop("auto_failure_event_type", None)
         query = q.strip().casefold()
         if query:
             representatives = [row for row in representatives if query in " ".join(
@@ -750,7 +760,19 @@ def get_content_import(import_id: UUID) -> dict[str, Any]:
             (str(import_id),),
         ).fetchall()
         latest_review = next((review for review in reversed(reviews) if latest and str(review["version_id"]) == str(latest["id"])), None)
-        return {"item": dict(row), "latest_version": dict(latest) if latest else None,
+        auto_failure = conn.execute(
+            """SELECT event_type,payload,id FROM audit_events
+            WHERE event_type IN ('publication.auto_failure.recorded','publication.auto_failure.cleared')
+              AND payload->>'import_id'=%s
+              AND (%s::text IS NULL OR payload->>'content_version_id'=%s)
+            ORDER BY id DESC LIMIT 1""",
+            (str(import_id), str(latest.get("content_version_id")) if latest and latest.get("content_version_id") else None,
+             str(latest.get("content_version_id")) if latest and latest.get("content_version_id") else None),
+        ).fetchone()
+        item_result = dict(row)
+        item_result["auto_publication_failure"] = bool(auto_failure and auto_failure["event_type"] == "publication.auto_failure.recorded")
+        item_result["auto_failure"] = dict(auto_failure["payload"]) if item_result["auto_publication_failure"] else None
+        return {"item": item_result, "latest_version": dict(latest) if latest else None,
             "versions": [dict(version) for version in versions],
             "lineage_history": [dict(version) for version in lineage_history],
             "duplicate_import_history": duplicate_import_history,

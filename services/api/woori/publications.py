@@ -31,6 +31,52 @@ from .publication_modes import (
 
 router = APIRouter(prefix="/admin/publications")
 
+
+def _live_write_capability(
+    conn: Any, policy: dict[str, Any], heartbeat: dict[str, Any] | None,
+    emergency_stopped: bool,
+) -> dict[str, Any]:
+    """Report only live lanes the current heartbeat and scoped policies can dispatch."""
+    fresh = bool(heartbeat and heartbeat.get("status") == "running" and heartbeat.get("last_seen_at")
+                 and datetime.now(UTC) - heartbeat["last_seen_at"] <= timedelta(seconds=45))
+    mode = heartbeat.get("execution_mode") if heartbeat else None
+    scheduled_worker = fresh and mode in {
+        "operations-scheduled-auto", "operations-scheduled-auto-and-manual"
+    }
+    manual_worker = fresh and mode in {
+        "operations-manual-confirmed", "operations-scheduled-auto-and-manual"
+    }
+    owner_policy = external_policy._blogger_policy_approval() is not None
+    no_billable_credentials = not external_policy.billing_credential_names()
+    approved = [str(value) for value in (policy.get("policy_event") or {}).get("approved_blog_ids", [])]
+    mapped = conn.execute(
+        """SELECT count(*)::int AS n FROM blogger_blogs b JOIN google_connections g
+        ON g.id=b.oauth_connection_id WHERE b.id=ANY(%s::uuid[]) AND b.active
+          AND g.status='connected' AND g.scopes=ARRAY['https://www.googleapis.com/auth/blogger']::text[]""",
+        (approved,),
+    ).fetchone()["n"] if approved else 0
+    scheduled = bool(policy.get("enabled") and approved and mapped == len(set(approved))
+                     and owner_policy and scheduled_worker and not emergency_stopped
+                     and no_billable_credentials)
+    manual = bool(owner_policy and manual_worker and not emergency_stopped and no_billable_credentials)
+    reason = None
+    if not (scheduled or manual):
+        if not fresh or not mode:
+            reason = "worker_heartbeat_stale_or_mode_missing"
+        elif not owner_policy:
+            reason = "blogger_owner_policy_missing"
+        elif emergency_stopped:
+            reason = "global_emergency_stop_active"
+        elif not no_billable_credentials:
+            reason = "external_billing_credential_present"
+        elif policy.get("enabled") and approved and mapped != len(set(approved)):
+            reason = "scheduled_blog_or_oauth_scope_unavailable"
+        else:
+            reason = "worker_mode_or_scheduled_policy_not_enabled"
+    return {"scheduled_auto": scheduled, "manual_confirmed": manual,
+            "live_dispatch": bool(scheduled_worker or manual_worker),
+            "reason": reason, "worker_fresh": fresh, "execution_mode": mode}
+
 PublicationState = Literal[
     "draft",
     "quality_held",
@@ -180,6 +226,7 @@ def _mode_settings(conn: Any) -> dict[str, Any]:
             "real_writes_enabled": False,
             "scheduled_auto_policy": {"enabled": False, "migration_required": True,
                                       "trends_lane_affected": False},
+            "scoped_write_capability": {"scheduled_auto": False, "manual_confirmed": False},
         }
     rows = conn.execute(
         """SELECT scope_type,scope_key,configured_mode,daily_auto_limit,
@@ -200,6 +247,16 @@ def _mode_settings(conn: Any) -> dict[str, Any]:
         "SELECT id,language_code,url,display_name,active FROM blogger_blogs ORDER BY language_code,url"
     ).fetchall()]
     global_setting = next((row for row in items if row["scope_type"] == "global"), None)
+    scheduled = _scheduled_auto_state(conn) if scheduled_table and scheduled_table["table_name"] else {
+        "enabled": False, "migration_required": True, "trends_lane_affected": False
+    }
+    heartbeat_row = conn.execute(
+        "SELECT status,last_seen_at,execution_mode FROM worker_heartbeats WHERE service_name='publication_worker'"
+    ).fetchone()
+    capability = _live_write_capability(
+        conn, scheduled, dict(heartbeat_row) if heartbeat_row else None,
+        bool(global_setting and global_setting["emergency_stopped"]),
+    )
     return {
         "migration_required": False,
         "default_mode": "manual",
@@ -208,10 +265,13 @@ def _mode_settings(conn: Any) -> dict[str, Any]:
         "blogs": blogs,
         "emergency_stopped": bool(global_setting and global_setting["emergency_stopped"]),
         "operations_auto_approved": False,
-        "live_auto_enabled": False,
-        "real_writes_enabled": False,
-        "scheduled_auto_policy": _scheduled_auto_state(conn) if scheduled_table and scheduled_table["table_name"]
-            else {"enabled": False, "migration_required": True, "trends_lane_affected": False},
+        "live_auto_enabled": capability["scheduled_auto"],
+        "real_writes_enabled": bool(capability["scheduled_auto"] or capability["manual_confirmed"]),
+        "scoped_write_capability": {"scheduled_auto": capability["scheduled_auto"],
+                                    "manual_confirmed": capability["manual_confirmed"],
+                                    "reason": capability["reason"]},
+        "scheduled_auto_policy": scheduled,
+        "publication_worker": dict(heartbeat_row) if heartbeat_row else None,
     }
 
 
@@ -437,6 +497,13 @@ def scheduled_first_post_status(import_id: Annotated[UUID, Query()]) -> dict[str
             ORDER BY id DESC LIMIT 1""",
             (str(import_id), str(version_id) if version_id else ""),
         ).fetchone() if version_id else None
+        latest_auto_failure = conn.execute(
+            """SELECT event_type,payload,id FROM audit_events
+            WHERE event_type IN ('publication.auto_failure.recorded','publication.auto_failure.cleared')
+              AND payload->>'import_id'=%s AND payload->>'content_version_id'=%s
+            ORDER BY id DESC LIMIT 1""",
+            (str(import_id), str(content_version_id or "")),
+        ).fetchone() if version_id else None
 
         blogs = conn.execute(
             """SELECT b.id,b.blog_id,b.language_code,b.display_name,b.url,b.active,
@@ -464,8 +531,8 @@ def scheduled_first_post_status(import_id: Annotated[UUID, Query()]) -> dict[str
             )
             blog_jobs = [dict(job) for job in jobs]
             manual_publication: dict[str, Any] = {}
-            if (imported["generation_method"] == "manual_codex_import"
-                    and content_version_id):
+            if (content_version_id and latest_auto_failure
+                    and latest_auto_failure["event_type"] == "publication.auto_failure.recorded"):
                 manual_candidate = _candidate(conn, UUID(str(content_version_id)), UUID(blog_id))
                 manual_row = dict(manual_candidate) if manual_candidate else None
                 manual_snapshot = _manual_publication_snapshot(conn, manual_row)
@@ -533,6 +600,10 @@ def scheduled_first_post_status(import_id: Annotated[UUID, Query()]) -> dict[str
                 "reasons": evidence_assessment["payload"].get("reasons", []),
                 "created_at": evidence_assessment["created_at"],
             } if evidence_assessment else None,
+            "auto_publication_failure": bool(latest_auto_failure and
+                latest_auto_failure["event_type"] == "publication.auto_failure.recorded"),
+            "auto_failure": dict(latest_auto_failure["payload"]) if latest_auto_failure and
+                latest_auto_failure["event_type"] == "publication.auto_failure.recorded" else None,
             "scheduled_auto_enabled": bool(policy.get("enabled")),
             "effective_for_new_jobs": bool(policy.get("effective_for_new_jobs")),
             "first_publication_approval_required": False,
@@ -1052,8 +1123,8 @@ def _manual_publication_snapshot(conn: Any, row: dict[str, Any] | None) -> dict[
         (content_version_id,),
     ).fetchone()
     blockers: list[str] = []
-    if not imported or imported["generation_method"] != "manual_codex_import":
-        blockers.append("manual_codex_import_origin_required")
+    if not imported:
+        blockers.append("content_import_link_required")
     elif str(imported["latest_import_version_id"]) != str(imported["import_version_id"]):
         blockers.append("stale_import_version")
     title = str(row.get("editorial_title") or row.get("title") or "").strip()
@@ -1184,7 +1255,7 @@ def _manual_publication_blockers(
 
 @router.get("")
 def list_publications(
-    view: Literal["queue", "review", "published", "held"] = Query("review"),
+    view: Literal["queue", "review", "published", "held", "auto_failure"] = Query("review"),
     q: str = Query("", max_length=200),
     language_code: str = Query("", max_length=35),
     blog_id: str = Query("", max_length=64),
@@ -1264,7 +1335,8 @@ def list_publications(
             """SELECT j.id,j.content_version_id,j.blog_id,b.language_code,b.url,v.title AS content_title,
                 j.status,j.publication_state,j.scheduled_at,j.schedule_timezone,j.block_reasons,
                 j.attempts,j.retry_count,j.last_error_category,j.updated_at,
-                j.adapter_type,j.simulation_only,j.live_stage,j.remote_post_id,
+                j.adapter_type,j.simulation_only,j.live_stage,j.remote_post_id,j.publication_lane,
+                imported.import_id,imported.generation_method,
                 live_record.remote_url,live_record.remote_status,live_record.remote_verified_at,
                 live_record.published_at,
                 (SELECT q.id FROM article_quality_evaluations q
@@ -1274,6 +1346,10 @@ def list_publications(
                 ,(SELECT count(*) FROM live_publication_attempts la WHERE la.job_id=j.id) AS live_attempt_count
             FROM publishing_jobs j JOIN blogger_blogs b ON b.id=j.blog_id
             LEFT JOIN content_versions v ON v.id=j.content_version_id
+            LEFT JOIN LATERAL (SELECT i.id AS import_id,i.generation_method
+              FROM external_content_import_content_links l JOIN external_content_imports i ON i.id=l.import_id
+              WHERE l.content_version_id=j.content_version_id ORDER BY i.received_at DESC,i.id DESC LIMIT 1
+            ) imported ON true
             LEFT JOIN LATERAL (SELECT remote_url,remote_status,remote_verified_at,published_at
               FROM publishing_records r WHERE r.job_id=j.id ORDER BY r.published_at DESC LIMIT 1) live_record ON true
              ORDER BY j.scheduled_at DESC,j.id DESC"""
@@ -1415,7 +1491,6 @@ def list_publications(
             "published_at": row["published_at"], "eligibility_reasons": [],
             "import_id": str(row["import_id"]) if row.get("import_id") else None,
             "generation_method": row.get("generation_method"),
-            "google_trends_based": row.get("google_trends_based"),
             "evaluation_id": str(row["evaluation_id"]) if row.get("evaluation_id") else None,
             "model_name": row.get("model"),
             "research_package_id": None, "source_names": None,
@@ -1430,20 +1505,75 @@ def list_publications(
             "next_publish_at": row["scheduled_at"], "remote_post_id": row["remote_post_id"],
             "remote_url": None, "remote_status": None, "remote_verified_at": None,
             "simulation_only": row["simulation_only"], "adapter_type": row["adapter_type"],
-            "attempts": row["attempts"], "last_error_category": row["last_error_category"],
+            "attempts": row["attempts"], "retry_count": row.get("retry_count") or 0,
+            "last_retry_at": row.get("updated_at") if row.get("retry_count") else None,
+            "last_error_category": row["last_error_category"],
             "eligibility_reasons": row["block_reasons"] or [],
+            "generation_method": row.get("generation_method"),
+            "publication_lane": row.get("publication_lane"),
+            "google_trends_based": row.get("google_trends_based"),
+            "auto_publication_failure": row.get("publication_lane") == "scheduled_auto",
+            "failure_stage": "publication_worker" if row.get("last_error_category") else "eligibility",
+            "failure_reason_code": row.get("last_error_category") or ((row["block_reasons"] or [None])[0]),
+            "manual_publication_available": row.get("import_id") is not None,
+            "import_id": str(row["import_id"]) if row.get("import_id") else None,
             "research_package_id": None, "source_names": None,
         } for row in held_jobs]
+
+        auto_failure_items = [item for item in held_items if item.get("auto_publication_failure")]
+        failure_events = conn.execute(
+            """WITH latest AS (
+              SELECT DISTINCT ON (payload->>'import_id',payload->>'content_version_id',payload->>'blog_record_id')
+                id,event_type,payload FROM audit_events
+              WHERE event_type IN ('publication.auto_failure.recorded','publication.auto_failure.cleared')
+              ORDER BY payload->>'import_id',payload->>'content_version_id',payload->>'blog_record_id',id DESC
+            )
+            SELECT e.id,e.event_type,e.payload,i.generation_method,i.language_code,
+              v.title,b.id AS blog_record_id,b.display_name AS blog_name,b.url,
+              v.id AS content_version_id,
+              (SELECT COALESCE(max(j.retry_count),0)::int FROM publishing_jobs j
+               WHERE j.content_version_id=v.id AND j.blog_id=b.id) AS retry_count
+            FROM latest e JOIN external_content_imports i ON i.id=(e.payload->>'import_id')::uuid
+            LEFT JOIN content_versions v ON v.id=NULLIF(e.payload->>'content_version_id','')::uuid
+            LEFT JOIN blogger_blogs b ON b.id=NULLIF(e.payload->>'blog_record_id','')::uuid
+            WHERE e.event_type='publication.auto_failure.recorded'
+              AND NOT EXISTS (SELECT 1 FROM publishing_records r WHERE r.blog_id=b.id
+                AND r.content_version_id=v.id AND r.remote_status='LIVE' AND r.remote_verified_at IS NOT NULL)
+            ORDER BY e.id DESC"""
+        ).fetchall()
+        for row in failure_events:
+            failure = dict(row)
+            key = (str(failure.get("content_version_id")), str(failure.get("blog_record_id")))
+            if any((item.get("content_version_id"), item.get("blog_id")) == key for item in auto_failure_items):
+                continue
+            payload = failure["payload"]
+            auto_failure_items.append({
+                "item_type": "auto_failure", "id": str(failure["id"]),
+                "content_version_id": str(failure.get("content_version_id") or payload.get("content_version_id") or ""),
+                "title": failure.get("title") or "제목 없음", "language_code": failure.get("language_code"),
+                "blog_id": str(failure.get("blog_record_id") or payload.get("blog_record_id") or ""),
+                "blog_name": failure.get("blog_name") or failure.get("url"), "url": failure.get("url"),
+                "topic": failure.get("title"), "status": "auto_publication_failed",
+                "created_at": payload.get("occurred_at"), "generation_method": failure.get("generation_method"),
+                "auto_publication_failure": True, "failure_stage": payload.get("stage"),
+                "failure_reason_code": payload.get("failure_reason_code"),
+                "eligibility_reasons": payload.get("reason_codes") or [],
+                "attempts": 0, "retry_count": failure.get("retry_count") or 0,
+                "manual_publication_available": True,
+                "import_id": payload.get("import_id"), "job_id": payload.get("job_id"),
+            })
 
         all_views = {
             "queue": queue_items,
             "review": review_items,
             "published": published_items,
             "held": held_items,
+            "auto_failure": auto_failure_items,
         }
         summary = {
             "queue": len(queue_items), "review": len(review_items),
             "published": len(published_items), "held": len(held_items),
+            "auto_failure": len(auto_failure_items),
             "latest_manuscripts": len(latest_candidates),
             "duplicate_suppressed": duplicate_suppressed,
             "excluded_non_operational": max(0, int(raw_latest_count) - len(latest_candidates) - duplicate_suppressed),
@@ -1478,7 +1608,7 @@ def list_publications(
             "queued_mock_jobs": queued["n"],
             "queued_confirmed_private_drafts": queued_drafts["n"],
             "actual_published_count": int(published_total["n"]),
-            "real_writes_enabled": False,
+            "real_writes_enabled": bool(mode_data.get("real_writes_enabled")),
             "publish_ready_enabled": False,
             "adapter_available": "fake_and_guarded_blogger_live_queue",
             "mode_policy": mode_data,
@@ -1494,8 +1624,12 @@ def list_publications(
             "auto_candidate_count": sum(
                 1 for candidate in latest_candidates if candidate["auto_eligibility"]["eligible"]
             ),
-            "auto_runtime_status": "disabled_pending_separate_activation",
-            "auto_policy_active": False,
+            "auto_runtime_status": (
+                "scoped_scheduled_auto_enabled"
+                if (mode_data.get("scoped_write_capability") or {}).get("scheduled_auto")
+                else "disabled_or_worker_unavailable"
+            ),
+            "auto_policy_active": bool((mode_data.get("scheduled_auto_policy") or {}).get("enabled")),
         }
 
 
@@ -2080,7 +2214,7 @@ def cancel_schedule(job_id: UUID, request: CancelInput) -> dict[str, Any]:
 def publication_worker_status() -> dict[str, Any]:
     with connection() as conn:
         row = conn.execute(
-            """SELECT service_name,process_id,status,last_error_category,last_seen_at,updated_at
+            """SELECT service_name,process_id,status,last_error_category,last_seen_at,updated_at,execution_mode
             FROM worker_heartbeats WHERE service_name='publication_worker'"""
         ).fetchone()
         queue = conn.execute(
@@ -2125,10 +2259,12 @@ def publication_worker_status() -> dict[str, Any]:
         assert queued_drafts is not None
         assert mode is not None
         heartbeat = dict(row) if row else None
+        policy = _scheduled_auto_state(conn)
+        capability = _live_write_capability(conn, policy, heartbeat, bool(mode["emergency_stopped"]))
         if int(queue["mock_due"]) > 0:
             idle_reason = None
         elif int(queue["live_due"]) > 0:
-            idle_reason = "live_dispatch_flag_disabled_or_live_policy_blocked"
+            idle_reason = "live_job_policy_blocked_or_lane_not_ready"
         elif int(queue["mock_queued"]) > 0 or int(queue["live_queued"]) > 0:
             idle_reason = "queued_jobs_not_yet_due"
         else:
@@ -2144,7 +2280,7 @@ def publication_worker_status() -> dict[str, Any]:
             "idle_reason_if_processed_false": idle_reason,
             "global_mode": dict(mode),
             "auto_policy_active": False,
-            "scheduled_auto_policy": _scheduled_auto_state(conn),
+            "scheduled_auto_policy": policy,
             "scheduled_auto_queued": queue["scheduled_auto_queued"],
             "scheduled_auto_due": queue["scheduled_auto_due"],
             "manual_confirmed_queued": queue["manual_confirmed_queued"],
@@ -2152,9 +2288,13 @@ def publication_worker_status() -> dict[str, Any]:
             "queued_mock_jobs": queue["mock_queued"],
             "queued_confirmed_private_drafts": queued_drafts["n"],
             "private_draft_worker_available": True,
-            "live_publication_dispatch_enabled": False,
-            "public_publication_enabled": False,
-            "real_writes_enabled": False,
+            "worker_execution_mode": capability["execution_mode"],
+            "live_publication_dispatch_enabled": capability["live_dispatch"],
+            "scheduled_auto_publication_enabled": capability["scheduled_auto"],
+            "manual_confirmed_publication_enabled": capability["manual_confirmed"],
+            "public_publication_enabled": bool(capability["scheduled_auto"] or capability["manual_confirmed"]),
+            "real_writes_enabled": bool(capability["scheduled_auto"] or capability["manual_confirmed"]),
+            "write_capability_reason": capability["reason"],
         }
 
 
