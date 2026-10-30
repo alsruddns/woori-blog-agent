@@ -38,8 +38,10 @@ function Write-ServerManifest($Manifest) {
 
 function Get-CurrentGitCommit {
   try {
-    $commit = (& git -C $script:ProjectRoot rev-parse HEAD 2>$null | Select-Object -First 1)
-    if ($LASTEXITCODE -eq 0 -and $commit -match '^[0-9a-f]{40}$') { return $commit }
+    $output = & git -C $script:ProjectRoot rev-parse HEAD 2>$null
+    $gitExit = $LASTEXITCODE
+    $commit = ([string]$output).Trim()
+    if ($gitExit -eq 0 -and $commit -match '^[0-9a-f]{40}$') { return $commit }
   } catch { }
   return 'unknown'
 }

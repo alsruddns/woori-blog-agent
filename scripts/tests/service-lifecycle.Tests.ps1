@@ -74,4 +74,8 @@ Describe 'Windows service lifecycle ownership and startup policy' {
     $apply | Should Match "branch.*develop"
     $apply | Should Match 'migrations?'
   }
+
+  It 'reads the current commit before any pipeline changes the native exit code' {
+    (Get-CurrentGitCommit) | Should Match '^[0-9a-f]{40}$'
+  }
 }
