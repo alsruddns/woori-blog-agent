@@ -30,7 +30,8 @@ def observation(conn,query,geo='KR',payload=None):
 
 @pytest.mark.parametrize(('query','payload','expected'),[
     ('weather',{},('discarded','unclear_search_intent',None)),
-    ('software launch',{'news_items':[{'title':'News context'}]},('selected','specific_topic_with_news_context','technology')),
+    ('software launch',{'news_items':[{'title':'Software launch context'}]},('selected','specific_topic_with_news_context','technology')),
+    ('software launch',{'news_items':[{'title':'Unrelated weather'}]},('review_candidate','news_context_mismatch','technology')),
     ('Private rumor',{},('discarded','unverifiable_rumor',None)),
     ('Some celebrity',{},('review_candidate','insufficient_context',None)),
 ])
@@ -55,8 +56,8 @@ def test_grouping_filters_discard_history_and_queue_contract(lab,monkeypatch):
     conn,api,h=bind(lab,monkeypatch)
     before=conn.execute('SELECT count(*) n FROM publishing_jobs').fetchone()['n']
     name='software technology '+uuid4().hex
-    first=observation(conn,name,payload={'news_items':[{'title':'Research context'}]})
-    second=observation(conn,name.upper(),payload={'news_items':[{'title':'Research context'}]})
+    first=observation(conn,name,payload={'news_items':[{'title':name+' news context'}]})
+    second=observation(conn,name.upper(),payload={'news_items':[{'title':name+' news context'}]})
     unrelated=observation(conn,name+' separate event')
     editorial.reconcile()
     detail=api.get('/admin/research/trend-editorial/'+str(first),headers=h).json()
@@ -94,7 +95,7 @@ def test_same_slot_never_fetches_success_again(lab,monkeypatch):
 def test_trends_queue_dispatch_has_distinct_provenance_and_no_publication(lab,monkeypatch):
     conn,api,h=bind(lab,monkeypatch)
     name='software technology '+uuid4().hex
-    observation_id=observation(conn,name,payload={'news_items':[{'title':'Research context'}]})
+    observation_id=observation(conn,name,payload={'news_items':[{'title':name+' news context'}]})
     editorial.reconcile()
     topic=api.get('/admin/research/trend-editorial/'+str(observation_id),headers=h).json()['topic_id']
     profile=conn.execute("INSERT INTO language_profiles(language_code,target_country) VALUES('ko','KR') ON CONFLICT(language_code,target_country) DO UPDATE SET search_intent=language_profiles.search_intent RETURNING id").fetchone()['id']

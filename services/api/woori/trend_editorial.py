@@ -55,8 +55,11 @@ def classify(query: str, payload: dict[str, Any] | None) -> tuple[str,str,str | 
         return 'discarded','unverifiable_rumor',None
     category=domains[0] if domains else None
     # Feed headlines provide research context, never factual verification.
-    if domains and payload and payload.get('news_items'):
+    headlines=[topics.normalize_query(str(n.get('title') or '')) for n in (payload or {}).get('news_items',[]) if isinstance(n,dict)]
+    if domains and any(key in title for title in headlines):
         return 'selected','specific_topic_with_news_context',category
+    if headlines and not any(key in title for title in headlines):
+        return 'review_candidate','news_context_mismatch',category
     return 'review_candidate','insufficient_context',category
 
 
