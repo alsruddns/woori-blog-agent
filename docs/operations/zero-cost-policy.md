@@ -123,4 +123,6 @@ Google Trends authoring reuses the same installed official Codex CLI, ChatGPT lo
 
 ## P5-CODEX-092 Trends Auto publication volume policy (2026-10-31)
 
+P5-CODEX-093 adds an authenticated per-blog Trends enable request as a scoped public-consent recording path. It still requires the existing Blogger cost approval, actual write-verification evidence and a fresh identity check. This does not establish account billing or quota state, and no agent execution fabricates administrator consent. Source assessments reuse retained collector proofs and do not fetch arbitrary news URLs or approve semantic accuracy/reuse rights.
+
 New Trends policy events may use `daily_limit=NULL` to mean no application daily or per-round publication count ceiling. Worker language/global daily and hourly caps are bypassed only for the `trends_auto` lane; OAuth-connection 2-minute and Blogger-blog 5-minute spacing, duplicate checks, quality/rights review, emergency stop, and external Blogger approval gates remain. This removes application volume caps; it does not imply that Blogger API calls are free or uncapped by Google. Cloud Billing association and public-write zero-cost approval remain unverified, so no Trends Auto policy was activated and no public Blogger write was attempted. Codex unattended generation is also fail-closed under the current runtime baseline.

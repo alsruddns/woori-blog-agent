@@ -14,3 +14,11 @@
 - Remaining: actual live evidence collection for the new Trends source URLs, trustworthy semantic/contradiction and rights review, verified eligible new article, historical write verification reconciliation, fresh Google identity verification, authenticated administrator policy approval, operational LIVE E2E. This checkpoint is not completion of the requested autonomous semantic verification or automatic publication pipeline.
 - Files: claim_evidence.py, content_imports.py, external_policy.py, trends_publication.py, their focused tests; Dashboard import detail and Trends policy components.
 - Commit identity: see git log for P5-CODEX-093; runtime and final verification recorded in follow-up.
+
+## Runtime checkpoint
+
+- Final reflection initially caught a nullable INSERT RETURNING result in mypy; corrected in 68ad5a3. No service stopped before validation passed.
+- Final Ruff/mypy, 14 changed tests, isolated wheel, Dashboard lint/typecheck/build passed. Broader focused safety suite passed 59 tests before reflection.
+- Safely restarted API PID 10164, Dashboard PID 47100, Research Worker PID 58748, Publication Worker PID 59484 at code commit 68ad5a3. HTTP checks passed; worker heartbeats fresh. Trends policy remains off and queued live jobs remain zero.
+- Existing policy UI Playwright desktop/mobile 390px tests passed 2/2 against the reflected Dashboard. This does not cover a real administrator approval submission or an end-to-end publishing transaction.
+- No production Blogger POST, new Import, Publishing Job or LIVE result occurred. No migration was needed. End-to-end autonomous semantic/rights verification and LIVE publication remain incomplete; this record deliberately reports a checkpoint, not completion.
