@@ -13,6 +13,17 @@ from woori.trends import ALLOWED_GEOS, parse_feed
 lab = shared_lab
 
 
+@pytest.mark.parametrize(('minutes','expected'),[(5,'0.08'),(6,'0.1'),(10,'0.17'),
+    (15,'0.25'),(20,'0.33'),(25,'0.42'),(30,'0.5'),(60,'1')])
+def test_trend_window_parameter_is_decimal_not_a_verified_filter(minutes,expected):
+    assert trends.minutes_to_hours_parameter(minutes)==expected
+
+
+@pytest.mark.parametrize('minutes',[0,61,-1,True,1.5])
+def test_trend_window_parameter_rejects_invalid_input(minutes):
+    with pytest.raises(ValueError):trends.minutes_to_hours_parameter(minutes)
+
+
 def test_google_trends_feed_preserves_source_fields_without_inventing_rank() -> None:
     raw = b"""<?xml version="1.0"?><rss xmlns:ht="https://trends.google.com/trending/rss"><channel>
       <lastBuildDate>Tue, 27 Oct 2026 08:00:00 GMT</lastBuildDate>

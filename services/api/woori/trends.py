@@ -7,7 +7,7 @@ import re
 import time
 import xml.etree.ElementTree as ET
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from email.utils import parsedate_to_datetime
 from typing import Any
 from uuid import uuid4
@@ -38,6 +38,14 @@ RETRYABLE_FAILURES = {
 }
 SCHEDULER_LOCK = "google_trends_hourly_scheduler"
 NS = {"ht": "https://trends.google.com/trending/rss"}
+
+
+def minutes_to_hours_parameter(minutes: int) -> str:
+    """Serialize a requested window; this does not assert provider support."""
+    if isinstance(minutes, bool) or not isinstance(minutes, int) or not 1 <= minutes <= 60:
+        raise ValueError("trend_window_minutes_out_of_range")
+    value=(Decimal(minutes)/Decimal(60)).quantize(Decimal('0.01'),rounding=ROUND_HALF_UP)
+    return format(value.normalize(),'f')
 
 
 def _date(value: str | None) -> datetime | None:
