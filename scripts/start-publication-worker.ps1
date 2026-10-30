@@ -76,9 +76,10 @@ if (-not $heartbeatVerified) {
 }
 $manifest.services['publication_worker'] = @{
   pid=[int]$actualWorker.Id; runner=$runner; root=$script:ProjectRoot; mode=$Mode
-  started_utc=(Get-ProcessStarted ([int]$actualWorker.Id))
+  started_utc=(Get-ProcessStarted ([int]$actualWorker.Id)); applied_commit=(Get-CurrentGitCommit); log_path=$stdout
 }
 Write-ServerManifest $manifest
+Write-LifecycleLog 'publication_worker' 'started' "pid=$($actualWorker.Id) mode=$Mode heartbeat_fresh=true log=$stdout"
 $modeLabel = switch ($Mode) {
   'scheduled-auto' { 'scheduled-auto live lane' }
   'manual-confirmed' { 'exactly user-confirmed manual live lane' }

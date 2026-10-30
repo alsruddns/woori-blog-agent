@@ -1,6 +1,6 @@
 [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
-  [ValidateSet('api','dashboard','worker','publication_worker','all')][string]$Service = 'all',
+  [ValidateSet('api','dashboard','research_worker','worker','evaluation_worker','publication_worker','all')][string]$Service = 'all',
   [ValidateRange(5,3600)][int]$TimeoutSeconds = 60,
   [switch]$Force
 )
@@ -19,7 +19,9 @@ function Get-ServiceStopKinds([string]$Name) {
   switch ($Name) {
     'api' { return @('api') }
     'dashboard' { return @('dashboard') }
-    'worker' { return @('worker','evaluation_worker') }
+    'research_worker' { return @('worker') }
+    'worker' { return @('worker') }
+    'evaluation_worker' { return @('evaluation_worker') }
     'publication_worker' { return @('publication_worker') }
     default { throw "Unsupported service: $Name" }
   }
@@ -80,11 +82,14 @@ function Get-StopCandidates([string]$Name, $ProcessTable) {
       RelatedLaunchers=$related
     })
   }
-  if ($Name -eq 'worker') {
+  if ($Name -in @('worker','research_worker')) {
     $venvPython = [IO.Path]::GetFullPath((Join-Path $script:ProjectRoot '.venv\Scripts\python.exe'))
     $matched = @(
       Get-CheckoutServiceProcesses $ProcessTable 'worker' |
-        Where-Object { Test-ExactCheckoutServiceProcess $_ 'worker' }
+        Where-Object {
+          (Test-ExactCheckoutServiceProcess $_ 'worker') -and
+          ($Name -ne 'research_worker' -or [string]$_.CommandLine -notmatch '(?i)(^|\s)--evaluation(?:\s|$)')
+        }
     )
     $candidates = @()
     foreach ($process in $matched | Where-Object { [IO.Path]::GetFullPath([string]$_.Path) -ine $venvPython }) {
@@ -453,7 +458,7 @@ function Invoke-ProjectStop {
 
 function Invoke-StopCommand([string]$SelectedService, [int]$Timeout, [bool]$AllowForce) {
   $preview = [bool]$WhatIfPreference
-  $targets = if ($SelectedService -eq 'all') { @('dashboard','api','worker','publication_worker') } else { @($SelectedService) }
+  $targets = if ($SelectedService -eq 'all') { @('dashboard','api','research_worker','publication_worker') } else { @($SelectedService) }
   $result = $true
   foreach ($name in $targets) {
     try { if (-not (Invoke-ProjectStop $name $Timeout $AllowForce)) { $result=$false } }

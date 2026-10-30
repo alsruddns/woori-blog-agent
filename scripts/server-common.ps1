@@ -2,6 +2,7 @@ $ErrorActionPreference = 'Stop'
 $script:ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $script:RuntimeDir = Join-Path $script:ProjectRoot '.runtime'
 $script:ManifestPath = Join-Path $script:RuntimeDir 'servers.json'
+$script:ValidatedSourcePath = Join-Path $script:RuntimeDir 'validated-source.json'
 $script:Services = @{
   api = @{ Port = 8100; Script = (Join-Path $PSScriptRoot 'run-api.ps1') }
   dashboard = @{ Port = 3100; Script = (Join-Path $PSScriptRoot 'run-dashboard.ps1') }
@@ -18,6 +19,8 @@ function Read-ServerManifest {
           pid = [int]$property.Value.pid; runner = [string]$property.Value.runner
           root = [string]$property.Value.root; started_utc = [string]$property.Value.started_utc
           mode = [string]$property.Value.mode
+          applied_commit = [string]$property.Value.applied_commit
+          log_path = [string]$property.Value.log_path
         }
       }
     }
@@ -31,6 +34,70 @@ function Write-ServerManifest($Manifest) {
   $temp = "$($script:ManifestPath).tmp"
   $Manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $temp -Encoding utf8
   Move-Item -LiteralPath $temp -Destination $script:ManifestPath -Force
+}
+
+function Get-CurrentGitCommit {
+  try {
+    $commit = (& git -C $script:ProjectRoot rev-parse HEAD 2>$null | Select-Object -First 1)
+    if ($LASTEXITCODE -eq 0 -and $commit -match '^[0-9a-f]{40}$') { return $commit }
+  } catch { }
+  return 'unknown'
+}
+
+function Get-TrackedGitChanges {
+  try { return @(& git -C $script:ProjectRoot status --porcelain --untracked-files=no) }
+  catch { throw 'Could not verify the tracked Git worktree state.' }
+}
+
+function Read-ValidatedSource {
+  if (-not (Test-Path -LiteralPath $script:ValidatedSourcePath -PathType Leaf)) { return $null }
+  try { return (Get-Content -LiteralPath $script:ValidatedSourcePath -Raw -Encoding utf8 | ConvertFrom-Json) }
+  catch { throw 'Validated source marker is invalid; inspect .runtime/validated-source.json.' }
+}
+
+function Write-ValidatedSource([string]$Commit, [string[]]$Services, [string]$DashboardBuildDir = '') {
+  [void](Get-ProjectLogDirectory)
+  $payload = [ordered]@{ commit=$Commit; validated_at_utc=[DateTimeOffset]::UtcNow.ToString('o'); services=@($Services | Sort-Object -Unique); dashboard_build_dir=$DashboardBuildDir }
+  $temp = "$($script:ValidatedSourcePath).$([guid]::NewGuid().ToString('N')).tmp"
+  [IO.File]::WriteAllText($temp,($payload | ConvertTo-Json -Depth 3),(New-Object System.Text.UTF8Encoding($false)))
+  Move-Item -LiteralPath $temp -Destination $script:ValidatedSourcePath -Force
+}
+
+function Write-LifecycleLog([string]$ServiceName, [string]$Event, [string]$Detail = '') {
+  $logs = Get-ProjectLogDirectory
+  $log = Join-Path $logs 'service-lifecycle.log'
+  if ((Test-Path -LiteralPath $log -PathType Leaf) -and (Get-Item -LiteralPath $log).Length -gt 2MB) {
+    Move-Item -LiteralPath $log -Destination (Join-Path $logs 'service-lifecycle.previous.log') -Force
+  }
+  $record = [ordered]@{
+    at_utc = [DateTimeOffset]::UtcNow.ToString('o'); service = $ServiceName
+    event = $Event; detail = $Detail; git_commit = (Get-CurrentGitCommit)
+  } | ConvertTo-Json -Compress
+  [IO.File]::AppendAllText($log, $record + [Environment]::NewLine, (New-Object System.Text.UTF8Encoding($false)))
+}
+
+function Get-ProjectLogDirectory {
+  if (-not (Test-Path -LiteralPath $script:RuntimeDir)) { New-Item -ItemType Directory -Path $script:RuntimeDir -Force | Out-Null }
+  $runtimeItem = Get-Item -LiteralPath $script:RuntimeDir -Force
+  if (($runtimeItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+      [IO.Path]::GetFullPath($runtimeItem.FullName).TrimEnd('\') -ine [IO.Path]::GetFullPath($script:RuntimeDir).TrimEnd('\')) {
+    throw '.runtime is not a project-owned directory; refusing service lifecycle writes.'
+  }
+  $logs = Join-Path $script:RuntimeDir 'logs'
+  if (-not (Test-Path -LiteralPath $logs)) { New-Item -ItemType Directory -Path $logs -Force | Out-Null }
+  $logItem = Get-Item -LiteralPath $logs -Force
+  if (($logItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+      [IO.Path]::GetFullPath($logItem.FullName).TrimEnd('\') -ine [IO.Path]::GetFullPath($logs).TrimEnd('\')) {
+    throw '.runtime/logs is not a project-owned directory; refusing service lifecycle writes.'
+  }
+  return $logs
+}
+
+function Test-LoopbackHttp([string]$Url, [int]$TimeoutSeconds = 5) {
+  try {
+    $response = Invoke-WebRequest -Uri $Url -Method Get -TimeoutSec $TimeoutSeconds -UseBasicParsing
+    return $response.StatusCode -eq 200
+  } catch { return $false }
 }
 
 function Get-ProcessTable {

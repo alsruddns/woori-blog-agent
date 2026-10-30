@@ -1,8 +1,12 @@
-param([ValidateSet('api','dashboard','publication_worker','all')][string]$Service='all',
+param([ValidateSet('api','dashboard','worker','research_worker','publication_worker','all')][string]$Service='all',
   [ValidateSet('mock-only','scheduled-auto','manual-confirmed','scheduled-auto-manual')][string]$PublicationMode='mock-only')
 . (Join-Path $PSScriptRoot 'server-common.ps1')
 if ($Service -eq 'publication_worker') {
   & (Join-Path $PSScriptRoot 'start-publication-worker.ps1') -Mode $PublicationMode
+  exit $LASTEXITCODE
+}
+if ($Service -in @('worker','research_worker')) {
+  & (Join-Path $PSScriptRoot 'start-research-worker.ps1')
   exit $LASTEXITCODE
 }
 $manifest = Read-ServerManifest
@@ -18,11 +22,14 @@ foreach ($name in $targets) {
   $listeners = Get-Listeners $port
   if ($listeners.Count) { throw "Port $port is already occupied. Run scripts/status.ps1 and stop only its verified project-owned process." }
   $runner = (Resolve-Path $script:Services[$name].Script).Path
-  $proc = Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',"`"$runner`"") -WorkingDirectory $script:ProjectRoot -PassThru
+  $logs = Get-ProjectLogDirectory
+  $arguments = @('-NoProfile','-ExecutionPolicy','Bypass','-WindowStyle','Hidden','-File',('"' + $runner + '"'))
+  $proc = Start-Process -FilePath 'powershell.exe' -ArgumentList $arguments -WorkingDirectory $script:ProjectRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $logs "$name.stdout.log") -RedirectStandardError (Join-Path $logs "$name.stderr.log")
   Start-Sleep -Milliseconds 800
   if ($proc.HasExited) { throw "$name startup process exited; inspect its service window and application log." }
-  $manifest.services[$name] = @{ pid=$proc.Id; runner=$runner; root=$script:ProjectRoot; started_utc=$proc.StartTime.ToUniversalTime().ToString('o') }
+  $manifest.services[$name] = @{ pid=$proc.Id; runner=$runner; root=$script:ProjectRoot; started_utc=$proc.StartTime.ToUniversalTime().ToString('o'); applied_commit=(Get-CurrentGitCommit); log_path=(Join-Path $logs "$name.stdout.log") }
   Write-ServerManifest $manifest
+  Write-LifecycleLog $name 'starting' "runner_pid=$($proc.Id) port=$port"
   $table = Get-ProcessTable
   if (-not (Test-RecordedRunner ($table | Where-Object Id -eq $proc.Id | Select-Object -First 1) $manifest.services[$name] $name)) { throw "Could not verify $name executable, checkout, and start-time ownership after startup." }
   $deadline = (Get-Date).AddSeconds(30)
@@ -35,5 +42,6 @@ foreach ($name in $targets) {
   try { $health = Invoke-WebRequest -Uri $healthUrl -Method Get -TimeoutSec 8 -UseBasicParsing }
   catch { throw "$name is listening but its read-only health route did not respond. Process remains tracked." }
   if ($health.StatusCode -ne 200) { throw "$name health route returned $($health.StatusCode). Process remains tracked." }
+  Write-LifecycleLog $name 'ready' "runner_pid=$($proc.Id) port=$port http_status=200"
   Write-Output "$name started; verified HTTP GET $healthUrl returned 200 (runner PID $($proc.Id))."
 }
