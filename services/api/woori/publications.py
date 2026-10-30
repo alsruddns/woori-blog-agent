@@ -1080,8 +1080,8 @@ def _candidate(conn: Any, version_id: UUID, blog_id: UUID) -> dict[str, Any] | N
         JOIN languages lang ON lang.code=l.language_code
         LEFT JOIN LATERAL (
           SELECT id FROM language_profiles
-          WHERE language_code=l.language_code AND target_country IN (l.target_country,'')
-          ORDER BY (target_country=l.target_country) DESC LIMIT 1
+          WHERE language_code=l.language_code AND target_country=l.target_country
+          LIMIT 1
         ) lp ON true
         LEFT JOIN publishing_policies p ON p.blog_id=b.id AND p.profile_id=lp.id
         LEFT JOIN LATERAL (

@@ -744,8 +744,9 @@ def test_emergency_stop_is_persisted_and_audited_in_isolated_database(
     assert event["payload"]["emergency_stopped"] is True
 
 
+@pytest.mark.parametrize(('language','country'), [('ko','KR'),('en','US'),('ja','JP'),('zh-CN','CN')])
 def test_manual_live_request_commits_approval_job_and_followups_atomically_in_isolated_db(
-    lab: Any, monkeypatch: pytest.MonkeyPatch,
+    lab: Any, monkeypatch: pytest.MonkeyPatch, language: str, country: str,
 ) -> None:
     """Exercise the production POST SQL and schema guards inside the lab rollback boundary."""
     from contextlib import contextmanager
@@ -754,10 +755,9 @@ def test_manual_live_request_commits_approval_job_and_followups_atomically_in_is
     from woori.google_http import WRITE_SCOPE
 
     conn, api, headers = lab
-    language = conn.execute("SELECT code FROM languages WHERE code='ko'").fetchone()["code"]
     profile = conn.execute(
-        "SELECT id FROM language_profiles WHERE language_code=%s AND target_country='' LIMIT 1",
-        (language,),
+        "INSERT INTO language_profiles(language_code,target_country) VALUES (%s,%s) ON CONFLICT(language_code,target_country) DO UPDATE SET search_intent=language_profiles.search_intent RETURNING id",
+        (language,country),
     ).fetchone()["id"]
     oauth_id = uuid4()
     blog_record_id = uuid4()
@@ -769,28 +769,31 @@ def test_manual_live_request_commits_approval_job_and_followups_atomically_in_is
     conn.execute(
         """INSERT INTO blogger_blogs(id,language_code,url,display_name,active,blog_id,
              connection_verified_at,test_publish_verified_at,oauth_connection_id)
-           VALUES (%s,'ko','https://manual-transaction-fixture.blogspot.com',
+           VALUES (%s,%s,'https://manual-transaction-fixture.blogspot.com',
              'Isolated manual transaction fixture',true,%s,now(),now(),%s)""",
-        (blog_record_id, blog_id, oauth_id),
+        (blog_record_id, language, blog_id, oauth_id),
     )
     policy_id = uuid4()
     conn.execute(
         """INSERT INTO publishing_policies(id,language_code,blog_id,profile_id,active)
-           VALUES (%s,'ko',%s,%s,false)""",
-        (policy_id, blog_record_id, profile),
+           VALUES (%s,%s,%s,%s,false)""",
+        (policy_id, language, blog_record_id, conn.execute(
+            "SELECT id FROM language_profiles WHERE language_code=%s AND target_country=''",
+            (language,),
+        ).fetchone()['id']),
     )
     group_id, localization_id, version_id, import_id, import_version_id = (uuid4() for _ in range(5))
     title = "Isolated manual publication transaction"
     body = "A synthetic body used only to exercise the transaction in a forced-rollback test."
     conn.execute("INSERT INTO content_groups(id) VALUES (%s)", (group_id,))
     conn.execute(
-        "INSERT INTO content_localizations(id,group_id,language_code,target_country) VALUES (%s,%s,'ko','')",
-        (localization_id, group_id),
+        "INSERT INTO content_localizations(id,group_id,language_code,target_country) VALUES (%s,%s,%s,%s)",
+        (localization_id, group_id, language, country),
     )
     conn.execute(
         """INSERT INTO content_versions(id,group_id,language,localization_id,version,title,body)
-           VALUES (%s,%s,'ko',%s,1,%s,%s)""",
-        (version_id, group_id, localization_id, title, body),
+           VALUES (%s,%s,%s,%s,1,%s,%s)""",
+        (version_id, group_id, language, localization_id, title, body),
     )
     digest = hashlib.sha256((title + "\n" + body + "\n{}\n[]").encode()).hexdigest()
     conn.execute(
@@ -799,10 +802,10 @@ def test_manual_live_request_commits_approval_job_and_followups_atomically_in_is
             target_audiences,category,title,body_markdown,source_ids,sources,claims,
             fact_checked_at,seo_metadata,blogger_labels,generation_method,generated_at,
             submitted_by,content_sha256,idempotency_key)
-           VALUES (%s,%s,%s,'original','KR','ko',%s,'finance',%s,%s,'[]','[]','[]',now(),
+           VALUES (%s,%s,%s,'original',%s,%s,%s,'finance',%s,%s,'[]','[]','[]',now(),
              '{}','[]','manual_codex_import',now(),'isolated-test',%s,%s)""",
-        (import_id, str(import_id), "manual-test-" + str(import_id),
-         Jsonb([{"language_code": "ko", "target_region": "KR"}]), title, body,
+        (import_id, str(import_id), "manual-test-" + str(import_id),country,language,
+         Jsonb([{"language_code": language, "target_region": country}]), title, body,
          digest, hashlib.sha256(("import" + str(import_id)).encode()).hexdigest()),
     )
     conn.execute(
@@ -823,12 +826,26 @@ def test_manual_live_request_commits_approval_job_and_followups_atomically_in_is
             yield conn
 
     monkeypatch.setattr(publications, "connection", shared_connection)
-    monkeypatch.setattr(publications, "_manual_publication_blockers", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(publications.external_policy, "_blogger_policy_approval", lambda: {"approved": True})
     monkeypatch.setattr(publications.BloggerLivePublisher, "_target", staticmethod(lambda _blog: None))
 
     candidate = publications._candidate(conn, version_id, blog_record_id)
+    assert candidate is not None and candidate['policy_id'] is None
+    missing_policy = publications._manual_publication_snapshot(conn, candidate)
+    assert 'publication_policy_missing' in publications._manual_publication_blockers(
+        conn, candidate, missing_policy, blog_record_id,
+    )
+    conn.execute(
+        "INSERT INTO publishing_policies(language_code,blog_id,profile_id,active) VALUES (%s,%s,%s,false)",
+        (language,blog_record_id,profile),
+    )
+    candidate = publications._candidate(conn, version_id, blog_record_id)
     snapshot = publications._manual_publication_snapshot(conn, candidate)
+    other_blog = conn.execute("SELECT id FROM blogger_blogs WHERE language_code<>%s LIMIT 1", (language,)).fetchone()['id']
+    wrong = publications._candidate(conn, version_id, other_blog)
+    assert 'blog_language_mismatch' in publications._manual_publication_blockers(
+        conn, wrong, publications._manual_publication_snapshot(conn, wrong), other_blog,
+    )
     payload = {
         "content_version_id": str(version_id), "blog_id": str(blog_record_id),
         "expected_title_sha256": snapshot["title_sha256"],

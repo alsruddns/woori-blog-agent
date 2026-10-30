@@ -1,5 +1,6 @@
 import logging
 import secrets
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 import psycopg
@@ -76,7 +77,8 @@ async def database_error(request: Request, exc: psycopg.Error) -> JSONResponse:
         safe_rule_code = "database_operation_failed"
     source_function = getattr(diag, "source_function", None) or "unknown"
     logger.error(
-        "Database request failed: request_id=%s path=%s method=%s sqlstate=%s error_code=%s db_function=%s schema=%s table=%s column=%s constraint=%s",
+        "Database request failed: at_utc=%s request_id=%s path=%s method=%s sqlstate=%s error_code=%s db_function=%s schema=%s table=%s column=%s constraint=%s",
+        datetime.now(UTC).isoformat(),
         request_id,
         request.url.path,
         request.method,
