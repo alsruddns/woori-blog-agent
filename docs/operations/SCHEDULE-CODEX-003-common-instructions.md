@@ -13,27 +13,38 @@ to the current scheduled occurrence.
 
 Before researching or writing, identify the topic/event, target country, target
 language, registered target Blogger ID, and (only for a market-close task) the
-actual completed market session date. Use an event_group_id that remains stable
-for the same real-world event. Do not treat quarantine/rejected files as
-successful imports or posts.
+actual completed market session date. Use a concise event_group_id (3-128
+characters) that remains stable for the same real-world event, such as an
+agency release number or filing identifier. Do not use the full source URL as
+the event ID. Do not treat quarantine/rejected files as successful imports or
+posts.
 
-Run the read-only duplicate preflight using this project command, substituting
+Before drafting, run the local-only generation preflight, substituting
 the real values from this task and the current occurrence:
 
-.\.venv\Scripts\python.exe .\scripts\scheduled_duplicate_check.py --language-code <ko|en|ja|zh-CN> --target-country <ISO-3166-1-country-code> --target-blog-id <registered-blog-id> [--trade-date YYYY-MM-DD] --event-group-id "<stable-event-id>" --topic "<concise-real-topic>"
+.\.venv\Scripts\python.exe .\scripts\scheduled_duplicate_check.py --stage generation --language-code <ko|en|ja|zh-CN> --target-country <ISO-3166-1-country-code> --target-blog-id <registered-blog-id> [--trade-date YYYY-MM-DD] --event-group-id "<stable-event-id>" --topic "<concise-real-topic>"
 
-Use --trade-date only for a market-close task. The command calls only the fixed
-same-origin Dashboard duplicate-check proxy on 127.0.0.1:3100. Do not call the
-API on port 8100, connect directly to PostgreSQL, read .env/credentials, or call
-Blogger. Interpret the returned status exactly:
-- already_published: stop; do not write a new article.
-- already_imported: stop creating a new article; report the existing import for
-  its existing downstream handling.
-- failed_only: a new original is allowed only when blogger_read_complete is
-  true. Preserve every failed file and use a new content UUID.
-- not_found: a new original is allowed only when blogger_read_complete is true.
-- unknown, missing fields, command error, incomplete Blogger read, or any
-  ambiguity: stop and create no ready file.
+Use --trade-date only for a market-close task. This command calls only the
+fixed same-origin Dashboard proxy and checks local DB, Import, publication, and
+inbox history; it does not call Blogger. Do not call the API on port 8100,
+connect directly to PostgreSQL, or read .env/credentials. Interpret the local
+and remote fields separately:
+- local_status=already_published: stop; do not write a new article.
+- local_status=already_imported: do not create a new content ID; report/use the
+  existing import path.
+- local_status=not_found or failed_only with draft_import_allowed=true: a fresh
+  original may be drafted and imported. Preserve every failed file and use a
+  new content UUID. The overall status may remain `unknown`, with
+  remote_status=not_checked; this is not `not_found` or verified uniqueness.
+  Record that publication-time remote verification is still required.
+- local_status=unknown, draft_import_allowed=false, missing fields, command
+  error, or local-history ambiguity: stop and create no ready file.
+
+The Publication Worker performs the separate remote Blogger duplicate check
+before dispatch and again immediately before a live write. A matching live
+post blocks duplicate publication and is linked to the existing post. A
+remote-read error holds the job out of Blogger writes and schedules bounded
+retry; it does not invalidate an otherwise locally unique draft/import.
 
 Research current, topic-relevant material using the tools available to this
 scheduled task and the project's reviewed outbound/provider rules. Prefer

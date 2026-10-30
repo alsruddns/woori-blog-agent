@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
+from io import BytesIO
 from typing import Self
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 
 from scripts.scheduled_duplicate_check import ENDPOINT, ORIGIN, check_duplicate
 
@@ -17,7 +18,7 @@ class FakeResponse:
     def __exit__(self, *_args: object) -> None:
         return None
 
-    def read(self) -> bytes:
+    def read(self, _limit: int = -1) -> bytes:
         return json.dumps(self.payload).encode("utf-8")
 
 
@@ -25,7 +26,7 @@ def test_duplicate_cli_calls_only_fixed_local_dashboard_preflight() -> None:
     payload = {
         "language_code": "ko", "target_country": "KR", "target_blog_id": "3321654108096579717",
         "trade_date": "2026-10-29", "event_group_id": "kr-close-20261029",
-        "topic": "Korean market close", "content_id": None,
+        "topic": "Korean market close", "content_id": None, "stage": "publication",
     }
     seen: dict[str, object] = {}
 
@@ -54,7 +55,37 @@ def test_duplicate_cli_converts_transport_error_to_unknown() -> None:
         raise URLError("offline")
 
     assert check_duplicate({}, opener=opener) == {
-        "status": "unknown", "reason": "duplicate_preflight_unavailable"
+        "status": "unknown", "reason": "duplicate_preflight_transport_error",
+        "transport_error_type": "URLError",
+    }
+
+
+def test_duplicate_cli_reports_http_status_without_error_body() -> None:
+    def opener(_request, *, timeout):
+        raise HTTPError(ENDPOINT, 503, "upstream unavailable", {}, None)
+
+    assert check_duplicate({}, opener=opener) == {
+        "status": "unknown", "reason": "duplicate_preflight_http_error",
+        "http_status": 503, "transport_error_type": "HTTPError",
+    }
+
+
+def test_duplicate_cli_preserves_sanitized_validation_location_for_422() -> None:
+    body = json.dumps({"detail": [{"loc": ["body", "event_group_id"],
+                                   "msg": "String should have at most 128 characters",
+                                   "input": "must-not-be-returned"}]}).encode()
+
+    def opener(_request, *, timeout):
+        raise HTTPError(ENDPOINT, 422, "invalid input", {}, BytesIO(body))
+
+    result = check_duplicate({}, opener=opener)
+    assert result == {
+        "status": "unknown", "reason": "duplicate_preflight_http_error",
+        "http_status": 422, "transport_error_type": "HTTPError",
+        "validation_detail": [{
+            "location": "body.event_group_id",
+            "message": "String should have at most 128 characters",
+        }],
     }
 
 

@@ -26,6 +26,20 @@ from woori.publications import (
 lab = shared_lab
 
 
+def test_remote_duplicate_unknown_uses_bounded_retry_and_found_never_retries() -> None:
+    first = publication_worker.remote_duplicate_retry_plan("unknown", 0, 2)
+    exhausted = publication_worker.remote_duplicate_retry_plan("unknown", 2, 2)
+    duplicate = publication_worker.remote_duplicate_retry_plan("found", 0, 2)
+
+    assert first == {"job_status": "queued", "retry": True, "retry_count": 1,
+                     "delay_seconds": 60}
+    assert exhausted == {"job_status": "failed", "retry": False, "retry_count": 3,
+                         "delay_seconds": None}
+    assert duplicate == {"job_status": "blocked", "retry": False, "retry_count": 0,
+                        "delay_seconds": None}
+    assert publication_worker.remote_duplicate_retry_delay(20) == 900
+
+
 def test_manual_publish_reason_accepts_concise_korean_confirmation() -> None:
     payload = {
         "content_version_id": str(uuid4()),

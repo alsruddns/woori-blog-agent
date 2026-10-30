@@ -92,6 +92,9 @@ def test_scheduled_envelope_requires_self_reported_task_and_consistent_target() 
     assert contract["properties"]["scheduled_origin"]["properties"]["task_type"]["enum"] == [
         "market_close_kr", "market_close_jp", "market_close_cn", "market_close_us", "weekly_finance", "trends_major_issue", "scheduled_article",
     ]
+    assert contract["properties"]["scheduled_origin"]["properties"]["remote_duplicate_status"]["enum"] == [
+        "not_checked", "clear", "found", "unknown", "database_verified",
+    ]
     no_market_date = json.loads(json.dumps(payload))
     no_market_date["scheduled_origin"]["market_date"] = None
     with pytest.raises(ValidationError, match="market_close_requires_market_date"):
@@ -176,6 +179,28 @@ def test_scheduled_origin_rejects_naive_time_and_unregistered_url_shape() -> Non
     invalid_url = dict(payload, target_blog_url="https://example.org")
     with pytest.raises(ValidationError, match="registered_blogspot"):
         ScheduledImportOrigin.model_validate(invalid_url)
+
+
+def test_scheduled_origin_records_deferred_remote_duplicate_check_consistently() -> None:
+    payload = scheduled_payload()["scheduled_origin"]
+    assert isinstance(payload, dict)
+    payload.update({
+        "local_duplicate_status": "failed_only",
+        "remote_duplicate_status": "not_checked",
+        "draft_import_allowed": True,
+        "publication_recheck_required": True,
+        "publication_retry_status": "required_before_publication",
+    })
+    parsed = ScheduledImportOrigin.model_validate(payload)
+    assert parsed.remote_duplicate_status == "not_checked"
+    assert parsed.draft_import_allowed is True
+
+    unsafe = dict(payload, local_duplicate_status="already_imported")
+    with pytest.raises(ValidationError, match="draft_import_requires_locally_clear"):
+        ScheduledImportOrigin.model_validate(unsafe)
+    untracked = dict(payload, publication_recheck_required=False)
+    with pytest.raises(ValidationError, match="remote_unconfirmed_requires"):
+        ScheduledImportOrigin.model_validate(untracked)
 
 
 def test_inbox_posts_review_held_item_and_idempotent_origin_then_moves_file(tmp_path: Path) -> None:

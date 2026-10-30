@@ -207,6 +207,18 @@ class ScheduledImportOrigin(BaseModel):
     automation_id: str | None = Field(default=None, min_length=1, max_length=128,
                                        pattern=r"^[A-Za-z0-9_.:-]+$")
     scheduled_slot: datetime | None = None
+    local_duplicate_status: Literal[
+        "already_published", "already_imported", "failed_only", "not_found", "unknown"
+    ] | None = None
+    remote_duplicate_status: Literal[
+        "not_checked", "clear", "found", "unknown", "database_verified"
+    ] | None = None
+    remote_failure_code: str | None = Field(default=None, min_length=1, max_length=120)
+    draft_import_allowed: bool | None = None
+    publication_recheck_required: bool | None = None
+    publication_retry_status: Literal[
+        "not_started", "not_required", "required_before_publication", "pending"
+    ] | None = None
     executed_at: datetime
     market_date: date | None = None
     target_language_code: str = Field(min_length=2, max_length=35)
@@ -249,6 +261,30 @@ class ScheduledImportOrigin(BaseModel):
             automation_id=self.automation_id,
             scheduled_slot=self.scheduled_slot,
         )
+        duplicate_fields = (
+            self.local_duplicate_status, self.remote_duplicate_status,
+            self.draft_import_allowed, self.publication_recheck_required,
+            self.publication_retry_status,
+        )
+        if any(value is not None for value in duplicate_fields) and any(
+            value is None for value in duplicate_fields
+        ):
+            raise ValueError("duplicate_preflight_metadata_must_be_complete")
+        if self.draft_import_allowed is True and self.local_duplicate_status not in {
+            "not_found", "failed_only"
+        }:
+            raise ValueError("draft_import_requires_locally_clear_duplicate_status")
+        if self.remote_duplicate_status in {"not_checked", "unknown"}:
+            if self.publication_recheck_required is not True:
+                raise ValueError("remote_unconfirmed_requires_publication_recheck")
+            expected_retry = (
+                "pending" if self.remote_duplicate_status == "unknown"
+                else "required_before_publication"
+            )
+            if self.publication_retry_status != expected_retry:
+                raise ValueError("remote_unconfirmed_retry_state_mismatch")
+        if self.remote_duplicate_status == "found" and self.draft_import_allowed is True:
+            raise ValueError("remote_duplicate_found_cannot_allow_new_draft")
         return self
 
 
@@ -288,6 +324,7 @@ class DuplicateCheckRequest(BaseModel):
     event_group_id: str = Field(min_length=3, max_length=128)
     topic: str = Field(min_length=3, max_length=300)
     content_id: str | None = Field(default=None, min_length=8, max_length=128)
+    stage: Literal["generation", "publication"] = "publication"
 
 
 @router.post("/duplicate-check")
@@ -301,12 +338,19 @@ def scheduled_duplicate_check(request: DuplicateCheckRequest) -> dict[str, Any]:
                 (request.language_code, Jsonb({
                     "event_group_id": request.event_group_id,
                     "content_id": request.content_id,
+                    "stage": request.stage,
                     "target_country": request.target_country,
                     "target_blog_id": request.target_blog_id,
                     "trade_date": request.trade_date.isoformat() if request.trade_date else None,
                     "status": result.get("status"), "reason": result.get("reason"),
                     "db_import_match": result.get("db_import_match"),
                     "blogger_read_complete": result.get("blogger_read_complete"),
+                    "local_duplicate_status": result.get("local_status"),
+                    "remote_duplicate_status": result.get("remote_status"),
+                    "remote_failure_code": result.get("remote_failure_code"),
+                    "draft_import_allowed": result.get("draft_import_allowed", False),
+                    "publication_recheck_required": result.get("publication_recheck_required", True),
+                    "publication_retry_status": result.get("publication_retry_status", "not_started"),
                     "read_only_preflight": True,
                 })),
             )
@@ -320,6 +364,17 @@ def scheduled_duplicate_check(request: DuplicateCheckRequest) -> dict[str, Any]:
         ).fetchone()
         if not blog:
             return finish({"status": "unknown", "reason": "target_blog_not_registered",
+                           "local_status": "unknown", "remote_status": "not_checked",
+                           "remote_failure_code": None, "draft_import_allowed": False,
+                           "publication_recheck_required": True,
+                           "publication_retry_status": "not_started",
+                           "db_import_match": False, "blogger_read_complete": False})
+        if not blog["active"]:
+            return finish({"status": "unknown", "reason": "target_blog_inactive",
+                           "local_status": "unknown", "remote_status": "not_checked",
+                           "remote_failure_code": None, "draft_import_allowed": False,
+                           "publication_recheck_required": True,
+                           "publication_retry_status": "not_started",
                            "db_import_match": False, "blogger_read_complete": False})
         imported = conn.execute(
             """SELECT i.id,i.external_content_id,i.event_group_id,i.source_region,i.language_code,
@@ -345,16 +400,34 @@ def scheduled_duplicate_check(request: DuplicateCheckRequest) -> dict[str, Any]:
                               and row["remote_verified_at"]), None)
             if published:
                 return finish({"status": "already_published", "reason": "verified_database_publication_record",
+                        "local_status": "already_published", "remote_status": "database_verified",
+                        "remote_failure_code": None, "draft_import_allowed": False,
+                        "publication_recheck_required": False, "publication_retry_status": "not_required",
                         "import_id": str(published["id"]), "content_version_id": str(published["content_version_id"]),
                         "post_id": published["remote_post_id"], "url": published["remote_url"],
                         "blogger_read_complete": False})
+            if request.stage == "generation":
+                return finish({"status": "already_imported", "reason": "matching_import_exists_without_verified_publication",
+                        "local_status": "already_imported", "remote_status": "not_checked",
+                        "remote_failure_code": None, "draft_import_allowed": False,
+                        "publication_recheck_required": True, "publication_retry_status": "required_before_publication",
+                        "import_id": str(imported[0]["id"]),
+                        "content_version_id": str(imported[0]["content_version_id"]) if imported[0]["content_version_id"] else None,
+                        "blogger_read_complete": False, "db_import_match": True})
             from .scheduled_duplicates import find_remote_duplicate
             remote = find_remote_duplicate(UUID(str(blog["id"])), request.topic)
             if remote["status"] == "found":
                 return finish({"status": "already_published", "reason": "remote_live_title_match",
+                        "local_status": "already_imported", "remote_status": "found",
+                        "remote_failure_code": None, "draft_import_allowed": False,
+                        "publication_recheck_required": False, "publication_retry_status": "not_required",
                         "import_id": str(imported[0]["id"]), "post_id": remote.get("post_id"),
                         "url": remote.get("url"), "blogger_read_complete": True})
             return finish({"status": "already_imported", "reason": "matching_import_exists_without_verified_publication",
+                    "local_status": "already_imported", "remote_status": remote["status"],
+                    "remote_failure_code": remote.get("reason") if remote["status"] == "unknown" else None,
+                    "draft_import_allowed": False, "publication_recheck_required": True,
+                    "publication_retry_status": "pending" if remote["status"] == "unknown" else "required_before_publication",
                     "import_id": str(imported[0]["id"]),
                     "content_version_id": str(imported[0]["content_version_id"]) if imported[0]["content_version_id"] else None,
                     "blogger_read_complete": remote["status"] != "unknown",
@@ -392,28 +465,67 @@ def scheduled_duplicate_check(request: DuplicateCheckRequest) -> dict[str, Any]:
                                 pending_ids.append(file_id)
             except OSError:
                 return finish({"status": "unknown", "reason": "local_failure_history_unavailable",
+                               "local_status": "unknown", "remote_status": "not_checked",
+                               "remote_failure_code": "local_failure_history_unavailable",
+                               "draft_import_allowed": False, "publication_recheck_required": True,
+                               "publication_retry_status": "not_started",
                                "db_import_match": False, "blogger_read_complete": False})
-        if not blog["active"] or not blog["connection_verified_at"] or not blog["oauth_connection_id"]:
+        if pending_ids:
+            return finish({"status": "unknown", "reason": "matching_file_pending_or_completed_without_database_import",
+                    "local_status": "unknown", "remote_status": "not_checked",
+                    "remote_failure_code": None, "draft_import_allowed": False,
+                    "publication_recheck_required": True, "publication_retry_status": "not_started",
+                    "pending_content_ids": sorted(set(pending_ids)),
+                    "db_import_match": False, "blogger_read_complete": False})
+        local_status = "failed_only" if failed_ids else "not_found"
+        if request.stage == "generation":
+            return finish({"status": "unknown", "reason": "remote_duplicate_check_deferred",
+                    "local_status": local_status, "remote_status": "not_checked",
+                    "remote_failure_code": None, "draft_import_allowed": True,
+                    "publication_recheck_required": True,
+                    "publication_retry_status": "required_before_publication",
+                    "failed_content_ids": sorted(set(failed_ids)),
+                    "safe_to_create_new_original_id": local_status in {"failed_only", "not_found"},
+                    "preserve_failed_files": True, "db_import_match": False,
+                    "blogger_read_complete": False})
+        if not blog["connection_verified_at"] or not blog["oauth_connection_id"]:
             return finish({"status": "unknown", "reason": "blogger_read_connection_unverified",
-                           "db_import_match": False, "blogger_read_complete": False})
+                    "local_status": local_status, "remote_status": "unknown",
+                    "remote_failure_code": "blogger_read_connection_unverified",
+                    "draft_import_allowed": False, "publication_recheck_required": True,
+                    "publication_retry_status": "pending",
+                    "failed_content_ids": sorted(set(failed_ids)),
+                    "preserve_failed_files": True,
+                    "db_import_match": False, "blogger_read_complete": False})
     from .scheduled_duplicates import find_remote_duplicate
     remote = find_remote_duplicate(UUID(str(blog["id"])), request.topic)
     if remote["status"] == "found":
         return finish({"status": "already_published", "reason": remote["reason"],
+                "local_status": local_status, "remote_status": "found", "remote_failure_code": None,
+                "draft_import_allowed": False, "publication_recheck_required": False,
+                "publication_retry_status": "not_required",
                 "post_id": remote.get("post_id"), "url": remote.get("url"),
                 "blogger_read_complete": True})
     if remote["status"] == "unknown":
         return finish({"status": "unknown", "reason": remote["reason"],
+                       "local_status": local_status, "remote_status": "unknown",
+                       "remote_failure_code": remote.get("reason"), "draft_import_allowed": False,
+                       "publication_recheck_required": True, "publication_retry_status": "pending",
+                       "http_status": remote.get("http_status"),
+                       "scanned_posts": remote.get("scanned_posts"),
+                       "preserve_failed_files": True,
                        "db_import_match": False, "blogger_read_complete": False})
-    if pending_ids:
-        return finish({"status": "unknown", "reason": "matching_file_pending_or_completed_without_database_import",
-                "pending_content_ids": sorted(set(pending_ids)),
-                "db_import_match": False, "blogger_read_complete": True})
     if failed_ids:
         return finish({"status": "failed_only", "reason": "matching_quarantined_or_rejected_file_without_database_import_or_remote_post",
+                "local_status": "failed_only", "remote_status": "clear", "remote_failure_code": None,
+                "draft_import_allowed": True, "publication_recheck_required": True,
+                "publication_retry_status": "required_before_publication",
                 "failed_content_ids": sorted(set(failed_ids)), "safe_to_create_new_original_id": True,
                 "preserve_failed_files": True, "blogger_read_complete": True})
     return finish({"status": "not_found", "reason": "database_and_complete_blogger_read_contain_no_match",
+                   "local_status": "not_found", "remote_status": "clear", "remote_failure_code": None,
+                   "draft_import_allowed": True, "publication_recheck_required": True,
+                   "publication_retry_status": "required_before_publication",
                    "db_import_match": False, "blogger_read_complete": True})
 
 
@@ -1011,6 +1123,12 @@ def _record_scheduled_import_origin(
             "automation_id": request.automation_id,
             "scheduled_slot": request.scheduled_slot.isoformat() if request.scheduled_slot else None,
             "occurrence_timezone": "Asia/Seoul" if request.occurrence_id_source == "project_derived_kst_slot" else None,
+            "local_duplicate_status": request.local_duplicate_status,
+            "remote_duplicate_status": request.remote_duplicate_status,
+            "remote_failure_code": request.remote_failure_code,
+            "draft_import_allowed": request.draft_import_allowed,
+            "publication_recheck_required": request.publication_recheck_required,
+            "publication_retry_status": request.publication_retry_status,
             "executed_at": request.executed_at.isoformat(),
             "market_date": request.market_date.isoformat() if request.market_date else None,
             "target_language_code": request.target_language_code,

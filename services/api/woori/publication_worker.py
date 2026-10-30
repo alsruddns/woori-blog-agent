@@ -48,6 +48,24 @@ def retryable(outcome: str, scenario: str, retry_count: int, max_retries: int) -
     )
 
 
+def remote_duplicate_retry_delay(retry_number: int) -> int:
+    """Bound transient pre-publication Blogger-read retries to 15 minutes."""
+    return int(min(60 * (2 ** max(0, retry_number - 1)), 900))
+
+
+def remote_duplicate_retry_plan(status: str, retry_count: int, max_retries: int) -> dict[str, Any]:
+    """Do not write while remote state is unknown; retry only within job bounds."""
+    if status == "found":
+        return {"job_status": "blocked", "retry": False, "retry_count": retry_count,
+                "delay_seconds": None}
+    if status != "unknown":
+        raise ValueError("remote_duplicate_status_must_be_found_or_unknown")
+    next_retry = retry_count + 1
+    retry = next_retry <= max_retries
+    return {"job_status": "queued" if retry else "failed", "retry": retry,
+            "retry_count": next_retry, "delay_seconds": remote_duplicate_retry_delay(next_retry) if retry else None}
+
+
 def execution_mode(*, private_drafts: bool = False, live: bool = False,
                    scheduled_auto: bool = False, manual_confirmed: bool = False) -> str:
     if scheduled_auto and manual_confirmed:
@@ -722,20 +740,47 @@ def process_next_live_job(
             blog_id, str(candidate.get("editorial_title") or candidate["title"]),
         )
         if remote_check["status"] != "clear":
-            category = "remote_duplicate_found" if remote_check["status"] == "found" else "remote_duplicate_check_unknown"
+            found = remote_check["status"] == "found"
+            category = "remote_duplicate_found" if found else "remote_duplicate_check_unknown"
+            retry_plan = remote_duplicate_retry_plan(
+                remote_check["status"], int(job.get("retry_count") or 0),
+                int(job.get("max_retries") or 0),
+            )
+            next_retry = retry_plan["retry_count"]
+            max_retries = int(job.get("max_retries") or 0)
+            should_retry = retry_plan["retry"]
+            retry_delay = retry_plan["delay_seconds"]
+            next_status = retry_plan["job_status"]
             with connection() as conn:
-                conn.execute(
-                    """UPDATE publishing_jobs SET status='blocked',publication_state='publication_blocked',
-                    last_error_category=%s,lease_until=NULL,updated_at=now() WHERE id=%s AND status='running'""",
-                    (category, job_id),
-                )
-                _append_audit(conn, "publication." + lane + ".remote_duplicate_blocked", {
+                if should_retry:
+                    conn.execute(
+                        """UPDATE publishing_jobs SET status='queued',publication_state='publication_queued',
+                        retry_count=%s,available_at=now()+(%s * interval '1 second'),
+                        last_error_category=%s,lease_until=NULL,updated_at=now()
+                        WHERE id=%s AND status='running'""",
+                        (next_retry, retry_delay, category, job_id),
+                    )
+                else:
+                    conn.execute(
+                        """UPDATE publishing_jobs SET status=%s,publication_state='publication_blocked',
+                        retry_count=%s,last_error_category=%s,lease_until=NULL,updated_at=now()
+                        WHERE id=%s AND status='running'""",
+                        (next_status, next_retry if not found else int(job.get("retry_count") or 0), category, job_id),
+                    )
+                _append_audit(conn, "publication." + lane + ".remote_duplicate_check", {
                     "job_id": str(job_id), "content_version_id": str(version_id),
                     "status": remote_check["status"], "reason": remote_check["reason"],
+                    "http_status": remote_check.get("http_status"),
+                    "scanned_posts": remote_check.get("scanned_posts"),
                     "post_id": remote_check.get("post_id"), "blogger_write_performed": False,
+                    "outcome": "retry_scheduled" if should_retry else next_status,
+                    "retry_count": next_retry if not found else int(job.get("retry_count") or 0),
+                    "max_retries": max_retries, "retry_delay_seconds": retry_delay,
                 })
-            return {"job_id": str(job_id), "status": "blocked", "reason": category,
-                    "remote_duplicate_check": remote_check["status"], "live_write_performed": False}
+            return {"job_id": str(job_id), "status": "retry_scheduled" if should_retry else next_status,
+                    "reason": category, "remote_duplicate_check": remote_check["status"],
+                    "retry_count": next_retry if not found else int(job.get("retry_count") or 0),
+                    "retry_delay_seconds": retry_delay, "live_write_performed": False}
     if stage == "draft_needed":
         operation = "create_draft"
         write_key = "pubjob-" + str(job_id) + "-draft"
