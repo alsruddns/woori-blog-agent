@@ -709,7 +709,8 @@ def create_manual_live_request(request: ManualLiveRequestInput) -> dict[str, Any
             """INSERT INTO post_publication_reviews
             (publishing_job_id,blog_id,content_version_id,import_id,content_id,review_status,review_notes)
             VALUES (%s,%s,%s,%s,%s,'pending','Items below are follow-ups from the user-approved manual publication request; no verification status was changed.')
-            ON CONFLICT(publishing_job_id) DO NOTHING RETURNING id""",
+            ON CONFLICT(publishing_job_id) WHERE publishing_job_id IS NOT NULL
+            DO NOTHING RETURNING id""",
             (inserted["id"], request.blog_id, request.content_version_id,
              snapshot["import_id"], snapshot.get("external_content_id")),
         ).fetchone()

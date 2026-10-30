@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
@@ -741,6 +742,117 @@ def test_emergency_stop_is_persisted_and_audited_in_isolated_database(
         "SELECT payload FROM audit_events WHERE event_type='publication.emergency_stop.engaged' ORDER BY id DESC LIMIT 1"
     ).fetchone()
     assert event["payload"]["emergency_stopped"] is True
+
+
+def test_manual_live_request_commits_approval_job_and_followups_atomically_in_isolated_db(
+    lab: Any, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exercise the production POST SQL and schema guards inside the lab rollback boundary."""
+    from contextlib import contextmanager
+
+    from psycopg.types.json import Jsonb
+    from woori.google_http import WRITE_SCOPE
+
+    conn, api, headers = lab
+    language = conn.execute("SELECT code FROM languages WHERE code='ko'").fetchone()["code"]
+    profile = conn.execute(
+        "SELECT id FROM language_profiles WHERE language_code=%s AND target_country='' LIMIT 1",
+        (language,),
+    ).fetchone()["id"]
+    oauth_id = uuid4()
+    blog_record_id = uuid4()
+    blog_id = "9876543210123456789"
+    conn.execute(
+        "INSERT INTO google_connections(id,label,status,scopes) VALUES (%s,'isolated fixture','connected',%s)",
+        (oauth_id, [WRITE_SCOPE]),
+    )
+    conn.execute(
+        """INSERT INTO blogger_blogs(id,language_code,url,display_name,active,blog_id,
+             connection_verified_at,test_publish_verified_at,oauth_connection_id)
+           VALUES (%s,'ko','https://manual-transaction-fixture.blogspot.com',
+             'Isolated manual transaction fixture',true,%s,now(),now(),%s)""",
+        (blog_record_id, blog_id, oauth_id),
+    )
+    policy_id = uuid4()
+    conn.execute(
+        """INSERT INTO publishing_policies(id,language_code,blog_id,profile_id,active)
+           VALUES (%s,'ko',%s,%s,false)""",
+        (policy_id, blog_record_id, profile),
+    )
+    group_id, localization_id, version_id, import_id, import_version_id = (uuid4() for _ in range(5))
+    title = "Isolated manual publication transaction"
+    body = "A synthetic body used only to exercise the transaction in a forced-rollback test."
+    conn.execute("INSERT INTO content_groups(id) VALUES (%s)", (group_id,))
+    conn.execute(
+        "INSERT INTO content_localizations(id,group_id,language_code,target_country) VALUES (%s,%s,'ko','')",
+        (localization_id, group_id),
+    )
+    conn.execute(
+        """INSERT INTO content_versions(id,group_id,language,localization_id,version,title,body)
+           VALUES (%s,%s,'ko',%s,1,%s,%s)""",
+        (version_id, group_id, localization_id, title, body),
+    )
+    digest = hashlib.sha256((title + "\n" + body + "\n{}\n[]").encode()).hexdigest()
+    conn.execute(
+        """INSERT INTO external_content_imports
+           (id,external_content_id,event_group_id,relation,source_region,language_code,
+            target_audiences,category,title,body_markdown,source_ids,sources,claims,
+            fact_checked_at,seo_metadata,blogger_labels,generation_method,generated_at,
+            submitted_by,content_sha256,idempotency_key)
+           VALUES (%s,%s,%s,'original','KR','ko',%s,'finance',%s,%s,'[]','[]','[]',now(),
+             '{}','[]','manual_codex_import',now(),'isolated-test',%s,%s)""",
+        (import_id, str(import_id), "manual-test-" + str(import_id),
+         Jsonb([{"language_code": "ko", "target_region": "KR"}]), title, body,
+         digest, hashlib.sha256(("import" + str(import_id)).encode()).hexdigest()),
+    )
+    conn.execute(
+        """INSERT INTO external_content_import_versions
+           (id,import_id,version_number,title,body_markdown,seo_metadata,blogger_labels,
+            content_sha256,author_label,change_reason)
+           VALUES (%s,%s,1,%s,%s,'{}','[]',%s,'isolated-test','transaction integration test')""",
+        (import_version_id, import_id, title, body, digest),
+    )
+    conn.execute(
+        "INSERT INTO external_content_import_content_links(import_id,import_version_id,content_version_id) VALUES (%s,%s,%s)",
+        (import_id, import_version_id, version_id),
+    )
+
+    @contextmanager
+    def shared_connection():
+        with conn.transaction():
+            yield conn
+
+    monkeypatch.setattr(publications, "connection", shared_connection)
+    monkeypatch.setattr(publications, "_manual_publication_blockers", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(publications.external_policy, "_blogger_policy_approval", lambda: {"approved": True})
+    monkeypatch.setattr(publications.BloggerLivePublisher, "_target", staticmethod(lambda _blog: None))
+
+    candidate = publications._candidate(conn, version_id, blog_record_id)
+    snapshot = publications._manual_publication_snapshot(conn, candidate)
+    payload = {
+        "content_version_id": str(version_id), "blog_id": str(blog_record_id),
+        "expected_title_sha256": snapshot["title_sha256"],
+        "expected_body_sha256": snapshot["body_sha256"],
+        "expected_html_sha256": snapshot["html_sha256"], "actor_label": "admin",
+        "reason": "확인완료", "reviewed_exact_content": True,
+        "assertions_safe_to_publish": True, "rights_privacy_harm_checked": True,
+        "confirmation": "PUBLISH THIS EXACT MANUSCRIPT PUBLICLY",
+        "idempotency_key": "isolated-manual-post-" + uuid4().hex[:20],
+    }
+    first = api.post("/admin/publications/manual-live-requests", headers=headers, json=payload)
+    assert first.status_code == 201, first.text
+    assert first.json()["public_write_performed"] is False
+    assert first.json()["followup_review_id"]
+    assert conn.execute("SELECT count(*) AS n FROM publishing_jobs WHERE idempotency_key=%s",
+                        (payload["idempotency_key"],)).fetchone()["n"] == 1
+    assert conn.execute("SELECT count(*) AS n FROM manual_publication_approval_events WHERE idempotency_key=%s",
+                        (payload["idempotency_key"],)).fetchone()["n"] == 1
+    assert conn.execute("SELECT count(*) AS n FROM post_publication_reviews WHERE publishing_job_id=%s",
+                        (first.json()["id"],)).fetchone()["n"] == 1
+    again = api.post("/admin/publications/manual-live-requests", headers=headers, json=payload)
+    assert again.status_code == 201 and again.json()["duplicate"] is True
+    assert conn.execute("SELECT count(*) AS n FROM publishing_jobs WHERE idempotency_key=%s",
+                        (payload["idempotency_key"],)).fetchone()["n"] == 1
 
 
 def test_emergency_stop_blocks_live_job_before_any_blogger_request(monkeypatch: pytest.MonkeyPatch) -> None:

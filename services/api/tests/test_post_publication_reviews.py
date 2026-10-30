@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 from pathlib import Path
 
@@ -169,6 +170,8 @@ def test_database_error_log_records_sqlstate_and_constraint_without_error_payloa
         table_name = "manual_publication_approval_events"
         column_name = ""
         constraint_name = "manual_publication_approval_events_reason_min_3_check"
+        message_primary = "prepublication_review_requires_manual_user_confirmation"
+        source_function = "require_verified_scheduled_publication_review"
 
     class DatabaseFailure:
         sqlstate = "23514"
@@ -184,6 +187,61 @@ def test_database_error_log_records_sqlstate_and_constraint_without_error_payloa
     with caplog.at_level(logging.ERROR, logger="woori.api.database"):
         response = asyncio.run(database_error(request, DatabaseFailure()))
     assert response.status_code == 503
-    assert response.body == b'{"error":"Database operation unavailable"}'
+    response_body = json.loads(response.body)
+    assert response_body["error"] == "Database operation unavailable"
+    assert response_body["code"] == "database_constraint_violation"
+    assert len(response_body["request_id"]) == 24
     assert "sqlstate=23514" in caplog.text
     assert "manual_publication_approval_events_reason_min_3_check" in caplog.text
+
+
+def test_database_error_does_not_expose_unknown_postgres_message(caplog: pytest.LogCaptureFixture) -> None:
+    class Diagnostic:
+        schema_name = "public"
+        table_name = "publishing_jobs"
+        column_name = ""
+        constraint_name = ""
+        message_primary = "private title must never leak into logs"
+        source_function = "some_guard"
+
+    class DatabaseFailure:
+        sqlstate = "P0001"
+        diag = Diagnostic()
+
+    scope = {
+        "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
+        "method": "POST", "scheme": "http", "path": "/admin/publications/manual-live-requests",
+        "raw_path": b"/admin/publications/manual-live-requests", "query_string": b"",
+        "headers": [], "server": ("127.0.0.1", 8100), "client": ("127.0.0.1", 12345),
+    }
+    with caplog.at_level(logging.ERROR, logger="woori.api.database"):
+        response = asyncio.run(database_error(Request(scope), DatabaseFailure()))
+    assert response.status_code == 503
+    assert "database_rule_rejected" in caplog.text
+    assert "private title" not in caplog.text
+    assert "private title" not in response.body.decode()
+
+
+def test_database_error_classifies_conflict_target_failure_without_sql_text() -> None:
+    class Diagnostic:
+        schema_name = "unknown"
+        table_name = "unknown"
+        column_name = "unknown"
+        constraint_name = "unknown"
+        message_primary = "there is no unique constraint matching the ON CONFLICT specification"
+        source_function = "infer_arbiter_indexes"
+
+    class DatabaseFailure:
+        sqlstate = "42P10"
+        diag = Diagnostic()
+
+    scope = {
+        "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
+        "method": "POST", "scheme": "http", "path": "/admin/publications/manual-live-requests",
+        "raw_path": b"/admin/publications/manual-live-requests", "query_string": b"",
+        "headers": [], "server": ("127.0.0.1", 8100), "client": ("127.0.0.1", 12345),
+    }
+    response = asyncio.run(database_error(Request(scope), DatabaseFailure()))
+    assert response.status_code == 503
+    assert json.loads(response.body)["code"] == "db_conflict_target_missing"
+    assert "ON CONFLICT" not in response.body.decode()

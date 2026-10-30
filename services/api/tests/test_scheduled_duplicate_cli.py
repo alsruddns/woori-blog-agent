@@ -46,18 +46,44 @@ def test_duplicate_cli_calls_only_fixed_local_dashboard_preflight() -> None:
         "method": "POST",
         "origin": ORIGIN,
         "body": payload,
-        "timeout": 20,
+        "timeout": 4,
     }
 
 
 def test_duplicate_cli_converts_transport_error_to_unknown() -> None:
+    calls = 0
+
     def opener(_request, *, timeout):
-        raise URLError("offline")
+        nonlocal calls
+        calls += 1
+        assert timeout == 4
+        raise URLError(ConnectionRefusedError(10061, "connection refused"))
 
     assert check_duplicate({}, opener=opener) == {
         "status": "unknown", "reason": "duplicate_preflight_transport_error",
-        "transport_error_type": "URLError",
+        "transport_error_type": "URLError", "transport_reason": "connection_refused",
+        "attempts": 3,
     }
+    assert calls == 3
+
+
+def test_duplicate_cli_recovers_after_transient_loopback_failure() -> None:
+    calls = 0
+
+    def opener(request, *, timeout):
+        nonlocal calls
+        calls += 1
+        assert request.full_url == ENDPOINT and request.method == "POST"
+        assert timeout == 4
+        if calls == 1:
+            raise URLError(ConnectionResetError(10054, "connection reset"))
+        return FakeResponse({"status": "unknown", "draft_import_allowed": True,
+                             "local_status": "failed_only", "remote_status": "not_checked"})
+
+    result = check_duplicate({"stage": "generation"}, opener=opener)
+    assert calls == 2
+    assert result["draft_import_allowed"] is True
+    assert result["local_status"] == "failed_only"
 
 
 def test_duplicate_cli_reports_http_status_without_error_body() -> None:
@@ -67,6 +93,7 @@ def test_duplicate_cli_reports_http_status_without_error_body() -> None:
     assert check_duplicate({}, opener=opener) == {
         "status": "unknown", "reason": "duplicate_preflight_http_error",
         "http_status": 503, "transport_error_type": "HTTPError",
+        "attempts": 1,
     }
 
 
@@ -82,6 +109,7 @@ def test_duplicate_cli_preserves_sanitized_validation_location_for_422() -> None
     assert result == {
         "status": "unknown", "reason": "duplicate_preflight_http_error",
         "http_status": 422, "transport_error_type": "HTTPError",
+        "attempts": 1,
         "validation_detail": [{
             "location": "body.event_group_id",
             "message": "String should have at most 128 characters",

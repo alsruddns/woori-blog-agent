@@ -57,17 +57,41 @@ async def google_error(request: Request, exc: GoogleFailure) -> JSONResponse:
 @app.exception_handler(psycopg.Error)
 async def database_error(request: Request, exc: psycopg.Error) -> JSONResponse:
     diag = exc.diag
+    request_id = secrets.token_hex(12)
+    known_rule_messages = {
+        "post_publication_review_requires_verified_live_record": "verified_live_review_guard",
+        "prepublication_review_requires_bound_job": "review_job_binding_guard",
+        "prepublication_review_requires_active_scheduled_job": "scheduled_review_policy_guard",
+        "prepublication_review_requires_manual_user_confirmation": "manual_confirmation_guard",
+        "prepublication_review_requires_active_publication_job": "active_job_guard",
+        "Localization does not match language/country policy": "publication_locale_guard",
+    }
+    primary = getattr(diag, "message_primary", None) or ""
+    safe_rule_code = known_rule_messages.get(primary, "database_rule_rejected")
+    if exc.sqlstate == "42P10":
+        safe_rule_code = "db_conflict_target_missing"
+    elif exc.sqlstate == "23514":
+        safe_rule_code = "database_constraint_violation"
+    elif exc.sqlstate != "P0001":
+        safe_rule_code = "database_operation_failed"
+    source_function = getattr(diag, "source_function", None) or "unknown"
     logger.error(
-        "Database request failed: path=%s method=%s sqlstate=%s schema=%s table=%s column=%s constraint=%s",
+        "Database request failed: request_id=%s path=%s method=%s sqlstate=%s error_code=%s db_function=%s schema=%s table=%s column=%s constraint=%s",
+        request_id,
         request.url.path,
         request.method,
         exc.sqlstate or "unknown",
+        safe_rule_code,
+        source_function,
         getattr(diag, "schema_name", None) or "unknown",
         getattr(diag, "table_name", None) or "unknown",
         getattr(diag, "column_name", None) or "unknown",
         getattr(diag, "constraint_name", None) or "unknown",
     )
-    return JSONResponse({"error": "Database operation unavailable"}, status_code=503)
+    return JSONResponse(
+        {"error": "Database operation unavailable", "code": safe_rule_code,
+         "request_id": request_id}, status_code=503,
+    )
 
 
 class RunRequest(BaseModel):

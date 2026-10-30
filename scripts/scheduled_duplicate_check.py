@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from datetime import date
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.request import HTTPRedirectHandler, Request, build_opener
+from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 ORIGIN = "http://127.0.0.1:3100"
 ENDPOINT = f"{ORIGIN}/api/research/content-imports/duplicate-check"
 KNOWN_STATUSES = {"already_published", "already_imported", "failed_only", "not_found", "unknown"}
+REQUEST_TIMEOUT_SECONDS = 4
+MAX_ATTEMPTS = 3
 
 
 class _NoRedirect(HTTPRedirectHandler):
@@ -20,7 +23,32 @@ class _NoRedirect(HTTPRedirectHandler):
 
 
 def _open_local_proxy(request: Request, *, timeout: int):
-    return build_opener(_NoRedirect).open(request, timeout=timeout)
+    # This fixed loopback-only endpoint must never be routed through a machine proxy.
+    return build_opener(ProxyHandler({}), _NoRedirect).open(request, timeout=timeout)
+
+
+def _transport_reason(exc: BaseException) -> str:
+    """Classify transport failures without persisting hostnames or raw exception text."""
+    reason = exc.reason if isinstance(exc, URLError) else exc
+    if isinstance(reason, (TimeoutError,)):
+        return "timeout"
+    if isinstance(reason, ConnectionRefusedError):
+        return "connection_refused"
+    if isinstance(reason, ConnectionResetError):
+        return "connection_reset"
+    if isinstance(reason, OSError):
+        if getattr(reason, "winerror", None) == 11001:
+            return "name_resolution"
+        if getattr(reason, "winerror", None) in {10061} or getattr(reason, "errno", None) in {111, 61}:
+            return "connection_refused"
+        if getattr(reason, "winerror", None) in {10060} or getattr(reason, "errno", None) in {110, 60}:
+            return "timeout"
+        if getattr(reason, "winerror", None) in {10051, 10065} or getattr(reason, "errno", None) in {101, 113}:
+            return "network_unreachable"
+        return "socket_error"
+    if isinstance(reason, str) and "name or service not known" in reason.casefold():
+        return "name_resolution"
+    return "other_transport"
 
 
 def _safe_http_validation_detail(error: HTTPError) -> list[dict[str, str]]:
@@ -50,39 +78,40 @@ def check_duplicate(payload: dict[str, Any], *, opener=_open_local_proxy) -> dic
         headers={"Origin": ORIGIN, "Content-Type": "application/json"},
         method="POST",
     )
-    try:
-        response_context = opener(request, timeout=20)
-    except HTTPError as exc:
-        validation_detail = _safe_http_validation_detail(exc) if exc.code == 422 else []
+    last_transport: BaseException | None = None
+    raw: bytes | None = None
+    http_status: int | None = None
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            response_context = opener(request, timeout=REQUEST_TIMEOUT_SECONDS)
+            with response_context as response:
+                http_status = getattr(response, "status", getattr(response, "code", None))
+                if isinstance(http_status, int) and not 200 <= http_status < 300:
+                    return {
+                        "status": "unknown", "reason": "duplicate_preflight_http_error",
+                        "http_status": http_status, "transport_error_type": "HTTPResponse",
+                        "attempts": attempt,
+                    }
+                raw = response.read(128_001)
+            break
+        except HTTPError as exc:
+            validation_detail = _safe_http_validation_detail(exc) if exc.code == 422 else []
+            return {
+                "status": "unknown", "reason": "duplicate_preflight_http_error",
+                "http_status": exc.code, "transport_error_type": "HTTPError",
+                "attempts": attempt,
+                **({"validation_detail": validation_detail} if validation_detail else {}),
+            }
+        except (URLError, TimeoutError, OSError) as exc:
+            last_transport = exc
+            if attempt < MAX_ATTEMPTS:
+                time.sleep(0.15 * attempt)
+    if raw is None:
+        failure = last_transport or OSError("no_response")
         return {
-            "status": "unknown",
-            "reason": "duplicate_preflight_http_error",
-            "http_status": exc.code,
-            "transport_error_type": "HTTPError",
-            **({"validation_detail": validation_detail} if validation_detail else {}),
-        }
-    except (URLError, TimeoutError, OSError) as exc:
-        return {
-            "status": "unknown",
-            "reason": "duplicate_preflight_transport_error",
-            "transport_error_type": type(exc).__name__,
-        }
-    try:
-        with response_context as response:
-            http_status = getattr(response, "status", getattr(response, "code", None))
-            if isinstance(http_status, int) and not 200 <= http_status < 300:
-                return {
-                    "status": "unknown",
-                    "reason": "duplicate_preflight_http_error",
-                    "http_status": http_status,
-                    "transport_error_type": "HTTPResponse",
-                }
-            raw = response.read(128_001)
-    except (TimeoutError, OSError) as exc:
-        return {
-            "status": "unknown",
-            "reason": "duplicate_preflight_response_read_error",
-            "transport_error_type": type(exc).__name__,
+            "status": "unknown", "reason": "duplicate_preflight_transport_error",
+            "transport_error_type": type(failure).__name__,
+            "transport_reason": _transport_reason(failure), "attempts": MAX_ATTEMPTS,
         }
     if len(raw) > 128_000:
         return {"status": "unknown", "reason": "duplicate_preflight_response_too_large"}
