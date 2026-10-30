@@ -8,6 +8,8 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+import psycopg
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services" / "api"))
 
@@ -58,7 +60,7 @@ def main() -> int:
             "last_error_category": row["last_error_category"],
         }, default=str))
         return 0 if fresh else 5
-    except Exception as exc:  # the caller records only the sanitized category
+    except (psycopg.Error, OSError, RuntimeError, KeyError, TypeError, ValueError, AttributeError) as exc:
         category = type(exc).__name__.lower()
         print(json.dumps({"ready": False, "reason": category}))
         return 6

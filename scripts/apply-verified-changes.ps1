@@ -9,13 +9,50 @@ function Invoke-GitText([string[]]$GitArgs) {
   return @($result | ForEach-Object { [string]$_ })
 }
 
-function Invoke-RepositoryValidation([string]$BuildDirectory) {
+function Invoke-CheckedCommand([string]$Executable, [string[]]$Arguments) {
+  & $Executable @Arguments
+  if ($LASTEXITCODE -ne 0) { throw "Validation failed: $Executable $($Arguments -join ' ')" }
+}
+
+function Invoke-RepositoryValidation([string]$BuildDirectory, [string[]]$ChangedPaths, [string[]]$Targets) {
   $hadValue = Test-Path Env:WOORI_DASHBOARD_DIST_DIR
   $oldValue = $env:WOORI_DASHBOARD_DIST_DIR
   $env:WOORI_DASHBOARD_DIST_DIR = $BuildDirectory
   try {
-    & (Join-Path $PSScriptRoot 'verify.ps1')
-    $script:RepositoryVerificationExitCode = $LASTEXITCODE
+    $python = Join-Path $script:ProjectRoot '.venv\Scripts\python.exe'
+    $psFiles = @($ChangedPaths | Where-Object { $_ -match '\.ps1$' } | ForEach-Object { Join-Path $script:ProjectRoot $_ } | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf })
+    foreach ($file in $psFiles) {
+      $tokens=$null; $parseErrors=$null
+      [System.Management.Automation.Language.Parser]::ParseFile($file,[ref]$tokens,[ref]$parseErrors) | Out-Null
+      if ($parseErrors.Count) { throw "PowerShell parse failed: $file ($($parseErrors[0].Message))" }
+    }
+    if ($psFiles.Count) {
+      $pester = Invoke-Pester -Script @((Join-Path $script:ProjectRoot 'scripts/tests/service-lifecycle.Tests.ps1'),(Join-Path $script:ProjectRoot 'scripts/tests/stop.Tests.ps1')) -PassThru
+      if ($pester.FailedCount -gt 0) { throw "Pester failed ($($pester.FailedCount) failed tests)." }
+    }
+
+    $pythonFiles = @($ChangedPaths | Where-Object { $_ -match '\.py$' -and (Test-Path -LiteralPath (Join-Path $script:ProjectRoot $_) -PathType Leaf) })
+    foreach ($file in $pythonFiles) {
+      Invoke-CheckedCommand $python @('-m','ruff','check',(Join-Path $script:ProjectRoot $file))
+      Invoke-CheckedCommand $python @('-m','py_compile',(Join-Path $script:ProjectRoot $file))
+    }
+
+    if (@($Targets | Where-Object { $_ -in @('api','research_worker','publication_worker') }).Count -or @($ChangedPaths | Where-Object { $_ -match '^services/api/' }).Count) {
+      Invoke-CheckedCommand $python @('-m','ruff','check',(Join-Path $script:ProjectRoot 'services/api/woori'))
+      Invoke-CheckedCommand $python @('-m','mypy',(Join-Path $script:ProjectRoot 'services/api/woori'))
+      Invoke-CheckedCommand $python @('-m','pytest','-q')
+      Invoke-CheckedCommand $python @('scripts/build-wheel.py')
+    }
+
+    $dashboardChanged = @($Targets | Where-Object { $_ -eq 'dashboard' }).Count -or @($ChangedPaths | Where-Object { $_ -match '^apps/dashboard/' }).Count
+    if ($dashboardChanged) {
+      Invoke-CheckedCommand 'npm.cmd' @('run','lint')
+      Invoke-CheckedCommand 'npm.cmd' @('run','typecheck')
+    }
+    # Always prepare a commit-specific isolated Production Build for the next
+    # Dashboard start; never mutate the dist directory used by a running server.
+    Invoke-CheckedCommand 'npm.cmd' @('run','build')
+    $script:RepositoryVerificationExitCode = 0
   } finally {
     if ($hadValue) { $env:WOORI_DASHBOARD_DIST_DIR = $oldValue }
     else { Remove-Item Env:WOORI_DASHBOARD_DIST_DIR -ErrorAction SilentlyContinue }
@@ -75,7 +112,7 @@ if (-not $affected.Count) {
     return
   }
   Write-LifecycleLog 'service_reflection' 'validation_started' "commit=$head services=none"
-  Invoke-RepositoryValidation $dashboardBuildDir
+  Invoke-RepositoryValidation $dashboardBuildDir $paths $targets
   if ($script:RepositoryVerificationExitCode -ne 0) {
     Write-LifecycleLog 'service_reflection' 'validation_failed' "commit=$head services=none"
     throw 'Repository verification failed; existing services were left running.'
@@ -90,10 +127,10 @@ Write-Output "HEAD: $head`nRuntime baseline: $base`nAffected services: $($target
 
 if ($Apply) {
   Write-LifecycleLog 'service_reflection' 'validation_started' "commit=$head services=$($targets -join ',')"
-  # verify.ps1 is the repository's authoritative test/type/build gate. It runs
-  # before any stop request, so a failed test or production build leaves the
-  # current service processes untouched.
-  Invoke-RepositoryValidation $dashboardBuildDir
+  # Run change-scoped PowerShell/Python/API/Dashboard checks before any stop
+  # request, so a failed test or isolated production build leaves current
+  # service processes untouched.
+  Invoke-RepositoryValidation $dashboardBuildDir $paths $targets
   if ($script:RepositoryVerificationExitCode -ne 0) {
     Write-LifecycleLog 'service_reflection' 'validation_failed' "commit=$head services=$($targets -join ',')"
     throw 'Repository verification failed; existing services were left running.'

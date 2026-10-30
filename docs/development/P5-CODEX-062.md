@@ -15,7 +15,7 @@
 - `scripts/start-research-worker.ps1`, `scripts/start.ps1`: Research Worker를 숨김·분리 실행하고 DB heartbeat PID로 자식 Python 런처를 식별한다. `start.ps1 -Service research_worker|worker`를 추가했다.
 - `scripts/status.ps1`: 부모 런처를 Worker 중복으로 세지 않고 heartbeat PID, 실행 모드, 작업 스케줄러, 적용 commit, 시작 시각, 로그 경로를 확인한다.
 - `scripts/stop.ps1`: `research_worker`를 별도 서비스로 관리하고 `all`은 요청된 4개 서비스만 대상으로 한다. 평가 Worker는 `evaluation_worker`로 별도 지정한다. 협력 종료/Job 보호 기존 경로를 사용한다.
-- `scripts/apply-verified-changes.ps1`: 명시적 `-Apply`, clean `develop`, committed HEAD, 전체 `verify.ps1` 성공 후 실행 코드가 변경된 서비스만 graceful stop/start한다. PowerShell 시작/상태 관리 스크립트 변경만으로 살아 있는 서비스를 재시작하지 않는다. SQL migration 경로가 포함되면 중단한다. stop 거부/불명확한 소유권에는 강제 종료하지 않는다.
+- `scripts/apply-verified-changes.ps1`: 명시적 `-Apply`, clean `develop`, committed HEAD, 변경 범위 PowerShell/Python/API/Dashboard 검사가 성공한 뒤 실행 코드가 변경된 서비스만 graceful stop/start한다. PowerShell 시작/상태 관리 스크립트 변경만으로 살아 있는 서비스를 재시작하지 않는다. SQL migration 경로가 포함되면 중단한다. stop 거부/불명확한 소유권에는 강제 종료하지 않는다.
 - Dashboard 빌드는 현재 실행 중인 Production dist를 덮어쓰지 않도록 commit별 `.next-p5-<sha>`에 생성한다. 성공한 검증 마커의 dist만 `run-dashboard.ps1`이 사용한다.
 - `scripts/service-runtime-status.py`: 운영 DB 이름을 확인하는 read-only DB/Research heartbeat 상태 명령. 예외 메시지·접속 문자열·비밀값을 출력하지 않는다.
 - `scripts/register-worker.ps1`: 이전 호출 경로를 새 멱등 등록 관리기로 위임한다.
@@ -31,7 +31,7 @@
 
 ## 소스 변경 반영
 
-파일 저장 이벤트는 감시하지 않는다. 변경을 commit한 후 `scripts/apply-verified-changes.ps1`로 preview하고 `-Apply`를 명시하면 전체 저장소 검증을 수행한다. 실패하면 stop 요청 전에 종료한다. 성공 시 현재 commit과 Dashboard build 경로를 `.runtime/validated-source.json`에 기록하고 영향받는 서비스만 재시작한다. 부팅 조정기는 clean tracked tree와 검증된 현재 HEAD가 일치하지 않으면 시작을 거부한다. 적용 전 DB migration은 자동 실행하지 않는다.
+파일 저장 이벤트는 감시하지 않는다. 변경을 commit한 후 `scripts/apply-verified-changes.ps1`로 preview하고 `-Apply`를 명시하면 변경 범위 PowerShell/Python/API 테스트 및 타입 검사와 Dashboard lint/typecheck/Production Build(필요 범위)를 실행한다. 매 적용 시 Dashboard는 기존 실행본과 분리된 commit별 dist에 빌드한다. 실패하면 stop 요청 전에 종료한다. 성공 시 현재 commit과 Dashboard build 경로를 `.runtime/validated-source.json`에 기록하고 영향받는 서비스만 재시작한다. 부팅 조정기는 clean tracked tree와 검증된 현재 HEAD가 일치하지 않으면 시작을 거부한다. 적용 전 DB migration은 자동 실행하지 않는다.
 
 ## 테스트 및 실제 적용
 

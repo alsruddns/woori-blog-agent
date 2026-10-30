@@ -70,7 +70,7 @@ Describe 'Windows service lifecycle ownership and startup policy' {
 
   It 'requires a clean committed develop state and runs verification before stop requests' {
     $apply = Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\apply-verified-changes.ps1') -Raw
-    $apply.IndexOf('verify.ps1') | Should BeLessThan $apply.IndexOf("'stop.ps1'")
+    $apply.IndexOf('Invoke-RepositoryValidation $dashboardBuildDir $paths $targets') | Should BeLessThan $apply.IndexOf("'stop.ps1'")
     $apply | Should Match "branch.*develop"
     $apply | Should Match 'migrations?'
   }
