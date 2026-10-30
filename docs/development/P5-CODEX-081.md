@@ -9,4 +9,5 @@
 - 검증: 격리 DB 관련 테스트 42건, Ruff, mypy, Dashboard ESLint/TypeScript/최종 Production Build 통과. 운영 수집은 기존 시간대 성공으로 재실행이 `already_collected`였고, 다른 지역 요청은 기존 5분 제한으로 정당하게 `global_minimum_spacing` 차단되었다. 이후 운영 Research Worker의 실제 JP RSS 수집 Run `f8562cf0-0b29-40c7-a810-ac5bf3e5091c`이 17:46:50 KST에 성공하여 새 관측값 10건, 원본 검색량 10건, 원본 payload 10건을 저장했다. 이 응답은 Google 원본 category를 제공하지 않아 0건으로 보존했다. 운영 총 관측값 3,020건; 최신 주제 상태 2,118건 review_candidate, 5건 discarded, selected 0건. `/sources` 실제 브라우저와 모바일 폭에서 새 요약·필터·목록이 표시되고 API 오류가 없음을 확인했다.
 - 남은 문제: 082의 실제 자동 원고 생성·발행 연결, Dashboard 실제 브라우저/Production Build 검증, 운영 런타임 반영. 이번 단계의 선정은 자동 게시 적격을 의미하지 않는다.
 - 추가 안전 수정: 실제 JP RSS에서 검색어 `west.`와 무관한 미국 사건 뉴스 제목이 함께 반환됐다. 내부 주제 분류는 분류 분야와 뉴스 제목에 정규화한 검색어가 함께 있는 경우에만 자동 선정하며, 불일치는 `news_context_mismatch` 검토 대기로 남긴다. 원본 Google 카테고리와 내부 분류를 혼동하지 않는다.
+- 같은 주제의 새 관측값에 실제 RSS 원본 자료가 추가되면 시스템이 만든 `review_candidate`만 재분류한다. 운영자가 수동 폐기·선정한 결정을 자동으로 덮어쓰지 않는다.
 - 커밋 해시: 이 문서의 커밋과 `git log` 참조. 자기 참조 해시는 포함하지 않는다.

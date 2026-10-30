@@ -81,9 +81,12 @@ def reconcile(limit: int = 200) -> dict[str,int]:
                 VALUES(%s,%s,'Exact normalized same-region query; event identity requires research.') ON CONFLICT DO NOTHING''',
                 (topic_id,row['id']))
         unclassified=conn.execute('''SELECT t.*,o.raw_payload FROM trend_topics t
-            JOIN LATERAL(SELECT o.raw_payload FROM trend_topic_memberships m JOIN trend_observations o ON o.id=m.observation_id
+            JOIN LATERAL(SELECT o.raw_payload,o.collected_at FROM trend_topic_memberships m JOIN trend_observations o ON o.id=m.observation_id
               WHERE m.topic_id=t.id ORDER BY o.collected_at DESC LIMIT 1)o ON true
-            WHERE NOT EXISTS(SELECT 1 FROM trend_editorial_events e WHERE e.topic_id=t.id)
+            LEFT JOIN LATERAL(SELECT id,state,actor,created_at FROM trend_editorial_events e
+              WHERE e.topic_id=t.id ORDER BY id DESC LIMIT 1)e ON true
+            WHERE e.id IS NULL OR (e.state='review_candidate' AND e.actor='system:trend-editorial-v1'
+              AND o.collected_at>e.created_at AND o.raw_payload IS NOT NULL)
             ORDER BY t.created_at DESC LIMIT %s''',(limit,)).fetchall()
         counts:dict[str,int]={}
         for topic in unclassified:
