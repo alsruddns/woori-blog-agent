@@ -206,3 +206,8 @@ OAuth 토큰·API Key·비밀번호를 코드에 저장하지 않는다. .env �
 - The deterministic assessment, sanitized HTML, target language/blog, scheduled origin, duplicate result, daily/interval limits, OAuth connection, scoped scheduled-auto approval, public-write approval, idempotency ledger, and emergency stop are mandatory. The lane never changes general `publish_ready`, creates a human editorial-review event, or fabricates an approval.
 - The first LIVE publication remains gated by the existing explicit operator approval bound to the exact import, immutable import/content versions, body hash, and Blogger blog. After that approval, the enabled scheduled scope may publish later eligible scheduled originals without per-article approval. Any scope revocation, global stop, rights/fact failure, duplicate, quota error, or identity mismatch blocks dispatch.
 - Post-publication review items may be resolved only after remote LIVE verification. A pre-publication review row is not shown as a published post; it becomes visible with the verified remote URL only after the worker attaches the publishing record and Blogger post ID.
+## Google Trends collection: P5-CODEX-087 (2026-10-30)
+
+- The user explicitly removed the project-only five-minute spacing and twelve-per-hour limits for Google Trends RSS collection. Other providers' caps and Blogger account/blog publication intervals remain unchanged. Keep the exact free RSS host/path/geo allowlist, no paid credentials or fallback, serial collection, one attempt per region per slot, append-only audit, and persistent pause on 429 or 403.
+- The RSS `hours` parameter is not documented or verified. Calculate a display value from configured minutes, but do not report the source's period as known or send an unsupported RSS parameter.
+

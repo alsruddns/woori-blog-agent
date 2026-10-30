@@ -5,8 +5,9 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
   if (!process.env.ADMIN_TOKEN) return NextResponse.json({ error: "API unavailable" }, { status: 503 });
   const { path } = await context.params;
   const route = path.join("/");
-  const trendRoute = request.method === "GET" ? /^trend-editorial(?:\/[0-9a-f-]{36})?$/.test(route)
-    : request.method === "POST" && /^trend-editorial\/topics\/[0-9a-f-]{36}\/decision$/.test(route);
+  const trendRoute = request.method === "GET" ? /^trend-editorial(?:\/[0-9a-f-]{36})?$/.test(route) || route === "trends/settings"
+    : request.method === "POST" ? /^trend-editorial\/topics\/[0-9a-f-]{36}\/decision$/.test(route)
+    : request.method === "PUT" && route === "trends/settings";
   const allowed = request.method === "GET" ? (["state", "manuscripts", "trend-observations", "model-comparisons", "topics", "trends", "content-imports"].includes(route)
     || /^content-imports\/[0-9a-f-]{36}$/.test(route)
     || /^content-imports\/[0-9a-f-]{36}\/localizations$/.test(route)

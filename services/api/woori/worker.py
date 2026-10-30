@@ -229,7 +229,7 @@ def collect_trends_and_build_topics() -> dict[str, object]:
     """Build exact-query, evidence-gated candidates only after a real feed collection."""
     result = trends.schedule_tick()
     result['editorial_triage'] = trend_editorial.reconcile()
-    if result.get("status") == "succeeded":
+    if result.get("status") in {"succeeded", "partial"} and result.get("successes", 0):
         result["candidate_build"] = topics.build_candidates()
         result["research_triage"] = topics.select_research_candidates(
             settings().trend_research_hourly_limit

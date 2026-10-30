@@ -22,7 +22,8 @@ STATES = {'collected','pending_classification','selected','review_candidate','di
 
 def current_slot() -> datetime:
     """The current KST hour, including when the computer missed earlier sweeps."""
-    return datetime.now(trends.SCHEDULE_TIMEZONE).replace(minute=0,second=0,microsecond=0).astimezone(UTC)
+    config=trends.collection_settings()
+    return trends.slot_for(datetime.now(UTC),config['interval_minutes'])
 
 
 def slot_is_current(value:Any) -> bool:
@@ -88,6 +89,7 @@ def classify(query: str, payload: dict[str, Any] | None) -> tuple[str,str,str | 
 
 def reconcile(limit: int = 200) -> dict[str,int]:
     """Bounded backlog, existing exact-query groups; no lexical cross-language auto merges."""
+    slot=current_slot()
     with connection() as conn:
         # Expire only candidates which have not started authoring. Never delete
         # observations or overwrite prior editorial/audit records.
@@ -97,11 +99,11 @@ def reconcile(limit: int = 200) -> dict[str,int]:
               AND (e.created_at<%s OR NOT EXISTS(SELECT 1 FROM trend_topic_memberships m JOIN trend_observations o ON o.id=m.observation_id
                 JOIN trend_collection_slots s ON s.run_id=o.run_id AND s.geo=o.geo
                 WHERE m.topic_id=t.id AND s.slot_at=%s))
-            ORDER BY e.id LIMIT %s''',(current_slot(),current_slot(),limit)).fetchall()
+            ORDER BY e.id LIMIT %s''',(slot,slot,limit)).fetchall()
         for item in stale:
             transition(conn,item['id'],'discarded','expired_collection_slot',
                 '이전 회차의 미처리 후보가 만료되었습니다. 원본 관측과 이력은 보존합니다.',
-                'system:trend-slot',category=item['category'],evidence={'current_slot':current_slot().isoformat()})
+                'system:trend-slot',category=item['category'],evidence={'current_slot':slot.isoformat()})
         rows=conn.execute('''SELECT o.* FROM trend_observations o
             WHERE NOT EXISTS(SELECT 1 FROM trend_topic_memberships m WHERE m.observation_id=o.id)
             ORDER BY collected_at DESC,id LIMIT %s''',(limit,)).fetchall()
@@ -125,7 +127,7 @@ def reconcile(limit: int = 200) -> dict[str,int]:
             WHERE e.id IS NULL OR (e.state='review_candidate' AND e.actor='system:trend-editorial-v1'
               AND o.collected_at>e.created_at AND o.raw_payload IS NOT NULL)
               OR (e.state='discarded' AND e.reason_code='expired_collection_slot')
-            ORDER BY t.created_at DESC LIMIT %s''',(current_slot(),limit)).fetchall()
+            ORDER BY t.created_at DESC LIMIT %s''',(slot,limit)).fetchall()
         counts:dict[str,int]={}
         for topic in unclassified:
             state,code,category=classify(topic['representative_query'],topic['raw_payload'])

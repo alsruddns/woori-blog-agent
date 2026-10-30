@@ -13,6 +13,62 @@ from woori.trends import ALLOWED_GEOS, parse_feed
 lab = shared_lab
 
 
+def test_ten_minute_sweep_collects_all_regions_once_and_keeps_partial_failure(lab,monkeypatch):
+    conn,_,_=lab
+    @contextmanager
+    def shared():
+        with conn.transaction():yield conn
+    monkeypatch.setattr(trends,'connection',shared)
+    assert trends.collection_settings()['interval_minutes']==10
+    seen=[]
+    def collect(geo):
+        seen.append(geo)
+        status='failed' if geo=='JP' else 'succeeded'
+        run=conn.execute('INSERT INTO trend_collection_runs(provider,geo,status,item_count) VALUES(%s,%s,%s,0) RETURNING id',
+            ('google_trends_rss',geo,status)).fetchone()['id']
+        return {'run_id':str(run),'geo':geo,'status':status,'http_status':500 if geo=='JP' else 200,'item_count':0}
+    monkeypatch.setattr(trends,'_collect_geo',collect)
+    first=trends.schedule_tick()
+    assert first['status']=='partial' and first['successes']==10 and first['failures']==1
+    assert set(seen)==trends.ALLOWED_GEOS and len(seen)==11
+    assert trends.schedule_tick()['status']=='slot_complete' and len(seen)==11
+
+
+def test_collection_settings_save_for_next_slot_with_audit(lab,monkeypatch):
+    conn,api,headers=lab
+    @contextmanager
+    def shared():
+        with conn.transaction():yield conn
+    monkeypatch.setattr(trends,'connection',shared)
+    before=api.get('/admin/research/trends/settings',headers=headers)
+    assert before.status_code==200 and before.json()['interval_minutes']==10
+    response=api.put('/admin/research/trends/settings',headers=headers,json={'enabled':True,'interval_minutes':20})
+    assert response.status_code==200,response.text
+    after=api.get('/admin/research/trends/settings',headers=headers).json()
+    assert after['interval_minutes']==10 and after['pending_interval_minutes']==20
+    assert conn.execute("SELECT count(*) n FROM audit_events WHERE event_type='trend.collection.settings_changed'").fetchone()['n']>0
+    assert api.put('/admin/research/trends/settings',headers=headers,json={'enabled':True,'interval_minutes':6}).status_code==422
+
+
+def test_provider_quota_pauses_remaining_regions(lab,monkeypatch):
+    conn,_,_=lab
+    @contextmanager
+    def shared():
+        with conn.transaction():yield conn
+    monkeypatch.setattr(trends,'connection',shared)
+    calls=[]
+    def limited(geo):
+        calls.append(geo)
+        run=conn.execute("INSERT INTO trend_collection_runs(provider,geo,status,item_count,failure_category) VALUES('google_trends_rss',%s,'blocked',0,'provider_quota_or_rate_limit') RETURNING id",(geo,)).fetchone()['id']
+        return {'run_id':str(run),'geo':geo,'status':'blocked','item_count':0,'failure_category':'provider_quota_or_rate_limit'}
+    monkeypatch.setattr(trends,'_collect_geo',limited)
+    result=trends.schedule_tick()
+    assert result['status']=='blocked' and len(calls)==1
+    assert conn.execute('SELECT backoff_until>now() active FROM trend_collection_settings WHERE id=1').fetchone()['active']
+    trends.schedule_tick()
+    assert len(calls)==1
+
+
 @pytest.mark.parametrize(('minutes','expected'),[(5,'0.08'),(6,'0.1'),(10,'0.17'),
     (15,'0.25'),(20,'0.33'),(25,'0.42'),(30,'0.5'),(60,'1')])
 def test_trend_window_parameter_is_decimal_not_a_verified_filter(minutes,expected):
@@ -131,7 +187,7 @@ def test_trends_external_gate_allows_only_fixed_rss_geos_and_get(
             external_policy._authorize("google_trends_rss", "trend_collection", request)
 
 
-def test_google_trends_external_spacing_and_rolling_cap_are_durable_in_isolated_db(
+def test_google_trends_external_calls_respect_provider_backoff_not_legacy_caps(
     lab: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from contextlib import contextmanager
@@ -151,7 +207,7 @@ def test_google_trends_external_spacing_and_rolling_cap_are_durable_in_isolated_
     ) is None
     assert external_policy._reserve_google_trends_call(
         "trends.google.com", "GET", "trend_collection"
-    ) == "provider_minimum_spacing"
+    ) is None
     conn.execute(
         """INSERT INTO audit_events(event_type,payload,created_at)
         SELECT 'external.call.started',jsonb_build_object('provider','google_trends_rss'),now()-interval '6 minutes'
@@ -159,7 +215,9 @@ def test_google_trends_external_spacing_and_rolling_cap_are_durable_in_isolated_
     )
     assert external_policy._reserve_google_trends_call(
         "trends.google.com", "GET", "trend_collection"
-    ) == "durable_free_hourly_call_limit_reached"
+    ) is None
+    conn.execute("UPDATE trend_collection_settings SET backoff_until=now()+interval '1 hour' WHERE id=1")
+    assert external_policy._reserve_google_trends_call('trends.google.com','GET','trend_collection')=='provider_backoff'
 
 
 def test_hourly_scheduler_starts_on_top_of_hour_and_resumes_without_repeating_slots() -> None:
@@ -347,7 +405,7 @@ def test_observation_summary_tracks_new_continuing_and_period_unknown(lab: Any) 
     assert summary["research_status"] == "not_researched"
 
 
-def test_direct_trend_collection_obeys_global_minimum_spacing(
+def test_direct_trend_collection_no_longer_obeys_legacy_spacing(
     lab: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     conn, api, headers = lab
@@ -364,17 +422,9 @@ def test_direct_trend_collection_obeys_global_minimum_spacing(
         with conn.transaction():
             yield conn
 
-    def forbidden(*args: Any, **kwargs: Any) -> Any:
-        raise AssertionError("external request must be blocked by durable pacing")
-
     monkeypatch.setattr(trends, "connection", shared_connection)
-    monkeypatch.setattr(trends, "external_client", forbidden)
+    monkeypatch.setattr(trends, "_collect_geo", lambda geo: {'status':'succeeded','geo':geo,'item_count':0})
     response = api.post("/admin/research/trends/collect", headers=headers, json={"geo": "GB"})
     assert response.status_code == 200
-    assert response.json()["status"] == "blocked"
-    assert response.json()["failure_category"] == "global_minimum_spacing"
+    assert response.json()["status"] == "succeeded"
     assert conn.execute("SELECT count(*) AS n FROM trend_collection_attempts").fetchone()["n"] == prior + 1
-    event = conn.execute(
-        "SELECT payload FROM audit_events WHERE event_type='trend.collection.pacing_blocked' ORDER BY id DESC LIMIT 1"
-    ).fetchone()
-    assert event["payload"]["geo"] == "GB"

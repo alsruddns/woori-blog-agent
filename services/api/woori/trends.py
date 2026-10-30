@@ -168,21 +168,53 @@ def _save_failure(
     }
 
 
-def collect_geo(geo: str) -> dict[str, Any]:
-    """Serialize collection; a successful KST geo/hour is never collected twice."""
+def slot_for(now: datetime, interval_minutes: int) -> datetime:
+    if now.tzinfo is None or interval_minutes not in (5,10,15,20,30,60):
+        raise ValueError('invalid_trend_slot')
+    local=now.astimezone(SCHEDULE_TIMEZONE)
+    return local.replace(minute=local.minute//interval_minutes*interval_minutes,second=0,microsecond=0).astimezone(UTC)
+
+
+def collection_settings() -> dict[str, Any]:
+    with connection() as conn:
+        row=conn.execute('SELECT * FROM trend_collection_settings WHERE id=1').fetchone()
+        if not row:raise EngineFailure('trend_settings_missing')
+        latest=conn.execute("SELECT max(started_at) AS last_run FROM trend_collection_runs").fetchone()
+        regions=conn.execute('''SELECT DISTINCT ON (geo) geo,slot_at,result,updated_at
+            FROM trend_collection_slots ORDER BY geo,slot_at DESC''').fetchall()
+        result=dict(row)
+        if row['pending_interval_minutes'] and row['effective_at'] and row['effective_at']<=datetime.now(UTC):
+            result['interval_minutes']=row['pending_interval_minutes']
+        result['last_run']=latest['last_run'] if latest else None
+        result['regions']=regions
+        result['next_run_at']=slot_for(datetime.now(UTC),result['interval_minutes'])+timedelta(minutes=result['interval_minutes'])
+        result['requested_window_hours']=minutes_to_hours_parameter(result['interval_minutes'])
+        result['rss_window_status']='not_verified_not_sent'
+        return result
+
+
+def collect_geo(geo: str, *, slot_at: datetime | None = None) -> dict[str, Any]:
+    """Serialize each region; a successful region/slot is never collected twice."""
     if geo not in ALLOWED_GEOS:
         raise ValueError('trend_geo_not_allowlisted')
-    bucket=datetime.now(SCHEDULE_TIMEZONE).replace(minute=0,second=0,microsecond=0).astimezone(UTC)
+    config=collection_settings()
+    bucket=slot_at or slot_for(datetime.now(UTC),config['interval_minutes'])
     with connection() as guard:
         locked=guard.execute("SELECT pg_try_advisory_lock(hashtextextended('trend-slot-collection',0)) acquired").fetchone()
         if not locked or not locked['acquired']:return {'status':'busy','geo':geo,'item_count':0}
         try:
-            existing=guard.execute("SELECT id,item_count FROM trend_collection_runs WHERE geo=%s AND status='succeeded' AND started_at>=%s AND started_at<%s+interval '1 hour' LIMIT 1",(geo,bucket,bucket)).fetchone()
-            if existing:return {'status':'already_collected','geo':geo,'run_id':str(existing['id']),'item_count':existing['item_count'],'new_items':0}
+            existing=guard.execute("SELECT run_id,result FROM trend_collection_slots WHERE geo=%s AND slot_at=%s AND result->>'status'='succeeded'",(geo,bucket)).fetchone()
+            if existing:return {'status':'already_collected','geo':geo,'run_id':str(existing['run_id']),'item_count':existing['result'].get('item_count',0),'new_items':0}
+            if config['backoff_until'] and config['backoff_until']>datetime.now(UTC):
+                return {'status':'blocked','geo':geo,'item_count':0,'failure_category':'provider_backoff'}
             result=_collect_geo(geo)
+            if result.get('http_status') in (403,429) or result.get('failure_category')=='provider_quota_or_rate_limit':
+                guard.execute("UPDATE trend_collection_settings SET backoff_until=now()+interval '1 hour' WHERE id=1")
+                guard.execute("INSERT INTO audit_events(event_type,payload) VALUES('trend.collection.provider_backoff',%s)",
+                    (Jsonb({'geo':geo,'http_status':result.get('http_status'),'minutes':60}),))
             guard.execute('''INSERT INTO trend_collection_slots(geo,slot_at,run_id,result) VALUES(%s,%s,%s,%s)
                 ON CONFLICT(geo,slot_at) DO UPDATE SET run_id=EXCLUDED.run_id,result=EXCLUDED.result,updated_at=now()''',
-                (geo,bucket,result.get('run_id') if result.get('http_status') is not None else None,
+                (geo,bucket,result.get('run_id'),
                  Jsonb({k:v.isoformat() if isinstance(v,datetime) else v for k,v in result.items()})))
             return result
         finally:guard.execute("SELECT pg_advisory_unlock(hashtextextended('trend-slot-collection',0))")
@@ -202,61 +234,6 @@ def _collect_geo(geo: str) -> dict[str, Any]:
     http_status: int | None = None
     with connection() as conn:
         conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('google_trends_rss',0))")
-        spacing_row = conn.execute(
-            "SELECT max(attempted_at) AS last_attempt FROM trend_collection_attempts"
-        ).fetchone()
-        last_attempt = spacing_row["last_attempt"] if spacing_row else None
-        now = datetime.now(UTC)
-        if last_attempt and now - last_attempt < MIN_REQUEST_SPACING:
-            next_eligible_at = last_attempt + MIN_REQUEST_SPACING
-            conn.execute(
-                "INSERT INTO audit_events(event_type,payload) VALUES ('trend.collection.pacing_blocked',%s)",
-                (
-                    Jsonb(
-                        {
-                            "collection_run_id": str(run_id),
-                            "provider": PROVIDER,
-                            "geo": geo,
-                            "next_eligible_at": next_eligible_at.isoformat(),
-                        }
-                    ),
-                ),
-            )
-            return {
-                "run_id": str(run_id),
-                "geo": geo,
-                "status": "blocked",
-                "item_count": 0,
-                "failure_category": "global_minimum_spacing",
-                "next_eligible_at": next_eligible_at,
-            }
-        quota_row = conn.execute(
-            "SELECT count(*) AS n FROM trend_collection_attempts WHERE attempted_at>now()-interval '1 hour'"
-        ).fetchone()
-        if quota_row is None:
-            raise EngineFailure("trend_quota_state_unavailable")
-        prior = quota_row["n"]
-        if prior >= 12:
-            conn.execute(
-                "INSERT INTO audit_events(event_type,payload) VALUES ('trend.collection.quota_blocked',%s)",
-                (
-                    Jsonb(
-                        {
-                            "collection_run_id": str(run_id),
-                            "provider": PROVIDER,
-                            "geo": geo,
-                            "hourly_cap": 12,
-                        }
-                    ),
-                ),
-            )
-            return {
-                "run_id": str(run_id),
-                "geo": geo,
-                "status": "blocked",
-                "item_count": 0,
-                "failure_category": "durable_hourly_limit",
-            }
         conn.execute(
             "INSERT INTO trend_collection_attempts(id,provider,geo) VALUES (%s,%s,%s)",
             (run_id, PROVIDER, geo),
@@ -561,7 +538,7 @@ def choose_hourly_geo(
     return None, "waiting_for_region_interval"
 
 
-def schedule_tick(now: datetime | None = None) -> dict[str, Any]:
+def legacy_schedule_tick(now: datetime | None = None) -> dict[str, Any]:
     """Collect one due region in a persisted KST hourly sweep, at 5-minute spacing."""
     current = now or datetime.now(UTC)
     if current.tzinfo is None:
@@ -655,3 +632,37 @@ def schedule_tick(now: datetime | None = None) -> dict[str, Any]:
                 "SELECT pg_advisory_unlock(hashtextextended(%s,0))",
                 (SCHEDULER_LOCK,),
             )
+
+
+def schedule_tick(now: datetime | None = None) -> dict[str, Any]:
+    """Collect all eleven geographies once per configured KST slot, serially."""
+    current=now or datetime.now(UTC)
+    if current.tzinfo is None:raise ValueError('scheduler_time_must_be_timezone_aware')
+    config=collection_settings()
+    if not config['enabled']:return {'status':'disabled','external_calls':0}
+    bucket=slot_for(current,config['interval_minutes'])
+    with connection() as guard:
+        locked=guard.execute('SELECT pg_try_advisory_lock(hashtextextended(%s,0)) acquired',(SCHEDULER_LOCK,)).fetchone()
+        if not locked or not locked['acquired']:return {'status':'busy','external_calls':0}
+        try:
+            existing=guard.execute('SELECT geo,result FROM trend_collection_slots WHERE slot_at=%s',(bucket,)).fetchall()
+            attempted={row['geo'] for row in existing}
+            if len(attempted)>=len(ALLOWED_GEOS):
+                return {'status':'slot_complete','slot_at':bucket.isoformat(),'external_calls':0}
+            guard.execute("INSERT INTO audit_events(event_type,payload) VALUES('trend.sweep.started',%s)",
+                (Jsonb({'slot_at':bucket.isoformat(),'interval_minutes':config['interval_minutes']}),))
+            results=[]
+            for geo in sorted(ALLOWED_GEOS-attempted):
+                if now is None and slot_for(datetime.now(UTC),config['interval_minutes'])!=bucket:break
+                result=collect_geo(geo,slot_at=bucket);results.append(result)
+                if result.get('status')=='blocked' and result.get('failure_category') in {
+                    'provider_backoff','provider_quota_or_rate_limit','external_policy_blocked'}:break
+            successes=sum(r.get('status')=='succeeded' for r in results)
+            failures=sum(r.get('status') in {'failed','blocked'} for r in results)
+            status='succeeded' if successes and not failures else 'partial' if successes else 'blocked' if failures else 'not_due'
+            guard.execute("INSERT INTO audit_events(event_type,payload) VALUES('trend.sweep.completed',%s)",
+                (Jsonb({'slot_at':bucket.isoformat(),'status':status,'successes':successes,'failures':failures,
+                        'attempted_regions':len(results),'total_regions':len(ALLOWED_GEOS)}),))
+            return {'status':status,'slot_at':bucket.isoformat(),'external_calls':sum(r.get('http_status') is not None for r in results),
+                    'results':results,'successes':successes,'failures':failures}
+        finally:guard.execute('SELECT pg_advisory_unlock(hashtextextended(%s,0))',(SCHEDULER_LOCK,))

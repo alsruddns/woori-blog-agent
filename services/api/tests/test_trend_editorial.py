@@ -27,7 +27,7 @@ def observation(conn,query,geo='KR',payload=None,volume=1000):
     if slot:run=slot['run_id']
     else:
         run=conn.execute("INSERT INTO trend_collection_runs(provider,geo,status,item_count) VALUES('google_trends_rss',%s,'succeeded',1) RETURNING id",(geo,)).fetchone()['id']
-        conn.execute("INSERT INTO trend_collection_slots(geo,slot_at,run_id,result) VALUES(%s,%s,%s,'{}')",(geo,editorial.current_slot(),run))
+        conn.execute("INSERT INTO trend_collection_slots(geo,slot_at,run_id,result) VALUES(%s,%s,%s,%s)",(geo,editorial.current_slot(),run,Jsonb({'status':'succeeded'})))
     return conn.execute("""INSERT INTO trend_observations(run_id,geo,platform,query,source_url,response_sha256,raw_payload,source_volume_label,source_volume_lower_bound,trend_started_at)
         VALUES(%s,%s,'google_trends',%s,'https://trends.google.com/trending/rss',%s,%s,%s,%s,now()) RETURNING id""",
         (run,geo,query,'a'*64,Jsonb(payload or {}),f'{volume}+',volume)).fetchone()['id']

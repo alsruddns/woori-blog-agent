@@ -99,11 +99,9 @@ PROVIDERS: dict[str, dict[str, Any]] = {
     "google_trends_rss": {
         "hosts": {"trends.google.com"},
         "methods": {"GET"},
-        "rpm": 1,
-        "rph": 12,
         "operations": {"trend_collection"},
         "paths": ("/trending/rss",),
-        "cost": "Google Trends public RSS export; no key, metered API, or billing account used; application hard caps apply",
+        "cost": "Google Trends public RSS export; no key, metered API, or billing account used",
         "commercial_use": "Google Trends help documents RSS export; preserve trend attribution and Google terms; no search-volume ranks are inferred",
         "zero_cost_reviewed": True,
     },
@@ -433,10 +431,9 @@ def status() -> dict[str, Any]:
             {
                 "name": name,
                 "cost": rule["cost"],
-                "usage_limit": (
-                    f"local hard caps {rule['rpm']} calls/minute and {rule['rph']} calls/hour; "
-                    "provider 429/quota stops immediately"
-                ),
+                "usage_limit": ("serial region requests; provider 429/access denial pauses collection"
+                    if name == 'google_trends_rss' else
+                    f"local hard caps {rule['rpm']} calls/minute and {rule['rph']} calls/hour; provider 429/quota stops immediately"),
                 "commercial_use": rule["commercial_use"],
                 "calls_allowed": allowed,
                 "block_reason": reason,
@@ -547,7 +544,7 @@ def _reserve_japan_energy_call(host: str, method: str, hourly_limit: int) -> Non
 
 
 def _reserve_google_trends_call(host: str, method: str, operation: str) -> str | None:
-    """Durably share RSS spacing and rolling-hour caps across every caller/process."""
+    """Record an allowlisted RSS request; provider backoff is durable."""
     from psycopg.types.json import Jsonb
 
     from .db import connection
@@ -557,35 +554,10 @@ def _reserve_google_trends_call(host: str, method: str, operation: str) -> str |
             "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
             ("external-provider:google_trends_rss:rolling-caps",),
         )
-        row = conn.execute(
-            """SELECT count(*) FILTER (WHERE created_at>=now()-interval '1 hour') AS hour_count,
-            min(created_at) FILTER (WHERE created_at>=now()-interval '1 hour') AS oldest_in_hour,
-            max(created_at) AS last_call FROM audit_events
-            WHERE event_type='external.call.started'
-              AND payload->>'provider'='google_trends_rss'"""
-        ).fetchone()
-        if row is None:
-            return "durable_quota_state_unavailable"
-        if row["hour_count"] >= 12:
-            return "durable_free_hourly_call_limit_reached"
-        if row["last_call"] is not None:
-            elapsed = conn.execute(
-                "SELECT now()-%s AS age", (row["last_call"],)
-            ).fetchone()
-            if elapsed is None or elapsed["age"] < timedelta(minutes=5):
-                return "provider_minimum_spacing"
+        row=conn.execute("SELECT backoff_until FROM trend_collection_settings WHERE id=1").fetchone()
+        if row is None:return 'durable_quota_state_unavailable'
+        if row['backoff_until'] and row['backoff_until']>datetime.now(UTC):return 'provider_backoff'
         run_id = _external_run_id.get()
-        last_collector_attempt = conn.execute(
-            """SELECT max(attempted_at) AS last_attempt FROM trend_collection_attempts
-            WHERE provider='google_trends_rss' AND (%s::text IS NULL OR id::text<>%s::text)""",
-            (run_id, run_id),
-        ).fetchone()
-        if last_collector_attempt and last_collector_attempt["last_attempt"] is not None:
-            elapsed = conn.execute(
-                "SELECT now()-%s AS age", (last_collector_attempt["last_attempt"],)
-            ).fetchone()
-            if elapsed is None or elapsed["age"] < timedelta(minutes=5):
-                return "provider_minimum_spacing"
         payload: dict[str, Any] = {
             "provider": "google_trends_rss",
             "operation": operation,
@@ -699,14 +671,17 @@ def _authorize(provider: str, operation: str, request: httpx.Request) -> None:
     # and quota errors remain hard stops; this limiter never sleeps or retries.
     now = time.monotonic()
     with _lock:
-        for seconds, cap_key in ((60, "rpm"), (3600, "rph")):
-            calls = _windows.setdefault((provider, seconds), deque())
-            while calls and now - calls[0] >= seconds:
-                calls.popleft()
-            if len(calls) >= rule[cap_key]:
-                raise FreeQuotaExceeded("local_free_call_limit_reached")
-        for seconds in (60, 3600):
-            _windows[(provider, seconds)].append(now)
+        if provider == 'google_trends_rss':
+            pass  # P5-CODEX-087: requests are serialized by the collection scheduler.
+        else:
+            for seconds, cap_key in ((60, "rpm"), (3600, "rph")):
+                calls = _windows.setdefault((provider, seconds), deque())
+                while calls and now - calls[0] >= seconds:
+                    calls.popleft()
+                if len(calls) >= rule[cap_key]:
+                    raise FreeQuotaExceeded("local_free_call_limit_reached")
+            for seconds in (60, 3600):
+                _windows[(provider, seconds)].append(now)
     try:
         if provider == "taiwan_official_documents":
             _reserve_taiwan_official_call(parsed.host, request.method, rule["rph"])

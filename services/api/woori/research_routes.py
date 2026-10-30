@@ -2,7 +2,7 @@
 
 import hashlib
 import math
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, Self
 from urllib.parse import urlsplit
 from uuid import UUID
@@ -56,6 +56,38 @@ class TrendCollectionRequest(Input):
         if value not in trends.ALLOWED_GEOS:
             raise ValueError("trend_geo_not_allowlisted")
         return value
+
+
+class TrendCollectionSettingsRequest(Input):
+    enabled: bool
+    interval_minutes: Literal[5, 10, 15, 20, 30, 60]
+
+
+@router.get('/trends/settings')
+def get_trend_collection_settings() -> dict[str, Any]:
+    return trends.collection_settings()
+
+
+@router.put('/trends/settings')
+def set_trend_collection_settings(request: TrendCollectionSettingsRequest) -> dict[str, Any]:
+    from psycopg.types.json import Jsonb
+    with connection() as conn:
+        conn.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',('trend-collection-settings',))
+        before=conn.execute('SELECT * FROM trend_collection_settings WHERE id=1 FOR UPDATE').fetchone()
+        if not before:raise HTTPException(503,'trend_settings_missing')
+        now=datetime.now(UTC)
+        current_interval=before['interval_minutes']
+        if before['pending_interval_minutes'] and before['effective_at'] and before['effective_at']<=now:
+            current_interval=before['pending_interval_minutes']
+        effective=trends.slot_for(now,current_interval)+timedelta(minutes=current_interval)
+        after=conn.execute('''UPDATE trend_collection_settings SET enabled=%s,interval_minutes=%s,
+            pending_interval_minutes=%s,effective_at=%s,updated_at=now() WHERE id=1 RETURNING *''',
+            (request.enabled,current_interval,request.interval_minutes,effective)).fetchone()
+        conn.execute("INSERT INTO audit_events(event_type,payload) VALUES('trend.collection.settings_changed',%s)",
+            (Jsonb({'before':{'enabled':before['enabled'],'interval_minutes':before['interval_minutes']},
+                'after':{'enabled':request.enabled,'interval_minutes':request.interval_minutes},
+                'effective_at':effective.isoformat(),'actor':'authenticated_operator'}),))
+    return dict(after) if after else {}
 
 
 class TrendTopicDecision(Input):
