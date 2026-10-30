@@ -112,7 +112,10 @@ def _source_review_actor_type(url: str, approved: bool, reviewer: str | None) ->
 def research_domains(query: str) -> list[str]:
     normalized = normalize_query(query)
     return [
-        domain for domain, markers in (RESEARCH_MARKERS | SPECIALIZED_RESEARCH_MARKERS).items()
+        domain for domain, markers in RESEARCH_MARKERS.items()
+        if any(normalize_query(marker) in normalized for marker in markers)
+    ] + [
+        domain for domain, markers in SPECIALIZED_RESEARCH_MARKERS.items()
         if any(normalize_query(marker) in normalized for marker in markers)
     ]
 

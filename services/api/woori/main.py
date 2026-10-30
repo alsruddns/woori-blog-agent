@@ -22,6 +22,7 @@ from .operations import health as operations_health
 from .operations_dashboard import dashboard_snapshot
 from .publications import router as publications_router
 from .research_routes import router as research_router
+from .trend_editorial import router as trend_editorial_router
 
 app = FastAPI(title="Woori Blog Agent", docs_url=None, redoc_url=None, openapi_url=None)
 logger = logging.getLogger("woori.api.database")
@@ -42,6 +43,7 @@ app.include_router(router, dependencies=[Depends(authorize)])
 app.include_router(blogger_router, dependencies=[Depends(authorize)])
 app.include_router(publications_router, dependencies=[Depends(authorize)])
 app.include_router(keyword_authoring_router, dependencies=[Depends(authorize)])
+app.include_router(trend_editorial_router, dependencies=[Depends(authorize)])
 
 
 @app.exception_handler(EngineFailure)

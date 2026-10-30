@@ -97,6 +97,13 @@ def parse_feed(content: bytes, geo: str, collected_at: datetime | None = None) -
                 "geo": geo,
                 "platform": "google_trends",
                 "query": query,
+                "source_categories": [c.text for c in item.findall('category') if c.text],
+                "source_language": channel.findtext('language'),
+                "raw_payload": {'item_xml': ET.tostring(item, encoding='unicode'),
+                    'news_items': [{'title': n.findtext('ht:news_item_title', namespaces=NS),
+                                    'url': n.findtext('ht:news_item_url', namespaces=NS),
+                                    'source': n.findtext('ht:news_item_source', namespaces=NS)}
+                                   for n in item.findall('ht:news_item', NS)[:5]]},
                 "source_rank": None,
                 "source_volume_label": traffic if traffic else None,
                 "source_volume_lower_bound": parse_approx_traffic(traffic),
@@ -154,6 +161,26 @@ def _save_failure(
 
 
 def collect_geo(geo: str) -> dict[str, Any]:
+    """Serialize collection; a successful KST geo/hour is never collected twice."""
+    if geo not in ALLOWED_GEOS:
+        raise ValueError('trend_geo_not_allowlisted')
+    bucket=datetime.now(SCHEDULE_TIMEZONE).replace(minute=0,second=0,microsecond=0).astimezone(UTC)
+    with connection() as guard:
+        locked=guard.execute("SELECT pg_try_advisory_lock(hashtextextended('trend-slot-collection',0)) acquired").fetchone()
+        if not locked or not locked['acquired']:return {'status':'busy','geo':geo,'item_count':0}
+        try:
+            existing=guard.execute("SELECT id,item_count FROM trend_collection_runs WHERE geo=%s AND status='succeeded' AND started_at>=%s AND started_at<%s+interval '1 hour' LIMIT 1",(geo,bucket,bucket)).fetchone()
+            if existing:return {'status':'already_collected','geo':geo,'run_id':str(existing['id']),'item_count':existing['item_count'],'new_items':0}
+            result=_collect_geo(geo)
+            guard.execute('''INSERT INTO trend_collection_slots(geo,slot_at,run_id,result) VALUES(%s,%s,%s,%s)
+                ON CONFLICT(geo,slot_at) DO UPDATE SET run_id=EXCLUDED.run_id,result=EXCLUDED.result,updated_at=now()''',
+                (geo,bucket,result.get('run_id') if result.get('http_status') is not None else None,
+                 Jsonb({k:v.isoformat() if isinstance(v,datetime) else v for k,v in result.items()})))
+            return result
+        finally:guard.execute("SELECT pg_advisory_unlock(hashtextextended('trend-slot-collection',0))")
+
+
+def _collect_geo(geo: str) -> dict[str, Any]:
     if geo not in ALLOWED_GEOS:
         raise ValueError("trend_geo_not_allowlisted")
     with connection() as conn:
@@ -303,13 +330,15 @@ def collect_geo(geo: str) -> dict[str, Any]:
                 conn.execute(
                     """INSERT INTO trend_observations
                     (run_id,geo,platform,query,source_rank,source_volume_label,source_volume_lower_bound,
-                     source_volume_period,trend_started_at,source_updated_at,collected_at,related_terms,source_url,response_sha256)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                     source_volume_period,trend_started_at,source_updated_at,collected_at,related_terms,source_url,response_sha256,
+                     raw_payload,source_categories,source_language)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     ON CONFLICT(run_id,query) DO NOTHING""",
                     (run_id,row["geo"],row["platform"],row["query"],row["source_rank"],
                      row["source_volume_label"],row["source_volume_lower_bound"],row["source_volume_period"],
                      row["trend_started_at"],row["source_updated_at"],row["collected_at"],
-                     row["related_terms"],row["source_url"],parsed["response_sha256"]),
+                     row["related_terms"],row["source_url"],parsed["response_sha256"],
+                     Jsonb(row['raw_payload']),row['source_categories'],row['source_language']),
                 )
             else:
                 conn.execute(

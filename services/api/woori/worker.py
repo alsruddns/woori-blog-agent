@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 import psycopg
 from psycopg.types.json import Jsonb
 
-from . import collection, keyword_jobs, pipeline, scheduled_import_inbox, topics, trends
+from . import collection, keyword_jobs, pipeline, scheduled_import_inbox, topics, trend_editorial, trends
 from .config import settings
 from .db import connection
 
@@ -220,6 +220,7 @@ def tick() -> bool:
 def collect_trends_and_build_topics() -> dict[str, object]:
     """Build exact-query, evidence-gated candidates only after a real feed collection."""
     result = trends.schedule_tick()
+    result['editorial_triage'] = trend_editorial.reconcile()
     if result.get("status") == "succeeded":
         result["candidate_build"] = topics.build_candidates()
         result["research_triage"] = topics.select_research_candidates(
