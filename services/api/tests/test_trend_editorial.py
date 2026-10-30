@@ -86,6 +86,9 @@ def test_same_slot_never_fetches_success_again(lab,monkeypatch):
     assert result['status']=='already_collected' and result['new_items']==0
     now=datetime(2026,10,30,2,0,tzinfo=UTC)
     assert trends.choose_hourly_geo({}, {}, None,now)[0] is not None
+    reboot=datetime(2026,10,30,2,30,tzinfo=UTC)
+    assert trends.choose_hourly_geo({}, {}, None,reboot)[0] is None
+    assert trends.choose_hourly_geo({}, {}, None,reboot,allow_late=True)[0] is not None
 
 
 def test_trends_queue_dispatch_has_distinct_provenance_and_no_publication(lab,monkeypatch):

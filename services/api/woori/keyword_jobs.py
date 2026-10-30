@@ -106,7 +106,12 @@ def state(job_id:UUID,value:str,**fields:Any) -> None:
     with connection() as conn:
         update(conn,job_id,value,**fields)
         if value in {'failed','cancelled'}:
-            conn.execute("UPDATE trend_generation_requests SET state='failed',updated_at=now() WHERE authoring_job_id=%s AND state='generating'",(job_id,))
+            row=conn.execute("UPDATE trend_generation_requests SET state='failed',updated_at=now() WHERE authoring_job_id=%s AND state='generating' RETURNING topic_id",(job_id,)).fetchone()
+            if row:
+                from .trend_editorial import transition
+                transition(conn,row['topic_id'],'failed','codex_authoring_failed',
+                    'Codex 실행 또는 원고 검증이 실패했습니다. 원본 결과와 오류 기록을 보존합니다.',
+                    'system:trend-codex',evidence={'authoring_job_id':str(job_id),'error_code':fields.get('error_code')})
 
 
 @router.get('')
@@ -360,8 +365,13 @@ def import_pending(*,transport:httpx.BaseTransport|None=None,api_url:str='http:/
                 else:assessment_error='import_detail_http_'+str(detail.status_code)
             update(conn,job['id'],'imported_review',import_id=UUID(import_id),content_version_id=UUID(str(result['content_version_id'])),error_code=assessment_error,completed_at=datetime.now(UTC))
             if job.get('trend_request_id'):
-                conn.execute("UPDATE trend_generation_requests SET state='imported',updated_at=now() WHERE id=%s AND authoring_job_id=%s",(job['trend_request_id'],job['id']))
+                topic=conn.execute("UPDATE trend_generation_requests SET state='imported',updated_at=now() WHERE id=%s AND authoring_job_id=%s RETURNING topic_id",(job['trend_request_id'],job['id'])).fetchone()
                 audit(conn,job['id'],'trend_imported',{'trend_request_id':str(job['trend_request_id']),'import_id':import_id})
+                if topic:
+                    from .trend_editorial import transition
+                    transition(conn,topic['topic_id'],'imported','codex_imported',
+                        'Codex 원고 Import 완료. 게시 자격과 Blogger 공개는 별도 검증합니다.',
+                        'system:trend-codex',evidence={'authoring_job_id':str(job['id']),'import_id':import_id})
         except (RuntimeError,ValueError,OSError,KeyError,httpx.HTTPError,psycopg.Error) as error:
             code=str(error) if isinstance(error,codex_runner.CodexFailure) else 'import_unavailable'
             attempt=int(job['import_attempts'])+1
@@ -369,6 +379,13 @@ def import_pending(*,transport:httpx.BaseTransport|None=None,api_url:str='http:/
             update(conn,job['id'],'import_pending' if uncertain and attempt<3 else 'failed',
                    error_code='import_status_uncertain' if uncertain and attempt>=3 else code,
                    import_attempts=attempt,completed_at=datetime.now(UTC) if attempt>=3 or not uncertain else None)
+            if job.get('trend_request_id') and (not uncertain or attempt>=3):
+                row=conn.execute("UPDATE trend_generation_requests SET state='failed',updated_at=now() WHERE id=%s RETURNING topic_id",(job['trend_request_id'],)).fetchone()
+                if row:
+                    from .trend_editorial import transition
+                    transition(conn,row['topic_id'],'failed','codex_import_failed',
+                        'Codex 원고 Import가 실패했습니다. 중복 여부를 확인한 후 복구해야 합니다.',
+                        'system:trend-codex',evidence={'authoring_job_id':str(job['id']),'error_code':code})
 
 
 def tick() -> None:

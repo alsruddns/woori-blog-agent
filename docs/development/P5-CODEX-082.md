@@ -6,5 +6,6 @@
 - 수정 파일: `scripts/063_trend_codex_provenance.sql`, `scripts/migrate.py`, `scripts/provision-test-database.py`, `services/api/woori/content_imports.py`, `keyword_jobs.py`, `trend_editorial.py`, `worker.py`, `services/api/tests/test_trend_editorial.py`.
 - 격리 테스트: 선정 주제·지역 정책 → 영속 큐 → Codex Job 생성 및 중복 방지, Publishing Job 미생성을 확인. 정식 Import/실제 Codex/Web/Blogger 운영 결과는 후속 실행 기록에 남긴다.
 - 운영: schema 63은 운영 DB 백업 후 적용했다. `scheduled_publication_policy_events`는 기존 Codex Desktop 예약 범위다. 이 이벤트만으로 Trends 자동 공개 권한을 추론하지 않는다.
+- 운영 확인: 실제 최신 Trends 주제 상태는 review_candidate 2,118, discarded 5, selected 0, generation_queued 0. 082 전용 원고 생성·Import·Publishing Job·Blogger 공개 실행 사례는 아직 없다. Trend Auto의 별도 운영 승인 기록도 없다. Scheduled Auto 승인 이벤트를 Trends 공개 권한으로 재사용하지 않는다. 따라서 실제 공개 postId와 URL은 없고 이 단계는 부분 완료다.
 - 남은 문제: Trends 전용 운영 승인 정책과 안전한 live publisher lane, 실제 근거 검증된 Trends 원고, 원격 중복 확인 후 실제 Blogger 게시. 외부 공개 postId와 URL이 없으면 게시 성공으로 보고하지 않는다.
 - 커밋 해시: 이 문서 커밋의 `git log` 참조.

@@ -124,6 +124,19 @@ def test_source_date_precision_and_unopened_blocks_are_preserved_as_evidence():
     assert envelope.item.claims[0].verification_status=='unverified'
 
 
+def test_trends_origin_is_distinct_from_scheduled_and_manual():
+    item=valid_item()
+    article={**{k:item[k] for k in ('title','body_markdown','sources','claims','seo')},'source_region':'ZZ'}
+    job={'id':uuid4(),'trend_request_id':uuid4(),'job_type':'google_trends','category':'technology',
+         'language_code':'ko','target_country':'KR','model':'gpt-6-luna'}
+    proof={'opened_urls':{'https://example.gov/policy':datetime.now(UTC).isoformat()}}
+    envelope=keyword_jobs.make_envelope(job,article,proof)
+    assert envelope.item.generation_method=='codex_trends_export'
+    assert envelope.item.google_trends_based is True
+    assert envelope.item.event_group_id=='trend-'+str(job['trend_request_id'])
+    assert envelope.item.claims[0].verification_status=='unverified'
+
+
 @pytest.mark.parametrize('mode',['success','cancel','timeout','limit'])
 def test_runner_bounded_execution_no_shell_or_api_key(monkeypatch,tmp_path,mode):
     import io

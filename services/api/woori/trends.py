@@ -511,6 +511,7 @@ def choose_hourly_geo(
     attempted_this_hour: dict[str, list[dict[str, Any]]],
     last_global_attempt: datetime | None,
     now: datetime,
+    *, allow_late: bool = False,
 ) -> tuple[str | None, str]:
     """Select one region for the current KST sweep without replaying completed slots."""
     if now.tzinfo is None:
@@ -518,7 +519,7 @@ def choose_hourly_geo(
     current = now.astimezone(UTC)
     local = current.astimezone(SCHEDULE_TIMEZONE)
     bucket_local = local.replace(minute=0, second=0, microsecond=0)
-    if not attempted_this_hour and local - bucket_local >= SCHEDULE_START_WINDOW:
+    if not allow_late and not attempted_this_hour and local - bucket_local >= SCHEDULE_START_WINDOW:
         return None, "waiting_for_top_of_hour"
     if last_global_attempt and current - last_global_attempt < MIN_REQUEST_SPACING:
         return None, "not_due"
@@ -584,11 +585,7 @@ def schedule_tick(now: datetime | None = None) -> dict[str, Any]:
                 return {"status": "rolling_hour_limit_wait", "geo": None,
                         "external_calls": 0, "hour_bucket": bucket.isoformat(),
                         "next_run_at": (rolling["oldest"] + timedelta(hours=1)).isoformat()}
-            if not hour_rows and local - bucket_local >= SCHEDULE_START_WINDOW:
-                next_hour = (bucket_local + timedelta(hours=1)).isoformat()
-                return {"status": "waiting_for_top_of_hour", "geo": None,
-                        "external_calls": 0, "hour_bucket": bucket.isoformat(),
-                        "next_run_at": next_hour}
+            late_start=not hour_rows and local - bucket_local >= SCHEDULE_START_WINDOW
             per_geo = {
                 str(row["geo"]): row["last_attempt"]
                 for row in guard.execute(
@@ -613,7 +610,8 @@ def schedule_tick(now: datetime | None = None) -> dict[str, Any]:
                         "failure_category": hard_stop["failure_category"],
                         "hour_bucket": bucket.isoformat()}
             last_global = latest["last_attempt"] if latest else None
-            due_geo, decision = choose_hourly_geo(per_geo, attempts_this_hour, last_global, current)
+            due_geo, decision = choose_hourly_geo(per_geo, attempts_this_hour, last_global, current,
+                                                 allow_late=late_start)
             if due_geo is None:
                 next_run = (last_global + MIN_REQUEST_SPACING).isoformat() if decision == "not_due" and last_global else None
                 next_hour = (bucket_local + timedelta(hours=1)).isoformat()
@@ -642,7 +640,7 @@ def schedule_tick(now: datetime | None = None) -> dict[str, Any]:
                         "hour_bucket": bucket.isoformat(), "next_run_at": next_run or next_hour}
             result = collect_geo(due_geo)
             return {**result, "scheduled": True, "hour_bucket": bucket.isoformat(),
-                    "schedule_decision": decision,
+                    "schedule_decision": 'current_hour_catch_up' if late_start else decision,
                     "external_calls": int(result.get("http_status") == 200)}
         finally:
             guard.execute(
