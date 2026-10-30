@@ -19,6 +19,15 @@ Describe 'Windows service lifecycle ownership and startup policy' {
     (Test-ExactCheckoutServiceProcess $basePython 'api') | Should Be $false
   }
 
+  It 'recognizes the project API and Dashboard cooperative launch commands by exact absolute script path' {
+    $root=$script:ProjectRoot
+    $venv=Join-Path $root '.venv\Scripts\python.exe'
+    $api=[pscustomobject]@{Id=413;ParentId=1;Path='C:\Users\achie\AppData\Local\Programs\Python\Python313\python.exe';CommandLine="`"$venv`" `"$(Join-Path $root 'scripts\api-service.py')`""}
+    $dashboard=[pscustomobject]@{Id=414;ParentId=1;Path='C:\nvm4w\nodejs\node.exe';CommandLine="`"C:\nvm4w\nodejs\node.exe`" $(Join-Path $root 'scripts\dashboard-service.js')"}
+    (Test-ExactCheckoutServiceProcess $api 'api') | Should Be $true
+    (Test-ExactCheckoutServiceProcess $dashboard 'dashboard') | Should Be $true
+  }
+
   It 'does not count a Python launcher ancestor as a second Worker process' {
     $table = @(
       [pscustomobject]@{ Id=420; ParentId=1; Path='C:\Python\python.exe'; CommandLine='"C:\repo\.venv\Scripts\python.exe" -m woori.worker' },

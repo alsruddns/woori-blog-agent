@@ -230,8 +230,10 @@ function Test-ExactCheckoutServiceProcess($ProcessInfo, [string]$ServiceName) {
       $venvPythonCommand = $command -match ('(?i)^"' + [regex]::Escape($python) + '"\s+')
       $expectedInterpreter = $path -ieq $python -or
         ([IO.Path]::GetFileName($path) -ieq 'python.exe' -and $venvPythonCommand)
+      $apiServiceScript = [IO.Path]::GetFullPath((Join-Path $script:ProjectRoot 'scripts\api-service.py'))
+      $managedApiRunner = $command.IndexOf($apiServiceScript,[StringComparison]::OrdinalIgnoreCase) -ge 0
       return $expectedInterpreter -and (
-        $command -match '(?i)(^|\s)scripts[\\/]api-service\.py(?:\s|$)' -or
+        $managedApiRunner -or $command -match '(?i)(^|\s)scripts[\\/]api-service\.py(?:\s|$)' -or
         $command -match '(?i)(^|\s)-m\s+uvicorn\s+woori\.main:app(?:\s|$)'
       )
     }
@@ -242,7 +244,8 @@ function Test-ExactCheckoutServiceProcess($ProcessInfo, [string]$ServiceName) {
       )
       $knownNext = @($nextPaths | Where-Object { $command.IndexOf($_,[StringComparison]::OrdinalIgnoreCase) -ge 0 }).Count -gt 0
       if (-not $knownNext) { $knownNext = $command -match '(?i)apps[\\/]dashboard[\\/]node_modules[\\/]\.bin.*next[\\/]dist[\\/]bin[\\/]next' }
-      $managedDashboardRunner = $command -match '(?i)(^|\s)scripts[\\/]dashboard-service\.js(?:\s|$)'
+      $dashboardServiceScript = [IO.Path]::GetFullPath((Join-Path $script:ProjectRoot 'scripts\dashboard-service.js'))
+      $managedDashboardRunner = $command.IndexOf($dashboardServiceScript,[StringComparison]::OrdinalIgnoreCase) -ge 0
       return [IO.Path]::GetFileName($path) -ieq 'node.exe' -and ($knownNext -or $managedDashboardRunner) -and
         ($managedDashboardRunner -or $command -match '(?i)(?:^|\s)(dev|start)(?:\s|$)')
     }
