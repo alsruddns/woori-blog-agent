@@ -1233,7 +1233,7 @@ def list_publications(
               FROM article_quality_evaluations WHERE content_version_id=latest.content_version_id
               ORDER BY created_at DESC,id DESC LIMIT 1) q ON true
             LEFT JOIN LATERAL (SELECT imported.id AS import_id,imported.generation_method,
-                imported.google_trends_based,imported.research_package_id,imported.event_group_id,
+                NULL::boolean AS google_trends_based,imported.research_package_id,imported.event_group_id,
                 imported.title,imported.category
               FROM external_content_import_content_links link
               JOIN external_content_imports imported ON imported.id=link.import_id
@@ -1370,7 +1370,7 @@ def list_publications(
             FROM publishing_records r JOIN blogger_blogs b ON b.id=r.blog_id
             JOIN content_versions v ON v.id=r.content_version_id
             LEFT JOIN LATERAL (SELECT imported.id AS import_id,imported.generation_method,
-                imported.google_trends_based FROM external_content_import_content_links link
+                NULL::boolean AS google_trends_based FROM external_content_import_content_links link
                 JOIN external_content_imports imported ON imported.id=link.import_id
                 WHERE link.content_version_id=v.id ORDER BY imported.received_at DESC,imported.id DESC LIMIT 1
             ) imported ON true

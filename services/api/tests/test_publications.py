@@ -62,6 +62,24 @@ def test_candidate_query_parses_and_returns_none_for_unknown_ids(lab: Any) -> No
     assert publications._candidate(conn, uuid4(), uuid4()) is None
 
 
+def test_publication_read_model_uses_current_import_schema(lab: Any, monkeypatch: Any) -> None:
+    from contextlib import contextmanager
+
+    conn, api, headers = lab
+
+    @contextmanager
+    def shared_connection():
+        with conn.transaction():
+            yield conn
+
+    monkeypatch.setattr(publications, "connection", shared_connection)
+    response = api.get("/admin/publications", params={"view": "review"}, headers=headers)
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["view"] == "review"
+    assert {"queue", "review", "published", "held"} <= set(payload["summary"])
+
+
 def test_manual_publication_requires_editorial_and_exact_version_approval() -> None:
     row = {
         "language_active": True, "blog_active": True, "version_language": "en",

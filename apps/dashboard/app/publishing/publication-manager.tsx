@@ -133,7 +133,7 @@ export default function PublicationManager({ initial }: { initial: PublicationDa
       {tabs.map(([key,label]) => <button key={key} role="tab" aria-selected={activeTab===key} onClick={() => void refresh(1,key)}>{label}<span>{counts[key] ?? 0}</span></button>)}
       <button role="tab" aria-selected={activeTab==="settings"} onClick={() => setActiveTab("settings")}>운영 설정</button>
       <button role="tab" aria-selected={activeTab==="scheduled-auto"} onClick={() => setActiveTab("scheduled-auto")}>예약 Auto</button>
-      <button role="tab" aria-selected={activeTab==="post-review"} onClick={() => setActiveTab("post-review")}>?? ? ??</button>
+      <button role="tab" aria-selected={activeTab==="post-review"} onClick={() => setActiveTab("post-review")}>게시 후 보완</button>
     </nav>
     {error && <p className="quality-held" role="alert">{error}</p>}
     {activeTab === "post-review" ? <PostPublicationReviewPanel /> : activeTab === "scheduled-auto" ? <section className="workspace-panel publication-section scheduled-auto-section" aria-labelledby="scheduled-auto-title">

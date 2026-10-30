@@ -130,10 +130,12 @@ export default function ExternalImportWorkspace() {
   const [detailTab, setDetailTab] = useState<DetailTab>("editor");
   const [preview, setPreview] = useState<Row | null>(null);
   const autoOpened = useRef("");
+  const detailRequest = useRef(0);
   const detailDialog = useRef<HTMLElement | null>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
 
   const openDetail = useCallback(async (id: string, expectedContentVersionId = "") => {
+    const requestId = ++detailRequest.current;
     setError("");
     autoOpened.current = `${id}:${expectedContentVersionId}`;
     if (!detailDialog.current && document.activeElement instanceof HTMLElement) returnFocus.current = document.activeElement;
@@ -142,10 +144,12 @@ export default function ExternalImportWorkspace() {
       fetch(`/api/publications/scheduled-auto-state?import_id=${encodeURIComponent(id)}`, { cache: "no-store" }),
     ]);
     const data = await response.json();
+    if (requestId !== detailRequest.current) return;
     if (!response.ok) throw new Error("원고 상세를 불러오지 못했습니다.");
     const publication = publicationResponse.ok
       ? await publicationResponse.json() as Row
       : { status_error: publicationResponse.status === 404 ? "예약 발행 상태 조회 API를 찾을 수 없습니다." : "예약 발행 상태를 조회하지 못했습니다." };
+    if (requestId !== detailRequest.current) return;
     const nextDetail = { ...data, publication } as Details;
     setSelectedId(id); setDetail(nextDetail); setPreview(null); setDetailTab("editor");
     if (expectedContentVersionId && String(data.latest_version?.content_version_id ?? "") !== expectedContentVersionId) { setNotice("The listed version changed before the detail loaded. Current version history is shown."); }
@@ -188,17 +192,16 @@ export default function ExternalImportWorkspace() {
   }, [items, openDetail]);
 
   const closeDetail = useCallback(() => {
+    detailRequest.current += 1;
+    autoOpened.current = "";
+    setDetail(null);
+    setSelectedId("");
     const url = new URL(window.location.href);
     const returnTo = url.searchParams.get("return_to");
     if (returnTo && returnTo.startsWith("/") && !returnTo.startsWith("//") && !returnTo.includes("\\")) {
       window.location.assign(returnTo);
       return;
     }
-    if (window.history.state?.importDetail) {
-      window.history.back();
-      return;
-    }
-    setDetail(null); setSelectedId("");
     url.searchParams.delete("open_import_id");
     url.searchParams.delete("open_content_version_id");
     window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
@@ -434,25 +437,25 @@ function ScheduledBloggerPublication({ detail, selectedTargetId, setSelectedTarg
   const scheduled = publication.generation_method === "chatgpt_scheduled_export";
   const isPublished = jobs.some(job => job.remote_status === "LIVE" && job.remote_verified_at && job.remote_post_id && job.remote_url);
   return <section className="workspace-panel" id="scheduled-blogger-publication" aria-labelledby="scheduled-blogger-publication-title" data-testid="scheduled-blogger-publication">
-    <div className="section-heading"><div><h3 id="scheduled-blogger-publication-title">Blogger ?? ??</h3><p>?? Auto? ???? Blogger ????? ??? ?? ?? ?? ?? ?? ?? ??? ?????. ?? ?? ??? ??? ????, ?? ?????????OAuth??? ?? ???? ?? ?????.</p></div><button type="button" className="secondary-button" disabled={busy} onClick={onRefresh}>?? ????</button></div>
+    <div className="section-heading"><div><h3 id="scheduled-blogger-publication-title">Blogger 예약 발행</h3><p>예약 Auto 운영 범위에 포함된 원고의 발행 상태와 대상 Blogger를 확인합니다. 일반 품질 보완 항목은 별도 기록하며, OAuth 쓰기 권한·긴급 중지·대상 범위 등 필수 조건은 계속 확인합니다.</p></div><button type="button" className="secondary-button" disabled={busy} onClick={onRefresh}>상태 새로고침</button></div>
     {publication.status_error ? <p role="alert" className="quality-held">{String(publication.status_error)}</p> : <>
       <dl className="publication-detail-status">
-        <dt>?? ?? ??</dt><dd>{scheduled ? "Codex ?? Export" : `?? ? ? ${String(publication.generation_method ?? "?? ?? ???")}`}</dd>
-        <dt>?? Auto</dt><dd>{publication.scheduled_auto_enabled === true ? "??" : "???"}{publication.emergency_stopped === true ? " ? ?? ??" : ""}</dd>
-        <dt>?? ?? ??</dt><dd>?? ?? ??? ? ?? ?? ???? ?? ????? ??</dd>
-        <dt>?? ?? / SHA-256</dt><dd>v{String(publication.version_number ?? "?")} ? {String(publication.body_sha256 ?? "?")}</dd>
+        <dt>원고 생성 경로</dt><dd>{scheduled ? "Codex 예약 Export" : `예약 자동 게시 대상 아님 · ${String(publication.generation_method ?? "경로 미확인")}`}</dd>
+        <dt>예약 Auto</dt><dd>{publication.scheduled_auto_enabled === true ? "활성" : "비활성"}{publication.emergency_stopped === true ? " · 긴급 중지" : ""}</dd>
+        <dt>첫 게시 승인</dt><dd>별도 최초 게시 승인을 요구하지 않으며, 활성 예약 Auto 범위와 안전 조건을 적용합니다.</dd>
+        <dt>원고 버전 / SHA-256</dt><dd>v{String(publication.version_number ?? "확인 불가")} · {String(publication.body_sha256 ?? "확인 불가")}</dd>
       </dl>
-      {!scheduled && <p className="quality-held">?? Auto? ? ??? ???? ????. ?? ??? ?? ?? ?? ? ?? ?? ?? ??? ?????.</p>}
-      {targets.length > 0 && <label>?? Blogger<select aria-label="?? Auto ?? Blogger" value={selectedTargetId} onChange={event => setSelectedTargetId(event.target.value)}>
-        {targets.map(item => <option key={String(item.id)} value={String(item.id)}>{String(item.display_name)} ? {String(item.url)} ? Blogger ID {String(item.blog_id ?? "???")}{item.in_scheduled_scope ? " ? ?? Auto ??" : " ? ?? ?"}</option>)}
+      {!scheduled && <p className="quality-held">이 원고는 예약 원고가 아니므로 예약 Auto 발행 대상이 아닙니다. 수동 원고는 사용자의 별도 공개 게시 동작을 이용하세요.</p>}
+      {targets.length > 0 && <label>대상 Blogger<select aria-label="예약 Auto 대상 Blogger" value={selectedTargetId} onChange={event => setSelectedTargetId(event.target.value)}>
+        {targets.map(item => <option key={String(item.id)} value={String(item.id)}>{String(item.display_name)} · {String(item.url)} · Blogger ID {String(item.blog_id ?? "미확인")}{item.in_scheduled_scope ? " · 예약 Auto 범위" : " · 범위 밖"}</option>)}
       </select></label>}
       {target ? <>
-        <p>?? ??: {target.active ? "??" : "???"} ? OAuth {String(target.oauth_status ?? "???")} ? ?? ?? {target.in_scheduled_scope ? "??" : "???"} ? ?? ?? ?? {target.remote_write_policy_available ? "?? ??" : "?? ?? ???"}</p>
-        {blockers.length > 0 && <div className="quality-held" role="status"><strong>?? ?? ?? ??</strong><ul>{blockers.map(blocker => <li key={blocker}>{publicationBlockerNames[blocker] ?? blocker}</li>)}</ul></div>}
-        {jobs.length > 0 && <div><h4>?? ??</h4>{jobs.map(job => <article className="history-card" key={String(job.id)}><p>Job {String(job.id)} ? {String(job.publication_state)} ? {String(job.status)} ? {job.simulation_only ? "Mock" : "?? ?? ??"}</p>{job.remote_post_id != null && <p>Blogger postId: {String(job.remote_post_id)}</p>}{Boolean(job.remote_status === "LIVE" && job.remote_verified_at && job.remote_url) && <p><a href={String(job.remote_url)} target="_blank" rel="noopener noreferrer">?? Blogger ?? URL ?? ?</a></p>}{Boolean(job.remote_verified_at) && <p>?? ??? {fmt(job.remote_verified_at)}</p>}{job.published_at != null && <p>?? ?? {fmt(job.published_at)}</p>}</article>)}</div>}
-        {isPublished && <p className="quality-ok">?? ?? ?? ??? ??????.</p>}
-      </> : <p className="empty-state">?? ??? Blogger ??? ??? ?? ?? ??? ??? ? ????.</p>}
-      <p>?? Auto ??? ??? ?? ??? ???? Publication Worker? ?? ?????. ? ??? Blogger? ?? ?? ???, ?? URL? ?? ?? ??? ???? ???? ?????.</p>
+        <p>연결: {target.active ? "활성" : "비활성"} · OAuth {String(target.oauth_status ?? "확인 불가")} · 예약 Auto 범위 {target.in_scheduled_scope ? "포함" : "제외"} · 쓰기 정책 {target.remote_write_policy_available ? "사용 가능" : "사용 불가"}</p>
+        {blockers.length > 0 && <div className="quality-held" role="status"><strong>현재 발행 차단 사유</strong><ul>{blockers.map(blocker => <li key={blocker}>{publicationBlockerNames[blocker] ?? blocker}</li>)}</ul></div>}
+        {jobs.length > 0 && <div><h4>발행 작업</h4>{jobs.map(job => <article className="history-card" key={String(job.id)}><p>Job {String(job.id)} · {String(job.publication_state)} · {String(job.status)} · {job.simulation_only ? "Mock 작업" : "실제 발행 작업"}</p>{job.remote_post_id != null && <p>Blogger postId: {String(job.remote_post_id)}</p>}{Boolean(job.remote_status === "LIVE" && job.remote_verified_at && job.remote_url) && <p><a href={String(job.remote_url)} target="_blank" rel="noopener noreferrer">실제 Blogger 공개 URL 열기</a></p>}{Boolean(job.remote_verified_at) && <p>원격 확인: {fmt(job.remote_verified_at)}</p>}{job.published_at != null && <p>게시 시각: {fmt(job.published_at)}</p>}</article>)}</div>}
+        {isPublished && <p className="quality-ok">Blogger에서 공개 상태를 확인했습니다.</p>}
+      </> : <p className="empty-state">선택한 Blogger의 예약 발행 정보를 확인할 수 없습니다.</p>}
+      <p>예약 Auto가 활성화되고 필수 정책 검사를 통과하면 Publication Worker가 처리합니다. 실제 Blogger 게시 후에는 검증된 postId와 URL을 표시합니다.</p>
     </>}
   </section>;
 }
