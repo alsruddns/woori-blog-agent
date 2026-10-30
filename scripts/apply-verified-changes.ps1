@@ -14,6 +14,19 @@ function Invoke-CheckedCommand([string]$Executable, [string[]]$Arguments) {
   if ($LASTEXITCODE -ne 0) { throw "Validation failed: $Executable $($Arguments -join ' ')" }
 }
 
+function Invoke-IsolatedDashboardBuild {
+  $generatedFiles = @('apps/dashboard/next-env.d.ts','apps/dashboard/tsconfig.json')
+  $snapshots = @{}
+  foreach ($relative in $generatedFiles) {
+    $path = Join-Path $script:ProjectRoot $relative
+    if (Test-Path -LiteralPath $path -PathType Leaf) { $snapshots[$path] = [IO.File]::ReadAllBytes($path) }
+  }
+  try { Invoke-CheckedCommand 'npm.cmd' @('run','build') }
+  finally {
+    foreach ($path in $snapshots.Keys) { [IO.File]::WriteAllBytes($path,[byte[]]$snapshots[$path]) }
+  }
+}
+
 function Invoke-RepositoryValidation([string]$BuildDirectory, [string[]]$ChangedPaths, [string[]]$Targets) {
   $hadValue = Test-Path Env:WOORI_DASHBOARD_DIST_DIR
   $oldValue = $env:WOORI_DASHBOARD_DIST_DIR
@@ -51,7 +64,7 @@ function Invoke-RepositoryValidation([string]$BuildDirectory, [string[]]$Changed
     }
     # Always prepare a commit-specific isolated Production Build for the next
     # Dashboard start; never mutate the dist directory used by a running server.
-    Invoke-CheckedCommand 'npm.cmd' @('run','build')
+    Invoke-IsolatedDashboardBuild
     $script:RepositoryVerificationExitCode = 0
   } finally {
     if ($hadValue) { $env:WOORI_DASHBOARD_DIST_DIR = $oldValue }
@@ -111,12 +124,14 @@ if (-not $affected.Count) {
     Write-Output "No running service is affected by committed paths since $base; preview only and no service was restarted."
     return
   }
+  $targets = @()
   Write-LifecycleLog 'service_reflection' 'validation_started' "commit=$head services=none"
   Invoke-RepositoryValidation $dashboardBuildDir $paths $targets
   if ($script:RepositoryVerificationExitCode -ne 0) {
     Write-LifecycleLog 'service_reflection' 'validation_failed' "commit=$head services=none"
     throw 'Repository verification failed; existing services were left running.'
   }
+  if (@(Get-TrackedGitChanges).Count) { throw 'Verification left tracked source changes; no startup marker was recorded.' }
   Write-ValidatedSource $head @() $dashboardBuildDir
   Write-LifecycleLog 'service_reflection' 'validation_passed' "commit=$head services=none"
   Write-Output "Committed paths do not affect running services. Verification passed and HEAD $head was authorized for future startup; no service was restarted."
@@ -135,6 +150,7 @@ if ($Apply) {
     Write-LifecycleLog 'service_reflection' 'validation_failed' "commit=$head services=$($targets -join ',')"
     throw 'Repository verification failed; existing services were left running.'
   }
+  if (@(Get-TrackedGitChanges).Count) { throw 'Verification left tracked source changes; no startup marker was recorded and no service was stopped.' }
   Write-LifecycleLog 'service_reflection' 'validation_passed' "commit=$head services=$($targets -join ',')"
   Write-ValidatedSource $head $targets $dashboardBuildDir
 }
