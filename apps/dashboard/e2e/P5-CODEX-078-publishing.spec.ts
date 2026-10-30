@@ -12,6 +12,14 @@ test("publishing reuses detail, keeps filters, and explicit manual confirmation 
     await route.fulfill({json:{id:"test-only-job",recorded:true,followup_count:2}});
   });
   await page.route("**/api/publications/worker-jobs?*",async route=>{monitorReads++;await route.continue();});
+  // The live failure can refer to an older version whose latest version has
+  // already been published. Use an explicit isolated failure-state fixture;
+  // the intercepted POST below can never write to Blogger or the database.
+  await page.route(/\/api\/research\/content-imports\/[0-9a-f-]{36}(?:\?.*)?$/,async route=>{
+    const response=await route.fetch({headers:{...route.request().headers(),origin:new URL(route.request().url()).origin}});const data=await response.json();
+    data.item.auto_publication_failure=true;
+    await route.fulfill({response,json:data});
+  });
   await page.route("**/api/publications/scheduled-auto-state?*",async route=>{
     const response=await route.fetch({headers:{...route.request().headers(),origin:new URL(route.request().url()).origin}});const data=await response.json();
     for(const target of data.targets??[]){if(target.manual_publication){target.manual_publication.eligible=true;target.manual_publication.blockers=[];target.manual_publication.jobs=[];}}

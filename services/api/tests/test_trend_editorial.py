@@ -22,15 +22,15 @@ def bind(lab,monkeypatch):
     return conn,api,headers
 
 
-def observation(conn,query,geo='KR',payload=None):
+def observation(conn,query,geo='KR',payload=None,volume=1000):
     slot=conn.execute('SELECT run_id FROM trend_collection_slots WHERE geo=%s AND slot_at=%s',(geo,editorial.current_slot())).fetchone()
     if slot:run=slot['run_id']
     else:
         run=conn.execute("INSERT INTO trend_collection_runs(provider,geo,status,item_count) VALUES('google_trends_rss',%s,'succeeded',1) RETURNING id",(geo,)).fetchone()['id']
         conn.execute("INSERT INTO trend_collection_slots(geo,slot_at,run_id,result) VALUES(%s,%s,%s,'{}')",(geo,editorial.current_slot(),run))
-    return conn.execute("""INSERT INTO trend_observations(run_id,geo,platform,query,source_url,response_sha256,raw_payload)
-        VALUES(%s,%s,'google_trends',%s,'https://trends.google.com/trending/rss',%s,%s) RETURNING id""",
-        (run,geo,query,'a'*64,Jsonb(payload or {}))).fetchone()['id']
+    return conn.execute("""INSERT INTO trend_observations(run_id,geo,platform,query,source_url,response_sha256,raw_payload,source_volume_label,source_volume_lower_bound,trend_started_at)
+        VALUES(%s,%s,'google_trends',%s,'https://trends.google.com/trending/rss',%s,%s,%s,%s,now()) RETURNING id""",
+        (run,geo,query,'a'*64,Jsonb(payload or {}),f'{volume}+',volume)).fetchone()['id']
 
 
 @pytest.mark.parametrize(('query','payload','expected'),[
@@ -100,7 +100,7 @@ def test_same_slot_never_fetches_success_again(lab,monkeypatch):
 def test_old_slot_candidate_expires_without_deleting_observation(lab,monkeypatch):
     conn,api,h=bind(lab,monkeypatch)
     name='software launch '+uuid4().hex
-    observed=observation(conn,name,payload={'news_items':[{'title':name,'url':'https://example.gov/news'}]})
+    observed=observation(conn,name,payload={'news_items':[{'title':name,'url':'https://example.gov/news'}]},volume=1000)
     editorial.reconcile()
     detail=api.get('/admin/research/trend-editorial/'+str(observed),headers=h).json()
     assert detail['history'][0]['state']=='selected'
@@ -118,7 +118,9 @@ def test_old_slot_candidate_expires_without_deleting_observation(lab,monkeypatch
 def test_selected_current_slot_queues_once_for_unambiguous_blog(lab,monkeypatch):
     conn,api,h=bind(lab,monkeypatch)
     name='software launch '+uuid4().hex
-    observed=observation(conn,name,payload={'news_items':[{'title':name,'url':'https://example.gov/news'}]})
+    low='software launch '+uuid4().hex
+    observation(conn,low,payload={'news_items':[]},volume=100)
+    observed=observation(conn,name,payload={'news_items':[{'title':name,'url':'https://example.gov/news'}]},volume=1000)
     editorial.reconcile()
     topic=api.get('/admin/research/trend-editorial/'+str(observed),headers=h).json()['topic_id']
     profile=conn.execute("INSERT INTO language_profiles(language_code,target_country) VALUES('ko','KR') ON CONFLICT(language_code,target_country) DO UPDATE SET search_intent=language_profiles.search_intent RETURNING id").fetchone()['id']

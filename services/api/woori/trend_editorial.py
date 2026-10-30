@@ -81,6 +81,8 @@ def classify(query: str, payload: dict[str, Any] | None) -> tuple[str,str,str | 
         return 'selected','specific_topic_with_news_context',category
     if headlines and not any(key in title for title in headlines):
         return 'review_candidate','news_context_mismatch',category
+    if domains and len(key)>=8 and len(key.split())>=2:
+        return 'selected','specific_topic_requires_independent_research',category
     return 'review_candidate','insufficient_context',category
 
 
@@ -215,9 +217,6 @@ def queue_topic(conn:Any,topic_id:UUID,blog_id:UUID) -> dict[str,Any]:
     observations=current_observations(conn,topic_id)
     if not observations:raise HTTPException(409,'expired_collection_slot')
     newest=observations[0]
-    news=(newest['raw_payload'] or {}).get('news_items') or []
-    if not any(str(n.get('url') or '').startswith('https://') for n in news if isinstance(n,dict)):
-        raise HTTPException(409,'news_source_url_required')
     # Missing event date is deliberately a review boundary, not an invented event ID.
     event_stamp=newest['trend_started_at'] or newest['collected_at'].astimezone(trends.SCHEDULE_TIMEZONE).date()
     duplicate=hashlib.sha256(f"trend:{topic_id}:{event_stamp}:{blog_id}".encode()).hexdigest()
@@ -282,17 +281,20 @@ def queue_selected() -> dict[str,int]:
         conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('trend-selected-queue',0))")
         recent=conn.execute('SELECT count(*) n FROM trend_generation_requests WHERE created_at>=%s',(current_slot(),)).fetchone()
         if not recent or recent['n']>=1:return {'created':0}
-        rows=conn.execute('''SELECT t.id,t.representative_geo,e.category FROM trend_topics t
+        rows=conn.execute('''SELECT t.id,t.representative_geo,e.category,o.source_volume_lower_bound,o.trend_started_at FROM trend_topics t
             JOIN LATERAL(SELECT * FROM trend_editorial_events WHERE topic_id=t.id ORDER BY id DESC LIMIT 1)e ON true
+            JOIN LATERAL(SELECT o.source_volume_lower_bound,o.trend_started_at FROM trend_topic_memberships m
+              JOIN trend_observations o ON o.id=m.observation_id JOIN trend_collection_slots s ON s.run_id=o.run_id AND s.geo=o.geo
+              WHERE m.topic_id=t.id AND s.slot_at=%s ORDER BY o.collected_at DESC LIMIT 1)o ON true
             WHERE e.state='selected' AND NOT EXISTS(SELECT 1 FROM trend_generation_requests q WHERE q.topic_id=t.id)
-            ORDER BY e.id LIMIT 100''').fetchall()
+              AND o.source_volume_lower_bound IS NOT NULL AND o.trend_started_at IS NOT NULL
+              AND o.trend_started_at>=now()-interval '10 minutes' AND o.trend_started_at<=now()
+            ORDER BY t.representative_geo,o.source_volume_lower_bound DESC,o.trend_started_at DESC,t.id LIMIT 100''',(current_slot(),)).fetchall()
         blogs=targets(conn)
         for row in rows:
             observations=current_observations(conn,row['id'])
             candidates=[b for b in blogs if b['target_country']==row['representative_geo']]
             if not observations or len(candidates)!=1:continue
-            news=(observations[0]['raw_payload'] or {}).get('news_items') or []
-            if not any(str(n.get('url') or '').startswith('https://') for n in news if isinstance(n,dict)):continue
             queued=queue_topic(conn,row['id'],candidates[0]['id'])
             transition(conn,row['id'],'generation_queued','automatic_queue',
                 '현재 회차 선정 주제를 독립 웹 조사 대상으로 전달했습니다.',
