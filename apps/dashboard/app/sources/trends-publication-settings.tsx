@@ -128,7 +128,8 @@ export default function TrendsPublicationSettings() {
   }
 
   return <section className="workspace-panel" aria-labelledby="trends-auto-policy-heading">
-    <h2 id="trends-auto-policy-heading">Google Trends 자동 발행 정책</h2>
+    <h2 id="trends-auto-policy-heading">Google Trends 과거 발행 정책 (자동 쓰기 중지)</h2>
+    <p>아래 값은 감사용으로 보존된 이전 설정입니다. ON 또는 Draft 표시가 있어도 현재 자동 실행 권한은 없습니다.</p>
     <p>예약 Auto와 별도인 Trends 전용 정책입니다. 기본값은 비공개 초안 저장이며 공개 승인이 필요하지 않습니다. 즉시 공개는 관리자의 명시적 승인이 필요합니다. 미검증 상태는 보존하고 Blogger 매핑·중복·긴급 정지·Worker 상태를 확인합니다.</p>
     <label>설정 변경자<input value={actor} minLength={2} maxLength={120} onChange={event => setActor(event.target.value)} /></label>
     {!state && !message && <p role="status">정책을 불러오는 중입니다.</p>}
@@ -136,7 +137,7 @@ export default function TrendsPublicationSettings() {
       const draft = drafts[blog.id];
       if (!draft) return null;
       const confirmation = draft.enabled ? "ENABLE TRENDS AUTO PUBLICATION" : "STOP TRENDS AUTO PUBLICATION";
-      return <fieldset className="trend-blog-geo" key={blog.id}>
+      return <fieldset className="trend-blog-geo" key={blog.id} disabled>
         <legend>{blog.display_name} · {blog.language_code}</legend>
         <div role="group" aria-label={`${blog.display_name} 발행 방식`}>
           <label><input type="radio" name={`mode-${blog.id}`} checked={draft.publication_mode === "draft"} onChange={() => patch(blog.id, { publication_mode: "draft", confirmation: "" })} />임시발행(비공개 초안 저장) · 기본</label>

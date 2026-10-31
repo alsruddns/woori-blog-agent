@@ -766,8 +766,9 @@ def test_emergency_stop_is_persisted_and_audited_in_isolated_database(
 
 
 @pytest.mark.parametrize(('language','country'), [('ko','KR'),('en','US'),('ja','JP'),('zh-CN','CN')])
+@pytest.mark.parametrize("mode", ["draft", "publish"])
 def test_manual_live_request_commits_approval_job_and_followups_atomically_in_isolated_db(
-    lab: Any, monkeypatch: pytest.MonkeyPatch, language: str, country: str,
+    lab: Any, monkeypatch: pytest.MonkeyPatch, language: str, country: str, mode: str,
 ) -> None:
     """Exercise the production POST SQL and schema guards inside the lab rollback boundary."""
     from contextlib import contextmanager
@@ -776,6 +777,7 @@ def test_manual_live_request_commits_approval_job_and_followups_atomically_in_is
     from woori.google_http import WRITE_SCOPE
 
     conn, api, headers = lab
+    conn.execute("UPDATE publication_mode_settings SET configured_mode='manual',emergency_stopped=false,blogger_api_restricted=false WHERE scope_type='global'")
     profile = conn.execute(
         "INSERT INTO language_profiles(language_code,target_country) VALUES (%s,%s) ON CONFLICT(language_code,target_country) DO UPDATE SET search_intent=language_profiles.search_intent RETURNING id",
         (language,country),
@@ -846,6 +848,7 @@ def test_manual_live_request_commits_approval_job_and_followups_atomically_in_is
         with conn.transaction():
             yield conn
 
+    monkeypatch.setattr("woori.publication_operation.connection", shared_connection)
     monkeypatch.setattr(publications, "connection", shared_connection)
     monkeypatch.setattr(publications.external_policy, "_blogger_policy_approval", lambda: {"approved": True})
     monkeypatch.setattr(publications.BloggerLivePublisher, "_target", staticmethod(lambda _blog: None))
@@ -877,6 +880,9 @@ def test_manual_live_request_commits_approval_job_and_followups_atomically_in_is
         "confirmation": "PUBLISH THIS EXACT MANUSCRIPT PUBLICLY",
         "idempotency_key": "isolated-manual-post-" + uuid4().hex[:20],
     }
+    payload['publication_mode'] = mode
+    if mode == 'draft':
+        payload['confirmation'] = 'SAVE THIS EXACT MANUSCRIPT AS DRAFT'
     first = api.post("/admin/publications/manual-live-requests", headers=headers, json=payload)
     assert first.status_code == 201, first.text
     assert first.json()["public_write_performed"] is False
@@ -889,6 +895,21 @@ def test_manual_live_request_commits_approval_job_and_followups_atomically_in_is
                         (first.json()["id"],)).fetchone()["n"] == 1
     again = api.post("/admin/publications/manual-live-requests", headers=headers, json=payload)
     assert again.status_code == 201 and again.json()["duplicate"] is True
+    assert conn.execute("SELECT publication_mode FROM publishing_jobs WHERE id=%s", (first.json()['id'],)).fetchone()['publication_mode'] == mode
+    from woori import publication_operation
+    assert not publication_operation.blogger_writes_allowed()
+    with publications.external_policy.manual_publication_context(str(first.json()['id']), str(blog_record_id), str(version_id), snapshot['title_sha256'], snapshot['body_sha256'], snapshot['html_sha256']):
+        assert not publication_operation.blogger_writes_allowed()  # queued is not a transport authority
+        conn.execute("UPDATE publishing_jobs SET status='running',publication_state='publishing' WHERE id=%s", (first.json()['id'],))
+        assert publication_operation.blogger_writes_allowed()
+        conn.execute("UPDATE publishing_jobs SET status='queued',publication_state='publication_queued' WHERE id=%s", (first.json()['id'],))
+    if mode == 'draft':
+        monkeypatch.setattr(publication_worker, 'connection', shared_connection)
+        conn.execute("UPDATE publishing_jobs SET status='running',publication_state='publishing' WHERE id=%s", (first.json()['id'],))
+        publication_worker.save_verified_draft(UUID(first.json()['id']), blog_record_id, version_id,
+            {'status':'DRAFT','post_verified':True,'post_id':'123456','http_status':200})
+        assert conn.execute("SELECT publication_state FROM publishing_jobs WHERE id=%s", (first.json()['id'],)).fetchone()['publication_state'] == 'draft_saved'
+        return
     recovery_job = UUID(first.json()['id'])
     from datetime import timedelta
 

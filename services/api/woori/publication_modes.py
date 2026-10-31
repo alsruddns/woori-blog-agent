@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 Scope = Literal["global", "language", "blog"]
-Mode = Literal["manual", "auto"]
+Mode = Literal["authoring_only", "manual", "auto"]
 
 
 class ModeSettingsInput(BaseModel):
@@ -166,6 +166,8 @@ def assess_auto_candidate(
 
 
 def effective_mode(configured_mode: str, *, emergency_stopped: bool) -> str:
+    if configured_mode == "authoring_only":
+        return "authoring_only"
     if configured_mode == "manual":
         return "manual"
     return "auto_preview_blocked" if not emergency_stopped else "auto_stopped"
@@ -174,13 +176,16 @@ def effective_mode(configured_mode: str, *, emergency_stopped: bool) -> str:
 def resolve_mode(settings: list[dict[str, Any]], language_code: str, blog_id: str) -> dict[str, Any]:
     """Resolve blog > language > global; missing scopes always inherit Manual."""
     by_scope = {(row["scope_type"], str(row["scope_key"])): row for row in settings}
+    global_setting = by_scope.get(("global", ""))
+    if global_setting and global_setting["configured_mode"] == "authoring_only":
+        return dict(global_setting)
     selected = (
         by_scope.get(("blog", blog_id))
         or by_scope.get(("language", language_code))
         or by_scope.get(("global", ""))
     )
     return dict(selected) if selected else {
-        "scope_type": "global", "scope_key": "", "configured_mode": "manual",
+        "scope_type": "global", "scope_key": "", "configured_mode": "authoring_only",
         "daily_auto_limit": 1, "minimum_interval_minutes": 1440,
         "allowed_start_hour": 9, "allowed_end_hour": 17, "timezone": "Asia/Seoul",
         "allowed_categories": [], "excluded_topics": [], "max_source_age_hours": 24,

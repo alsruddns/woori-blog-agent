@@ -143,6 +143,9 @@ def policy_state(conn: Any) -> dict[str, Any]:
 
 
 def record_policy(conn: Any, request: Any) -> dict[str, Any]:
+    from .publication_operation import blogger_writes_allowed
+    if request.enabled and not blogger_writes_allowed():
+        raise HTTPException(409, "authoring_only_blogger_writes_suspended")
     expected = "ENABLE TRENDS AUTO PUBLICATION" if request.enabled else "STOP TRENDS AUTO PUBLICATION"
     if request.publication_mode == "publish" and request.confirmation != expected:
         raise HTTPException(422, "Explicit Trends publication confirmation is required")
@@ -300,8 +303,10 @@ def validate_trends_job(conn: Any, blog_id: UUID, content_version_id: UUID) -> d
 def enqueue_trends_auto_jobs() -> dict[str, int]:
     """Enqueue current, explicitly scoped Trends imports under the post-edit policy."""
     from . import external_policy
+    from .publication_operation import blogger_writes_allowed
     from .scheduled_duplicates import find_remote_duplicate
-
+    if not blogger_writes_allowed():
+        return {"created": 0, "held": 0}
     created = held = 0
     with connection() as conn:
         conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('trends-publication-enqueue',0))")

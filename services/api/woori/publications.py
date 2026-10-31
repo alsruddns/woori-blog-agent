@@ -89,6 +89,9 @@ def _live_write_capability(
             reason = "scheduled_blog_or_oauth_scope_unavailable"
         else:
             reason = "worker_mode_or_scheduled_policy_not_enabled"
+    from .publication_operation import manual_requests_allowed
+    scheduled = trends = False
+    manual = manual and manual_requests_allowed()
     return {"scheduled_auto": scheduled, "manual_confirmed": manual, "trends_auto": trends,
             "live_dispatch": bool(scheduled_worker or manual_worker),
             "reason": reason, "worker_fresh": fresh, "execution_mode": mode}
@@ -131,7 +134,15 @@ class ManualLiveRequestInput(BaseModel):
     reviewed_exact_content: Literal[True]
     assertions_safe_to_publish: Literal[True]
     rights_privacy_harm_checked: Literal[True]
-    confirmation: Literal["PUBLISH THIS EXACT MANUSCRIPT PUBLICLY"]
+    publication_mode: Literal["draft", "publish"] = "publish"
+    confirmation: Literal["PUBLISH THIS EXACT MANUSCRIPT PUBLICLY", "SAVE THIS EXACT MANUSCRIPT AS DRAFT"]
+
+    @model_validator(mode="after")
+    def matching_confirmation(self) -> ManualLiveRequestInput:
+        expected = "SAVE THIS EXACT MANUSCRIPT AS DRAFT" if self.publication_mode == "draft" else "PUBLISH THIS EXACT MANUSCRIPT PUBLICLY"
+        if self.confirmation != expected:
+            raise ValueError("publication_mode_confirmation_mismatch")
+        return self
     idempotency_key: str = Field(min_length=16, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
 
 
@@ -274,6 +285,8 @@ def _mode_settings(conn: Any) -> dict[str, Any]:
         return {
             "migration_required": True,
             "default_mode": "manual",
+        "blogger_write_mode": "manual_only",
+        "blogger_api_restricted": True,
             "settings": [],
             "languages": [],
             "blogs": [],
@@ -286,7 +299,7 @@ def _mode_settings(conn: Any) -> dict[str, Any]:
             "scoped_write_capability": {"scheduled_auto": False, "manual_confirmed": False},
         }
     rows = conn.execute(
-        """SELECT scope_type,scope_key,configured_mode,daily_auto_limit,
+        """SELECT scope_type,scope_key,configured_mode,blogger_write_mode,blogger_api_restricted,daily_auto_limit,
             minimum_interval_minutes,allowed_start_hour,allowed_end_hour,timezone,
             allowed_categories,excluded_topics,max_source_age_hours,retry_limit,
             emergency_stopped,operations_auto_approved,updated_at
@@ -317,6 +330,8 @@ def _mode_settings(conn: Any) -> dict[str, Any]:
     return {
         "migration_required": False,
         "default_mode": "manual",
+        "blogger_write_mode": "manual_only",
+        "blogger_api_restricted": bool(global_setting and global_setting.get("blogger_api_restricted", True)),
         "settings": items,
         "languages": languages,
         "blogs": blogs,
@@ -694,7 +709,7 @@ def create_manual_live_request(request: ManualLiveRequestInput) -> dict[str, Any
         )
         prior = conn.execute(
             """SELECT j.id,j.status,j.publication_state,j.adapter_type,j.simulation_only,
-                a.id AS approval_event_id FROM publishing_jobs j
+                a.id AS approval_event_id,a.created_at AS approval_at,j.publication_mode FROM publishing_jobs j
             LEFT JOIN manual_publication_approval_events a ON a.job_id=j.id
             WHERE j.blog_id=%s AND j.content_version_id=%s AND j.publication_lane='manual'
               AND NOT j.simulation_only AND j.adapter_type='blogger_live'
@@ -714,6 +729,11 @@ def create_manual_live_request(request: ManualLiveRequestInput) -> dict[str, Any
         if any(not actual or supplied != actual for supplied, actual in expected):
             raise HTTPException(409, "Manuscript changed after confirmation; reload the latest title, body, and Blogger preview")
         if prior:
+            cutoff = conn.execute("SELECT max(created_at) AS cutoff FROM audit_events WHERE event_type='publication.manual_only.activated'").fetchone()
+            if not prior['approval_at'] or (cutoff and cutoff['cutoff'] and prior['approval_at'] <= cutoff['cutoff']):
+                raise HTTPException(409, "Historical job is held; no automatic or implicit replay permitted")
+            if prior['publication_mode'] != request.publication_mode:
+                raise HTTPException(409, "Existing manual Job has a different immutable publication mode")
             return {
                 **dict(prior), "duplicate": True,
                 "approval_recorded": bool(prior.get("approval_event_id")),
@@ -739,12 +759,12 @@ def create_manual_live_request(request: ManualLiveRequestInput) -> dict[str, Any
         inserted = conn.execute(
             """INSERT INTO publishing_jobs(policy_id,blog_id,content_version_id,idempotency_key,
                 scheduled_at,status,publication_state,adapter_type,simulation_only,block_reasons,
-                oauth_connection_id,live_stage,publication_lane)
-            VALUES (%s,%s,%s,%s,now(),'queued','publication_queued','blogger_live',false,'[]',%s,'draft_needed','manual')
+                oauth_connection_id,live_stage,publication_lane,publication_mode)
+            VALUES (%s,%s,%s,%s,now(),'queued','publication_queued','blogger_live',false,'[]',%s,'draft_needed','manual',%s)
             ON CONFLICT(idempotency_key) DO NOTHING
             RETURNING id,status,publication_state,adapter_type,simulation_only""",
             (row["policy_id"], request.blog_id, request.content_version_id,
-             request.idempotency_key, row["oauth_connection_id"]),
+             request.idempotency_key, row["oauth_connection_id"], request.publication_mode),
         ).fetchone()
         if not inserted:
             raise HTTPException(409, "Idempotency key is already bound to another publication request")
@@ -901,6 +921,8 @@ def verify_trends_connections(request: ScheduledConnectionCheckInput) -> dict[st
 def save_mode_settings(request: ModeSettingsInput) -> dict[str, Any]:
     with connection() as conn:
         current = _mode_settings(conn)
+        if str(request.configured_mode) not in {"authoring_only", "manual"}:
+            raise HTTPException(409, "authoring_only: new operations approval and safety review required")
         if current["migration_required"]:
             raise HTTPException(409, "Publication settings migration 042 is required")
         # Auto preferences may be recorded for review, but this does not
@@ -1294,6 +1316,9 @@ def _manual_publication_blockers(
     """Hard safety and operational checks; quality gaps remain follow-ups."""
     if row is None:
         return ["content_or_blog_not_found"]
+    from .publication_operation import manual_requests_allowed
+    if not manual_requests_allowed():
+        return ["blogger_api_restricted_manual_only"]
     reasons = list(snapshot.get("blockers") or [])
     if not row.get("language_active"):
         reasons.append("language_inactive")
@@ -1317,7 +1342,7 @@ def _manual_publication_blockers(
             reasons.append(error or "registered_blog_unavailable")
         else:
             mode = resolve_mode(modes["settings"], str(blog["language_code"]), str(blog_id))
-            if mode["configured_mode"] != "manual":
+            if mode["configured_mode"] != "manual" and modes.get("blogger_write_mode") != "manual_only":
                 reasons.append("target_uses_auto_mode")
         if modes["emergency_stopped"]:
             reasons.append("publication_emergency_stop_active")

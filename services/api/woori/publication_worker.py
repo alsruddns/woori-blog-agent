@@ -266,6 +266,9 @@ def enqueue_scheduled_auto_jobs() -> dict[str, Any]:
     """Enqueue only evidence-reviewed scheduled exports inside the active policy scope."""
     created = 0
     held = 0
+    from .publication_operation import blogger_writes_allowed
+    if not blogger_writes_allowed():
+        return {"created": 0, "held": 0}
     with connection() as conn:
         policy_check = conn.execute(
             "SELECT action FROM scheduled_publication_policy_events ORDER BY id DESC LIMIT 1"
@@ -666,7 +669,7 @@ def save_verified_draft(job_id: UUID, blog_id: UUID, version_id: UUID, result: d
     if result.get("status") != "DRAFT" or not result.get("post_verified"):
         raise GoogleFailure("draft_readback_mismatch")
     with connection() as conn:
-        job = conn.execute("SELECT publication_state,publication_mode,blog_id,content_version_id,attempts FROM publishing_jobs WHERE id=%s AND publication_lane='trends_auto' FOR UPDATE",(job_id,)).fetchone()
+        job = conn.execute("SELECT publication_state,publication_mode,blog_id,content_version_id,attempts FROM publishing_jobs WHERE id=%s AND publication_lane IN ('trends_auto','manual') FOR UPDATE",(job_id,)).fetchone()
         if not job or job["publication_mode"] != "draft" or job["blog_id"] != blog_id or job["content_version_id"] != version_id:
             raise GoogleFailure("draft_job_identity_mismatch")
         conn.execute("""INSERT INTO blogger_draft_receipts(job_id,blog_id,content_version_id,remote_post_id,remote_status)
@@ -682,8 +685,8 @@ def save_verified_draft(job_id: UUID, blog_id: UUID, version_id: UUID, result: d
             post_id=str(result["post_id"]),status=result.get("http_status"),metadata={"remote_status":"DRAFT","recovered":recovered})
         conn.execute("""UPDATE publishing_jobs SET status='succeeded',publication_state='draft_saved',
             live_stage='draft_created',remote_post_id=%s,lease_until=NULL,last_error_category=NULL,updated_at=now()
-            WHERE id=%s AND publication_mode='draft' AND publication_lane='trends_auto'""",(str(result["post_id"]),job_id))
-        _append_audit(conn,"publication.trends_draft.saved",{"job_id":str(job_id),"post_id":str(result["post_id"]),
+            WHERE id=%s AND publication_mode='draft' AND publication_lane IN ('trends_auto','manual')""",(str(result["post_id"]),job_id))
+        _append_audit(conn,"publication.draft.saved",{"job_id":str(job_id),"post_id":str(result["post_id"]),
             "remote_status":"DRAFT","public_write_performed":False,"review_status":"pending"})
         linked = conn.execute("SELECT import_id FROM external_content_import_content_links WHERE content_version_id=%s LIMIT 1",(version_id,)).fetchone()
         if linked:
@@ -731,6 +734,9 @@ def process_next_live_job(
     *, scheduled_auto_only: bool = False, manual_confirmed_only: bool = False,
     trends_auto_only: bool = False,
 ) -> dict[str, Any] | None:
+    from .publication_operation import manual_requests_allowed
+    if not manual_confirmed_only or not manual_requests_allowed():
+        return None
     if trends_auto_only:
         recovered = recover_verified_trends_draft()
         if recovered:
@@ -761,7 +767,10 @@ def process_next_live_job(
         expired = conn.execute(
             """SELECT id,live_stage,publication_state FROM publishing_jobs
               WHERE NOT simulation_only AND adapter_type='blogger_live' AND status='running'
-                AND lease_until<now() FOR UPDATE SKIP LOCKED"""
+                AND lease_until<now() AND publication_lane='manual'
+                AND EXISTS (SELECT 1 FROM manual_publication_approval_events a WHERE a.job_id=publishing_jobs.id
+                    AND a.created_at>(SELECT max(created_at) FROM audit_events WHERE event_type='publication.manual_only.activated'))
+                FOR UPDATE SKIP LOCKED"""
         ).fetchall()
         for old in expired:
             conn.execute(
@@ -789,6 +798,8 @@ def process_next_live_job(
               )))
               AND (j.publication_lane<>'trends_auto' OR %s=true)
               AND (%s=false OR j.publication_lane='trends_auto')
+              AND EXISTS (SELECT 1 FROM manual_publication_approval_events fresh WHERE fresh.job_id=j.id
+                AND fresh.created_at>(SELECT max(created_at) FROM audit_events WHERE event_type='publication.manual_only.activated'))
               AND j.status='queued' AND j.scheduled_at<=now() AND j.available_at<=now()
             ORDER BY CASE WHEN j.publication_lane<>'trends_auto' AND (SELECT language_code FROM blogger_blogs bb WHERE bb.id=j.blog_id)='en'
             THEN 0 ELSE 1 END,j.scheduled_at,j.id FOR UPDATE OF j SKIP LOCKED LIMIT 1""",
@@ -801,7 +812,7 @@ def process_next_live_job(
         version_id = UUID(str(job["content_version_id"]))
         candidate = publications._candidate(conn, version_id, blog_id)
         lane = str(job["publication_lane"])
-        draft_mode = lane == "trends_auto" and job.get("publication_mode", "publish") == "draft"
+        draft_mode = lane in {"trends_auto", "manual"} and job.get("publication_mode", "publish") == "draft"
         assessment = None
         if lane == "scheduled_auto":
             link = conn.execute(
@@ -1085,13 +1096,17 @@ def process_next_live_job(
         operation = "create_draft"
         write_key = "pubjob-" + str(job_id) + "-draft"
         try:
-            result = publisher.create_draft(
-                write_key, blog_id,
-                str(candidate.get("editorial_title") or candidate["title"]),
-                str(candidate["html_body"]),
-                list(candidate.get("blogger_labels") or []),
-                enforce_volume_caps=publication_count_limits_apply(lane),
-            )
+            with external_policy.manual_publication_context(
+                str(job_id), str(blog_id), str(version_id),
+                str(snapshot['title_sha256']), str(snapshot['body_sha256']), str(snapshot['html_sha256'])
+            ):
+                result = publisher.create_draft(
+                    write_key, blog_id,
+                    str(candidate.get("editorial_title") or candidate["title"]),
+                    str(candidate["html_body"]),
+                    list(candidate.get("blogger_labels") or []),
+                    enforce_volume_caps=publication_count_limits_apply(lane),
+                )
             if draft_mode:
                 return save_verified_draft(job_id, blog_id, version_id, result)
             with connection() as conn:
@@ -1335,6 +1350,9 @@ def tick(
     allow_manual_confirmed_publications: bool = False, allow_trends_auto_publications: bool = False,
 ) -> dict[str, Any] | None:
     """Process one explicitly approved private draft or one due fake job."""
+    from .publication_operation import manual_requests_allowed
+    if not manual_requests_allowed():
+        return None
     if not 0 <= backoff_seconds <= 3600:
         raise ValueError("invalid_backoff")
     if allow_trends_auto_publications:
@@ -1352,6 +1370,8 @@ def tick(
         if live is not None:
             return {"job_type": "manual_confirmed_blogger_live", **live,
                     "simulation_only": False, "auto_enabled": False}
+    # No automatic/private/legacy queue is eligible in manual-only operation.
+    return None
     if allow_live_publications:
         live = process_next_live_job()
         if live is not None:

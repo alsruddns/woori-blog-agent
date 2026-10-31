@@ -36,6 +36,9 @@ def _live_response(
     transport: httpx.MockTransport | None = None,
 ) -> tuple[dict[str, Any], int]:
     """Send one guarded Google request; injected transports are test-only."""
+    from .publication_operation import blogger_writes_allowed
+    if method != "GET" and not blogger_writes_allowed():
+        raise GoogleFailure("authoring_only_blogger_writes_suspended")
     if not path.startswith("/blogs/") or ".." in path or "?" in path:
         raise GoogleFailure("invalid_path")
     if transport is not None and not isinstance(transport, httpx.MockTransport):
@@ -78,6 +81,11 @@ def _live_response(
                         'provider_reason':safe_error_reason(response)}),))
         if method != "GET" and (response.status_code >= 500 or category == "unavailable"):
             category = "uncertain_write"
+        if method != "GET" and response.status_code == 403:
+            with connection() as conn:
+                conn.execute("UPDATE publication_mode_settings SET blogger_api_restricted=true,emergency_stopped=true,updated_at=now() WHERE scope_type='global' AND scope_key=''")
+                conn.execute("INSERT INTO audit_events(event_type,payload) VALUES ('publication.google_restriction.detected',%s)",
+                    (Jsonb({'http_status':403,'category':category,'provider_reason':safe_error_reason(response),'automatic_retry':False}),))
         raise GoogleFailure(category, response.status_code)
     try:
         payload = response.json()

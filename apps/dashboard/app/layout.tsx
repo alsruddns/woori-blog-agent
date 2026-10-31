@@ -1,4 +1,5 @@
 import "./style.css";
+import AuthoringOnlyNotice from "./authoring-only-notice";
 import DashboardNavigation from "./navigation";
 import Script from "next/script";
 export const metadata = {
@@ -14,7 +15,7 @@ export default function Layout({
         <Script id="woori-theme-init" strategy="beforeInteractive">
           {`try{var t=localStorage.getItem('woori-theme')||'system';var d=t==='system'?matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light':t;document.documentElement.dataset.theme=d}catch(e){document.documentElement.dataset.theme='light'}`}
         </Script>
-        <div className="app-shell"><DashboardNavigation>{children}</DashboardNavigation></div>
+        <div className="app-shell"><DashboardNavigation><AuthoringOnlyNotice />{children}</DashboardNavigation></div>
       </body>
     </html>
   );

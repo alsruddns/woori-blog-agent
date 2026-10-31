@@ -648,6 +648,9 @@ def _deny(provider: str, operation: str, request: httpx.Request, reason: str) ->
 
 
 def _authorize(provider: str, operation: str, request: httpx.Request) -> None:
+    from .publication_operation import blogger_writes_allowed
+    if provider == "google_blogger_read" and request.method != "GET" and not blogger_writes_allowed():
+        _deny(provider, operation, request, "authoring_only_blogger_writes_suspended")
     rule = PROVIDERS.get(provider)
     if rule is None:
         _deny(provider, operation, request, "provider_not_allowlisted")

@@ -1,5 +1,6 @@
 "use client";
 
+import ManuscriptCopy from "./manuscript-copy";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 
@@ -132,6 +133,10 @@ export default function ExternalImportWorkspace({ embedded = false, detailReques
   const [approvalActor, setApprovalActor] = useState("admin");
   const [approvalReason, setApprovalReason] = useState("\uD655\uC778\uC644\uB8CC");
   const [manualAttest, setManualAttest] = useState({ content: true, facts: true, rights: true });
+  const [manualMode, setManualMode] = useState<"publish" | "draft">("publish");
+  useEffect(() => {
+    try { const saved = localStorage.getItem("woori-manual-publication-mode"); if (saved === "publish" || saved === "draft") setManualMode(saved); } catch { /* Keep the safe explicit-click default. */ }
+  }, []);
   const manualSubmitting = useRef(false);
   const [manualOutcomeUnknown,setManualOutcomeUnknown]=useState(false);
   const [targetLanguage, setTargetLanguage] = useState<(typeof languages)[number]>("ko");
@@ -357,7 +362,7 @@ export default function ExternalImportWorkspace({ embedded = false, detailReques
     const titleText = String(manual?.title ?? latestVersion.title ?? detail.item.title ?? "제목 없음");
     const bodyText = String(manual?.body ?? latestVersion.body_markdown ?? "");
     if (!target || manual?.eligible !== true || !manualAttest.content || !manualAttest.facts || !manualAttest.rights) return;
-    if (!window.confirm(`다음 원고를 Blogger에 공개 게시하도록 승인합니다.\n\n제목: ${titleText}\nContent Version: ${String(latestVersion.content_version_id)}\n본문 SHA-256: ${String(manual.body_sha256)}\n정제 HTML SHA-256: ${String(manual.html_sha256)}\n대상 Blogger: ${String(target.display_name)} · ${String(target.url)}\n\n게시용 본문을 화면에서 확인했고, 미확인 주장을 사실로 단정하지 않았으며, 알고 있는 권리·개인정보·중대한 위해 문제가 없음을 확인합니다. 이 확인은 정확한 본문 해시와 블로그에만 기록됩니다.`)) return;
+    if (manualMode === "publish" && !window.confirm(`다음 원고를 Blogger에 공개 게시하도록 승인합니다.\n\n제목: ${titleText}\nContent Version: ${String(latestVersion.content_version_id)}\n본문 SHA-256: ${String(manual.body_sha256)}\n정제 HTML SHA-256: ${String(manual.html_sha256)}\n대상 Blogger: ${String(target.display_name)} · ${String(target.url)}\n\n게시용 본문을 화면에서 확인했고, 미확인 주장을 사실로 단정하지 않았으며, 알고 있는 권리·개인정보·중대한 위해 문제가 없음을 확인합니다. 이 확인은 정확한 본문 해시와 블로그에만 기록됩니다.`)) return;
     manualSubmitting.current = true;
     setBusy(true); setError(""); setNotice("");
     try {
@@ -367,8 +372,9 @@ export default function ExternalImportWorkspace({ embedded = false, detailReques
           expected_title_sha256: manual.title_sha256, expected_body_sha256: manual.body_sha256,
           expected_html_sha256: manual.html_sha256, actor_label: approvalActor.trim(),
           reason: approvalReason.trim(), reviewed_exact_content: true, assertions_safe_to_publish: true,
-          rights_privacy_harm_checked: true, confirmation: "PUBLISH THIS EXACT MANUSCRIPT PUBLICLY",
-          idempotency_key: `manual-publish-${versionKey}-${String(manual.body_sha256).slice(0,24)}` }) });
+          rights_privacy_harm_checked: true, publication_mode: manualMode,
+          confirmation: manualMode === "draft" ? "SAVE THIS EXACT MANUSCRIPT AS DRAFT" : "PUBLISH THIS EXACT MANUSCRIPT PUBLICLY",
+          idempotency_key: `manual-${manualMode}-${versionKey}-${String(manual.body_sha256).slice(0,24)}` }) });
       const result = await response.json() as Row;
       if (!response.ok) throw new Error(`HTTP ${response.status} · ${String(result.error_code ?? "manual_publication_request_failed")} · ${String(result.detail ?? result.error ?? "공개 발행 요청을 처리하지 못했습니다.")}`);
       if (result.recorded === false) throw new Error(`발행이 차단되었습니다: ${Array.isArray(result.reasons) ? result.reasons.map(reason => manualBlockerNames[String(reason)] ?? String(reason)).join(" · ") : "필수 조건 미충족"}`);
@@ -421,6 +427,7 @@ export default function ExternalImportWorkspace({ embedded = false, detailReques
       </nav>
       <div role="tabpanel" aria-label="원고 상세 내용" className="import-detail-content">
         {detailTab === "editor" && <>
+          <ManuscriptCopy title={title} body={body} description={String(seo.search_description ?? "")} html={String(latestAssessment?.safe_html ?? "")} />
           <section className="workspace-panel" id="import-editor"><h3>원고 편집</h3><label>제목<input data-testid="import-title-input" value={title} onChange={event => setTitle(event.target.value)} /></label><label>본문 Markdown<textarea data-testid="import-body-input" value={body} onChange={event => setBody(event.target.value)} /></label><label>SEO 제목<input value={String(seo.seo_title ?? "")} onChange={event => setSeo({ ...seo, seo_title: event.target.value })} /></label><label>검색 설명<textarea value={String(seo.search_description ?? "")} onChange={event => setSeo({ ...seo, search_description: event.target.value })} /></label><label>Blogger 라벨<input value={labels} onChange={event => setLabels(event.target.value)} /></label><label>수정 사유<input value={reason} onChange={event => setReason(event.target.value)} /></label><label>작성자 표시<input value={reviewer} onChange={event => setReviewer(event.target.value)} /></label><button type="button" data-testid="save-import-version" disabled={busy} onClick={() => void saveVersion()}>새 버전 저장</button>
             <div className="import-actions"><button type="button" disabled={busy || body.trim().length < 100} onClick={() => void assess()}>{busy ? "검사 중…" : "품질·SEO·HTML 검사"}</button><button type="button" className="secondary-button" disabled={!latestAssessment} onClick={() => { if (latestAssessment) { setPreview({ title: title || String(latestVersion.title ?? detail.item.title ?? ""), safe_html: latestAssessment.safe_html, seo_checks: latestAssessment.seo_checks, html_sha256: latestAssessment.html_sha256 }); setDetailTab("preview"); } }}>게시용 미리보기</button></div>
           </section>
@@ -489,7 +496,9 @@ export default function ExternalImportWorkspace({ embedded = false, detailReques
             <p>체크 항목은 기본 선택이며 검토 증거로 자동 저장되지 않습니다. 본문과 대상 블로그를 확인하고 공개 게시 버튼 및 최종 확인을 눌러야 발행 승인이 기록됩니다.</p>
             {manualOutcomeUnknown && <button type="button" className="secondary-button" disabled={busy} onClick={()=>void openDetail(selectedId).then(()=>{setManualOutcomeUnknown(false);setDetailTab("distribution");})}>발행 상태 다시 확인</button>}
             <div className="review-attestations manual-publication-checks"><label><input type="checkbox" checked={manualAttest.content} onChange={event => setManualAttest({ ...manualAttest, content: event.target.checked })} />위에 표시된 최신 제목·본문·HTML을 확인했습니다.</label><label><input type="checkbox" checked={manualAttest.facts} onChange={event => setManualAttest({ ...manualAttest, facts: event.target.checked })} />미확인 주장을 확인된 사실처럼 단정하지 않았습니다.</label><label><input type="checkbox" checked={manualAttest.rights} onChange={event => setManualAttest({ ...manualAttest, rights: event.target.checked })} />알고 있는 저작권 침해·개인정보 노출·중대한 위해 문제가 없습니다.</label></div>
-            <button type="button" data-testid="manual-publication-submit" disabled={manualPublishDisabledReasons.length > 0} aria-describedby={manualPublishDisabledReasons.length ? "manual-publication-disabled-reasons" : undefined} onClick={() => void submitManualPublication()}>{busy ? "발행 Job 등록 중…" : (detail.item.auto_publication_failure === true || detail.publication?.auto_publication_failure === true) ? "Blogger에 수동 발행" : "Blogger에 공개 게시"}</button>
+            <label>발행 방식<select data-testid="manual-publication-mode" value={manualMode} disabled={busy} onChange={event => { const mode = event.target.value as "publish" | "draft"; setManualMode(mode); try { localStorage.setItem("woori-manual-publication-mode", mode); } catch { /* The current choice remains usable. */ } }}><option value="publish">바로 발행 (공개 · 기본)</option><option value="draft">초안 저장 (비공개)</option></select></label>
+            <p>Google Blogger API 제한이 확인된 동안 요청은 차단됩니다. 원고를 복사하여 Blogger 관리자에서 직접 게시할 수 있습니다.</p>
+            <button type="button" data-testid="manual-publication-submit" disabled={manualPublishDisabledReasons.length > 0} aria-describedby={manualPublishDisabledReasons.length ? "manual-publication-disabled-reasons" : undefined} onClick={() => void submitManualPublication()}>{busy ? "수동 Job 등록 중…" : manualMode === "draft" ? "Blogger 초안 저장" : "Blogger 공개 발행"}</button>
             {manualPublishDisabledReasons.length > 0 && <ul id="manual-publication-disabled-reasons" role="status" className="quality-held">{manualPublishDisabledReasons.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul>}
             <p>클릭 시 정확한 원고 해시·대상 블로그·승인자와 함께 Job이 등록됩니다. Publication Worker가 실제 게시 단계, Blogger 응답, 원격 재확인 결과를 저장하며, 이 화면의 확인만으로 게시 완료라고 표시하지 않습니다.</p>
             {Boolean(detail.publication?.status_error) && <p role="alert" className="quality-held">{String(detail.publication?.status_error)}</p>}
