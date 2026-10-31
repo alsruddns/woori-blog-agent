@@ -119,6 +119,8 @@ Caps: one active CLI run under a PostgreSQL advisory lock, 600-second timeout, 1
 
 ## P5-CODEX-095 private draft reuse (2026-10-31)
 
+P5-CODEX-096 retains the same approved Blogger endpoints, full-scope connection and ChatGPT-auth CLI. No paid provider, credit, key, host or API activation was added. Google rejected actual private inserts with HTTP 403/forbidden; current read/admin access is not write-success evidence and does not establish quota/Billing availability. Trends dispatch preserves queued Jobs during a local 15-minute provider-error backoff; its deadline is not a Google quota-reset claim. Codex usage/capacity failures use separately audited local backoff with no paid fallback or fabricated provider reset. The optional fetchUserInfo parameter was used once on the existing guarded list_account_blogs GET for registered-ID-only diagnostics; user/album identifiers were not retained.
+
 Private Trends drafts reuse the already reviewed full-scope Blogger connection and guarded official posts.insert isDraft=true path. The user explicitly authorizes private automation. Public approval is required only for publish mode; this does not create public consent, new API credentials, paid fallback or billing activation. Draft success requires remote DRAFT verification. Existing provider quota/error gates and OAuth/blog write spacing remain. No new claim about account-wide billing is inferred.
 
 # P5-CODEX-088 Trends authoring reuse (2026-10-31)
