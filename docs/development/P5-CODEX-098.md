@@ -72,3 +72,15 @@ Schema75 유지, 새 Migration 불필요. main 변경 없음. 자기 참조 커�
 - 후속 운영 점검에서 기존 Worker CLI/operations 요약이 raw queued를 집계하는 잔여 경로를 발견했다. `dispatch_queue_counts`를 공통 적용하여 실행 대기0 / 보존된 raw queued1 / auto_paused1로 명확히 분리했다. 이 수정은 backend-only이며 Dashboard 산출물은 그대로 재사용한다.
 - 집중 pytest 최종 **50 passed, 37 deselected**, production Ruff 및 변경 Python 모듈 mypy 통과. 전체 pytest를 반복 실행하지 않았다.
 - 삭제 후 manifest 재조회: 모든 삭제 대상 테이블의 잔여 대상0. immutable trigger 재활성화 및 FK 보호 유지 확인.
+
+## 최종 운영 확인
+
+- 후속 backend 커밋 `fb72496` 반영: API와 Publication Worker 정상 종료 후 재시작. Dashboard는 `bb088c4` 검증 산출물 유지. Research Worker PID63652는 중단하지 않았으며 running/fresh 유지. Publication Worker는 `operations-manual-confirmed`, 긴급 정지/Google 제한 ON.
+- 실제 운영 HTTP 200: `/health`, `/admin/publications`, `/admin/publications/worker`, `/admin/operations/dashboard`.
+- 최종 탭 건수: **대기0 / 검토40 / 게시 완료17 / 실패·보류17 / 자동발행실패7**.
+- Worker API와 CLI: `live_queued=0`, `live_due=0`, `preserved_live_queued=1`, `auto_paused=1`, idle reason `automatic_publication_suspended`. Operations Dashboard도 live_queued_jobs0 / auto_paused_jobs1.
+- Jamie 원본 Job status queued는 보존하고 유효 상태 auto_paused로 분류했다. actual postId/검증된 원격 저장 증거는 없으며 원격 미게시를 추정해서 성공/실패로 바꾸지 않았다. 다른 새 수동 요청은 P097의 사용자 확인·모드 스냅샷·Google 제한 검사를 그대로 따른다.
+- 백업 시각 이후 Blogger provider 외부 호출 감사 이벤트 **0건**. 새 원격 Draft/LIVE·수정·삭제 테스트 없음. 실제 기존 LIVE/Draft 기록과 모든 과거 실패 이벤트 보존.
+- Trends 설정 ON/10분, 등록11지역 유지. 최근 수집 실행 2026-10-31 23:20:21 KST, 지역별 기존 수집 결과11개 확인. Codex 원고 작성/Import 로직과 15개 Desktop 일정은 수정하지 않았다. 이번 작업의 새 원고 작성 성공은 주장하지 않으며 기존 Import 회귀는 격리 테스트로 확인했다.
+- 남은 제한: Google API 제한 및 긴급 정지로 운영 수동 API 쓰기도 차단. 현재 Blogger 제목/본문을 새로 조회하지 않았고, Fed LIVE는 저장 검증 증거를 사용했다. 독립 모델 성능 기록·모델 파일·공유 출처 및 빈 lineage identity는 요청된 원고 삭제 범위 밖으로 보존한다.
+- Git: develop 체크포인트 `bb088c4`, `fb72496` 및 본 최종 기록 커밋. origin/develop push와 원격 HEAD 일치를 마지막에 검증한다. main 변경 없음.
