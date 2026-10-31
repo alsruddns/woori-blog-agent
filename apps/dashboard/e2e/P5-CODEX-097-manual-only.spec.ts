@@ -52,5 +52,7 @@ test("manual defaults to publish, cancel performs no request, draft and publish 
   await expect.poll(()=>requests.length).toBe(2);
   expect(requests[1].publication_mode).toBe("publish");
   expect(requests[1].confirmation).toBe("PUBLISH THIS EXACT MANUSCRIPT PUBLICLY");
+  await expect(submit).toBeEnabled();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.unrouteAll({behavior:"wait"});
 });
