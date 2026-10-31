@@ -1782,7 +1782,7 @@ def sync_trends_draft(job_id: UUID) -> dict[str, Any]:
         result = {'job_id':str(job_id),'post_id':row['remote_post_id'],'remote_status':remote['status'],
                   'remote_url':remote.get('url') if remote['status']=='LIVE' else None,'blogger_write_performed':False,
                   'remote_updated_at':remote.get('updated'),'remote_published_at':remote.get('published') if remote['status']=='LIVE' else None,
-                  'checked_at':datetime.now(UTC).isoformat(),'error_code':None}
+                  'checked_at':datetime.now(UTC).isoformat(),'error_code':None,'remote_actor_verified':False}
     except GoogleFailure as error:
         result = {'job_id':str(job_id),'post_id':row['remote_post_id'],
                   'remote_status':'NOT_FOUND' if error.category=='not_found' else 'LOOKUP_FAILED',

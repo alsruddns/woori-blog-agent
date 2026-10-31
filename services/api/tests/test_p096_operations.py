@@ -3,6 +3,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+import httpx
 import psycopg
 import pytest
 from psycopg import sql
@@ -86,3 +87,22 @@ def test_usage_backoff_does_not_invent_provider_reset(lab):
     assert result['active'] and result['provider_reset_at'] is None
     assert result['basis']=='local_backoff_not_provider_reset'
     assert datetime.fromisoformat(result['not_before'])<=datetime.now(UTC)+timedelta(minutes=15)
+
+
+def test_settings_repr_never_exposes_connection_or_admin_credentials():
+    from woori.config import Settings
+    value=Settings(_env_file=None,database_url='postgresql://test:private-db-value@localhost/test',
+        evaluation_database_url='postgresql://test:private-eval-value@localhost/test',admin_token='private-admin-value-'*3)
+    rendered=repr(value)
+    assert 'private-db-value' not in rendered and 'private-eval-value' not in rendered and 'private-admin-value' not in rendered
+
+
+@pytest.mark.parametrize('message,expected',[
+    ('Blog has exceeded rate limit or quota','free_quota_exceeded'),
+    ('User does not have permission to perform the requested action','permission_denied'),
+])
+def test_google_forbidden_quota_is_distinct_from_permission(message,expected):
+    from woori.google_http import classify, safe_error_reason
+    response=httpx.Response(403,json={'error':{'message':message,'errors':[{'reason':'forbidden'}]}})
+    assert classify(response)==expected
+    assert safe_error_reason(response)=='forbidden'

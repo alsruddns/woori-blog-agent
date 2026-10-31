@@ -358,8 +358,8 @@ def enqueue_trends_auto_jobs() -> dict[str, int]:
                     continue
                 existing = conn.execute(
                     """SELECT id,status FROM publishing_jobs WHERE blog_id=%s AND content_version_id=%s
-                    AND NOT simulation_only AND adapter_type='blogger_live' AND status IN
-                      ('queued','running','uncertain','succeeded') ORDER BY updated_at DESC,id DESC LIMIT 1""",
+                    AND NOT simulation_only AND adapter_type='blogger_live'
+                    ORDER BY updated_at DESC,id DESC LIMIT 1""",
                     (blog_id, item["content_version_id"]),
                 ).fetchone()
                 if existing:

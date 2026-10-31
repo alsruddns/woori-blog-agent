@@ -93,7 +93,7 @@ export default function PostPublicationReviewPanel() {
     {error && <p className="quality-held" role="alert">{error}</p>}
     {busy && items.length === 0 ? <p className="empty-state">불러오는 중…</p> : items.length === 0 ? <p className="empty-state">원격 확인된 초안·게시물 중 이 필터에 해당하는 항목이 없습니다.</p> : <div className="post-review-list">
       {items.map((review) => <article className="post-review-card" key={review.id}>
-        <p>{review.publication_mode === "draft" ? review.remote_status === "LIVE" ? "Draft → 사용자 직접 LIVE 공개 확인" : review.remote_status === "DRAFT" ? "Draft 모드 · 비공개 초안 저장 이력" : "원격 조회 확인 필요 · 기존 초안 저장 이력 보존" : "Blogger LIVE 공개 게시물"}</p>
+        <p>{review.publication_mode === "draft" ? review.remote_status === "LIVE" ? "Draft → Blogger LIVE 전환 확인" : review.remote_status === "DRAFT" ? "Draft 모드 · 비공개 초안 저장 이력" : "원격 조회 확인 필요 · 기존 초안 저장 이력 보존" : "Blogger LIVE 공개 게시물"}</p>
         {review.blog_name && <p>{review.blog_name} · {review.keyword} · Codex Job {review.codex_job_id} · Import {review.import_id}</p>}
         {review.publication_mode === "draft" && <p>초안 저장: {review.saved_at} · 공개 시각: {review.remote_published_at??"공개 확인 없음"} · 원격 수정: {review.remote_updated_at??"정보 없음"} · 상태 조회: {review.remote_checked_at??"저장 시 확인"}{review.remote_check_error&&` · 조회 오류 ${review.remote_check_error} (삭제로 단정하지 않음)`}</p>}
         {review.publication_mode === "draft" && <button type="button" className="secondary-button" disabled={busy} onClick={() => {

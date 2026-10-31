@@ -778,7 +778,7 @@ def process_next_live_job(
               AND (j.publication_lane<>'trends_auto' OR %s=true)
               AND (%s=false OR j.publication_lane='trends_auto')
               AND j.status='queued' AND j.scheduled_at<=now() AND j.available_at<=now()
-            ORDER BY CASE WHEN (SELECT language_code FROM blogger_blogs bb WHERE bb.id=j.blog_id)='en'
+            ORDER BY CASE WHEN j.publication_lane<>'trends_auto' AND (SELECT language_code FROM blogger_blogs bb WHERE bb.id=j.blog_id)='en'
             THEN 0 ELSE 1 END,j.scheduled_at,j.id FOR UPDATE OF j SKIP LOCKED LIMIT 1""",
             (scheduled_auto_only, manual_confirmed_only, trends_auto_only, trends_auto_only),
         ).fetchone()

@@ -34,18 +34,32 @@ def classify(response: httpx.Response) -> str:
         return "unavailable"
     if response.status_code == 403:
         try:
-            reasons = [e.get("reason") for e in response.json().get("error", {}).get("errors", [])]
+            error = response.json().get("error", {})
+            reasons = [e.get("reason") for e in error.get("errors", [])]
+            # Blogger may use reason=forbidden for an explicit posting quota.
+            # Inspect only for classification; never retain the raw message.
+            quota_message = any(text in str(error.get('message','')).lower() for text in ('exceeded rate limit','quota exceeded','exceeded quota'))
         except (ValueError, AttributeError, TypeError):
             reasons = []
+            quota_message = False
         return (
             "free_quota_exceeded"
-            if any(
+            if quota_message or any(
                 r in ("rateLimitExceeded", "userRateLimitExceeded", "quotaExceeded")
                 for r in reasons
             )
             else "permission_denied"
         )
     return "invalid_request"
+
+
+def safe_error_reason(response: httpx.Response) -> str:
+    try:
+        reasons=[item.get('reason') for item in response.json().get('error',{}).get('errors',[])]
+    except (ValueError,AttributeError,TypeError):
+        return 'unavailable'
+    allowed={'forbidden','insufficientPermissions','rateLimitExceeded','userRateLimitExceeded','quotaExceeded','dailyLimitExceeded','notFound','authError'}
+    return next((reason for reason in reasons if reason in allowed),'other')
 
 
 def client() -> httpx.Client:

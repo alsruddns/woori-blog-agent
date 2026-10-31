@@ -21,7 +21,7 @@ from psycopg.types.json import Jsonb
 from . import external_policy, google_oauth
 from .db import connection
 from .external_policy import ExternalCallBlocked, FreeQuotaExceeded
-from .google_http import BASE, WRITE_SCOPE, GoogleFailure, classify, numeric_id
+from .google_http import BASE, WRITE_SCOPE, GoogleFailure, classify, numeric_id, safe_error_reason
 from .publication_daily import LANGUAGE_HOURLY_LIMITS
 
 
@@ -72,6 +72,10 @@ def _live_response(
         raise GoogleFailure("uncertain_write") from None
     if not response.is_success:
         category = classify(response)
+        with connection() as conn:
+            conn.execute("INSERT INTO audit_events(event_type,payload) VALUES ('blogger.api.error_classified',%s)",
+                (Jsonb({'operation':operation,'http_status':response.status_code,'category':category,
+                        'provider_reason':safe_error_reason(response)}),))
         if method != "GET" and (response.status_code >= 500 or category == "unavailable"):
             category = "uncertain_write"
         raise GoogleFailure(category, response.status_code)
