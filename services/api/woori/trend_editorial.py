@@ -284,6 +284,7 @@ def queue_topic(conn:Any,topic_id:UUID,blog_id:UUID,*,selection_rank:int|None=No
     if not current or current['state'] not in {'selected','generation_queued'}:raise HTTPException(409,'topic_not_selected')
     if current['created_at']<current_slot():raise HTTPException(409,'expired_collection_slot')
     topic=conn.execute('SELECT * FROM trend_topics WHERE id=%s',(topic_id,)).fetchone()
+    conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",('trend-topic-blog:'+topic['normalized_key']+':'+str(blog_id),))
     blog=next((b for b in targets(conn) if b['id']==blog_id),None)
     mapping=conn.execute('''SELECT 1 FROM trend_blog_geo_authoring
         WHERE blog_id=%s AND geo=%s AND enabled''',(blog_id,topic['representative_geo'])).fetchone()
@@ -297,10 +298,17 @@ def queue_topic(conn:Any,topic_id:UUID,blog_id:UUID,*,selection_rank:int|None=No
     # Missing event date is deliberately a review boundary, not an invented event ID.
     event_stamp=newest['trend_started_at'] or newest['collected_at'].astimezone(trends.SCHEDULE_TIMEZONE).date()
     duplicate=hashlib.sha256(f"trend:{topic_id}:{event_stamp}:{blog_id}".encode()).hexdigest()
-    previous=conn.execute('''SELECT q.id FROM trend_generation_requests q JOIN trend_topics prior ON prior.id=q.topic_id
-        WHERE prior.normalized_key=%s AND q.contract->>'target_blog_id'=%s AND q.duplicate_key<>%s LIMIT 1''',
-        (topic['normalized_key'],str(blog_id),duplicate)).fetchone()
-    if previous:raise HTTPException(409,'topic_already_requested_for_blog')
+    previous=prior_authoring_requests(conn,topic['normalized_key'],blog_id)
+    recovery=None
+    if previous:
+        same_slot=next((p for p in previous if slot_is_current(p['contract'].get('collection_slot'))),None)
+        if same_slot:
+            if same_slot['topic_id']!=topic_id or same_slot['state'] not in {'generation_queued','generating'}:
+                raise HTTPException(409,'topic_already_requested_for_blog')
+            return dict(conn.execute('SELECT * FROM trend_generation_requests WHERE id=%s',(same_slot['id'],)).fetchone())
+        if not all(recoverable_usage_request(p) for p in previous):raise HTTPException(409,'topic_already_requested_for_blog')
+        recovery=previous[0]['authoring_job_id']
+        duplicate=hashlib.sha256(f"trend-usage-recovery:{topic['normalized_key']}:{blog_id}:{newest['slot_at'].astimezone(UTC).isoformat()}".encode()).hexdigest()
     contract={'version':'trend-authoring/2','trend_topic_id':str(topic_id),
         'source_observation_ids':[str(o['id']) for o in observations], 'country':topic['representative_geo'],
         'source_country':topic['representative_geo'],
@@ -312,10 +320,23 @@ def queue_topic(conn:Any,topic_id:UUID,blog_id:UUID,*,selection_rank:int|None=No
         'raw_material':newest['raw_payload'],'duplicate_key':duplicate,'category':category,
         'selection_rank':selection_rank,'processing_order':processing_order,
         'content_type':'trends_major_issue','requires_codex_evaluation':True,'remote_duplicate_status':'not_checked'}
+    if recovery:contract['recovery_of_job_id']=str(recovery)
     row=conn.execute('''INSERT INTO trend_generation_requests(topic_id,duplicate_key,contract)
         VALUES(%s,%s,%s) ON CONFLICT(duplicate_key) DO UPDATE SET duplicate_key=EXCLUDED.duplicate_key RETURNING *''',
         (topic_id,duplicate,Jsonb(contract))).fetchone()
     return dict(row)
+
+
+def recoverable_usage_request(row:dict[str,Any]) -> bool:
+    return row['state']=='failed' and not row.get('import_id') and row.get('error_code') in {'codex_usage_limit','codex_capacity_unavailable'}
+
+
+def prior_authoring_requests(conn:Any,key:str,blog_id:UUID) -> list[dict[str,Any]]:
+    return [dict(row) for row in conn.execute('''SELECT q.id,q.topic_id,q.state,q.contract,q.authoring_job_id,j.error_code,j.import_id
+        FROM trend_generation_requests q JOIN trend_topics t ON t.id=q.topic_id
+        LEFT JOIN codex_authoring_jobs j ON j.id=q.authoring_job_id
+        WHERE t.normalized_key=%s AND q.contract->>'target_blog_id'=%s ORDER BY q.created_at DESC,q.id DESC''',
+        (key,str(blog_id))).fetchall()]
 
 
 def dispatch(limit:int=1) -> dict[str,int]:
@@ -346,10 +367,10 @@ def dispatch(limit:int=1) -> dict[str,int]:
                     'selection_reason':c['selection_reason'],'raw_news_items':(c.get('raw_material') or {}).get('news_items',[])[:5]}}
             digest=hashlib.sha256(json.dumps(options,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
             job=conn.execute('''INSERT INTO codex_authoring_jobs(request_key,request_sha256,job_type,blog_id,language_code,
-              target_country,category,keyword,options,model,trend_request_id)
-              VALUES(%s,%s,'google_trends',%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(request_key) DO NOTHING RETURNING id''',
+              target_country,category,keyword,options,model,trend_request_id,parent_job_id)
+              VALUES(%s,%s,'google_trends',%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(request_key) DO NOTHING RETURNING id''',
               (request_key,digest,UUID(c['target_blog_id']),c['target_language'],c['target_country'],
-               c['category'],c['query'],Jsonb(options),codex_runner.MODEL,row['id'])).fetchone()
+               c['category'],c['query'],Jsonb(options),codex_runner.MODEL,row['id'],c.get('recovery_of_job_id'))).fetchone()
             if not job:raise RuntimeError('trend_dispatch_identity_conflict')
             conn.execute("UPDATE trend_generation_requests SET state='generating',authoring_job_id=%s,updated_at=now() WHERE id=%s",(job['id'],row['id']))
             transition(conn,row['topic_id'],'generating','codex_authoring_queued','기존 Codex Runner 조사·원고 작성을 대기합니다.',
@@ -365,6 +386,9 @@ def queue_selected() -> dict[str,int]:
     slot=current_slot()
     with connection() as conn:
         conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('trend-selected-queue',0))")
+        from .keyword_jobs import authoring_backoff
+        pause=authoring_backoff(conn)
+        if pause and pause['active']:return {'created':0,'codex_backoff':1}
         limit=settings().trend_research_hourly_limit
         recent=conn.execute('SELECT count(*) n FROM trend_generation_requests WHERE created_at>=now()-interval \'1 hour\'').fetchone()
         remaining=max(0,limit-int(recent['n'] if recent else 0))
@@ -408,15 +432,14 @@ def queue_selected() -> dict[str,int]:
                 ORDER BY o.source_volume_lower_bound DESC,o.trend_started_at DESC,o.collected_at DESC,t.id LIMIT 100''',
                 (mapping['geo'],slot)).fetchall()
             for rank,row in enumerate(rows,1):
-                previous=conn.execute('''SELECT 1 FROM trend_generation_requests q JOIN trend_topics prior ON prior.id=q.topic_id
-                    WHERE prior.normalized_key=%s AND q.contract->>'target_blog_id'=%s LIMIT 1''',
-                    (row['normalized_key'],str(mapping['blog_id']))).fetchone()
-                if previous:continue
+                previous=prior_authoring_requests(conn,row['normalized_key'],mapping['blog_id'])
+                if previous and (not all(recoverable_usage_request(p) for p in previous)
+                        or any(slot_is_current(p['contract'].get('collection_slot')) for p in previous)):continue
                 state,code,category=classify(row['representative_query'],row['raw_payload'])
                 if state!='selected' or not (row['category'] or category):continue
                 category=row['category'] or category
                 current=latest(conn,row['id'])
-                if not current or current['state'] in {'review_candidate','pending_classification','collected'}:
+                if not current or current['state'] in {'review_candidate','pending_classification','collected'} or previous:
                     transition(conn,row['id'],'selected',code,
                         '현재 수집 회차의 검색량·최신성·주제 적합성으로 Codex 독립 조사를 선정했습니다. 근거나 사실 승인으로 간주하지 않습니다.',
                         'system:trend-country-rank',category=category,evidence={'geo':mapping['geo'],

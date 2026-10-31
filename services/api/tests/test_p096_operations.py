@@ -6,6 +6,7 @@ from uuid import uuid4
 import httpx
 import psycopg
 import pytest
+from fastapi import HTTPException
 from psycopg import sql
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
@@ -135,3 +136,41 @@ def test_trends_backoff_never_starves_existing_publication_lanes(monkeypatch,lan
     result=publication_worker.tick(allow_trends_auto_publications=True,
         allow_scheduled_auto_publications=lane=='scheduled_auto',allow_manual_confirmed_publications=lane=='manual')
     assert result['status']=='isolated_other_lane'
+
+
+def test_expired_usage_failure_can_recover_only_from_new_collection(lab,monkeypatch):
+    conn,api,headers,payload=setup_job(lab,monkeypatch)
+    @contextmanager
+    def shared():
+        with conn.transaction():yield conn
+    monkeypatch.setattr(trend_editorial,'connection',shared)
+    now=datetime.now(UTC).replace(second=0,microsecond=0)
+    slot=now.replace(minute=now.minute//10*10)
+    monkeypatch.setattr(trend_editorial,'current_slot',lambda:slot)
+    original=api.post('/admin/keyword-authoring',headers=headers,json=payload).json()['id']
+    blog=conn.execute('SELECT blog_id FROM codex_authoring_jobs WHERE id=%s',(original,)).fetchone()['blog_id']
+    conn.execute("UPDATE trend_blog_geo_authoring SET enabled=false WHERE geo='KR'")
+    conn.execute("INSERT INTO trend_blog_geo_authoring(blog_id,geo,enabled,processing_order) VALUES (%s,'KR',true,1)",(blog,))
+    topic=uuid4();key='p096 ai glasses '+uuid4().hex
+    conn.execute("INSERT INTO trend_topics(id,normalized_key,representative_geo,representative_query,grouping_method,grouping_confidence,grouping_status) VALUES (%s,%s,'KR',%s,'single_observation',1,'exact_query_cluster_not_event_confirmed')",(topic,key,key))
+    old_contract={'target_blog_id':str(blog),'collection_slot':(slot-timedelta(minutes=10)).isoformat()}
+    request=conn.execute("INSERT INTO trend_generation_requests(topic_id,duplicate_key,contract,state,authoring_job_id) VALUES (%s,%s,%s,'failed',%s) RETURNING id",(topic,uuid4().hex,Jsonb(old_contract),original)).fetchone()['id']
+    conn.execute("UPDATE codex_authoring_jobs SET job_type='google_trends',trend_request_id=%s,state='failed',error_code='codex_usage_limit' WHERE id=%s",(request,original))
+    observation={'id':uuid4(),'slot_at':slot,'collected_at':now,'trend_started_at':slot,
+        'query':key,'source_volume_label':'1000+','raw_payload':{}}
+    trend_editorial.transition(conn,topic,'selected','fresh_reassessment','New collection independently reassessed','isolated',category='technology')
+    monkeypatch.setattr(trend_editorial,'current_observations',lambda *_:[])
+    with pytest.raises(HTTPException,match='expired_collection_slot'):
+        trend_editorial.queue_topic(conn,topic,blog)
+    monkeypatch.setattr(trend_editorial,'current_observations',lambda *_:[observation])
+    queued=trend_editorial.queue_topic(conn,topic,blog)
+    assert queued['id']!=request and queued['contract']['collection_slot']==slot.isoformat()
+    assert queued['contract']['recovery_of_job_id']==original
+    assert queued['contract']['source_observation_ids']==[str(observation['id'])]
+    assert trend_editorial.queue_topic(conn,topic,blog)['id']==queued['id']
+    trend_editorial.transition(conn,topic,'generation_queued','fresh_recovery','New current slot','isolated',category='technology')
+    assert trend_editorial.dispatch()['created']==1
+    child=conn.execute('SELECT * FROM codex_authoring_jobs WHERE trend_request_id=%s',(queued['id'],)).fetchone()
+    assert child['job_type']=='google_trends' and str(child['parent_job_id'])==original
+    assert conn.execute('SELECT contract FROM trend_generation_requests WHERE id=%s',(request,)).fetchone()['contract']==old_contract
+    assert conn.execute('SELECT error_code FROM codex_authoring_jobs WHERE id=%s',(original,)).fetchone()['error_code']=='codex_usage_limit'
