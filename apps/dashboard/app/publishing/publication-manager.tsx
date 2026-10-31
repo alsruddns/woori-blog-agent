@@ -16,6 +16,7 @@ type Item = {
   import_id?: string | null; generation_method?: string | null; google_trends_based?: boolean;
   auto_publication_failure?: boolean; failure_stage?: string | null; failure_reason_code?: string | null;
   manual_publication_available?: boolean; retry_count?: number;
+  published_title?: string; published_content_version_id?: string;
 };
 type ModeSetting = { scope_type: string; scope_key: string; configured_mode: string; daily_auto_limit: number; minimum_interval_minutes: number; allowed_start_hour?:number; allowed_end_hour?:number; timezone?:string; allowed_categories?:string[]; excluded_topics?:string[]; max_source_age_hours?:number; retry_limit?:number };
 export type PublicationData = {
@@ -41,7 +42,7 @@ export type PublicationData = {
 };
 const tabs = [["queue", "발행 대기"], ["review", "검토 필요"], ["published", "게시 완료"], ["held", "실패·보류"], ["auto_failure", "자동발행실패"]] as const;
 const languageLabel = (code: string) => ({ko:"한국어",en:"영어",ja:"일본어","zh-CN":"중국어 간체"}[code] ?? code);
-const statusLabel = (status: string) => ({review_needed:"검토 필요",queueable:"발행 자격 충족 · Job 없음",queued:"Worker 처리 대기",publishing:"게시 중",published:"게시 완료",quality_held:"품질 보류",publication_blocked:"게시 차단",failed:"실패",uncertain:"결과 확인 필요",auto_publication_failed:"자동발행실패"}[status] ?? status);
+const statusLabel = (status: string) => ({review_needed:"검토 필요",queueable:"발행 자격 충족 · Job 없음",queued:"Worker 처리 대기",auto_paused:"자동 발행 중지로 보류",manual_action_required:"수동 요청 확인 필요 · 실행 차단",draft_saved:"Blogger 비공개 초안 저장 완료",publishing:"게시 중",published:"게시 완료",quality_held:"품질 보류",publication_blocked:"게시 차단",failed:"실패",uncertain:"결과 확인 필요",auto_publication_failed:"자동발행실패"}[status] ?? status);
 const reasonLabel = (reason: string) => ({
   quality_evaluation_missing:"품질 검사 기록 없음", quality_not_passed:"품질 검사 통과 필요",
   editorial_source_rights_and_publication_review_required:"근거·권리·승인 확인 필요",
@@ -265,7 +266,8 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
             : item.evaluation_id
               ? <a href={`/manuscripts?open_evaluation_id=${encodeURIComponent(item.evaluation_id)}&open_content_version_id=${encodeURIComponent(item.content_version_id)}&return_to=${encodeURIComponent(`/publishing?view=${view}&page=${page}&q=${query}&language_code=${language}&blog_id=${blog}`)}`}>{item.title || "제목 없음"}</a>
               : <span>{item.title || "제목 없음"}</span>}
-            <small>버전 {item.content_version_id.slice(0,8)} · {item.google_trends_based ? "Google Trends" : item.generation_method === "chatgpt_scheduled_export" ? "Codex 예약" : item.generation_method === "manual_codex_import" ? "수동 Import" : "내부 원고"}</small></td>
+            <small>현재 버전 {item.content_version_id.slice(0,8)} · {item.google_trends_based ? "Google Trends" : item.generation_method === "chatgpt_scheduled_export" ? "Codex 예약" : item.generation_method === "manual_codex_import" ? "수동 Import" : "내부 원고"}</small>
+            {item.published_title && <small>게시 당시 제목: {item.published_title} · 게시 버전 {item.published_content_version_id?.slice(0,8)} · 현재 Blogger 제목은 별도 원격 확인이 필요합니다.</small>}</td>
           <td>{languageLabel(item.language_code)}</td><td>{item.blog_name || item.url}</td>
           <td>{item.topic || item.source_names || "주제·출처 정보 없음"}</td>
           <td>{statusLabel(item.status)}{item.failure_reason_code && <small>실패 단계 {item.failure_stage ?? "미확인"} · {reasonLabel(item.failure_reason_code)}</small>}{item.retry_count !== undefined && <small>재시도 {item.retry_count}회</small>}{item.eligibility_reasons?.length ? <small>{item.eligibility_reasons.slice(0,2).map(reasonLabel).join(" · ")}</small> : null}{item.simulation_only && <small>모의 작업</small>}</td>

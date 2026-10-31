@@ -17,7 +17,7 @@ type Monitor = {
   last_job: {title:string; status:string; publication_state:string} | null;
   page: number; page_count:number; total:number;
 };
-const labels: Record<string,string> = {all:"전체",queued:"Job 대기",running:"처리 중",draft_saved:"Blogger 비공개 초안 저장",published:"Blogger 공개 완료",failed:"실패·보류 Job",pre_job_failure:"Job 생성 전 자동발행실패"};
+const labels: Record<string,string> = {all:"전체",queued:"실행 가능한 Job 대기",auto_paused:"자동 발행 중지로 보류",manual_action_required:"수동 요청 확인 필요",resolved:"과거 실패 후 게시 해결",running:"처리 중",draft_saved:"Blogger 비공개 초안 저장",published:"Blogger 공개 완료",failed:"실패·보류 Job",pre_job_failure:"Job 생성 전 자동발행실패"};
 const stages: Record<string,string> = {draft_needed:"초안 생성 단계",draft_created:"공개 전 확인·발행 간격 대기",published:"공개 확인 완료",eligibility:"발행 자격 평가",duplicate_check:"중복 확인",publication_worker:"Worker 처리",create_draft:"Blogger 초안 생성",publish_draft:"Blogger 공개 요청"};
 const reasons: Record<string,string> = {claim_source_verification_unavailable:"주장 출처 수집·확인 필요",claim_span_not_found_in_live_source_evidence:"원문 근거 구간 불일치",no_supported_body_after_sanitization:"게시 가능한 근거 본문 부족",publication_policy_missing:"대상 발행 정책 없음",remote_duplicate_found:"기존 게시물 확인됨",remote_duplicate_check_unknown:"원격 중복 확인 필요",not_found:"대상 리소스 없음",unauthorized:"OAuth 인증 확인 필요",permission_denied:"Blogger 권한 확인 필요",uncertain_write:"원격 게시 결과 확인 필요"};
 const intervalReasons:Record<string,string> = {blogger_external_backoff:"Google Blogger 외부 제한 · 로컬 재확인 대기 (제한 해제 확정 아님)",account_minimum_interval_not_elapsed:"OAuth \uC5F0\uACB0 \uACF5\uC720 \uACC4\uC815 2\uBD84 \uAC04\uACA9 \uB300\uAE30",blog_minimum_interval_not_elapsed:"Blogger 5\uBD84 \uAC04\uACA9 \uB300\uAE30"};

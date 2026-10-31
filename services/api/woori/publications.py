@@ -1381,7 +1381,7 @@ def _manual_publication_blockers(
 
 @router.get('/worker-jobs')
 def worker_job_monitor(
-    view: Literal['all','queued','running','published','draft_saved','failed','pre_job_failure'] = 'all',
+    view: Literal['all','queued','running','published','draft_saved','failed','pre_job_failure','auto_paused','manual_action_required','resolved'] = 'all',
     page: int = Query(1, ge=1), page_size: int = Query(25, ge=1, le=100),
 ) -> dict[str, Any]:
     from .publication_monitor import snapshot
@@ -1391,9 +1391,11 @@ def worker_job_monitor(
 def publication_list_flow(row: dict[str, Any]) -> str:
     """A Worker wait requires a persisted Job; verified remote state wins."""
     if row.get('remote_post_id') and row.get('remote_verified_at'):
-        return 'published'
+        return 'draft_saved' if row.get('remote_status') == 'DRAFT' else 'published'
     if not row.get('active_job_id'):
         return 'review_needed'
+    if row.get('pending_operational_state') in {'auto_paused','manual_action_required'}:
+        return str(row['pending_operational_state'])
     return 'publishing' if row.get('active_job_status') == 'running' else 'queued'
 
 
@@ -1408,6 +1410,11 @@ def list_publications(
 ) -> dict[str, Any]:
     with connection() as conn:
         mode_data = _mode_settings(conn)
+        from .publication_operation import manual_requests_allowed
+        from .publication_read_state import failure_resolved_clause, pending_state
+        manual_permitted = manual_requests_allowed() and bool(mode_data.get("scoped_write_capability", {}).get("manual_confirmed"))
+        cutoff_row = conn.execute("SELECT max(created_at) AS cutoff FROM audit_events WHERE event_type='publication.manual_only.activated'").fetchone()
+        pause_cutoff = cutoff_row["cutoff"] if cutoff_row else None
         raw_latest_count_row = conn.execute(
             """SELECT count(*)::int AS count FROM (
               SELECT DISTINCT ON (v.group_id,v.localization_id,b.id) v.group_id,v.localization_id,b.id
@@ -1439,10 +1446,13 @@ def list_publications(
               imported.import_id,imported.generation_method,imported.google_trends_based,
               imported.research_package_id,imported.event_group_id,
               COALESCE(imported.title,imported.category) AS topic,
-              publication.published_at AS remote_published_at,publication.remote_post_id,
-              publication.remote_url,publication.remote_verified_at,publication.remote_status,
+              publication.published_at AS remote_published_at,COALESCE(publication.remote_post_id,draft.remote_post_id) AS remote_post_id,
+              COALESCE(publication.remote_url,draft.remote_url) AS remote_url,
+              COALESCE(publication.remote_verified_at,draft.verified_at) AS remote_verified_at,
+              COALESCE(publication.remote_status,draft.remote_status) AS remote_status,
               active_job.id AS active_job_id,active_job.status AS active_job_status,
               active_job.publication_state AS active_job_publication_state,
+              active_job.publication_lane AS active_job_lane,active_job.approval_at,
               active_job.scheduled_at AS next_publish_at
             FROM latest
             JOIN languages lang ON lang.code=latest.language_code
@@ -1466,7 +1476,13 @@ def list_publications(
                 AND pl.language_code=latest.language_code AND pl.target_country=latest.target_country
                 AND r.remote_status='LIVE' AND r.remote_verified_at IS NOT NULL
               ORDER BY r.published_at DESC,r.id DESC LIMIT 1) publication ON true
-            LEFT JOIN LATERAL (SELECT j.id,j.status,j.publication_state,j.scheduled_at
+            LEFT JOIN LATERAL (SELECT d.remote_post_id,d.verified_at,d.remote_status,NULL::text AS remote_url
+              FROM blogger_draft_receipts d JOIN content_versions dv ON dv.id=d.content_version_id
+              WHERE d.blog_id=latest.blog_uuid AND dv.group_id=latest.group_id
+                AND dv.localization_id IS NOT DISTINCT FROM latest.localization_id
+              ORDER BY d.verified_at DESC LIMIT 1) draft ON true
+            LEFT JOIN LATERAL (SELECT j.id,j.status,j.publication_state,j.scheduled_at,j.publication_lane,
+              (SELECT max(a.created_at) FROM manual_publication_approval_events a WHERE a.job_id=j.id) approval_at
               FROM publishing_jobs j JOIN content_versions jv ON jv.id=j.content_version_id
               JOIN content_localizations jl ON jl.id=jv.localization_id
               WHERE j.blog_id=latest.blog_uuid AND jv.group_id=latest.group_id
@@ -1479,13 +1495,16 @@ def list_publications(
             ORDER BY latest.version_created_at DESC,latest.content_version_id DESC"""
         ).fetchall()
         jobs = conn.execute(
-            """SELECT j.id,j.content_version_id,j.blog_id,b.language_code,b.url,v.title AS content_title,
+            f"""SELECT j.id,j.content_version_id,j.blog_id,b.language_code,b.url,v.title AS content_title,
                 j.status,j.publication_state,j.scheduled_at,j.schedule_timezone,j.block_reasons,
                 j.attempts,j.retry_count,j.last_error_category,j.updated_at,
                 j.adapter_type,j.simulation_only,j.live_stage,j.remote_post_id,j.publication_lane,
                 imported.import_id,imported.generation_method,
                 live_record.remote_url,live_record.remote_status,live_record.remote_verified_at,
                 live_record.published_at,
+                (EXISTS(SELECT 1 FROM publishing_records rr WHERE rr.blog_id=j.blog_id
+                    AND rr.content_version_id=j.content_version_id AND rr.remote_status='LIVE' AND rr.remote_verified_at IS NOT NULL)
+                 OR NOT ({failure_resolved_clause('v','j.blog_id','imported.import_id')})) AS resolved_by_live,
                 (SELECT q.id FROM article_quality_evaluations q
                  WHERE q.content_version_id=j.content_version_id
                  ORDER BY q.created_at DESC,q.id DESC LIMIT 1) AS evaluation_id,
@@ -1538,8 +1557,8 @@ def list_publications(
         duplicate_suppressed = 0
         for raw_candidate in rows:
             candidate = dict(raw_candidate)
-            if any(marker in str(candidate.get("model_name") or "").casefold() for marker in ("qwen", "llama")):
-                continue
+            if candidate.get('active_job_id'):
+                candidate['pending_operational_state'] = pending_state(candidate.get('active_job_lane'), candidate.get('approval_at'), pause_cutoff, manual_permitted)
             candidate["id"] = str(candidate["content_version_id"])
             candidate["group_id"] = str(candidate["group_id"])
             candidate["content_version_id"] = str(candidate["content_version_id"])
@@ -1569,7 +1588,7 @@ def list_publications(
             candidate['has_publishing_job'] = bool(candidate['active_job_id'])
             candidate['publishing_job_id'] = str(candidate['active_job_id']) if candidate['active_job_id'] else None
             candidate['operational_status'] = publication_list_flow(candidate)
-            if candidate['operational_status'] in {'published','queued','publishing'}:
+            if candidate['operational_status'] in {'published','draft_saved','queued','publishing','auto_paused','manual_action_required'}:
                 candidate["eligibility_reasons"] = []
             else:
                 candidate["operational_status"] = "review_needed"
@@ -1588,12 +1607,16 @@ def list_publications(
 
         publication_records = [dict(row) for row in conn.execute(
             """SELECT r.id AS record_id,r.job_id,r.blog_id,b.language_code,b.display_name AS blog_name,
-            b.url AS blog_url,b.blog_id AS blogger_blog_id,r.content_version_id,v.group_id,v.title,
+            b.url AS blog_url,b.blog_id AS blogger_blog_id,current_v.id AS content_version_id,
+            r.content_version_id AS published_content_version_id,v.group_id,current_v.title,v.title AS published_title,
             r.remote_post_id,r.remote_url,r.remote_status,r.remote_verified_at,r.published_at,
             imported.import_id,imported.generation_method,imported.google_trends_based,
             evaluation.evaluation_id,evaluation.model
             FROM publishing_records r JOIN blogger_blogs b ON b.id=r.blog_id
             JOIN content_versions v ON v.id=r.content_version_id
+            JOIN LATERAL (SELECT id,title FROM content_versions cv
+              WHERE cv.group_id=v.group_id AND cv.localization_id IS NOT DISTINCT FROM v.localization_id
+              ORDER BY cv.version DESC,cv.created_at DESC,cv.id DESC LIMIT 1) current_v ON true
             LEFT JOIN LATERAL (SELECT imported.id AS import_id,imported.generation_method,
                 NULL::boolean AS google_trends_based FROM external_content_import_content_links link
                 JOIN external_content_imports imported ON imported.id=link.import_id
@@ -1605,9 +1628,10 @@ def list_publications(
             WHERE r.remote_status='LIVE' AND r.remote_verified_at IS NOT NULL
             ORDER BY r.published_at DESC,r.id DESC"""
         ).fetchall()]
-        held_jobs = [dict(row) for row in jobs if row["status"] in {"blocked", "failed", "uncertain"}
-                     or row["publication_state"] in {"quality_held", "publication_blocked", "publication_failed"}]
+        held_jobs = [dict(row) for row in jobs if (row["status"] in {"blocked", "failed", "uncertain"}
+                     or row["publication_state"] in {"quality_held", "publication_blocked", "publication_failed"}) and not row["resolved_by_live"]]
 
+        paused_items: list[dict[str, Any]] = []
         queue_items: list[dict[str, Any]] = []
         review_items: list[dict[str, Any]] = []
         for candidate in latest_candidates:
@@ -1624,10 +1648,15 @@ def list_publications(
             }
             if candidate["operational_status"] in {"queued", "publishing", "queueable"}:
                 queue_items.append(item)
+            elif candidate['operational_status'] in {'auto_paused','manual_action_required'}:
+                item['last_error_category'] = 'automatic_publication_suspended' if candidate['operational_status']=='auto_paused' else 'blogger_api_restricted_manual_only'
+                item['job_id'] = str(candidate['active_job_id'])
+                paused_items.append(item)
             else:
                 review_items.append(item)
         published_items = [{
             "item_type": "published", "id": str(row["record_id"]),
+            "published_title": row["published_title"], "published_content_version_id": str(row["published_content_version_id"]),
             "content_version_id": str(row["content_version_id"]), "group_id": str(row["group_id"]),
             "title": row["title"], "language_code": row["language_code"],
             "blog_id": str(row["blog_id"]), "blog_name": row["blog_name"],
@@ -1667,23 +1696,29 @@ def list_publications(
             "research_package_id": None, "source_names": None,
         } for row in held_jobs]
 
+        held_items.extend(paused_items)
+
         # Once a real job exists its current state belongs in the job views;
         # the historical pre-job failure remains in the append-only audit log.
         auto_failure_items: list[dict[str, Any]] = []
         failure_events = conn.execute(
-            """WITH latest AS (
+            f"""WITH latest AS (
               SELECT DISTINCT ON (payload->>'import_id',payload->>'content_version_id',payload->>'blog_record_id')
                 id,event_type,payload FROM audit_events
               WHERE event_type IN ('publication.auto_failure.recorded','publication.auto_failure.cleared')
               ORDER BY payload->>'import_id',payload->>'content_version_id',payload->>'blog_record_id',id DESC
             )
             SELECT e.id,e.event_type,e.payload,i.generation_method,i.language_code,
-              v.title,b.id AS blog_record_id,b.display_name AS blog_name,b.url,
-              v.id AS content_version_id,
+              current_v.title,b.id AS blog_record_id,b.display_name AS blog_name,b.url,
+              current_v.id AS content_version_id,v.id AS failure_content_version_id,
               (SELECT COALESCE(max(j.retry_count),0)::int FROM publishing_jobs j
                WHERE j.content_version_id=v.id AND j.blog_id=b.id) AS retry_count
             FROM latest e JOIN external_content_imports i ON i.id=(e.payload->>'import_id')::uuid
             LEFT JOIN content_versions v ON v.id=NULLIF(e.payload->>'content_version_id','')::uuid
+            LEFT JOIN LATERAL (SELECT cv.id,cv.title FROM external_content_import_content_links cl
+              JOIN content_versions cv ON cv.id=cl.content_version_id
+              WHERE cl.import_id=i.id AND cv.localization_id IS NOT DISTINCT FROM v.localization_id
+              ORDER BY cv.version DESC,cv.created_at DESC,cv.id DESC LIMIT 1) current_v ON true
             LEFT JOIN blogger_blogs b ON b.id=NULLIF(e.payload->>'blog_record_id','')::uuid
             WHERE e.event_type='publication.auto_failure.recorded'
               AND NOT EXISTS (SELECT 1 FROM publishing_jobs j
@@ -1692,8 +1727,7 @@ def list_publications(
                 WHERE j.blog_id=b.id AND j.content_version_id=v.id
                   AND j.adapter_type='blogger_live' AND NOT j.simulation_only
                   AND (j.status IN ('queued','running','failed','blocked','uncertain') OR j.publication_state='draft_saved'))
-              AND NOT EXISTS (SELECT 1 FROM publishing_records r WHERE r.blog_id=b.id
-                AND r.content_version_id=v.id AND r.remote_status='LIVE' AND r.remote_verified_at IS NOT NULL)
+              AND {failure_resolved_clause('v','b.id','i.id')}
             ORDER BY e.id DESC"""
         ).fetchall()
         for row in failure_events:
@@ -1704,6 +1738,7 @@ def list_publications(
             payload = failure["payload"]
             auto_failure_items.append({
                 "item_type": "auto_failure", "id": str(failure["id"]),
+                "failure_content_version_id": str(failure.get("failure_content_version_id") or ""),
                 "content_version_id": str(failure.get("content_version_id") or payload.get("content_version_id") or ""),
                 "title": failure.get("title") or "제목 없음", "language_code": failure.get("language_code"),
                 "blog_id": str(failure.get("blog_record_id") or payload.get("blog_record_id") or ""),
@@ -1733,18 +1768,20 @@ def list_publications(
             "duplicate_suppressed": duplicate_suppressed,
             "excluded_non_operational": max(0, int(raw_latest_count) - len(latest_candidates) - duplicate_suppressed),
         }
-        selected = all_views[view]
         query = q.strip().casefold()
-        if query:
-            selected = [item for item in selected if query in " ".join(str(item.get(key) or "") for key in (
-                "title", "topic", "source_names", "remote_post_id", "content_version_id", "id"
-            )).casefold()]
-        if language_code:
-            selected = [item for item in selected if item.get("language_code") == language_code]
-        if blog_id:
-            selected = [item for item in selected if item.get("blog_id") == blog_id]
+        for name, view_items in all_views.items():
+            filtered = [item for item in view_items if
+                (not language_code or item.get('language_code') == language_code)
+                and (not blog_id or item.get('blog_id') == blog_id)
+                and (not query or query in " ".join(str(item.get(key) or "") for key in (
+                    'title','topic','published_title','source_names','remote_post_id','content_version_id','id'
+                )).casefold())]
+            all_views[name] = filtered
+            summary[name] = len(filtered)
+        selected = all_views[view]
         total_count = len(selected)
-        page_count = (total_count + page_size - 1) // page_size
+        page_count = max(1, (total_count + page_size - 1) // page_size)
+        page = min(page, page_count)
         start = (page - 1) * page_size
         items = selected[start:start + page_size]
         return {
