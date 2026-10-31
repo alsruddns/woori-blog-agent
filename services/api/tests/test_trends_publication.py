@@ -126,7 +126,7 @@ class _TrendsEnqueueConnection:
         if "FROM trends_publication_policy_events p JOIN blogger_blogs" in query:
             return _Result(rows=[{"blog_id": self.blog_id, "language_code": "ja",
                                  "blogger_id": "123456", "enabled": True,
-                                 "allowed_geos": ["JP"], "daily_limit": 3,
+                                 "allowed_geos": ["JP"], "daily_limit": 3, "publication_mode": "publish",
                                  "created_at": datetime.fromisoformat("2026-10-31T08:00:00+09:00")}])
         if "FROM external_content_imports i" in query:
             return _Result(rows=[{

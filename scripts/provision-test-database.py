@@ -65,6 +65,7 @@ MIGRATIONS = [ROOT / "scripts" / f"{i:03d}_{name}.sql" for i, name in [
     (70, "trends_optional_evidence"),
     (71, "trends_ph_publication_geo"),
     (72, "trends_post_review_guard"),
+    (73, "trends_draft_mode"),
 ]]
 
 

@@ -163,7 +163,8 @@ def test_post_publication_review_api_reads_isolated_schema_without_fake_posts() 
             headers={"Authorization": "Bearer " + settings().admin_token},
         )
     assert response.status_code == 200, response.text
-    assert response.json()["verified_live_only"] is True
+    assert response.json()["verified_live_only"] is False
+    assert response.json()["verified_remote_only"] is True
     assert response.json()["total"] == 0
 
 

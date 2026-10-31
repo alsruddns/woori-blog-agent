@@ -160,6 +160,20 @@ def test_trends_output_contract_distinguishes_article_from_insufficient_evidence
     assert set(schema['required'])=={'status','article','reason'}
 
 
+def test_trends_date_only_source_metadata_uses_observed_time_without_fabricating_publication_time():
+    original=valid_item()
+    source=original['sources'][0]
+    source['published_at']='2026-10-31'
+    source['observed_at']='2026-10-31'
+    proof={'opened_urls':{'https://example.gov/policy':'2026-10-31T01:00:00+00:00'}}
+    normalized=keyword_jobs.normalize_trend_source_times(original,proof)
+    assert normalized['sources'][0]['observed_at']=='2026-10-31T01:00:00+00:00'
+    assert normalized['sources'][0]['published_at'] is None
+    assert source['published_at']=='2026-10-31'
+    assert proof['source_date_metadata'][0]['author_declared_date']=='2026-10-31'
+    assert proof['source_date_metadata'][0]['verified'] is False
+
+
 @pytest.mark.parametrize('mode',['success','cancel','timeout','limit'])
 def test_runner_bounded_execution_no_shell_or_api_key(monkeypatch,tmp_path,mode):
     import io

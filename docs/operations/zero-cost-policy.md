@@ -117,6 +117,10 @@ Admission is `woori.external_policy.authorize_codex_chatgpt_process`: billable c
 
 Caps: one active CLI run under a PostgreSQL advisory lock, 600-second timeout, 1.5 GiB Windows Job Object memory limit, bounded event/output sizes, explicit user retries only, and bounded idempotent local Import retries. Rate/usage limits stop the run with no paid fallback. Current reader-facing output is original fact-based paraphrase with URL/excerpt/rights notes, stored as unverified manual content for user review. Rights are not approved by model self-report. No automated public publication or account upgrade occurs.
 
+## P5-CODEX-095 private draft reuse (2026-10-31)
+
+Private Trends drafts reuse the already reviewed full-scope Blogger connection and guarded official posts.insert isDraft=true path. The user explicitly authorizes private automation. Public approval is required only for publish mode; this does not create public consent, new API credentials, paid fallback or billing activation. Draft success requires remote DRAFT verification. Existing provider quota/error gates and OAuth/blog write spacing remain. No new claim about account-wide billing is inferred.
+
 # P5-CODEX-088 Trends authoring reuse (2026-10-31)
 
 Google Trends authoring reuses the same installed official Codex CLI, ChatGPT login, `gpt-6-luna` model, authorization gate, single-run lock, timeout and process memory cap described above. The worker invokes it only for a persisted, idempotent `google_trends` job attached to an explicitly mapped current collection slot. This is existing ChatGPT plan usage, not an OpenAI API integration; no API-key fallback, provider switch, credit purchase, or Blogger write is part of this lane. The actual Trends-to-Codex/Import call must still stop on detected billable credentials, configured paid credits, authentication failure, or provider usage limit. Account-level usage/credit availability is not exposed to the project; no additional credits were enabled or bought by this change.

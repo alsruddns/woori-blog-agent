@@ -1,0 +1,18 @@
+# P5-CODEX-095 — Trends private draft automation
+
+- Date: 2026-10-31 Asia/Seoul. Branch develop, base 34169de. P095 explicitly authorizes private Blogger drafts; no public consent is manufactured.
+- Before: Trends used the public lane exclusively and required public consent and an existing real LIVE write receipt. Recent actual Codex outputs also failed source timestamp validation before their actual retrieval timestamps could be normalized.
+- After: policies default to draft; publish requires the existing authenticated explicit consent. Draft bypasses only public-consent and public-test markers, retaining exact mapped Blogger/OAuth, cost gate, duplicate checks, basic article safety, spacing and emergency stop. Existing claim/evidence states remain unchanged. No past slot is reactivated.
+- Additive migration 073: policy mode; immutable Job mode/policy snapshot; terminal draft_saved state; separate verified private-draft receipts. Existing scheduled/manual Jobs remain publish. Explicitly consented old policies are preserved by an appended publish policy. Applied SQL is immutable.
+- Backup before operational migration: backups/20261031T025537Z.dump, 14,005,204 bytes, archive catalog verified. Operations and isolated test schema are now 73. Existing manuscripts, Jobs, posts and audit records preserved. Task start audited in PostgreSQL.
+- Worker reuses official isDraft=true insertion and remote DRAFT verification, then records draft_saved without public API calls or LIVE receipts. Durable known-post reconciliation uses GET only, preserving remote user edits; unknown write outcomes are held rather than blindly re-POSTed. Draft duplicate checking includes both LIVE and DRAFT posts. Same-version receipt/Job uniqueness retained.
+- Policy mode changes affect only later Jobs. Draft Jobs cannot reach publish execution, even after a policy change. Manual Blogger publication can be synchronized through authenticated read-only status recheck; review acknowledgement is audited without asserting a remotely verified edit.
+- UI: per-blog Draft/Publish radios, mode-specific activation requirements, private/public Job state and postId, manuscript delivery details, user-review status. No verified per-post editor URL is available, so the existing Blogger manager root is offered rather than inventing an editor URL.
+- Actual retained failure root cause: date-only published_at/observed_at in Codex JSON raised source_timestamp_requires_timezone before normalization. Trends now uses actual CLI retrieval time, retains date-only publication declarations as unverified metadata, and leaves unknown publication timestamps NULL. Raw artifacts remain unchanged; old slots are not reimported.
+- Changed files: migration/runners; trends_publication, publication_worker/monitor, publications, content_imports, scheduled_duplicates, keyword_jobs; Dashboard policy, monitor, reviews, manuscript detail and proxy; focused Python/browser tests; cost policy note.
+- Verification checkpoint: focused broader suite 154 passed; subsequent 45-case duplicate/Blogger/Trends suite and 19-case authoring/Trends suite passed. Final verification/runtime and actual operational result will be appended below. Tests use the dedicated isolated DB/rollback boundary and simulated Blogger writes only.
+- Commit identity is linked by git log for this document; no self-referential commit hash is fabricated.
+
+## Operational checkpoint
+
+Pending final committed-source verification, runtime reflection and a genuinely new post-activation collection slot. No operational Blogger Draft or LIVE success is claimed at this checkpoint.

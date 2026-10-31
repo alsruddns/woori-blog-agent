@@ -19,27 +19,28 @@ def _possible_title_match(expected: str, actual: str) -> bool:
     return SequenceMatcher(a=left, b=right).ratio() >= 0.82
 
 
-def find_remote_duplicate(blog_record_id: UUID, title: str, *, page_limit: int = 10) -> dict[str, Any]:
-    """Return found/clear/unknown; a partial Blogger listing is never called clear."""
-    token = ""
+def find_remote_duplicate(blog_record_id: UUID, title: str, *, page_limit: int = 10,
+                          include_drafts: bool = False, exclude_post_id: str = "") -> dict[str, Any]:
+    """A clear result requires complete listing of every requested remote state."""
     scanned = 0
     try:
-        for _ in range(page_limit):
-            page = blogger_service.posts(blog_record_id, token, "live")
-            items = page.get("items", [])
-            scanned += len(items)
-            for item in items:
-                remote_title = str(item.get("title") or "")
-                if _possible_title_match(title, remote_title):
-                    return {"status": "found", "reason": "remote_live_title_match",
-                            "post_id": str(item.get("id") or ""), "url": item.get("url"),
-                            "scanned_posts": scanned}
-            token = str(page.get("nextPageToken") or "")
-            if not token:
-                return {"status": "clear", "reason": "complete_live_post_listing_no_title_match",
-                        "scanned_posts": scanned}
-        return {"status": "unknown", "reason": "blogger_read_scan_limit_reached",
-                "scanned_posts": scanned}
+        for remote_state in (["live", "draft"] if include_drafts else ["live"]):
+            token = ""
+            for _ in range(page_limit):
+                page = blogger_service.posts(blog_record_id, token, remote_state)
+                items = page.get("items", [])
+                scanned += len(items)
+                for item in items:
+                    if exclude_post_id and str(item.get("id")) == exclude_post_id:
+                        continue
+                    if _possible_title_match(title, str(item.get("title") or "")):
+                        return {"status": "found", "reason": "remote_"+remote_state+"_title_match",
+                                "post_id": str(item.get("id") or ""), "url": item.get("url"), "scanned_posts": scanned}
+                token = str(page.get("nextPageToken") or "")
+                if not token:
+                    break
+            else:
+                return {"status": "unknown", "reason": "blogger_read_scan_limit_reached", "scanned_posts": scanned}
+        return {"status": "clear", "reason": "complete_live_post_listing_no_title_match" if not include_drafts else "complete_live_and_draft_listing_no_title_match", "scanned_posts": scanned}
     except GoogleFailure as exc:
-        return {"status": "unknown", "reason": exc.category, "http_status": exc.status,
-                "scanned_posts": scanned}
+        return {"status": "unknown", "reason": exc.category, "http_status": exc.status, "scanned_posts": scanned}

@@ -86,6 +86,28 @@ class TrendArticleResult(BaseModel):
         return self
 
 
+def normalize_trend_source_times(article:dict[str,Any], evidence:dict[str,Any]) -> dict[str,Any]:
+    """Use actual retrieval timestamps; retain date-only publication declarations without inventing timezones."""
+    candidate:dict[str,Any]=json.loads(json.dumps(article))
+    opened=evidence.get('opened_urls') or {}
+    declared=evidence.setdefault('source_date_metadata',[])
+    for source in candidate.get('sources') or []:
+        observed=opened.get(codex_runner.canonical_url(str(source.get('url') or '')))
+        if observed:
+            source['observed_at']=observed
+        published=source.get('published_at')
+        if isinstance(published,str):
+            try:
+                stamp=datetime.fromisoformat(published)
+            except ValueError:
+                continue
+            if stamp.tzinfo is None or stamp.utcoffset() is None:
+                declared.append({'source_id':source.get('source_id'),'author_declared_date':published,
+                                 'precision':'day' if len(published)==10 else 'timezone_unknown','verified':False})
+                source['published_at']=None
+    return candidate
+
+
 def output_schema() -> dict[str,Any]:
     schema=ArticleOutput.model_json_schema()
     def strict(node:Any) -> None:
@@ -291,7 +313,7 @@ def make_envelope(job:dict[str,Any],article:dict[str,Any],evidence:dict[str,Any]
                 declared.append({'source_id':source['source_id'],'author_declared_date':published,
                                  'precision':'day' if len(published)==10 else 'timezone_unknown','verified':False})
                 source['published_at']=None  # A date is not an invented midnight/timezone.
-    evidence['source_date_metadata']=declared
+    evidence.setdefault('source_date_metadata',[]).extend(declared)
     model=(TrendArticleOutput if trends_origin else ArticleOutput).model_validate(article)
     sources=[]
     for source in model.sources:
@@ -369,6 +391,8 @@ def generate(job:dict[str,Any]) -> None:
                 trend_output_schema() if job['job_type']=='google_trends' else output_schema(),
                 lambda phase,data:state(job_id,phase,**data),lambda:cancelled(job_id),**runner_options)
         if job['job_type']=='google_trends':
+            if article.get('status')=='article' and isinstance(article.get('article'),dict):
+                article={**article,'article':normalize_trend_source_times(article['article'],evidence)}
             result=TrendArticleResult.model_validate(article)
             if result.status=='insufficient_evidence':
                 state(job_id,'failed',error_code='insufficient_evidence',

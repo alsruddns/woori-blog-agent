@@ -662,10 +662,79 @@ def reconcile_published_manual_job(job_id: UUID) -> dict[str, Any]:
     return {'job_id':str(job_id),'post_id':result['post_id'],'url':result['url'],'status':'published','blogger_write_performed':False}
 
 
+def save_verified_draft(job_id: UUID, blog_id: UUID, version_id: UUID, result: dict[str, Any], *, recovered: bool = False) -> dict[str, Any]:
+    if result.get("status") != "DRAFT" or not result.get("post_verified"):
+        raise GoogleFailure("draft_readback_mismatch")
+    with connection() as conn:
+        job = conn.execute("SELECT publication_state,publication_mode,blog_id,content_version_id,attempts FROM publishing_jobs WHERE id=%s AND publication_lane='trends_auto' FOR UPDATE",(job_id,)).fetchone()
+        if not job or job["publication_mode"] != "draft" or job["blog_id"] != blog_id or job["content_version_id"] != version_id:
+            raise GoogleFailure("draft_job_identity_mismatch")
+        conn.execute("""INSERT INTO blogger_draft_receipts(job_id,blog_id,content_version_id,remote_post_id,remote_status)
+            VALUES (%s,%s,%s,%s,'DRAFT') ON CONFLICT(job_id) DO NOTHING""",
+            (job_id,blog_id,version_id,str(result["post_id"])))
+        saved = conn.execute("SELECT remote_post_id FROM blogger_draft_receipts WHERE job_id=%s",(job_id,)).fetchone()
+        if not saved or saved["remote_post_id"] != str(result["post_id"]):
+            raise GoogleFailure("draft_receipt_conflict")
+        if recovered:
+            conn.execute("UPDATE blogger_write_operations SET status='succeeded',result=%s WHERE idempotency_key=%s AND result->>'post_id'=%s",
+                (Jsonb(result),'live:pubjob-'+str(job_id)+'-draft',str(result['post_id'])))
+        _live_attempt(conn,job_id,max(1,int(job["attempts"])),"create_draft","pubjob-"+str(job_id)+"-draft","succeeded",
+            post_id=str(result["post_id"]),status=result.get("http_status"),metadata={"remote_status":"DRAFT","recovered":recovered})
+        conn.execute("""UPDATE publishing_jobs SET status='succeeded',publication_state='draft_saved',
+            live_stage='draft_created',remote_post_id=%s,lease_until=NULL,last_error_category=NULL,updated_at=now()
+            WHERE id=%s AND publication_mode='draft' AND publication_lane='trends_auto'""",(str(result["post_id"]),job_id))
+        _append_audit(conn,"publication.trends_draft.saved",{"job_id":str(job_id),"post_id":str(result["post_id"]),
+            "remote_status":"DRAFT","public_write_performed":False,"review_status":"pending"})
+        linked = conn.execute("SELECT import_id FROM external_content_import_content_links WHERE content_version_id=%s LIMIT 1",(version_id,)).fetchone()
+        if linked:
+            _append_audit(conn,"publication.auto_failure.cleared",{"import_id":str(linked["import_id"]),
+                "content_version_id":str(version_id),"blog_record_id":str(blog_id),"job_id":str(job_id),
+                "stage":"draft_saved","reason_codes":[],"public_write_performed":False})
+        if job["publication_state"] != "draft_saved":
+            conn.execute("INSERT INTO publication_state_events(job_id,from_state,to_state,reason,details) VALUES (%s,%s,'draft_saved','verified_private_draft_saved',%s)",
+                (job_id,job["publication_state"],Jsonb({"post_id":str(result["post_id"]),"remote_status":"DRAFT"})))
+    return {"job_id":str(job_id),"status":"draft_saved","post_id":str(result["post_id"]),"remote_status":"DRAFT","public_write_performed":False}
+
+
+def recover_verified_trends_draft() -> dict[str, Any] | None:
+    """Reconcile an already-successful private write using GET only; never replay POST."""
+    from . import blogger_service
+    with connection() as conn:
+        row = conn.execute("""SELECT j.id,j.blog_id,j.content_version_id,w.result,b.blog_id blogger_id
+            FROM publishing_jobs j JOIN blogger_blogs b ON b.id=j.blog_id
+            JOIN blogger_write_operations w ON w.idempotency_key='live:pubjob-'||j.id::text||'-draft'
+            WHERE j.publication_lane='trends_auto' AND j.publication_mode='draft'
+              AND (j.status='uncertain' OR (j.status='running' AND j.lease_until<now()))
+              AND j.available_at<=now() AND j.retry_count<j.max_retries
+              AND w.status IN ('succeeded','uncertain') AND w.result->>'status'='DRAFT'
+              AND w.result->>'post_id' IS NOT NULL AND w.result->>'blog_id'=b.blog_id
+            ORDER BY j.scheduled_at,j.id LIMIT 1""").fetchone()
+    if not row:
+        return None
+    try:
+        remote = blogger_service.post(row['blog_id'], str(row['result']['post_id']))
+        if str(remote.get('id')) != str(row['result']['post_id']) or str((remote.get('blog') or {}).get('id')) != row['blogger_id']:
+            raise GoogleFailure('draft_recovery_identity_mismatch')
+        if remote.get('status') != 'DRAFT':
+            raise GoogleFailure('draft_remote_status_changed_requires_sync')
+        return save_verified_draft(row['id'], row['blog_id'], row['content_version_id'],
+            {**dict(row['result']),"post_verified":True}, recovered=True)
+    except GoogleFailure as exc:
+        with connection() as conn:
+            conn.execute("""UPDATE publishing_jobs SET status='uncertain',last_error_category=%s,
+                retry_count=retry_count+1,available_at=now()+interval '15 minutes',lease_until=NULL
+                WHERE id=%s AND retry_count<max_retries""", (exc.category,row['id']))
+        return None
+
+
 def process_next_live_job(
     *, scheduled_auto_only: bool = False, manual_confirmed_only: bool = False,
     trends_auto_only: bool = False,
 ) -> dict[str, Any] | None:
+    if trends_auto_only:
+        recovered = recover_verified_trends_draft()
+        if recovered:
+            return recovered
     """Process one fully approved Blogger job; all absent approvals fail closed."""
     enqueue_scheduled_auto_jobs()
     if trends_auto_only:
@@ -700,7 +769,7 @@ def process_next_live_job(
         job = conn.execute(
             """SELECT id,policy_id,blog_id,content_version_id,idempotency_key,attempts,
             retry_count,max_retries,publication_state,live_stage,remote_post_id,oauth_connection_id,
-            publication_lane
+            publication_lane,publication_mode
             FROM publishing_jobs j WHERE NOT j.simulation_only AND j.adapter_type='blogger_live'
               AND (%s=false OR j.publication_lane='scheduled_auto')
               AND (%s=false OR (j.publication_lane='manual' AND EXISTS (
@@ -720,6 +789,7 @@ def process_next_live_job(
         version_id = UUID(str(job["content_version_id"]))
         candidate = publications._candidate(conn, version_id, blog_id)
         lane = str(job["publication_lane"])
+        draft_mode = lane == "trends_auto" and job.get("publication_mode", "publish") == "draft"
         assessment = None
         if lane == "scheduled_auto":
             link = conn.execute(
@@ -764,7 +834,7 @@ def process_next_live_job(
             if not link:
                 reasons.append("trends_provenance_or_import_link_missing")
             with external_policy.trends_publication_context(str(blog_id)):
-                if not external_policy._blogger_operation_is_approved("blogger_public_publish"):
+                if not external_policy._blogger_operation_is_approved("blogger_draft_create" if draft_mode else "blogger_public_publish"):
                     reasons.append("trends_publication_policy_inactive_or_revoked")
             settings = conn.execute(
                 "SELECT emergency_stopped FROM publication_mode_settings WHERE scope_type='global' AND scope_key=''")
@@ -824,7 +894,7 @@ def process_next_live_job(
         elif lane == "trends_auto":
             with external_policy.trends_publication_context(str(blog_id)):
                 publish_operation_approved = external_policy._blogger_operation_is_approved(
-                    "blogger_public_publish"
+                    "blogger_draft_create" if draft_mode else "blogger_public_publish"
                 )
         elif lane == "manual":
             publish_operation_approved = bool(
@@ -952,9 +1022,11 @@ def process_next_live_job(
     publisher = BloggerLivePublisher()
     stage = str(claimed["live_stage"])
     if lane in {"scheduled_auto", "trends_auto", "manual"}:
-        remote_check = find_remote_duplicate(
-            blog_id, str(candidate.get("editorial_title") or candidate["title"]),
-        )
+        if lane == "trends_auto":
+            remote_check = find_remote_duplicate(blog_id, str(candidate.get("editorial_title") or candidate["title"]),
+                include_drafts=True, exclude_post_id=str(claimed["remote_post_id"] or ""))
+        else:
+            remote_check = find_remote_duplicate(blog_id, str(candidate.get("editorial_title") or candidate["title"]))
         if remote_check["status"] != "clear":
             found = remote_check["status"] == "found"
             category = "remote_duplicate_found" if found else "remote_duplicate_check_unknown"
@@ -1008,6 +1080,8 @@ def process_next_live_job(
                 list(candidate.get("blogger_labels") or []),
                 enforce_volume_caps=publication_count_limits_apply(lane),
             )
+            if draft_mode:
+                return save_verified_draft(job_id, blog_id, version_id, result)
             with connection() as conn:
                 conn.execute(
                     """UPDATE publishing_jobs SET status='queued',publication_state='publication_queued',
@@ -1059,6 +1133,8 @@ def process_next_live_job(
                 (job_id,),
             )
         return {"job_id": str(job_id), "status": "uncertain", "reason": "live_job_stage_invalid"}
+    if draft_mode:
+        return {"job_id": str(job_id), "status": "uncertain", "reason": "draft_only_job_cannot_publish"}
     operation = "publish_draft"
     source_draft_key = "pubjob-" + str(job_id) + "-draft"
     write_key = "pubjob-" + str(job_id) + "-publish"

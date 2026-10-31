@@ -14,14 +14,15 @@ def heartbeat_state(row: dict[str, Any] | None, now: datetime) -> str:
 def snapshot(view: str, page: int, page_size: int) -> dict[str, Any]:
     with connection() as conn:
         jobs = conn.execute("""SELECT j.id,j.content_version_id,j.blog_id,j.status,j.publication_state,
-            j.publication_lane,j.scheduled_at,j.available_at,j.updated_at,j.retry_count,j.max_retries,
+            j.publication_lane,j.publication_mode,j.scheduled_at,j.available_at,j.updated_at,j.retry_count,j.max_retries,
             j.live_stage,j.last_error_category,j.block_reasons,j.lease_until,
             v.title,b.display_name AS blog_name,b.blog_id AS blogger_blog_id,
             imported.import_id,imported.generation_method,evaluation.id AS evaluation_id,
             attempt.operation AS failure_operation,
             registered.registered_at,started.started_at,progress.created_at AS progress_at,
             progress.event_type AS progress_event,
-            remote.remote_url,remote.remote_post_id,remote.remote_verified_at,remote.remote_status
+            COALESCE(remote.remote_url,sync.payload->>'remote_url') remote_url,COALESCE(remote.remote_post_id,d.remote_post_id,j.remote_post_id) remote_post_id,
+            COALESCE(remote.remote_verified_at,sync.created_at,d.verified_at) remote_verified_at,COALESCE(remote.remote_status,sync.payload->>'remote_status',d.remote_status) remote_status
           FROM publishing_jobs j JOIN content_versions v ON v.id=j.content_version_id
           JOIN blogger_blogs b ON b.id=j.blog_id
           LEFT JOIN LATERAL (SELECT i.id import_id,i.generation_method
@@ -38,6 +39,9 @@ def snapshot(view: str, page: int, page_size: int) -> dict[str, Any]:
           LEFT JOIN LATERAL (SELECT created_at,event_type FROM audit_events
             WHERE payload->>'job_id'=j.id::text ORDER BY id DESC LIMIT 1) progress ON true
           LEFT JOIN publishing_records remote ON remote.job_id=j.id
+          LEFT JOIN blogger_draft_receipts d ON d.job_id=j.id
+          LEFT JOIN LATERAL (SELECT payload,created_at FROM audit_events WHERE event_type='publication.trends_draft.synced'
+            AND payload->>'job_id'=j.id::text ORDER BY id DESC LIMIT 1) sync ON true
           WHERE j.adapter_type='blogger_live' AND NOT j.simulation_only
           ORDER BY j.updated_at DESC,j.id DESC""").fetchall()
         failures = conn.execute("""WITH latest AS (
@@ -53,7 +57,7 @@ def snapshot(view: str, page: int, page_size: int) -> dict[str, Any]:
               ON l.content_version_id=j.content_version_id AND l.import_id=i.id
             WHERE j.blog_id=b.id AND j.content_version_id::text=e.payload->>'content_version_id'
               AND j.adapter_type='blogger_live' AND NOT j.simulation_only
-              AND j.status IN ('queued','running','failed','blocked','uncertain'))
+              AND (j.status IN ('queued','running','failed','blocked','uncertain') OR j.publication_state='draft_saved'))
           AND NOT EXISTS (SELECT 1 FROM publishing_records r WHERE r.blog_id=b.id
             AND r.content_version_id::text=e.payload->>'content_version_id'
             AND r.remote_status='LIVE' AND r.remote_verified_at IS NOT NULL)
@@ -63,7 +67,7 @@ def snapshot(view: str, page: int, page_size: int) -> dict[str, Any]:
     for raw in jobs:
         item = dict(raw)
         state = ('published' if item['remote_status']=='LIVE' and item['remote_verified_at']
-                 else 'queued' if item['status']=='queued' else 'running' if item['status']=='running' else 'failed')
+                 else 'draft_saved' if item['remote_status']=='DRAFT' and item['publication_state']=='draft_saved' else 'queued' if item['status']=='queued' else 'running' if item['status']=='running' else 'failed')
         item.update(kind='job',state=state,job_id=str(item['id']),
                     lease_overdue=bool(item['status']=='running' and item['lease_until'] and item['lease_until']<datetime.now(UTC)),
                     failure_stage='eligibility' if item['block_reasons'] else item['failure_operation'] or 'publication_worker',
@@ -78,7 +82,7 @@ def snapshot(view: str, page: int, page_size: int) -> dict[str, Any]:
                       'failure_stage':p.get('stage'),'failure_reason':p.get('failure_reason_code'),
                       'retry_count':p.get('retry_count',0),'retry_possible':False,
                       'updated_at':failure['created_at'],'registered_at':None})
-    counts = {key:sum(item['state']==key for item in items) for key in ('queued','running','published','failed','pre_job_failure')}
+    counts = {key:sum(item['state']==key for item in items) for key in ('queued','running','published','draft_saved','failed','pre_job_failure')}
     items.sort(key=lambda item:item.get('updated_at') or datetime.min.replace(tzinfo=UTC),reverse=True)
     selected = items if view=='all' else [item for item in items if item['state']==view]
     now = datetime.now(UTC)

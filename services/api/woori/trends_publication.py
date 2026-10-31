@@ -93,7 +93,7 @@ def policy_state(conn: Any) -> dict[str, Any]:
         GROUP BY b.id,g.status,g.scopes ORDER BY b.display_name,b.id"""
     ).fetchall()
     latest = conn.execute(
-        """SELECT DISTINCT ON(blog_id) id,blog_id,enabled,allowed_geos,daily_limit,
+        """SELECT DISTINCT ON(blog_id) id,blog_id,enabled,allowed_geos,daily_limit,publication_mode,
           actor_label,reason,created_at FROM trends_publication_policy_events
         ORDER BY blog_id,id DESC"""
     ).fetchall()
@@ -110,6 +110,7 @@ def policy_state(conn: Any) -> dict[str, Any]:
             blockers.append("fresh_blog_identity_verification_required")
         if not public_approved and external_policy._trends_public_write_approval(str(blog["id"])) is None:
             blockers.append("authenticated_public_publish_approval_required")
+        blog["draft_activation_blockers"] = [b for b in blockers if b not in {"actual_write_verification_required", "authenticated_public_publish_approval_required"}]
         blog["activation_blockers"] = blockers
         blog["activation_ready"] = not blockers
     return {"policies": [{**dict(blog), "policy": policies.get(str(blog["id"]))}
@@ -120,7 +121,7 @@ def policy_state(conn: Any) -> dict[str, Any]:
 
 def record_policy(conn: Any, request: Any) -> dict[str, Any]:
     expected = "ENABLE TRENDS AUTO PUBLICATION" if request.enabled else "STOP TRENDS AUTO PUBLICATION"
-    if request.confirmation != expected:
+    if request.publication_mode == "publish" and request.confirmation != expected:
         raise HTTPException(422, "Explicit Trends publication confirmation is required")
     blog = conn.execute(
         """SELECT b.id,b.blog_id,b.language_code,b.active,b.oauth_connection_id,
@@ -139,7 +140,7 @@ def record_policy(conn: Any, request: Any) -> dict[str, Any]:
     if request.enabled:
         from .google_http import WRITE_SCOPE
         if (not geos or not blog["blog_id"] or not blog["connection_verified_at"]
-                or not blog["test_publish_verified_at"] or blog["oauth_status"] != "connected"
+                or (request.publication_mode == "publish" and not blog["test_publish_verified_at"]) or blog["oauth_status"] != "connected"
                 or list(blog["scopes"] or []) != [WRITE_SCOPE]):
             raise HTTPException(409, "Enabled policy requires a verified Blogger write connection and explicit country mapping")
         if not _recent_identity_verification(conn, request.blog_id, str(blog["blog_id"])):
@@ -148,16 +149,16 @@ def record_policy(conn: Any, request: Any) -> dict[str, Any]:
         if external_policy._blogger_policy_approval() is None:
             raise HTTPException(409, "Blogger zero-cost operations approval is unavailable")
     prior = conn.execute(
-        "SELECT id,blog_id,enabled,allowed_geos,daily_limit FROM trends_publication_policy_events WHERE idempotency_key=%s",
+        "SELECT id,blog_id,enabled,allowed_geos,daily_limit,publication_mode FROM trends_publication_policy_events WHERE idempotency_key=%s",
         (request.idempotency_key,),
     ).fetchone()
     if prior:
         if (str(prior["blog_id"]) != str(request.blog_id) or bool(prior["enabled"]) != request.enabled
                 or sorted(prior["allowed_geos"]) != geos
-                or prior["daily_limit"] != request.daily_limit):
+                or prior["daily_limit"] != request.daily_limit or prior["publication_mode"] != request.publication_mode):
             raise HTTPException(409, "Idempotency key conflicts with an earlier Trends policy event")
         return {"event_id": prior["id"], "duplicate": True, "enabled": request.enabled}
-    if request.enabled:
+    if request.enabled and request.publication_mode == "publish":
         # This authenticated API request contains the explicit enable phrase,
         # actor and reason; never synthesize approval from an agent execution.
         conn.execute("INSERT INTO audit_events(event_type,blog_id,payload) VALUES (%s,%s,%s)",
@@ -170,13 +171,13 @@ def record_policy(conn: Any, request: Any) -> dict[str, Any]:
                 "post_publication_review_required": True,
             })))
     previous = conn.execute(
-        "SELECT id,enabled,allowed_geos,daily_limit FROM trends_publication_policy_events WHERE blog_id=%s ORDER BY id DESC LIMIT 1",
+        "SELECT id,enabled,allowed_geos,daily_limit,publication_mode FROM trends_publication_policy_events WHERE blog_id=%s ORDER BY id DESC LIMIT 1",
         (request.blog_id,),
     ).fetchone()
     saved = conn.execute(
-        """INSERT INTO trends_publication_policy_events(blog_id,enabled,allowed_geos,daily_limit,
-          actor_label,reason,idempotency_key) VALUES(%s,%s,%s,%s,%s,%s,%s) RETURNING id,created_at""",
-        (request.blog_id, request.enabled, geos, request.daily_limit,
+        """INSERT INTO trends_publication_policy_events(blog_id,enabled,allowed_geos,daily_limit,publication_mode,
+          actor_label,reason,idempotency_key) VALUES(%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id,created_at""",
+        (request.blog_id, request.enabled, geos, request.daily_limit, request.publication_mode,
          request.actor_label, request.reason, request.idempotency_key),
     ).fetchone()
     payload = {"event_id": saved["id"], "blog_record_id": str(request.blog_id),
@@ -185,11 +186,12 @@ def record_policy(conn: Any, request: Any) -> dict[str, Any]:
         "actor_label": request.actor_label, "reason": request.reason,
         "previous": dict(previous) if previous else None,
         "provenance": "codex_trends_export", "public_write_performed": False}
+    payload["publication_mode"] = request.publication_mode
     payload["content_policy"] = "trends-post-edit-1"
     conn.execute("INSERT INTO audit_events(event_type,blog_id,payload) VALUES(%s,%s,%s)",
         ("publication.trends_auto.policy_changed", request.blog_id, Jsonb(payload)))
     return {"event_id": saved["id"], "created_at": saved["created_at"],
-            "enabled": request.enabled, "allowed_geos": geos, "daily_limit": request.daily_limit}
+            "enabled": request.enabled, "allowed_geos": geos, "daily_limit": request.daily_limit, "publication_mode": request.publication_mode}
 
 
 def _recent_identity_verification(conn: Any, blog_id: UUID, blogger_id: str) -> bool:
@@ -240,7 +242,7 @@ def validate_trends_job(conn: Any, blog_id: UUID, content_version_id: UUID) -> d
         return {"row": None, "assessment": None, "reasons": ["trends_provenance_or_import_link_missing"]}
     row = dict(row)
     policy = conn.execute(
-        "SELECT id,enabled,allowed_geos,daily_limit FROM trends_publication_policy_events WHERE blog_id=%s ORDER BY id DESC LIMIT 1",
+        "SELECT id,enabled,allowed_geos,daily_limit,publication_mode FROM trends_publication_policy_events WHERE blog_id=%s ORDER BY id DESC LIMIT 1",
         (blog_id,),
     ).fetchone()
     geo = str(row["contract"].get("source_country") or "")
@@ -373,11 +375,11 @@ def enqueue_trends_auto_jobs() -> dict[str, int]:
                     _record_hold(conn, item, blog_id, ["blogger_zero_cost_policy_required"])
                     continue
                 with external_policy.trends_publication_context(str(blog_id)):
-                    if not external_policy._blogger_operation_is_approved("blogger_public_publish"):
+                    if not external_policy._blogger_operation_is_approved("blogger_public_publish" if policy["publication_mode"] == "publish" else "blogger_draft_create"):
                         held += 1
                         _record_hold(conn, item, blog_id, ["trends_publication_policy_inactive"])
                         continue
-                remote = find_remote_duplicate(blog_id, str(item["title"]))
+                remote = find_remote_duplicate(blog_id, str(item["title"]), include_drafts=True)
                 if remote["status"] != "clear":
                     held += 1
                     _record_hold(conn, item, blog_id, ["remote_duplicate_found" if remote["status"] == "found" else "remote_duplicate_check_unknown"])
@@ -414,10 +416,10 @@ def enqueue_trends_auto_jobs() -> dict[str, int]:
                 job = conn.execute(
                     """INSERT INTO publishing_jobs(policy_id,blog_id,content_version_id,idempotency_key,
                     scheduled_at,status,publication_state,adapter_type,simulation_only,oauth_connection_id,
-                    live_stage,publication_lane)
-                    VALUES(%s,%s,%s,%s,now(),'queued','publication_queued','blogger_live',false,%s,'draft_needed','trends_auto')
+                    live_stage,publication_lane,publication_mode,trends_policy_event_id)
+                    VALUES(%s,%s,%s,%s,now(),'queued','publication_queued','blogger_live',false,%s,'draft_needed','trends_auto',%s,%s)
                     ON CONFLICT(idempotency_key) DO NOTHING RETURNING id""",
-                    (policy_row["id"], blog_id, item["content_version_id"], key, item["oauth_connection_id"]),
+                    (policy_row["id"], blog_id, item["content_version_id"], key, item["oauth_connection_id"], policy["publication_mode"], policy["id"]),
                 ).fetchone()
                 if not job:
                     continue
@@ -429,11 +431,13 @@ def enqueue_trends_auto_jobs() -> dict[str, int]:
                     "content_version_id": str(item["content_version_id"]),
                     "trend_topic_id": topic_id, "trend_request_id": str(item["trend_request_id"]),
                     "collection_slot": slot, "source_country": geo, "blog_record_id": str(blog_id),
-                    "policy_event_id": policy["id"], "publication_lane": "trends_auto",
+                    "policy_event_id": policy["id"], "publication_lane": "trends_auto", "publication_mode": policy["publication_mode"],
                     "content_policy": "trends-post-edit-1", "claims_promoted": False,
                     "unverified_claim_count": sum(c.get("verification_status") == "unverified" for c in item["claims"] or []),
                     "idempotency_key": key, "public_write_performed": False,
                 })
+                if policy["publication_mode"] == "draft":
+                    continue
                 conn.execute(
                     """INSERT INTO post_publication_reviews(publishing_job_id,blog_id,content_version_id,
                     import_id,content_id,review_notes) VALUES(%s,%s,%s,%s,%s,'Trends auto publication follow-up review')

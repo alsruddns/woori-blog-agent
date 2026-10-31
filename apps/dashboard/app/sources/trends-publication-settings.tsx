@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 type Policy = {
   id: string;
   enabled: boolean;
+  publication_mode: "draft" | "publish";
   allowed_geos: string[];
   daily_limit: number | null;
   created_at: string;
@@ -17,11 +18,12 @@ type Blog = {
   language_code: string;
   active: boolean;
   activation_blockers?: string[];
+  draft_activation_blockers?: string[];
   mapped_geos: string[];
   policy: Policy | null;
 };
 type State = { policies: Blog[]; supported_geographies: string[] };
-type Draft = { enabled: boolean; geos: string[]; reason: string; confirmation: string };
+type Draft = { enabled: boolean; publication_mode: "draft" | "publish"; geos: string[]; reason: string; confirmation: string };
 const blockerNames: Record<string, string> = {
   country_mapping_required: "수집 국가 매핑 필요",
   blogger_write_oauth_required: "Blogger OAuth 쓰기 권한 확인 필요",
@@ -44,6 +46,7 @@ export default function TrendsPublicationSettings() {
     setState(data);
     setDrafts(Object.fromEntries(data.policies.map(blog => [blog.id, {
       enabled: blog.policy?.enabled ?? false,
+      publication_mode: blog.policy?.publication_mode ?? "draft",
       geos: blog.policy?.allowed_geos ?? [],
       reason: "",
       confirmation: "",
@@ -80,15 +83,15 @@ export default function TrendsPublicationSettings() {
     setMessage("");
     try {
       const confirmation = draft.enabled ? "ENABLE TRENDS AUTO PUBLICATION" : "STOP TRENDS AUTO PUBLICATION";
-      if (draft.confirmation !== confirmation) throw new Error(`확인 문구를 정확히 입력하세요: ${confirmation}`);
+      if (draft.publication_mode === "publish" && draft.confirmation !== confirmation) throw new Error(`확인 문구를 정확히 입력하세요: ${confirmation}`);
       const response = await fetch("/api/publications/trends-auto-policy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          blog_id: blog.id, enabled: draft.enabled,
+          blog_id: blog.id, enabled: draft.enabled, publication_mode: draft.publication_mode,
           allowed_geos: draft.geos, daily_limit: null,
           actor_label: actor, reason: draft.reason,
-          confirmation, idempotency_key: crypto.randomUUID(),
+          confirmation: draft.publication_mode === "publish" ? confirmation : "", idempotency_key: crypto.randomUUID(),
         }),
       });
       const result = await response.json();
@@ -104,7 +107,7 @@ export default function TrendsPublicationSettings() {
 
   return <section className="workspace-panel" aria-labelledby="trends-auto-policy-heading">
     <h2 id="trends-auto-policy-heading">Google Trends 자동 발행 정책</h2>
-    <p>예약 Auto와 별도인 Trends 전용 정책입니다. 이 설정만으로 공개 쓰기가 허용되지는 않습니다. 검증된 주장·출처·권리, Blogger 매핑, 긴급 정지, 별도 운영 공개 승인과 Worker 상태를 매번 확인합니다.</p>
+    <p>예약 Auto와 별도인 Trends 전용 정책입니다. 기본값은 비공개 초안 저장이며 공개 승인이 필요하지 않습니다. 즉시 공개는 관리자의 명시적 승인이 필요합니다. 미검증 상태는 보존하고 Blogger 매핑·중복·긴급 정지·Worker 상태를 확인합니다.</p>
     <label>설정 변경자<input value={actor} minLength={2} maxLength={120} onChange={event => setActor(event.target.value)} /></label>
     {!state && !message && <p role="status">정책을 불러오는 중입니다.</p>}
     {state?.policies.map(blog => {
@@ -113,10 +116,15 @@ export default function TrendsPublicationSettings() {
       const confirmation = draft.enabled ? "ENABLE TRENDS AUTO PUBLICATION" : "STOP TRENDS AUTO PUBLICATION";
       return <fieldset className="trend-blog-geo" key={blog.id}>
         <legend>{blog.display_name} · {blog.language_code}</legend>
+        <div role="group" aria-label={`${blog.display_name} 발행 방식`}>
+          <label><input type="radio" name={`mode-${blog.id}`} checked={draft.publication_mode === "draft"} onChange={() => patch(blog.id, { publication_mode: "draft", confirmation: "" })} />임시발행(비공개 초안 저장) · 기본</label>
+          <label><input type="radio" name={`mode-${blog.id}`} checked={draft.publication_mode === "publish"} onChange={() => patch(blog.id, { publication_mode: "publish", confirmation: "" })} />즉시 공개 발행 · 관리자 승인</label>
+        </div>
+        <p>{draft.publication_mode === "draft" ? "공개 승인 없이 비공개 초안을 저장합니다. 이후 Blogger에서 직접 수정·공개할 수 있습니다." : "저장 시 이 블로그와 선택 국가의 이후 신규 원고 자동 공개를 명시적으로 승인합니다."}</p>
         <button type="button" className="button button-secondary" disabled={busy !== null || !blog.active || !blog.mapped_geos.length} onClick={() => void verify(blog)}>현재 연결·기존 LIVE 쓰기 이력 확인</button>
         <p>{blog.url} · Blogger ID: {blog.blog_id ?? "미확인"}</p>
-        <p>활성화 저장은 이 블로그의 Trends 자동 공개를 승인하고 감사 기록에 남깁니다. 기본 안전·중복·발행 간격 검사를 적용하며 미검증 항목은 게시 후 직접 검토하는 정책입니다.</p>
-        <p>{blog.activation_blockers?.length ? `활성화 준비: ${blog.activation_blockers.map(code => blockerNames[code] ?? code).join(", ")}` : "활성화 조건 확인됨"}</p>
+        <p>이후 새 수집 회차에 적용되며 기존 Job의 발행 방식은 바뀌지 않습니다. 기본 안전·중복·쓰기 간격 검사를 유지하고 미검증 항목은 직접 검토합니다.</p>
+        <p>{(draft.publication_mode === "draft" ? blog.draft_activation_blockers : blog.activation_blockers)?.length ? `활성화 준비: ${(draft.publication_mode === "draft" ? blog.draft_activation_blockers : blog.activation_blockers)!.map(code => blockerNames[code] ?? code).join(", ")}` : "활성화 조건 확인됨"}</p>
         <p>상태: {blog.policy?.enabled ? "활성" : "비활성"} · 연결된 수집 지역: {blog.mapped_geos.length ? blog.mapped_geos.join(", ") : "없음"}</p>
         <label><input type="checkbox" checked={draft.enabled} onChange={event => patch(blog.id, { enabled: event.target.checked, confirmation: "" })} /> Trends 자동 발행 허용</label>
         <div className="trend-geo-options">{blog.mapped_geos.map(geo => <label key={geo}>
@@ -126,8 +134,8 @@ export default function TrendsPublicationSettings() {
         </label>)}</div>
         <p>발행량 상한: 무제한 (검증·중복 방지·최소 발행 간격은 계속 적용)</p>
         <label>변경 사유<input minLength={10} maxLength={2000} value={draft.reason} onChange={event => patch(blog.id, { reason: event.target.value, confirmation: "" })} /></label>
-        <label>명시적 확인 문구<input value={draft.confirmation} placeholder={confirmation} onChange={event => patch(blog.id, { confirmation: event.target.value })} /></label>
-        <button type="button" className="button button-secondary" disabled={busy !== null || !blog.active || actor.trim().length < 2 || draft.reason.trim().length < 10 || draft.confirmation !== confirmation || (draft.enabled && (!draft.geos.length || !blog.mapped_geos.length))} onClick={() => void save(blog)}>
+        {draft.publication_mode === "publish" && <label>공개 발행 명시적 확인 문구<input value={draft.confirmation} placeholder={confirmation} onChange={event => patch(blog.id, { confirmation: event.target.value })} /></label>}
+        <button type="button" className="button button-secondary" disabled={busy !== null || !blog.active || actor.trim().length < 2 || draft.reason.trim().length < 10 || (draft.publication_mode === "publish" && draft.confirmation !== confirmation) || (draft.enabled && (!draft.geos.length || !blog.mapped_geos.length))} onClick={() => void save(blog)}>
           {busy === blog.id ? "저장 중…" : "정책 변경 기록"}
         </button>
         {blog.policy && <small>마지막 변경: {new Intl.DateTimeFormat("ko-KR", { dateStyle: "short", timeStyle: "short", timeZone: "Asia/Seoul" }).format(new Date(blog.policy.created_at))} · 발행량 상한 {blog.policy.daily_limit === null ? "무제한" : `${blog.policy.daily_limit}건`}</small>}

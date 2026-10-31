@@ -139,17 +139,18 @@ class TrendsAutoPolicyInput(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     blog_id: UUID
     enabled: bool
+    publication_mode: Literal["draft", "publish"] = "draft"
     allowed_geos: list[str] = Field(default_factory=list, max_length=11)
     daily_limit: int | None = Field(default=None, ge=1, le=10)
     actor_label: str = Field(min_length=2, max_length=120)
     reason: str = Field(min_length=10, max_length=2000)
     idempotency_key: str = Field(min_length=16, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
-    confirmation: Literal["ENABLE TRENDS AUTO PUBLICATION", "STOP TRENDS AUTO PUBLICATION"]
+    confirmation: str = ""
 
     @model_validator(mode="after")
     def action_confirmation_matches(self) -> TrendsAutoPolicyInput:
         expected = "ENABLE TRENDS AUTO PUBLICATION" if self.enabled else "STOP TRENDS AUTO PUBLICATION"
-        if self.confirmation != expected:
+        if self.publication_mode == "publish" and self.confirmation != expected:
             raise ValueError("explicit_trends_publication_confirmation_required")
         if any(value not in {"KR","US","GB","CA","AU","IN","JP","TW","HK","SG","PH","BR"}
                for value in self.allowed_geos):
@@ -1354,7 +1355,7 @@ def _manual_publication_blockers(
 
 @router.get('/worker-jobs')
 def worker_job_monitor(
-    view: Literal['all','queued','running','published','failed','pre_job_failure'] = 'all',
+    view: Literal['all','queued','running','published','draft_saved','failed','pre_job_failure'] = 'all',
     page: int = Query(1, ge=1), page_size: int = Query(25, ge=1, le=100),
 ) -> dict[str, Any]:
     from .publication_monitor import snapshot
@@ -1664,7 +1665,7 @@ def list_publications(
                   ON l.content_version_id=j.content_version_id AND l.import_id=i.id
                 WHERE j.blog_id=b.id AND j.content_version_id=v.id
                   AND j.adapter_type='blogger_live' AND NOT j.simulation_only
-                  AND j.status IN ('queued','running','failed','blocked','uncertain'))
+                  AND (j.status IN ('queued','running','failed','blocked','uncertain') OR j.publication_state='draft_saved'))
               AND NOT EXISTS (SELECT 1 FROM publishing_records r WHERE r.blog_id=b.id
                 AND r.content_version_id=v.id AND r.remote_status='LIVE' AND r.remote_verified_at IS NOT NULL)
             ORDER BY e.id DESC"""
@@ -1761,6 +1762,40 @@ def list_publications(
         }
 
 
+@router.post("/jobs/{job_id}/sync-draft")
+def sync_trends_draft(job_id: UUID) -> dict[str, Any]:
+    from . import blogger_service
+    with connection() as conn:
+        row = conn.execute("""SELECT j.blog_id,b.blog_id blogger_id,j.remote_post_id
+            FROM publishing_jobs j JOIN blogger_blogs b ON b.id=j.blog_id
+            AND b.oauth_connection_id=j.oauth_connection_id
+            WHERE j.id=%s AND j.publication_lane='trends_auto' AND j.publication_mode='draft'
+              AND j.remote_post_id IS NOT NULL""",(job_id,)).fetchone()
+    if not row:
+        raise HTTPException(404,"Recorded Trends draft not found")
+    remote = blogger_service.post(row["blog_id"],row["remote_post_id"])
+    if (str(remote.get("id")) != row["remote_post_id"] or str((remote.get("blog") or {}).get("id")) != row["blogger_id"]
+            or remote.get("status") not in {"DRAFT","LIVE"}):
+        raise HTTPException(409,"Remote draft identity or status mismatch")
+    result = {"job_id":str(job_id),"post_id":row["remote_post_id"],"remote_status":remote["status"],
+              "remote_url":remote.get("url") if remote["status"] == "LIVE" else None,"blogger_write_performed":False}
+    with connection() as conn:
+        conn.execute("INSERT INTO audit_events(event_type,blog_id,payload) VALUES ('publication.trends_draft.synced',%s,%s)",
+            (row["blog_id"],Jsonb(result)))
+    return result
+
+
+@router.patch("/jobs/{job_id}/draft-review")
+def review_trends_draft(job_id: UUID, request: PostPublicationReviewUpdate) -> dict[str, Any]:
+    with connection() as conn:
+        if not conn.execute("SELECT 1 FROM blogger_draft_receipts WHERE job_id=%s",(job_id,)).fetchone():
+            raise HTTPException(404,"Verified draft receipt not found")
+        payload={"job_id":str(job_id),"review_status":request.review_status,"review_notes":request.review_notes,
+                 "actor":"authenticated_dashboard_operator","remote_edit_verified":False}
+        conn.execute("INSERT INTO audit_events(event_type,payload) VALUES ('publication.trends_draft.reviewed',%s)",(Jsonb(payload),))
+    return payload
+
+
 @router.get("/post-publication-reviews")
 def list_post_publication_reviews(
     status: Literal["all", "pending", "completed"] = Query("all"),
@@ -1768,7 +1803,7 @@ def list_post_publication_reviews(
     """List manually and automatically published posts whose LIVE status was remotely verified."""
     with connection() as conn:
         rows = conn.execute(
-            """SELECT r.id,r.review_status,r.review_notes,r.created_at,r.updated_at,
+            """SELECT 'publish'::text publication_mode,r.id,r.review_status,r.review_notes,r.created_at,r.updated_at,
                 p.remote_url,p.remote_post_id,p.published_at,p.remote_verified_at,
                 p.content_version_id,r.content_id,v.title,b.language_code,b.url AS blog_url,
                 i.import_id,i.claims AS claim_verification,COALESCE(open_items.n,0)::int AS open_item_count,
@@ -1796,7 +1831,25 @@ def list_post_publication_reviews(
             ORDER BY high_count DESC,open_items.n DESC,p.published_at DESC,r.id""",
             (status,status,status),
         ).fetchall()
-        return {"items": [dict(row) for row in rows], "total": len(rows), "verified_live_only": True}
+        drafts = conn.execute("""SELECT d.job_id id,'draft'::text publication_mode,
+            COALESCE(review.payload->>'review_status','pending') review_status,
+            COALESCE(review.payload->>'review_notes','') review_notes,d.verified_at published_at,
+            d.remote_post_id,COALESCE(sync.payload->>'remote_status','DRAFT') remote_status,
+            sync.payload->>'remote_url' remote_url,d.content_version_id,v.title,b.language_code,b.url blog_url,
+            0 open_item_count,0 high_count,'[]'::jsonb review_items,i.claims claim_verification
+            FROM blogger_draft_receipts d JOIN content_versions v ON v.id=d.content_version_id
+            JOIN blogger_blogs b ON b.id=d.blog_id
+            LEFT JOIN external_content_import_content_links l ON l.content_version_id=d.content_version_id
+            LEFT JOIN external_content_imports i ON i.id=l.import_id
+            LEFT JOIN LATERAL (SELECT payload FROM audit_events WHERE event_type='publication.trends_draft.reviewed'
+              AND payload->>'job_id'=d.job_id::text ORDER BY id DESC LIMIT 1) review ON true
+            LEFT JOIN LATERAL (SELECT payload FROM audit_events WHERE event_type='publication.trends_draft.synced'
+              AND payload->>'job_id'=d.job_id::text ORDER BY id DESC LIMIT 1) sync ON true
+            WHERE (%s='all' OR (%s='pending' AND COALESCE(review.payload->>'review_status','pending')<>'completed')
+              OR (%s='completed' AND review.payload->>'review_status'='completed'))
+            ORDER BY d.verified_at DESC""",(status,status,status)).fetchall()
+        items = [dict(row) for row in [*rows,*drafts]]
+        return {"items":items,"total":len(items),"verified_live_only":False,"verified_remote_only":True}
 
 
 @router.patch("/post-publication-reviews/{review_id}")

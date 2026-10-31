@@ -969,6 +969,20 @@ def get_content_import(import_id: UUID) -> dict[str, Any]:
              str(latest.get("content_version_id")) if latest and latest.get("content_version_id") else None),
         ).fetchone()
         item_result = dict(row)
+        delivery = conn.execute("""SELECT j.id job_id,j.publication_mode,j.publication_state,j.remote_post_id,
+            b.display_name blog_name,b.blog_id blogger_id,COALESCE(p.remote_status,sync.payload->>'remote_status',d.remote_status) remote_status,
+            COALESCE(p.remote_url,sync.payload->>'remote_url') remote_url,COALESCE(p.remote_verified_at,sync.created_at,d.verified_at) verified_at,
+            COALESCE(review.payload->>'review_status',d.review_status) review_status
+            FROM publishing_jobs j JOIN blogger_blogs b ON b.id=j.blog_id
+            LEFT JOIN blogger_draft_receipts d ON d.job_id=j.id LEFT JOIN publishing_records p ON p.job_id=j.id
+            LEFT JOIN LATERAL (SELECT payload,created_at FROM audit_events WHERE event_type='publication.trends_draft.synced'
+              AND payload->>'job_id'=j.id::text ORDER BY id DESC LIMIT 1) sync ON true
+            LEFT JOIN LATERAL (SELECT payload FROM audit_events WHERE event_type='publication.trends_draft.reviewed'
+              AND payload->>'job_id'=j.id::text ORDER BY id DESC LIMIT 1) review ON true
+            WHERE j.content_version_id=%s AND NOT j.simulation_only ORDER BY j.updated_at DESC LIMIT 1""",
+            ((latest or {}).get("content_version_id"),)).fetchone()
+        item_result["blogger_delivery"] = dict(delivery) if delivery else None
+
         from .claim_evidence import assess_claim_evidence
         claim_evidence = assess_claim_evidence(item_result, {
             str(event["payload"].get("source_id")): event["payload"] for event in source_verifications

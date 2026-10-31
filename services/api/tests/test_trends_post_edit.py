@@ -2,6 +2,7 @@ from contextlib import contextmanager
 from copy import deepcopy
 from uuid import uuid4
 
+import psycopg
 import pytest
 from psycopg.types.json import Jsonb
 from test_content_imports import valid_item
@@ -94,13 +95,14 @@ def test_unverified_trends_job_enqueue_and_duplicate_reuse(monkeypatch):
     monkeypatch.setattr("woori.trends_publication.connection", shared)
     monkeypatch.setattr(external_policy, "_blogger_policy_approval", lambda: {"approved": True})
     monkeypatch.setattr(external_policy, "_blogger_operation_is_approved", lambda _: True)
-    monkeypatch.setattr(scheduled_duplicates, "find_remote_duplicate", lambda *_: {"status": "clear"})
+    monkeypatch.setattr(scheduled_duplicates, "find_remote_duplicate", lambda *_, **__: {"status": "clear"})
     assert enqueue_trends_auto_jobs() == {"created": 1, "held": 0}
     assert enqueue_trends_auto_jobs() == {"created": 0, "held": 0}
     assert fake.claims[0]["verification_status"] == "unverified"
 
 
-def test_isolated_import_enqueue_worker_and_live_receipt(lab, monkeypatch):
+@pytest.mark.parametrize("mode,recover", [("draft",False),("publish",False),("draft",True)])
+def test_isolated_import_enqueue_worker_and_live_receipt(lab, monkeypatch, mode, recover):
     conn, api, headers = lab
     @contextmanager
     def shared():
@@ -109,9 +111,9 @@ def test_isolated_import_enqueue_worker_and_live_receipt(lab, monkeypatch):
     for module in (content_imports, publications, publication_worker, trends_publication):
         monkeypatch.setattr(module, "connection", shared)
     monkeypatch.setattr(external_policy, "_blogger_policy_approval", lambda: {"approved": True})
-    monkeypatch.setattr(external_policy, "_blogger_operation_is_approved", lambda _: True)
-    monkeypatch.setattr(scheduled_duplicates, "find_remote_duplicate", lambda *_: {"status": "clear"})
-    monkeypatch.setattr(publication_worker, "find_remote_duplicate", lambda *_: {"status": "clear"})
+    monkeypatch.setattr(external_policy, "_blogger_operation_is_approved", lambda op: mode != "draft" or op != "blogger_public_publish")
+    monkeypatch.setattr(scheduled_duplicates, "find_remote_duplicate", lambda *_, **__: {"status": "clear"})
+    monkeypatch.setattr(publication_worker, "find_remote_duplicate", lambda *_, **__: {"status": "clear"})
     payload = item()
     payload['claims'] = [{"claim_id": "general", "claim": "Readers can compare organizational approaches.",
         "source_ids": [], "evidence_excerpt": "", "verification_status": "unverified", "factual_state": "unverified"}]
@@ -127,7 +129,18 @@ def test_isolated_import_enqueue_worker_and_live_receipt(lab, monkeypatch):
     conn.execute("INSERT INTO publishing_policies(language_code,blog_id,profile_id) VALUES ('en',%s,%s)", (blog,profile))
     conn.execute("UPDATE trend_blog_geo_authoring SET enabled=false WHERE geo='US'")
     conn.execute("INSERT INTO trend_blog_geo_authoring(blog_id,geo,enabled,processing_order) VALUES (%s,'US',true,1)",(blog,))
-    conn.execute("INSERT INTO trends_publication_policy_events(blog_id,enabled,allowed_geos,daily_limit,actor_label,reason,idempotency_key,created_at) VALUES (%s,true,ARRAY['US'],NULL,'isolated','isolated scope approval',%s,now()-interval '1 minute')",(blog,uuid4().hex))
+    if mode == 'draft':
+        conn.execute("UPDATE blogger_blogs SET test_publish_verified_at=NULL WHERE id=%s",(blog,))
+    conn.execute("INSERT INTO audit_events(event_type,payload) VALUES ('publication.trends_auto.connection_check',%s)",
+        (Jsonb({'results':[{'blog_record_id':str(blog),'remote_blog_id':'1234567890','verified':True}]}),))
+    approvals_before=conn.execute("SELECT count(*) n FROM audit_events WHERE event_type='publication.trends_public_write.approved'").fetchone()['n']
+    policy_response=api.post('/admin/publications/trends-auto-policy',headers=headers,json={
+        'blog_id':str(blog),'enabled':True,'allowed_geos':['US'],'publication_mode':mode,'daily_limit':None,
+        'actor_label':'isolated manager','reason':'Isolated policy lifecycle test','idempotency_key':uuid4().hex,
+        'confirmation':'ENABLE TRENDS AUTO PUBLICATION' if mode=='publish' else ''})
+    assert policy_response.status_code==201, policy_response.text
+    approvals_after=conn.execute("SELECT count(*) n FROM audit_events WHERE event_type='publication.trends_public_write.approved'").fetchone()['n']
+    assert approvals_after-approvals_before == (1 if mode=='publish' else 0)
     topic=uuid4()
     conn.execute("INSERT INTO trend_topics(id,normalized_key,representative_geo,representative_query,grouping_method,grouping_confidence,grouping_status) VALUES (%s,%s,'US','organization','single_observation',1,'exact_query_cluster_not_event_confirmed')",(topic,uuid4().hex))
     job=conn.execute("""INSERT INTO codex_authoring_jobs(request_key,request_sha256,job_type,blog_id,language_code,target_country,
@@ -139,14 +152,44 @@ def test_isolated_import_enqueue_worker_and_live_receipt(lab, monkeypatch):
     conn.execute("UPDATE publication_mode_settings SET emergency_stopped=false WHERE scope_type='global' AND scope_key=''")
     assert enqueue_trends_auto_jobs()['created']==1
     assert enqueue_trends_auto_jobs()['created']==0
+    bound=conn.execute("SELECT id,publication_mode,trends_policy_event_id FROM publishing_jobs WHERE blog_id=%s",(blog,)).fetchone()
+    assert bound['publication_mode']==mode and bound['trends_policy_event_id']
+    with pytest.raises(psycopg.errors.RaiseException, match='snapshot_immutable'), conn.transaction():
+        conn.execute("UPDATE publishing_jobs SET publication_mode=%s WHERE id=%s",('publish' if mode=='draft' else 'draft',bound['id']))
+    if recover:
+        from woori import blogger_service
+        ledger={'post_id':'456','blog_id':'1234567890','status':'DRAFT','post_verified':True}
+        conn.execute("INSERT INTO blogger_write_operations(idempotency_key,request_fingerprint,operation,status,result) VALUES (%s,%s,'create_draft','succeeded',%s)",
+            ('live:pubjob-'+str(bound['id'])+'-draft','a'*64,Jsonb(ledger)))
+        conn.execute("UPDATE publishing_jobs SET status='running',lease_until=now()-interval '1 second' WHERE id=%s",(bound['id'],))
+        monkeypatch.setattr(blogger_service,'post',lambda *_:{'id':'456','blog':{'id':'1234567890'},'status':'DRAFT','content':'User edited this draft'})
     class Publisher:
         def create_draft(self,*args,**kwargs):
-            return {'post_id':'456','http_status':200,'post_verified':True}
+            assert not recover, 'recovery must never POST again'
+            return {'post_id':'456','http_status':200,'post_verified':True,'status':'DRAFT'}
         def publish_draft(self,*args,**kwargs):
             return {'post_id':'456','url':'https://isolated.blogspot.com/article.html','status':'LIVE',
                     'readback_verified':True,'http_status':200,'published_at':slot}
     monkeypatch.setattr(publication_worker,'BloggerLivePublisher',Publisher)
     result=publication_worker.process_next_live_job(trends_auto_only=True)
+    if mode == 'draft':
+        assert result['status']=='draft_saved', result
+        assert conn.execute("SELECT remote_status FROM blogger_draft_receipts WHERE blog_id=%s",(blog,)).fetchone()['remote_status']=='DRAFT'
+        assert conn.execute("SELECT count(*) n FROM publishing_records WHERE blog_id=%s",(blog,)).fetchone()['n']==0
+        assert publication_worker.process_next_live_job(trends_auto_only=True) is None
+        from woori import blogger_service, publication_monitor
+        monkeypatch.setattr(publication_monitor,'connection',shared)
+        monkeypatch.setattr(blogger_service,'post',lambda *_:{'id':'456','blog':{'id':'1234567890'},'status':'LIVE','url':'https://isolated.blogspot.com/edited.html'})
+        synced=api.post('/admin/publications/jobs/'+str(bound['id'])+'/sync-draft',headers=headers)
+        assert synced.status_code==200 and synced.json()['remote_status']=='LIVE'
+        monitor=publication_monitor.snapshot('all',1,50)
+        tracked=next(j for j in monitor['items'] if j['job_id']==str(bound['id']))
+        assert tracked['state']=='published' and tracked['publication_mode']=='draft'
+        reviewed=api.patch('/admin/publications/jobs/'+str(bound['id'])+'/draft-review',headers=headers,
+            json={'review_status':'completed','review_notes':'User manually reviewed the Blogger draft.'})
+        assert reviewed.status_code==200 and reviewed.json()['remote_edit_verified'] is False
+        assert conn.execute("SELECT publication_mode FROM publishing_jobs WHERE id=%s",(bound['id'],)).fetchone()['publication_mode']=='draft'
+        return
     assert result['status']=='draft_created', result
     conn.execute("UPDATE publishing_jobs SET available_at=now() WHERE blog_id=%s",(blog,))
     result=publication_worker.process_next_live_job(trends_auto_only=True)
