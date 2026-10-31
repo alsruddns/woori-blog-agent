@@ -821,6 +821,7 @@ def create_manual_live_request(request: ManualLiveRequestInput) -> dict[str, Any
             "INSERT INTO audit_events(event_type,blog_id,language_code,payload) VALUES ('publication.manual_request.approved',%s,%s,%s)",
             (request.blog_id, row["blog_language"], Jsonb({
                 "job_id": str(inserted["id"]), "approval_event_id": approval["id"],
+                "publication_mode": request.publication_mode, "authenticated_access": "admin_api",
                 "content_version_id": str(request.content_version_id),
                 "import_id": snapshot["import_id"], "generation_method": snapshot["generation_method"],
                 "title_sha256": snapshot["title_sha256"], "body_sha256": snapshot["body_sha256"],

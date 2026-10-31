@@ -133,10 +133,10 @@ export default function ExternalImportWorkspace({ embedded = false, detailReques
   const [approvalActor, setApprovalActor] = useState("admin");
   const [approvalReason, setApprovalReason] = useState("\uD655\uC778\uC644\uB8CC");
   const [manualAttest, setManualAttest] = useState({ content: true, facts: true, rights: true });
-  const [manualMode, setManualMode] = useState<"publish" | "draft">("publish");
-  useEffect(() => {
-    try { const saved = localStorage.getItem("woori-manual-publication-mode"); if (saved === "publish" || saved === "draft") setManualMode(saved); } catch { /* Keep the safe explicit-click default. */ }
-  }, []);
+  const [manualMode, setManualMode] = useState<"publish" | "draft">(() => {
+    try { if (typeof window !== "undefined" && localStorage.getItem("woori-manual-publication-mode") === "draft") return "draft"; } catch { /* Use the default when storage is unavailable. */ }
+    return "publish";
+  });
   const manualSubmitting = useRef(false);
   const [manualOutcomeUnknown,setManualOutcomeUnknown]=useState(false);
   const [targetLanguage, setTargetLanguage] = useState<(typeof languages)[number]>("ko");

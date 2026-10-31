@@ -84,3 +84,29 @@ def test_manual_confirmation_matches_requested_mode(mode):
     assert ManualLiveRequestInput.model_validate(payload).publication_mode == mode
     with pytest.raises(ValidationError):
         ManualLiveRequestInput.model_validate({**payload, "confirmation": "yes"})
+
+
+def test_google_403_persists_stop_and_prevents_another_post(monkeypatch):
+    calls = []
+    with connection() as conn:
+        @contextmanager
+        def shared():
+            with conn.transaction():
+                yield conn
+        monkeypatch.setattr(blogger_writes, "connection", shared)
+        monkeypatch.setattr(publication_operation, "connection", shared)
+        monkeypatch.setattr(blogger_writes.google_oauth, "access_token", lambda _: "mock-only")
+        original = publication_operation.blogger_writes_allowed
+        monkeypatch.setattr(publication_operation, "blogger_writes_allowed", lambda: True)
+        def handler(request):
+            calls.append(request.method)
+            return httpx.Response(403, json={"error":{"errors":[{"reason":"forbidden"}]}})
+        monkeypatch.setattr(external_policy, "client", lambda *args, **kwargs: httpx.Client(transport=httpx.MockTransport(handler)))
+        with pytest.raises(GoogleFailure):
+            blogger_writes._live_response(connection_id=uuid4(), operation="blogger_draft_create", method="POST", path="/blogs/123/posts")
+        row = conn.execute("SELECT emergency_stopped,blogger_api_restricted FROM publication_mode_settings WHERE scope_type='global'").fetchone()
+        assert row['emergency_stopped'] and row['blogger_api_restricted']
+        monkeypatch.setattr(publication_operation, "blogger_writes_allowed", original)
+        with pytest.raises(GoogleFailure, match="authoring_only"):
+            blogger_writes._live_response(connection_id=uuid4(), operation="blogger_draft_create", method="POST", path="/blogs/123/posts")
+        assert calls == ['POST']  # Mock only; no second POST or real Google request.
