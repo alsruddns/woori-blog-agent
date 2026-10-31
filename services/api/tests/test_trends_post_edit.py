@@ -156,6 +156,18 @@ def test_isolated_import_enqueue_worker_and_live_receipt(lab, monkeypatch, mode,
     assert bound['publication_mode']==mode and bound['trends_policy_event_id']
     with pytest.raises(psycopg.errors.RaiseException, match='snapshot_immutable'), conn.transaction():
         conn.execute("UPDATE publishing_jobs SET publication_mode=%s WHERE id=%s",('publish' if mode=='draft' else 'draft',bound['id']))
+    if not recover:
+        # A later policy mode must not upgrade a queued private draft or rewrite
+        # an already-confirmed public Job. All records are inside lab rollback.
+        conn.execute('UPDATE blogger_blogs SET test_publish_verified_at=now() WHERE id=%s',(blog,))
+        changed=api.post('/admin/publications/trends-auto-policy',headers=headers,json={
+            'blog_id':str(blog),'enabled':True,'allowed_geos':['US'],
+            'publication_mode':'publish' if mode=='draft' else 'draft','daily_limit':None,
+            'actor_label':'isolated manager','reason':'Isolated later policy mode switch',
+            'idempotency_key':uuid4().hex,
+            'confirmation':'ENABLE TRENDS AUTO PUBLICATION' if mode=='draft' else ''})
+        assert changed.status_code==201, changed.text
+        assert conn.execute('SELECT publication_mode FROM publishing_jobs WHERE id=%s',(bound['id'],)).fetchone()['publication_mode']==mode
     if recover:
         from woori import blogger_service
         ledger={'post_id':'456','blog_id':'1234567890','status':'DRAFT','post_verified':True}
@@ -168,6 +180,7 @@ def test_isolated_import_enqueue_worker_and_live_receipt(lab, monkeypatch, mode,
             assert not recover, 'recovery must never POST again'
             return {'post_id':'456','http_status':200,'post_verified':True,'status':'DRAFT'}
         def publish_draft(self,*args,**kwargs):
+            assert mode == 'publish', 'a later public policy must never publish an existing Draft Job'
             return {'post_id':'456','url':'https://isolated.blogspot.com/article.html','status':'LIVE',
                     'readback_verified':True,'http_status':200,'published_at':slot}
     monkeypatch.setattr(publication_worker,'BloggerLivePublisher',Publisher)

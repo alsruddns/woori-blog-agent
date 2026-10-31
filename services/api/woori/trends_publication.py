@@ -87,6 +87,9 @@ def policy_state(conn: Any) -> dict[str, Any]:
         """SELECT b.id,b.blog_id,b.display_name,b.language_code,b.url,b.active,
           b.oauth_connection_id,b.connection_verified_at,b.test_publish_verified_at,
           g.status AS oauth_status,g.scopes,
+          GREATEST((SELECT max(d.verified_at) FROM blogger_draft_receipts d WHERE d.blog_id=b.id),
+            (SELECT max(r.remote_verified_at) FROM publishing_records r JOIN publishing_jobs j ON j.id=r.job_id
+              WHERE r.blog_id=b.id AND j.publication_lane='trends_auto' AND r.remote_status='LIVE')) AS last_completed_at,
           COALESCE(array_agg(DISTINCT m.geo) FILTER (WHERE m.enabled),ARRAY[]::text[]) AS mapped_geos
         FROM blogger_blogs b LEFT JOIN google_connections g ON g.id=b.oauth_connection_id
         LEFT JOIN trend_blog_geo_authoring m ON m.blog_id=b.id
@@ -100,6 +103,7 @@ def policy_state(conn: Any) -> dict[str, Any]:
     policies = {str(row["blog_id"]): dict(row) for row in latest}
     from . import external_policy
     public_approved = external_policy._blogger_public_publish_approval() is not None
+    emergency = conn.execute("SELECT emergency_stopped FROM publication_mode_settings WHERE scope_type='global' AND scope_key=''").fetchone()
     for blog in blogs:
         blockers = []
         if not blog["mapped_geos"]: blockers.append("country_mapping_required")
@@ -108,7 +112,8 @@ def policy_state(conn: Any) -> dict[str, Any]:
         if not blog["test_publish_verified_at"]: blockers.append("actual_write_verification_required")
         if not _recent_identity_verification(conn, blog["id"], str(blog["blog_id"])):
             blockers.append("fresh_blog_identity_verification_required")
-        if not public_approved and external_policy._trends_public_write_approval(str(blog["id"])) is None:
+        blog['public_approval_present'] = public_approved or external_policy._trends_public_write_approval(str(blog['id'])) is not None
+        if not blog['public_approval_present']:
             blockers.append("authenticated_public_publish_approval_required")
         blog["draft_activation_blockers"] = [b for b in blockers if b not in {"actual_write_verification_required", "authenticated_public_publish_approval_required"}]
         blog["activation_blockers"] = blockers
@@ -116,7 +121,8 @@ def policy_state(conn: Any) -> dict[str, Any]:
     return {"policies": [{**dict(blog), "policy": policies.get(str(blog["id"]))}
                           for blog in blogs],
             "supported_geographies": sorted(ALLOWED_GEOGRAPHIES),
-            "provenance": "codex_trends_export", "publication_lane": "trends_auto"}
+            "provenance": "codex_trends_export", "publication_lane": "trends_auto",
+            "emergency_stopped": not emergency or bool(emergency['emergency_stopped'])}
 
 
 def record_policy(conn: Any, request: Any) -> dict[str, Any]:

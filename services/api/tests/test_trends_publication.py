@@ -64,6 +64,7 @@ def test_trends_auto_policy_defaults_to_unlimited_and_accepts_none() -> None:
         confirmation="ENABLE TRENDS AUTO PUBLICATION",
     )
     assert request.daily_limit is None
+    assert request.publication_mode == 'draft'
 
 
 def test_trends_policy_needs_separate_public_write_approval(monkeypatch) -> None:

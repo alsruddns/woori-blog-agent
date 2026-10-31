@@ -17,12 +17,15 @@ type Blog = {
   url: string;
   language_code: string;
   active: boolean;
+  oauth_status?: string;
+  last_completed_at?: string | null;
+  public_approval_present?: boolean;
   activation_blockers?: string[];
   draft_activation_blockers?: string[];
   mapped_geos: string[];
   policy: Policy | null;
 };
-type State = { policies: Blog[]; supported_geographies: string[] };
+type State = { policies: Blog[]; supported_geographies: string[]; emergency_stopped?: boolean };
 type Draft = { enabled: boolean; publication_mode: "draft" | "publish"; geos: string[]; reason: string; confirmation: string };
 const blockerNames: Record<string, string> = {
   country_mapping_required: "수집 국가 매핑 필요",
@@ -126,6 +129,9 @@ export default function TrendsPublicationSettings() {
         <p>이후 새 수집 회차에 적용되며 기존 Job의 발행 방식은 바뀌지 않습니다. 기본 안전·중복·쓰기 간격 검사를 유지하고 미검증 항목은 직접 검토합니다.</p>
         <p>{(draft.publication_mode === "draft" ? blog.draft_activation_blockers : blog.activation_blockers)?.length ? `활성화 준비: ${(draft.publication_mode === "draft" ? blog.draft_activation_blockers : blog.activation_blockers)!.map(code => blockerNames[code] ?? code).join(", ")}` : "활성화 조건 확인됨"}</p>
         <p>상태: {blog.policy?.enabled ? "활성" : "비활성"} · 연결된 수집 지역: {blog.mapped_geos.length ? blog.mapped_geos.join(", ") : "없음"}</p>
+        <p>OAuth: {blog.oauth_status === "connected" ? "연결됨" : "연결 확인 필요"} · 공개 발행 승인: {blog.public_approval_present ? "기록 있음" : "미승인 (Draft에 불필요)"}</p>
+        <p>긴급 중지: {state.emergency_stopped ? "ON · Blogger 쓰기 중지" : "OFF"} · <a href="/publishing">발행 관리에서 긴급 중지 관리</a></p>
+        <p>마지막 정상 처리: {blog.last_completed_at ? new Intl.DateTimeFormat("ko-KR", { dateStyle: "short", timeStyle: "medium", timeZone: "Asia/Seoul" }).format(new Date(blog.last_completed_at)) : "처리 이력 없음"}</p>
         <label><input type="checkbox" checked={draft.enabled} onChange={event => patch(blog.id, { enabled: event.target.checked, confirmation: "" })} /> Trends 자동 발행 허용</label>
         <div className="trend-geo-options">{blog.mapped_geos.map(geo => <label key={geo}>
           <input type="checkbox" checked={draft.geos.includes(geo)} onChange={event => patch(blog.id, {
