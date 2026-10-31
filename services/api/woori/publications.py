@@ -2524,10 +2524,19 @@ def publication_worker_status() -> dict[str, Any]:
         assert queue is not None
         assert queued_drafts is not None
         assert mode is not None
+        from .publication_read_state import dispatch_queue_counts
+        queue.update(dispatch_queue_counts(conn))
+        queue['scheduled_auto_queued'] = queue['scheduled_auto_due'] = 0
+        queue['manual_confirmed_queued'] = queue['live_queued']
+        queue['manual_confirmed_due'] = queue['live_due']
         heartbeat = dict(row) if row else None
         policy = _scheduled_auto_state(conn)
         capability = _live_write_capability(conn, policy, heartbeat, bool(mode["emergency_stopped"]))
-        if int(queue["mock_due"]) > 0:
+        if queue.get('auto_paused'):
+            idle_reason = 'automatic_publication_suspended'
+        elif queue.get('manual_action_required'):
+            idle_reason = 'manual_request_blocked'
+        elif int(queue["mock_due"]) > 0:
             idle_reason = None
         elif int(queue["live_due"]) > 0:
             idle_reason = "live_job_policy_blocked_or_lane_not_ready"

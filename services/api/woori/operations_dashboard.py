@@ -321,7 +321,7 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
         ).fetchall()]
     config_rows = [dict(row) for row in conn.execute("""SELECT scope_type,scope_key,configured_mode,daily_auto_limit,minimum_interval_minutes,emergency_stopped
         FROM publication_mode_settings""").fetchall()]
-    global_config = next((row for row in config_rows if row["scope_type"]=="global"),
+    global_config: dict[str, Any] = next((row for row in config_rows if row["scope_type"]=="global"),
         {"configured_mode":"manual","emergency_stopped":False,"daily_auto_limit":1})
     languages = {str(row["code"]):str(row["display_name"]) for row in conn.execute("SELECT code,display_name FROM languages ORDER BY code").fetchall()}
     blog_rows = conn.execute("""SELECT b.id,b.language_code,b.display_name,b.url,b.active,b.blog_id,b.connection_verified_at,b.last_checked_at,
@@ -478,9 +478,8 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
             ORDER BY a.created_at DESC,a.id DESC LIMIT 20"""
         ).fetchall()
     ]
-    live_queued_row = conn.execute(
-        "SELECT count(*)::int AS count FROM publishing_jobs WHERE status='queued' AND NOT simulation_only AND adapter_type='blogger_live'"
-    ).fetchone()
+    from .publication_read_state import dispatch_queue_counts
+    dispatch = dispatch_queue_counts(conn)
     return {"schema_version":schema_version,"recent_activity":recent_activity,"trends":trends,"trend_pipeline":trend_pipeline,"collection_sources":collection_sources,"scheduled_import":scheduled_import,"jobs":job_counts,
         "readiness":readiness,"monitoring":monitoring,
         "generation":{"provider_connected":False,"provider_status":"not_configured","codex_scheduled_export_supported":True,
@@ -490,7 +489,8 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
             "failed":quality_counts.get("failed",0),"human_review_required":quality_counts.get("machine_passed_review_required",0)},
         "publishing":{"jobs":publication_counts,"recorded_posts":int(record_count or 0),"last_recorded_at":latest_published,
             "latest_publication":dict(latest_publication) if latest_publication else None,
-            "live_queued_jobs":int((live_queued_row or {}).get("count", 0)),
+            "live_queued_jobs":dispatch["live_queued"],
+            "auto_paused_jobs":dispatch["auto_paused"], "preserved_live_queued":dispatch["preserved_live_queued"],
             "recent_public_url":latest_publication["remote_url"] if latest_publication else None,
             "url_note":"게시 기록에 공개 URL 필드가 없어 링크를 추정하지 않습니다.",
             "queued_mock_jobs":sum(v for k,v in publication_counts.items() if k.startswith("queued:")),

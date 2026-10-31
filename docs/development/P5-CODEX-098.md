@@ -64,3 +64,11 @@
 `publications.py`, `publication_monitor.py`, `publication_read_state.py`, `qwen_cleanup.py`, owner 전용 cleanup CLI, Publishing/Worker UI, 집중 Python/Playwright 테스트, 두 Dry Run manifest와 본 기록.
 
 Schema75 유지, 새 Migration 불필요. main 변경 없음. 자기 참조 커밋은 `git log --grep P5-CODEX-098`와 최종 기록으로 연결한다. 기존 미추적 Playwright artifact 폴더는 보존한다.
+
+## 최종 검증 체크포인트
+
+- 구현/정리 기록 커밋 `bb088c4`. Dashboard `.next-p5-bb088c4` 최종 lint/typecheck/Production Build 통과.
+- 실제 Chromium 브라우저 **8 passed**: P098 정합성 4건 + P097 수동 모드 회귀 4건, 각 1440px/390px. 정상 원고 상세 연결, Fed 현재/과거 제목, 해결된 실패 제외, 빈 검색, publish 기본/draft 선택/취소 시 쓰기0, 자동 쓰기 중지 안내 및 가로 넘침 없음. 운영 원고 읽기만 사용하고 수동 POST는 Mock으로 가로채 실제 Job/Blogger 쓰기를 생성하지 않았다.
+- 후속 운영 점검에서 기존 Worker CLI/operations 요약이 raw queued를 집계하는 잔여 경로를 발견했다. `dispatch_queue_counts`를 공통 적용하여 실행 대기0 / 보존된 raw queued1 / auto_paused1로 명확히 분리했다. 이 수정은 backend-only이며 Dashboard 산출물은 그대로 재사용한다.
+- 집중 pytest 최종 **50 passed, 37 deselected**, production Ruff 및 변경 Python 모듈 mypy 통과. 전체 pytest를 반복 실행하지 않았다.
+- 삭제 후 manifest 재조회: 모든 삭제 대상 테이블의 잔여 대상0. immutable trigger 재활성화 및 FK 보호 유지 확인.
