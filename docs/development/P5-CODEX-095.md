@@ -15,4 +15,8 @@
 
 ## Operational checkpoint
 
-Pending final committed-source verification, runtime reflection and a genuinely new post-activation collection slot. No operational Blogger Draft or LIVE success is claimed at this checkpoint.
+- Code d4dc309: final scoped validation passed 43 tests, Ruff/mypy, wheel, Dashboard lint/typecheck/production build. API and Dashboard HTTP 200; Publication Worker restarted in the existing operations mode. KO Draft activated through the existing policy API at 12:05:54 KST, policy event 1, daily_limit NULL, no public-consent event.
+- Runtime interruption: the Research Worker did not finish its synchronous cycle within the lifecycle script's 180-second grace window. No force stop occurred. API/Dashboard/Publication Worker were explicitly restored from the already-validated commit. Research Worker eventually exited gracefully at approximately 12:10 KST.
+- Root cause: legacy cross-geography grouping compared repeated observation query strings quadratically across 11,440 retained observations (7-day lookback). Added only per-call normalized-query/comparison memoization; every original observation-pair proposal and its method/confidence remain unchanged. No collection settings, source requests, country selection or stored observation are changed. Focused grouping suite 14 passed, including preservation of all repeated-slot proposal pairs with one comparison per text pair.
+- Browser: existing policy/review regressions 6/6 and new Draft-default/explicit-public-choice/real-monitor checks 4/4 passed at desktop 1440px and mobile 390px. No public approval or Blogger write submitted by browser tests. Minor monitor label correction distinguishes Trends Auto and removes a corrupted separator.
+- Pending: final reflection of the grouping/label correction and a genuinely new post-activation collection slot. No operational Blogger Draft or LIVE success is claimed at this checkpoint.

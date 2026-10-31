@@ -146,27 +146,37 @@ def _audit(conn: Any, event: str, **payload: Any) -> None:
 def _propose_cross_geo_pairs(conn: Any, rows: list[dict[str, Any]]) -> int:
     proposals = 0
     by_geo: dict[str, list[dict[str, Any]]] = {}
+    normalized = {row['id']: normalize_query(row['query']) for row in rows}
+    # Repeated collection slots retain distinct observations. Compare their
+    # query text once, while preserving every original observation-pair proposal.
+    comparisons: dict[tuple[str, str], tuple[str, float, str] | None] = {}
     for row in rows:
         by_geo.setdefault(row["geo"], []).append(row)
     geos = sorted(by_geo)
     for index, left_geo in enumerate(geos):
         for right_geo in geos[index + 1 :]:
             for left in by_geo[left_geo]:
-                lnorm = normalize_query(left["query"])
+                lnorm = normalized[left['id']]
                 for right in by_geo[right_geo]:
-                    rnorm = normalize_query(right["query"])
-                    ratio = SequenceMatcher(None, lnorm, rnorm).ratio()
-                    ltokens, rtokens = set(lnorm.split()), set(rnorm.split())
-                    shared = ltokens & rtokens
-                    jaccard = len(shared) / max(1, len(ltokens | rtokens))
-                    if lnorm == rnorm:
-                        method, confidence = "same_query_cross_geo", 0.8
-                        rationale = "Exact query text appears in different geographies; event identity is unverified."
-                    elif shared and ratio >= 0.82 and jaccard >= 0.67:
-                        method, confidence = "lexical_similarity", round(min(ratio, jaccard), 3)
-                        rationale = "Lexical overlap proposes review only; it does not establish the same event."
-                    else:
+                    rnorm = normalized[right['id']]
+                    key = (lnorm, rnorm)
+                    if key not in comparisons:
+                        ratio = SequenceMatcher(None, lnorm, rnorm).ratio()
+                        ltokens, rtokens = set(lnorm.split()), set(rnorm.split())
+                        shared = ltokens & rtokens
+                        jaccard = len(shared) / max(1, len(ltokens | rtokens))
+                        if lnorm == rnorm:
+                            comparisons[key] = ("same_query_cross_geo", 0.8,
+                                "Exact query text appears in different geographies; event identity is unverified.")
+                        elif shared and ratio >= 0.82 and jaccard >= 0.67:
+                            comparisons[key] = ("lexical_similarity", round(min(ratio, jaccard), 3),
+                                "Lexical overlap proposes review only; it does not establish the same event.")
+                        else:
+                            comparisons[key] = None
+                    match = comparisons[key]
+                    if match is None:
                         continue
+                    method, confidence, rationale = match
                     a, b = sorted((left["id"], right["id"]))
                     inserted = conn.execute(
                         """INSERT INTO trend_grouping_proposals(observation_a,observation_b,method,

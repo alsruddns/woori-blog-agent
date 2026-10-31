@@ -13,6 +13,29 @@ from woori import topics
 lab = shared_lab
 
 
+def test_repeated_slots_compare_query_once_and_preserve_observation_pairs(monkeypatch):
+    real_matcher = topics.SequenceMatcher
+    comparisons = []
+    def matcher(*args):
+        comparisons.append(args[1:])
+        return real_matcher(*args)
+    monkeypatch.setattr(topics, 'SequenceMatcher', matcher)
+    rows = [{'id': uuid4(), 'geo': geo, 'query': query}
+            for geo in ('KR', 'US') for _ in range(3)
+            for query in ('same event', 'unrelated query')]
+    class Sink:
+        def __init__(self): self.proposals = []
+        def execute(self, sql, params):
+            self.proposals.append(params)
+            return self
+        def fetchone(self): return {'id': uuid4()}
+    sink = Sink()
+    assert topics._propose_cross_geo_pairs(sink, rows) == 18
+    assert len(comparisons) == 4
+    assert len({tuple(p[:2]) for p in sink.proposals}) == 18
+    assert all(p[2] == 'same_query_cross_geo' and p[3] == 0.8 for p in sink.proposals)
+
+
 def test_normalize_query_uses_unicode_compatibility_and_punctuation() -> None:
     assert topics.normalize_query("  ＧＯＯＧＬ   Stock! ") == "googl stock"
     assert topics.normalize_query("以色列，大選") == topics.normalize_query("以色列 大選")
