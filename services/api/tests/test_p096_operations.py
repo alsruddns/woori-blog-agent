@@ -106,3 +106,20 @@ def test_google_forbidden_quota_is_distinct_from_permission(message,expected):
     response=httpx.Response(403,json={'error':{'message':message,'errors':[{'reason':'forbidden'}]}})
     assert classify(response)==expected
     assert safe_error_reason(response)=='forbidden'
+
+
+def test_blogger_backoff_preserves_jobs_and_does_not_dispatch(lab,monkeypatch):
+    from woori import publication_worker, trends_publication
+    conn,_,_=lab
+    @contextmanager
+    def shared():
+        with conn.transaction():yield conn
+    monkeypatch.setattr(publication_worker,'connection',shared)
+    monkeypatch.setattr(publication_worker,'recover_verified_trends_draft',lambda:None)
+    monkeypatch.setattr(publication_worker,'enqueue_scheduled_auto_jobs',lambda:pytest.fail('no new dispatch during provider backoff'))
+    conn.execute("INSERT INTO audit_events(event_type,payload) VALUES ('blogger.api.error_classified','{\"category\":\"permission_denied\",\"operation\":\"blogger_draft_create\"}')")
+    pause=trends_publication.trends_write_backoff(conn)
+    assert pause['active'] and pause['provider_reset_at'] is None
+    assert publication_worker.process_next_live_job(trends_auto_only=True)['status']=='external_backoff'
+    assert publication_worker.process_next_live_job(trends_auto_only=True)['job_id'] is None
+    assert conn.execute("SELECT count(*) n FROM audit_events WHERE event_type='publication.trends_auto.external_backoff' AND payload->>'source_event_id'=%s",(str(pause['event_id']),)).fetchone()['n']==1

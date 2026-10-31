@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -14,6 +14,16 @@ from psycopg.types.json import Jsonb
 from .db import connection
 
 ALLOWED_GEOGRAPHIES = {"KR", "US", "GB", "CA", "AU", "IN", "JP", "TW", "HK", "SG", "PH", "BR"}
+
+
+def trends_write_backoff(conn:Any) -> dict[str,Any]|None:
+    event=conn.execute("""SELECT id,created_at,payload->>'category' category FROM audit_events
+        WHERE event_type='blogger.api.error_classified' AND payload->>'operation' IN ('blogger_draft_create','blogger_public_publish')
+          AND payload->>'category' IN ('permission_denied','free_quota_exceeded') ORDER BY id DESC LIMIT 1""").fetchone()
+    if not event:return None
+    deadline=event['created_at']+timedelta(minutes=15)
+    return {'event_id':event['id'],'error_code':event['category'],'not_before':deadline.isoformat(),
+            'active':deadline>datetime.now(UTC),'provider_reset_at':None,'basis':'local_backoff_not_provider_reset'}
 
 
 def collection_after_activation(slot: Any, activated_at: datetime) -> bool:
@@ -129,7 +139,7 @@ def policy_state(conn: Any) -> dict[str, Any]:
             "supported_geographies": sorted(ALLOWED_GEOGRAPHIES),
             "provenance": "codex_trends_export", "publication_lane": "trends_auto",
             "emergency_stopped": not emergency or bool(emergency['emergency_stopped']),
-            'codex_backoff':authoring_backoff(conn)}
+            'codex_backoff':authoring_backoff(conn),'blogger_backoff':trends_write_backoff(conn)}
 
 
 def record_policy(conn: Any, request: Any) -> dict[str, Any]:

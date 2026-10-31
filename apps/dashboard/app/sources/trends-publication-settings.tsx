@@ -27,7 +27,8 @@ type Blog = {
   mapped_geos: string[];
   policy: Policy | null;
 };
-type State = { policies: Blog[]; supported_geographies: string[]; emergency_stopped?: boolean; codex_backoff?: {active:boolean;error_code:string;not_before:string;basis:string}|null };
+type Backoff={active:boolean;error_code:string;not_before:string;basis:string};
+type State = { policies: Blog[]; supported_geographies: string[]; emergency_stopped?: boolean; codex_backoff?: Backoff|null; blogger_backoff?: Backoff|null };
 type Draft = { enabled: boolean; publication_mode: "draft" | "publish"; geos: string[]; reason: string; confirmation: string };
 const blockerNames: Record<string, string> = {
   country_mapping_required: "수집 국가 매핑 필요",
@@ -152,7 +153,7 @@ export default function TrendsPublicationSettings() {
         <p>마지막 정상 처리: {blog.last_completed_at ? new Intl.DateTimeFormat("ko-KR", { dateStyle: "short", timeStyle: "medium", timeZone: "Asia/Seoul" }).format(new Date(blog.last_completed_at)) : "처리 이력 없음"}</p>
         <p>원고 작성: {state.codex_backoff?.active ? `Codex 사용량·용량 대기 · ${state.codex_backoff.error_code} · 로컬 재확인 가능 ${state.codex_backoff.not_before} (한도 초기화 시각 아님)` : blog.authoring ? ({queued:"Codex 작성 대기",researching:"Codex 웹 조사 중",writing:"Codex 작성 중",validating:"JSON 검증 중",import_pending:"Import 대기",imported_review:"Import 완료",failed:"작성 실패",cancelled:"회차 만료·취소"} as Record<string,string>)[blog.authoring.state??""]??"작성 요청 대기" : "후보·작성 Job 없음"}</p>
         {blog.authoring && <p>{blog.authoring.keyword} · Codex Job {blog.authoring.job_id??"미생성"} · {blog.authoring.error_code??""}</p>}
-        <p>최근 전달: {blog.delivery ? `${blog.delivery.publication_state} · ${blog.delivery.last_error_category??"오류 없음"} · Job ${blog.delivery.id}` : "Publishing Job 없음"}</p>
+        <p>최근 전달: {state.blogger_backoff?.active && blog.policy?.enabled ? `Google Blogger 외부 제한 대기 · ${state.blogger_backoff.error_code} · 로컬 재확인 가능 ${state.blogger_backoff.not_before} (제한 해제 시각 아님)` : blog.delivery ? `${({draft_saved:"Blogger 초안 저장 성공",publication_queued:"Draft/Publish Job 대기",publishing:"Blogger 처리 중",published:"원격 LIVE 확인",publication_failed:"발행 실패·보류"} as Record<string,string>)[blog.delivery.publication_state]??blog.delivery.publication_state} · ${blog.delivery.last_error_category??"오류 없음"} · Job ${blog.delivery.id}` : "Publishing Job 없음"}</p>
         <label><input type="checkbox" checked={draft.enabled} onChange={event => patch(blog.id, { enabled: event.target.checked, confirmation: "" })} /> Trends 자동 발행 허용</label>
         <div className="trend-geo-options">{blog.mapped_geos.map(geo => <label key={geo}>
           <input type="checkbox" checked={draft.geos.includes(geo)} onChange={event => patch(blog.id, {

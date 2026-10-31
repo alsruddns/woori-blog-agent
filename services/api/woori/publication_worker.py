@@ -735,6 +735,18 @@ def process_next_live_job(
         recovered = recover_verified_trends_draft()
         if recovered:
             return recovered
+        from .trends_publication import trends_write_backoff
+        with connection() as conn:
+            pause=trends_write_backoff(conn)
+            if pause and pause['active']:
+                conn.execute("""UPDATE publishing_jobs SET available_at=GREATEST(available_at,%s),
+                    last_error_category='blogger_external_backoff',updated_at=now()
+                    WHERE publication_lane='trends_auto' AND status='queued' AND available_at<%s""",
+                    (pause['not_before'],pause['not_before']))
+                if not conn.execute("SELECT 1 FROM audit_events WHERE event_type='publication.trends_auto.external_backoff' AND payload->>'source_event_id'=%s LIMIT 1",(str(pause['event_id']),)).fetchone():
+                    _append_audit(conn,'publication.trends_auto.external_backoff',{'source_event_id':pause['event_id'],**pause,'blogger_write_performed':False})
+                return {'job_id':None,'status':'external_backoff','reason':pause['error_code'],
+                        'available_at':pause['not_before'],'public_write_performed':False}
     """Process one fully approved Blogger job; all absent approvals fail closed."""
     enqueue_scheduled_auto_jobs()
     if trends_auto_only:
