@@ -20,12 +20,14 @@ type Blog = {
   oauth_status?: string;
   last_completed_at?: string | null;
   public_approval_present?: boolean;
+  authoring?: { job_id: string | null; request_state: string; state: string | null; error_code: string | null; keyword: string; import_id: string | null } | null;
+  delivery?: { id: string; publication_state: string; status: string; last_error_category: string | null; available_at: string; remote_post_id: string | null } | null;
   activation_blockers?: string[];
   draft_activation_blockers?: string[];
   mapped_geos: string[];
   policy: Policy | null;
 };
-type State = { policies: Blog[]; supported_geographies: string[]; emergency_stopped?: boolean };
+type State = { policies: Blog[]; supported_geographies: string[]; emergency_stopped?: boolean; codex_backoff?: {active:boolean;error_code:string;not_before:string;basis:string}|null };
 type Draft = { enabled: boolean; publication_mode: "draft" | "publish"; geos: string[]; reason: string; confirmation: string };
 const blockerNames: Record<string, string> = {
   country_mapping_required: "수집 국가 매핑 필요",
@@ -57,7 +59,23 @@ export default function TrendsPublicationSettings() {
   }
 
   useEffect(() => {
-    void Promise.resolve().then(() => load()).catch(error => setMessage(String(error)));
+    let disposed=false, pending=false;
+    const controller=new AbortController();
+    async function refresh() {
+      if (pending || disposed || document.visibilityState!=="visible") return;
+      pending=true;
+      try {
+        const response=await fetch("/api/publications/trends-auto-policy",{cache:"no-store",signal:controller.signal});
+        if(!response.ok) throw new Error(`Trends 상태 조회 HTTP ${response.status}`);
+        const data=await response.json() as State;
+        if(!disposed){setState(data);setDrafts(current=>Object.keys(current).length ? current : Object.fromEntries(data.policies.map(blog=>[blog.id,{
+          enabled:blog.policy?.enabled??false,publication_mode:blog.policy?.publication_mode??"draft",geos:blog.policy?.allowed_geos??[],reason:"",confirmation:"",
+        }])));}
+      }catch(error){if(!controller.signal.aborted)setMessage(String(error));}finally{pending=false;}
+    }
+    void refresh();const timer=setInterval(()=>void refresh(),10000);
+    const visible=()=>void refresh();document.addEventListener("visibilitychange",visible);
+    return()=>{disposed=true;controller.abort();clearInterval(timer);document.removeEventListener("visibilitychange",visible);};
   }, []);
 
   function patch(blogId: string, value: Partial<Draft>) {
@@ -132,6 +150,9 @@ export default function TrendsPublicationSettings() {
         <p>OAuth: {blog.oauth_status === "connected" ? "연결됨" : "연결 확인 필요"} · 공개 발행 승인: {blog.public_approval_present ? "기록 있음" : "미승인 (Draft에 불필요)"}</p>
         <p>긴급 중지: {state.emergency_stopped ? "ON · Blogger 쓰기 중지" : "OFF"} · <a href="/publishing">발행 관리에서 긴급 중지 관리</a></p>
         <p>마지막 정상 처리: {blog.last_completed_at ? new Intl.DateTimeFormat("ko-KR", { dateStyle: "short", timeStyle: "medium", timeZone: "Asia/Seoul" }).format(new Date(blog.last_completed_at)) : "처리 이력 없음"}</p>
+        <p>원고 작성: {state.codex_backoff?.active ? `Codex 사용량·용량 대기 · ${state.codex_backoff.error_code} · 로컬 재확인 가능 ${state.codex_backoff.not_before} (한도 초기화 시각 아님)` : blog.authoring ? ({queued:"Codex 작성 대기",researching:"Codex 웹 조사 중",writing:"Codex 작성 중",validating:"JSON 검증 중",import_pending:"Import 대기",imported_review:"Import 완료",failed:"작성 실패",cancelled:"회차 만료·취소"} as Record<string,string>)[blog.authoring.state??""]??"작성 요청 대기" : "후보·작성 Job 없음"}</p>
+        {blog.authoring && <p>{blog.authoring.keyword} · Codex Job {blog.authoring.job_id??"미생성"} · {blog.authoring.error_code??""}</p>}
+        <p>최근 전달: {blog.delivery ? `${blog.delivery.publication_state} · ${blog.delivery.last_error_category??"오류 없음"} · Job ${blog.delivery.id}` : "Publishing Job 없음"}</p>
         <label><input type="checkbox" checked={draft.enabled} onChange={event => patch(blog.id, { enabled: event.target.checked, confirmation: "" })} /> Trends 자동 발행 허용</label>
         <div className="trend-geo-options">{blog.mapped_geos.map(geo => <label key={geo}>
           <input type="checkbox" checked={draft.geos.includes(geo)} onChange={event => patch(blog.id, {

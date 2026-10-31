@@ -449,6 +449,8 @@ export default function ExternalImportWorkspace({ embedded = false, detailReques
           {Boolean(detail.item.blogger_delivery) && <section className="workspace-panel"><h3>Blogger 저장 상태</h3>
             <p>{String((detail.item.blogger_delivery as Row).blog_name)} · 모드 {String((detail.item.blogger_delivery as Row).publication_mode)} · {String((detail.item.blogger_delivery as Row).remote_status ?? (detail.item.blogger_delivery as Row).publication_state)}</p>
             <p>postId: {String((detail.item.blogger_delivery as Row).remote_post_id ?? "대기")} · 확인 시각: {String((detail.item.blogger_delivery as Row).verified_at ?? "대기")}</p>
+            <p>초안 저장: {String((detail.item.blogger_delivery as Row).saved_at??"없음")} · 공개: {String((detail.item.blogger_delivery as Row).remote_published_at??"확인 없음")} · 원격 수정: {String((detail.item.blogger_delivery as Row).remote_updated_at??"정보 없음")}</p>
+            {Boolean((detail.item.blogger_delivery as Row).remote_check_error)&&<p role="status">원격 조회 확인 필요: {String((detail.item.blogger_delivery as Row).remote_check_error)} · 삭제로 단정하지 않습니다.</p>}
             <a href="https://www.blogger.com/" target="_blank" rel="noreferrer">Blogger 관리 열기</a>
             {Boolean((detail.item.blogger_delivery as Row).remote_status === "LIVE" && (detail.item.blogger_delivery as Row).remote_url) && <a href={String((detail.item.blogger_delivery as Row).remote_url)} target="_blank" rel="noreferrer">실제 공개 URL</a>}
           </section>}

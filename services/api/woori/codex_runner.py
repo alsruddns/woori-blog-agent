@@ -153,6 +153,8 @@ def execute(work: Path, prompt: str, schema: dict[str, Any], callback: Callable[
             if item.get('type')=='error' or event.get('type') in {'error','turn.failed'}:
                 message=str(item.get('message') or event.get('error') or '').lower()
                 failure='codex_usage_limit' if any(s in message for s in ('usage limit','usage_limit','rate limit','rate_limit','quota','429')) else 'codex_auth_failed' if any(s in message for s in ('unauthorized','invalid_grant','401')) else 'codex_execution_failed'
+                if failure=='codex_execution_failed' and any(s in message for s in ('capacity','overloaded','503')):
+                    failure='codex_capacity_unavailable'
                 if 'unrecognized configuration' in message:
                     raise CodexFailure('codex_config_unsupported')
             if event.get('type')=='item.completed' and item.get('type')=='web_search':

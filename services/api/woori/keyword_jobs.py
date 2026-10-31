@@ -6,7 +6,7 @@ import json
 import os
 import re
 import threading
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID
@@ -175,7 +175,24 @@ def state(job_id:UUID,value:str,**fields:Any) -> None:
 @router.get('')
 def list_jobs() -> dict[str,Any]:
     with connection() as conn:
-        return {'items':conn.execute('SELECT * FROM codex_authoring_jobs ORDER BY created_at DESC LIMIT 30').fetchall()}
+        return {'items':conn.execute('SELECT * FROM codex_authoring_jobs ORDER BY created_at DESC LIMIT 30').fetchall(),
+                'backoff':authoring_backoff(conn)}
+
+
+def authoring_backoff(conn:Any) -> dict[str,Any]|None:
+    row=conn.execute("""SELECT created_at,payload->>'error_code' error_code FROM audit_events
+        WHERE event_type='codex.authoring.state' AND payload->>'error_code' IN ('codex_usage_limit','codex_capacity_unavailable')
+        ORDER BY id DESC LIMIT 1""").fetchone()
+    if not row:return None
+    deadline=row['created_at']+timedelta(minutes=15 if row['error_code']=='codex_usage_limit' else 5)
+    return {'error_code':row['error_code'],'not_before':deadline.isoformat(),'active':deadline>datetime.now(UTC),
+            'provider_reset_at':None,'basis':'local_backoff_not_provider_reset'}
+
+
+def job_workdir(job:dict[str,Any]) -> Path:
+    root=Path(os.environ.get('LOCALAPPDATA',str(ROOT/'.local')))/'WooriBlogAgent/codex-jobs'/str(job['id'])
+    attempt=(job.get('evidence') or {}).get('artifact_attempt')
+    return root/('attempt-'+str(UUID(attempt))) if attempt else root
 
 
 @router.get('/capabilities')
@@ -236,8 +253,9 @@ class RetryRequest(BaseModel):
 @router.post('/{job_id}/retry',status_code=201)
 def retry_job(job_id:UUID,request:RetryRequest) -> dict[str,Any]:
     with connection() as conn:
-        prior=conn.execute('SELECT * FROM codex_authoring_jobs WHERE id=%s',(job_id,)).fetchone()
+        prior=conn.execute('SELECT * FROM codex_authoring_jobs WHERE id=%s FOR UPDATE',(job_id,)).fetchone()
         if not prior:raise HTTPException(404,'authoring_job_not_found')
+        if (prior.get('evidence') or {}).get('retry_request_key')==str(request.request_key):return dict(prior)
         expected_origin='codex_trends_export' if prior['job_type']=='google_trends' else 'manual_codex_import'
         imported=conn.execute("SELECT i.id,l.content_version_id FROM external_content_imports i JOIN external_content_import_content_links l ON l.import_id=i.id WHERE i.external_content_id=%s AND i.generation_method=%s ORDER BY l.created_at DESC LIMIT 1",(str(job_id),expected_origin)).fetchone()
         if imported:
@@ -246,12 +264,35 @@ def retry_job(job_id:UUID,request:RetryRequest) -> dict[str,Any]:
             assert restored is not None
             return dict(restored)
         if prior['state'] not in {'failed','cancelled'}:raise HTTPException(409,'existing_result_or_active_request')
+        if prior['job_type']=='google_trends' and prior['error_code'] in {'codex_usage_limit','codex_capacity_unavailable'}:
+            from .trend_editorial import current_observations, slot_is_current, transition
+            trend=conn.execute('SELECT * FROM trend_generation_requests WHERE id=%s FOR UPDATE',(prior['trend_request_id'],)).fetchone()
+            if not trend or not slot_is_current(trend['contract'].get('collection_slot')) or not current_observations(conn,trend['topic_id']):
+                raise HTTPException(409,'expired_collection_slot_requires_new_current_topic')
+            backoff=authoring_backoff(conn)
+            if backoff and backoff['active']:raise HTTPException(429,backoff)
+            duplicate=conn.execute("""SELECT 1 FROM codex_authoring_jobs j JOIN trend_generation_requests q ON q.authoring_job_id=j.id
+                WHERE q.topic_id=%s AND j.blog_id=%s AND j.id<>%s AND j.import_id IS NOT NULL LIMIT 1""",
+                (trend['topic_id'],prior['blog_id'],job_id)).fetchone()
+            if duplicate:raise HTTPException(409,'topic_already_imported')
+            audit(conn,job_id,'retry_requested',{'request_key':str(request.request_key),'previous_execution_id':prior['execution_id'],
+                'previous_error':prior['error_code'],'same_job_preserved':True})
+            evidence={**dict(prior.get('evidence') or {}),'retry_request_key':str(request.request_key),'artifact_attempt':str(request.request_key)}
+            update(conn,job_id,'queued',error_code=None,execution_id=None,process_id=None,started_at=None,completed_at=None,evidence=Jsonb(evidence))
+            conn.execute("UPDATE trend_generation_requests SET state='generating',updated_at=now() WHERE id=%s",(trend['id'],))
+            transition(conn,trend['topic_id'],'generating','usage_recovery_current_slot_rechecked',
+                '현재 회차·중복을 다시 확인한 명시적 재실행입니다. 이전 실행 기록은 보존합니다.', 'authenticated_operator',
+                evidence={'authoring_job_id':str(job_id)})
+            restored=conn.execute('SELECT * FROM codex_authoring_jobs WHERE id=%s',(job_id,)).fetchone()
+            assert restored is not None
+            return dict(restored)
         if prior['error_code']=='json_schema_invalid' and prior['execution_id']:
-            work=Path(os.environ['LOCALAPPDATA'])/'WooriBlogAgent/codex-jobs'/str(job_id)
+            work=job_workdir(dict(prior))
             if (work/'article.json').is_file() and (work/'research-evidence.json').is_file():
                 raw=(work/'article.json').read_bytes()
                 if len(raw)>256*1024:raise HTTPException(409,'saved_result_too_large')
                 evidence=json.loads((work/'research-evidence.json').read_text(encoding='utf-8'))
+                evidence.update({k:prior['evidence'][k] for k in ('artifact_attempt','retry_request_key') if k in (prior.get('evidence') or {})})
                 if evidence.get('execution_id')!=prior['execution_id']:raise HTTPException(409,'saved_execution_identity_mismatch')
                 evidence['resume_article_sha256']=hashlib.sha256(raw).hexdigest()
                 evidence['resume_saved_output']=True
@@ -345,7 +386,7 @@ def make_envelope(job:dict[str,Any],article:dict[str,Any],evidence:dict[str,Any]
 
 def generate(job:dict[str,Any]) -> None:
     job_id=job['id']
-    work=Path(os.environ.get('LOCALAPPDATA',str(ROOT/'.local')))/'WooriBlogAgent/codex-jobs'/str(job_id)
+    work=job_workdir(job)
     options=job.get('options') or {}
     trend_contract=options.get('trend_contract') or {}
     user_direction=str(options.get('direction') or '').strip() if job['job_type']=='user_keyword' else ''
@@ -390,6 +431,7 @@ def generate(job:dict[str,Any]) -> None:
             article,evidence=codex_runner.execute(work,prompt,
                 trend_output_schema() if job['job_type']=='google_trends' else output_schema(),
                 lambda phase,data:state(job_id,phase,**data),lambda:cancelled(job_id),**runner_options)
+        evidence.update({k:job['evidence'][k] for k in ('artifact_attempt','retry_request_key') if k in (job.get('evidence') or {})})
         if job['job_type']=='google_trends':
             if article.get('status')=='article' and isinstance(article.get('article'),dict):
                 article={**article,'article':normalize_trend_source_times(article['article'],evidence)}
@@ -432,6 +474,8 @@ def run_one() -> None:
                 # The OS Job Object closes with an exited Worker; interrupted runs never silently retry.
                 for old in conn.execute("SELECT id FROM codex_authoring_jobs WHERE state IN ('researching','writing','validating') FOR UPDATE").fetchall():
                     update(conn,old['id'],'failed',error_code='worker_interrupted',completed_at=datetime.now(UTC))
+                backoff=authoring_backoff(conn)
+                if backoff and backoff['active']:return
                 job=conn.execute("SELECT * FROM codex_authoring_jobs WHERE state='queued' AND job_type IN ('user_keyword','google_trends') ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1").fetchone()
                 if not job:return
                 if job['job_type']=='google_trends' and not job['execution_id']:

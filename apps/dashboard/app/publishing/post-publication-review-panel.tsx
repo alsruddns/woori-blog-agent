@@ -9,6 +9,9 @@ type Review = {
   title: string; language_code: string; blog_url: string; open_item_count: number;
   high_count: number; review_items: ReviewItem[];
   claim_verification?: { verification_status: string }[];
+  blog_name?: string; keyword?: string; codex_job_id?: string; import_id?: string;
+  remote_status?: string; saved_at?: string; remote_published_at?: string; remote_updated_at?: string;
+  remote_checked_at?: string; remote_check_error?: string;
 };
 
 const issueTypes = ["source", "number", "date", "exchange_rate", "translation", "copyright", "other"] as const;
@@ -90,7 +93,9 @@ export default function PostPublicationReviewPanel() {
     {error && <p className="quality-held" role="alert">{error}</p>}
     {busy && items.length === 0 ? <p className="empty-state">불러오는 중…</p> : items.length === 0 ? <p className="empty-state">원격 확인된 초안·게시물 중 이 필터에 해당하는 항목이 없습니다.</p> : <div className="post-review-list">
       {items.map((review) => <article className="post-review-card" key={review.id}>
-        <p>{review.publication_mode === "draft" ? "Draft 모드 · 비공개 초안 저장 이력" : "Blogger LIVE 공개 게시물"}</p>
+        <p>{review.publication_mode === "draft" ? review.remote_status === "LIVE" ? "Draft → 사용자 직접 LIVE 공개 확인" : review.remote_status === "DRAFT" ? "Draft 모드 · 비공개 초안 저장 이력" : "원격 조회 확인 필요 · 기존 초안 저장 이력 보존" : "Blogger LIVE 공개 게시물"}</p>
+        {review.blog_name && <p>{review.blog_name} · {review.keyword} · Codex Job {review.codex_job_id} · Import {review.import_id}</p>}
+        {review.publication_mode === "draft" && <p>초안 저장: {review.saved_at} · 공개 시각: {review.remote_published_at??"공개 확인 없음"} · 원격 수정: {review.remote_updated_at??"정보 없음"} · 상태 조회: {review.remote_checked_at??"저장 시 확인"}{review.remote_check_error&&` · 조회 오류 ${review.remote_check_error} (삭제로 단정하지 않음)`}</p>}
         {review.publication_mode === "draft" && <button type="button" className="secondary-button" disabled={busy} onClick={() => {
           setBusy(true);
           void fetch(`/api/publications/jobs/${review.id}/sync-draft`, { method: "POST" }).then(async response => {
@@ -99,7 +104,7 @@ export default function PostPublicationReviewPanel() {
           }).catch(cause => setError(String(cause))).finally(() => setBusy(false));
         }}>Blogger Draft/LIVE 상태 재조회</button>}
         <header><div><span className={review.high_count ? "post-review-risk" : "post-review-status"}>{review.high_count ? `높은 중요도 ${review.high_count}` : review.review_status === "completed" ? "보완 완료" : `열린 항목 ${review.open_item_count}`}</span><h3>{review.title}</h3><p>{review.language_code} · {review.blog_url} · postId {review.remote_post_id}</p></div>{review.remote_url && <a href={review.remote_url} target="_blank" rel="noreferrer">Blogger 글 열기</a>}</header>
-        <p>검토 상태: {review.review_status === "completed" ? "사용자 검토 완료" : review.review_status === "in_progress" ? "수정 필요" : "검토 전"} · 발행 시각: {new Intl.DateTimeFormat("ko-KR", { dateStyle: "short", timeStyle: "short", timeZone: "Asia/Seoul" }).format(new Date(review.published_at))}</p>
+        <p>검토 상태: {review.review_status === "completed" ? "사용자 검토 완료" : review.review_status === "in_progress" ? "수정 필요" : "검토 전"} · {review.publication_mode === "draft" ? "초안 저장 시각" : "발행 시각"}: {new Intl.DateTimeFormat("ko-KR", { dateStyle: "short", timeStyle: "short", timeZone: "Asia/Seoul" }).format(new Date(review.published_at))}</p>
         <p>Claim {review.claim_verification?.length ?? 0}개 · 미검증 {review.claim_verification?.filter(claim => claim.verification_status === "unverified").length ?? 0}개. 검토 완료 표시는 사용자의 확인 기록이며 Blogger 수정 여부를 자동 확인한 결과는 아닙니다.</p>
         {review.review_notes && <p>{review.review_notes}</p>}
         <ul>{review.review_items.map((item) => <li key={item.id} className={item.resolved ? "is-resolved" : ""}><span>{issueLabels[item.issue_type] ?? item.issue_type} · {item.severity}</span><p>{item.description}</p>{!item.resolved && <button type="button" className="secondary-button" disabled={busy} onClick={() => void resolve(review, item)}>보완 완료</button>}</li>)}</ul>

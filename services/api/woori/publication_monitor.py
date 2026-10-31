@@ -22,7 +22,9 @@ def snapshot(view: str, page: int, page_size: int) -> dict[str, Any]:
             registered.registered_at,started.started_at,progress.created_at AS progress_at,
             progress.event_type AS progress_event,
             COALESCE(remote.remote_url,sync.payload->>'remote_url') remote_url,COALESCE(remote.remote_post_id,d.remote_post_id,j.remote_post_id) remote_post_id,
-            COALESCE(remote.remote_verified_at,sync.created_at,d.verified_at) remote_verified_at,COALESCE(remote.remote_status,sync.payload->>'remote_status',d.remote_status) remote_status
+            COALESCE(remote.remote_verified_at,CASE WHEN sync.payload->>'remote_status' IN ('DRAFT','LIVE') THEN sync.created_at END,d.verified_at) remote_verified_at,
+            sync.created_at remote_checked_at,sync.payload->>'error_code' remote_check_error,
+            COALESCE(remote.remote_status,sync.payload->>'remote_status',d.remote_status) remote_status
           FROM publishing_jobs j JOIN content_versions v ON v.id=j.content_version_id
           JOIN blogger_blogs b ON b.id=j.blog_id
           LEFT JOIN LATERAL (SELECT i.id import_id,i.generation_method
@@ -71,7 +73,7 @@ def snapshot(view: str, page: int, page_size: int) -> dict[str, Any]:
         item.update(kind='job',state=state,job_id=str(item['id']),
                     lease_overdue=bool(item['status']=='running' and item['lease_until'] and item['lease_until']<datetime.now(UTC)),
                     failure_stage='eligibility' if item['block_reasons'] else item['failure_operation'] or 'publication_worker',
-                    failure_reason=item['last_error_category'] or next(iter(item['block_reasons'] or []),None),
+                    failure_reason=item['last_error_category'] or item.get('remote_check_error') or next(iter(item['block_reasons'] or []),None),
                     retry_possible=state=='failed' and item['status'] in {'failed','blocked'} and item['retry_count']<item['max_retries'],
                     remote_url=item['remote_url'] if state=='published' else None)
         items.append(item)

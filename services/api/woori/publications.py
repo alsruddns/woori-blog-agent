@@ -1773,15 +1773,27 @@ def sync_trends_draft(job_id: UUID) -> dict[str, Any]:
               AND j.remote_post_id IS NOT NULL""",(job_id,)).fetchone()
     if not row:
         raise HTTPException(404,"Recorded Trends draft not found")
-    remote = blogger_service.post(row["blog_id"],row["remote_post_id"])
-    if (str(remote.get("id")) != row["remote_post_id"] or str((remote.get("blog") or {}).get("id")) != row["blogger_id"]
-            or remote.get("status") not in {"DRAFT","LIVE"}):
-        raise HTTPException(409,"Remote draft identity or status mismatch")
-    result = {"job_id":str(job_id),"post_id":row["remote_post_id"],"remote_status":remote["status"],
-              "remote_url":remote.get("url") if remote["status"] == "LIVE" else None,"blogger_write_performed":False}
+    from .google_http import GoogleFailure
+    try:
+        remote = blogger_service.post(row['blog_id'],row['remote_post_id'])
+        if (str(remote.get('id'))!=row['remote_post_id'] or str((remote.get('blog') or {}).get('id'))!=row['blogger_id']
+                or remote.get('status') not in {'DRAFT','LIVE'} or (remote.get('status')=='LIVE' and not remote.get('url'))):
+            raise GoogleFailure('remote_identity_or_status_mismatch')
+        result = {'job_id':str(job_id),'post_id':row['remote_post_id'],'remote_status':remote['status'],
+                  'remote_url':remote.get('url') if remote['status']=='LIVE' else None,'blogger_write_performed':False,
+                  'remote_updated_at':remote.get('updated'),'remote_published_at':remote.get('published') if remote['status']=='LIVE' else None,
+                  'checked_at':datetime.now(UTC).isoformat(),'error_code':None}
+    except GoogleFailure as error:
+        result = {'job_id':str(job_id),'post_id':row['remote_post_id'],
+                  'remote_status':'NOT_FOUND' if error.category=='not_found' else 'LOOKUP_FAILED',
+                  'error_code':error.category,'http_status':error.status,'remote_url':None,
+                  'checked_at':datetime.now(UTC).isoformat(),'blogger_write_performed':False}
     with connection() as conn:
+        previous=conn.execute("SELECT payload->>'remote_status' status FROM audit_events WHERE event_type='publication.trends_draft.synced' AND payload->>'job_id'=%s ORDER BY id DESC LIMIT 1",(str(job_id),)).fetchone()
         conn.execute("INSERT INTO audit_events(event_type,blog_id,payload) VALUES ('publication.trends_draft.synced',%s,%s)",
             (row["blog_id"],Jsonb(result)))
+        if result['remote_status']=='LIVE' and (not previous or previous['status']!='LIVE'):
+            conn.execute("INSERT INTO audit_events(event_type,blog_id,payload) VALUES ('publication.trends_draft.manual_published',%s,%s)",(row['blog_id'],Jsonb(result)))
     return result
 
 
@@ -1831,19 +1843,23 @@ def list_post_publication_reviews(
             ORDER BY high_count DESC,open_items.n DESC,p.published_at DESC,r.id""",
             (status,status,status),
         ).fetchall()
-        drafts = conn.execute("""SELECT d.job_id id,'draft'::text publication_mode,
+        drafts = conn.execute("""SELECT d.job_id id,'draft'::text publication_mode,b.display_name blog_name,
+            authoring.id codex_job_id,authoring.keyword,authoring.import_id,
             COALESCE(review.payload->>'review_status','pending') review_status,
             COALESCE(review.payload->>'review_notes','') review_notes,d.verified_at published_at,
+            d.verified_at saved_at,sync.created_at remote_checked_at,sync.payload->>'remote_updated_at' remote_updated_at,
+            sync.payload->>'remote_published_at' remote_published_at,sync.payload->>'error_code' remote_check_error,
             d.remote_post_id,COALESCE(sync.payload->>'remote_status','DRAFT') remote_status,
             sync.payload->>'remote_url' remote_url,d.content_version_id,v.title,b.language_code,b.url blog_url,
             0 open_item_count,0 high_count,'[]'::jsonb review_items,i.claims claim_verification
             FROM blogger_draft_receipts d JOIN content_versions v ON v.id=d.content_version_id
             JOIN blogger_blogs b ON b.id=d.blog_id
+            LEFT JOIN codex_authoring_jobs authoring ON authoring.content_version_id=d.content_version_id
             LEFT JOIN external_content_import_content_links l ON l.content_version_id=d.content_version_id
             LEFT JOIN external_content_imports i ON i.id=l.import_id
             LEFT JOIN LATERAL (SELECT payload FROM audit_events WHERE event_type='publication.trends_draft.reviewed'
               AND payload->>'job_id'=d.job_id::text ORDER BY id DESC LIMIT 1) review ON true
-            LEFT JOIN LATERAL (SELECT payload FROM audit_events WHERE event_type='publication.trends_draft.synced'
+            LEFT JOIN LATERAL (SELECT payload,created_at FROM audit_events WHERE event_type='publication.trends_draft.synced'
               AND payload->>'job_id'=d.job_id::text ORDER BY id DESC LIMIT 1) sync ON true
             WHERE (%s='all' OR (%s='pending' AND COALESCE(review.payload->>'review_status','pending')<>'completed')
               OR (%s='completed' AND review.payload->>'review_status'='completed'))

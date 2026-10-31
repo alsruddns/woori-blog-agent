@@ -254,7 +254,9 @@ def access_token(connection_id: UUID, force: bool = False) -> str:
     token = ""
     with connection() as conn:
         row = conn.execute(
-            "SELECT * FROM google_connections WHERE id=%s FOR UPDATE", (connection_id,)
+            # Token refresh changes no referenced key. Allow the caller's Job
+            # FK KEY SHARE lock while still serializing refreshes/revocation.
+            "SELECT * FROM google_connections WHERE id=%s FOR NO KEY UPDATE", (connection_id,)
         ).fetchone()
         if row is None or row["status"] != "connected":
             raise GoogleFailure("oauth_not_connected")

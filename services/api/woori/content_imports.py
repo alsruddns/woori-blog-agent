@@ -971,7 +971,9 @@ def get_content_import(import_id: UUID) -> dict[str, Any]:
         item_result = dict(row)
         delivery = conn.execute("""SELECT j.id job_id,j.publication_mode,j.publication_state,j.remote_post_id,
             b.display_name blog_name,b.blog_id blogger_id,COALESCE(p.remote_status,sync.payload->>'remote_status',d.remote_status) remote_status,
-            COALESCE(p.remote_url,sync.payload->>'remote_url') remote_url,COALESCE(p.remote_verified_at,sync.created_at,d.verified_at) verified_at,
+            COALESCE(p.remote_url,sync.payload->>'remote_url') remote_url,COALESCE(p.remote_verified_at,CASE WHEN sync.payload->>'remote_status' IN ('DRAFT','LIVE') THEN sync.created_at END,d.verified_at) verified_at,
+            d.verified_at saved_at,sync.created_at remote_checked_at,sync.payload->>'remote_updated_at' remote_updated_at,
+            sync.payload->>'remote_published_at' remote_published_at,sync.payload->>'error_code' remote_check_error,
             COALESCE(review.payload->>'review_status',d.review_status) review_status
             FROM publishing_jobs j JOIN blogger_blogs b ON b.id=j.blog_id
             LEFT JOIN blogger_draft_receipts d ON d.job_id=j.id LEFT JOIN publishing_records p ON p.job_id=j.id

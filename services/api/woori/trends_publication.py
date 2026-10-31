@@ -118,11 +118,18 @@ def policy_state(conn: Any) -> dict[str, Any]:
         blog["draft_activation_blockers"] = [b for b in blockers if b not in {"actual_write_verification_required", "authenticated_public_publish_approval_required"}]
         blog["activation_blockers"] = blockers
         blog["activation_ready"] = not blockers
+        blog['authoring'] = conn.execute("""SELECT q.state request_state,j.id job_id,j.state,j.error_code,j.keyword,j.import_id,j.content_version_id,j.updated_at
+            FROM trend_generation_requests q LEFT JOIN codex_authoring_jobs j ON j.id=q.authoring_job_id
+            WHERE q.contract->>'target_blog_id'=%s ORDER BY q.created_at DESC,q.id DESC LIMIT 1""",(str(blog['id']),)).fetchone()
+        blog['delivery'] = conn.execute("""SELECT id,status,publication_state,publication_mode,last_error_category,available_at,remote_post_id
+            FROM publishing_jobs WHERE blog_id=%s AND publication_lane='trends_auto' ORDER BY scheduled_at DESC,id DESC LIMIT 1""",(blog['id'],)).fetchone()
+    from .keyword_jobs import authoring_backoff
     return {"policies": [{**dict(blog), "policy": policies.get(str(blog["id"]))}
                           for blog in blogs],
             "supported_geographies": sorted(ALLOWED_GEOGRAPHIES),
             "provenance": "codex_trends_export", "publication_lane": "trends_auto",
-            "emergency_stopped": not emergency or bool(emergency['emergency_stopped'])}
+            "emergency_stopped": not emergency or bool(emergency['emergency_stopped']),
+            'codex_backoff':authoring_backoff(conn)}
 
 
 def record_policy(conn: Any, request: Any) -> dict[str, Any]:

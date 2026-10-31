@@ -101,9 +101,10 @@ def test_unverified_trends_job_enqueue_and_duplicate_reuse(monkeypatch):
     assert fake.claims[0]["verification_status"] == "unverified"
 
 
-@pytest.mark.parametrize("mode,recover", [("draft",False),("publish",False),("draft",True)])
-def test_isolated_import_enqueue_worker_and_live_receipt(lab, monkeypatch, mode, recover):
+@pytest.mark.parametrize("mode,recover,language", [("draft",False,"en"),("publish",False,"en"),("draft",True,"en"),("draft",False,"ja"),("draft",False,"ko")])
+def test_isolated_import_enqueue_worker_and_live_receipt(lab, monkeypatch, mode, recover, language):
     conn, api, headers = lab
+    geo={"en":"US","ja":"JP","ko":"KR"}[language]
     @contextmanager
     def shared():
         with conn.transaction():
@@ -115,6 +116,12 @@ def test_isolated_import_enqueue_worker_and_live_receipt(lab, monkeypatch, mode,
     monkeypatch.setattr(scheduled_duplicates, "find_remote_duplicate", lambda *_, **__: {"status": "clear"})
     monkeypatch.setattr(publication_worker, "find_remote_duplicate", lambda *_, **__: {"status": "clear"})
     payload = item()
+    if language != 'en':
+        payload.update(language_code=language,source_region=geo,
+            target_audiences=[{'language_code':language,'target_region':geo,'reader_relevance_reason':'Localized isolated contract test'}],
+            title='資料整理の進め方と比較のポイント' if language=='ja' else '자료 정리 방법과 비교 기준을 살펴보는 안내',
+            body_markdown=('資料を整理する際は、目的と読み手を確認し、情報を比較しやすい形にまとめます。手順と選択肢を区別し、必要な情報を見つけやすくすることが大切です。' if language=='ja' else '자료를 정리할 때는 목적과 독자를 확인하고 정보를 비교하기 쉬운 형태로 구성합니다. 절차와 선택지를 구분하고 필요한 정보를 찾기 쉽게 정리하는 방법을 설명합니다.')*8,
+            blogger_labels=suggested_labels('technology',language,google_trends_based=True))
     payload['claims'] = [{"claim_id": "general", "claim": "Readers can compare organizational approaches.",
         "source_ids": [], "evidence_excerpt": "", "verification_status": "unverified", "factual_state": "unverified"}]
     response = api.post('/admin/research/content-imports', headers=headers, json={'submitted_by': 'isolated', 'item': payload})
@@ -123,31 +130,31 @@ def test_isolated_import_enqueue_worker_and_live_receipt(lab, monkeypatch, mode,
     oauth = conn.execute("INSERT INTO google_connections(label,status,scopes) VALUES ('isolated','connected',%s) RETURNING id",
         (['https://www.googleapis.com/auth/blogger'],)).fetchone()['id']
     blog = conn.execute("""INSERT INTO blogger_blogs(language_code,url,display_name,blog_id,oauth_connection_id,
-        connection_verified_at,test_publish_verified_at) VALUES ('en',%s,'isolated','1234567890',%s,now(),now()) RETURNING id""",
-        ('https://isolated-'+uuid4().hex+'.blogspot.com', oauth)).fetchone()['id']
-    profile = conn.execute("INSERT INTO language_profiles(language_code,target_country) VALUES ('en','US') ON CONFLICT(language_code,target_country) DO UPDATE SET search_intent=language_profiles.search_intent RETURNING id").fetchone()['id']
-    conn.execute("INSERT INTO publishing_policies(language_code,blog_id,profile_id) VALUES ('en',%s,%s)", (blog,profile))
-    conn.execute("UPDATE trend_blog_geo_authoring SET enabled=false WHERE geo='US'")
-    conn.execute("INSERT INTO trend_blog_geo_authoring(blog_id,geo,enabled,processing_order) VALUES (%s,'US',true,1)",(blog,))
+        connection_verified_at,test_publish_verified_at) VALUES (%s,%s,'isolated','1234567890',%s,now(),now()) RETURNING id""",
+        (language,'https://isolated-'+uuid4().hex+'.blogspot.com', oauth)).fetchone()['id']
+    profile = conn.execute("INSERT INTO language_profiles(language_code,target_country) VALUES (%s,%s) ON CONFLICT(language_code,target_country) DO UPDATE SET search_intent=language_profiles.search_intent RETURNING id",(language,geo)).fetchone()['id']
+    conn.execute("INSERT INTO publishing_policies(language_code,blog_id,profile_id) VALUES (%s,%s,%s)", (language,blog,profile))
+    conn.execute("UPDATE trend_blog_geo_authoring SET enabled=false WHERE geo=%s",(geo,))
+    conn.execute("INSERT INTO trend_blog_geo_authoring(blog_id,geo,enabled,processing_order) VALUES (%s,%s,true,1)",(blog,geo))
     if mode == 'draft':
         conn.execute("UPDATE blogger_blogs SET test_publish_verified_at=NULL WHERE id=%s",(blog,))
     conn.execute("INSERT INTO audit_events(event_type,payload) VALUES ('publication.trends_auto.connection_check',%s)",
         (Jsonb({'results':[{'blog_record_id':str(blog),'remote_blog_id':'1234567890','verified':True}]}),))
     approvals_before=conn.execute("SELECT count(*) n FROM audit_events WHERE event_type='publication.trends_public_write.approved'").fetchone()['n']
     policy_response=api.post('/admin/publications/trends-auto-policy',headers=headers,json={
-        'blog_id':str(blog),'enabled':True,'allowed_geos':['US'],'publication_mode':mode,'daily_limit':None,
+        'blog_id':str(blog),'enabled':True,'allowed_geos':[geo],'publication_mode':mode,'daily_limit':None,
         'actor_label':'isolated manager','reason':'Isolated policy lifecycle test','idempotency_key':uuid4().hex,
         'confirmation':'ENABLE TRENDS AUTO PUBLICATION' if mode=='publish' else ''})
     assert policy_response.status_code==201, policy_response.text
     approvals_after=conn.execute("SELECT count(*) n FROM audit_events WHERE event_type='publication.trends_public_write.approved'").fetchone()['n']
     assert approvals_after-approvals_before == (1 if mode=='publish' else 0)
     topic=uuid4()
-    conn.execute("INSERT INTO trend_topics(id,normalized_key,representative_geo,representative_query,grouping_method,grouping_confidence,grouping_status) VALUES (%s,%s,'US','organization','single_observation',1,'exact_query_cluster_not_event_confirmed')",(topic,uuid4().hex))
+    conn.execute("INSERT INTO trend_topics(id,normalized_key,representative_geo,representative_query,grouping_method,grouping_confidence,grouping_status) VALUES (%s,%s,%s,'organization','single_observation',1,'exact_query_cluster_not_event_confirmed')",(topic,uuid4().hex,geo))
     job=conn.execute("""INSERT INTO codex_authoring_jobs(request_key,request_sha256,job_type,blog_id,language_code,target_country,
-        category,keyword,options,state,model,import_id,content_version_id) VALUES (%s,%s,'google_trends',%s,'en','US',
-        'technology','organization','{}','imported_review','isolated',%s,%s) RETURNING id""",(uuid4(),'a'*64,blog,imported,version)).fetchone()['id']
+        category,keyword,options,state,model,import_id,content_version_id) VALUES (%s,%s,'google_trends',%s,%s,%s,
+        'technology','organization','{}','imported_review','isolated',%s,%s) RETURNING id""",(uuid4(),'a'*64,blog,language,geo,imported,version)).fetchone()['id']
     slot=conn.execute('SELECT now() stamp').fetchone()['stamp'].isoformat()
-    contract={'target_blog_id':str(blog),'target_language':'en','target_country':'US','source_country':'US','collection_slot':slot}
+    contract={'target_blog_id':str(blog),'target_language':language,'target_country':geo,'source_country':geo,'collection_slot':slot}
     conn.execute("INSERT INTO trend_generation_requests(topic_id,duplicate_key,contract,state,authoring_job_id) VALUES (%s,%s,%s,'imported',%s)",(topic,uuid4().hex,Jsonb(contract),job))
     conn.execute("UPDATE publication_mode_settings SET emergency_stopped=false WHERE scope_type='global' AND scope_key=''")
     assert enqueue_trends_auto_jobs()['created']==1
@@ -161,7 +168,7 @@ def test_isolated_import_enqueue_worker_and_live_receipt(lab, monkeypatch, mode,
         # an already-confirmed public Job. All records are inside lab rollback.
         conn.execute('UPDATE blogger_blogs SET test_publish_verified_at=now() WHERE id=%s',(blog,))
         changed=api.post('/admin/publications/trends-auto-policy',headers=headers,json={
-            'blog_id':str(blog),'enabled':True,'allowed_geos':['US'],
+            'blog_id':str(blog),'enabled':True,'allowed_geos':[geo],
             'publication_mode':'publish' if mode=='draft' else 'draft','daily_limit':None,
             'actor_label':'isolated manager','reason':'Isolated later policy mode switch',
             'idempotency_key':uuid4().hex,
@@ -192,9 +199,12 @@ def test_isolated_import_enqueue_worker_and_live_receipt(lab, monkeypatch, mode,
         assert publication_worker.process_next_live_job(trends_auto_only=True) is None
         from woori import blogger_service, publication_monitor
         monkeypatch.setattr(publication_monitor,'connection',shared)
-        monkeypatch.setattr(blogger_service,'post',lambda *_:{'id':'456','blog':{'id':'1234567890'},'status':'LIVE','url':'https://isolated.blogspot.com/edited.html'})
+        monkeypatch.setattr(blogger_service,'post',lambda *_:{'id':'456','blog':{'id':'1234567890'},'status':'LIVE','url':'https://isolated.blogspot.com/edited.html','updated':slot,'published':slot,'content':'User edited content'})
         synced=api.post('/admin/publications/jobs/'+str(bound['id'])+'/sync-draft',headers=headers)
         assert synced.status_code==200 and synced.json()['remote_status']=='LIVE'
+        assert synced.json()['remote_updated_at']==slot and synced.json()['remote_published_at']==slot
+        assert api.post('/admin/publications/jobs/'+str(bound['id'])+'/sync-draft',headers=headers).status_code==200
+        assert conn.execute("SELECT count(*) n FROM audit_events WHERE event_type='publication.trends_draft.manual_published' AND payload->>'job_id'=%s",(str(bound['id']),)).fetchone()['n']==1
         monitor=publication_monitor.snapshot('all',1,50)
         tracked=next(j for j in monitor['items'] if j['job_id']==str(bound['id']))
         assert tracked['state']=='published' and tracked['publication_mode']=='draft'
@@ -202,6 +212,22 @@ def test_isolated_import_enqueue_worker_and_live_receipt(lab, monkeypatch, mode,
             json={'review_status':'completed','review_notes':'User manually reviewed the Blogger draft.'})
         assert reviewed.status_code==200 and reviewed.json()['remote_edit_verified'] is False
         assert conn.execute("SELECT publication_mode FROM publishing_jobs WHERE id=%s",(bound['id'],)).fetchone()['publication_mode']=='draft'
+        from woori.google_http import GoogleFailure
+        original_body=conn.execute('SELECT body FROM content_versions WHERE id=%s',(version,)).fetchone()['body']
+        for category,status in [('not_found',404),('permission_denied',403),('network',None),('free_quota_exceeded',429)]:
+            calls=[]
+            def unavailable(*_,_calls=calls,_category=category,_status=status):
+                _calls.append(True)
+                raise GoogleFailure(_category,_status)
+            monkeypatch.setattr(blogger_service,'post',unavailable)
+            unavailable_result=api.post('/admin/publications/jobs/'+str(bound['id'])+'/sync-draft',headers=headers)
+            assert unavailable_result.status_code==200
+            assert unavailable_result.json()['remote_status']==('NOT_FOUND' if status==404 else 'LOOKUP_FAILED')
+            assert calls==[True]
+            failed_item=next(j for j in publication_monitor.snapshot('all',1,50)['items'] if j['job_id']==str(bound['id']))
+            assert failed_item['state']=='failed' and failed_item['remote_url'] is None
+            assert conn.execute('SELECT body FROM content_versions WHERE id=%s',(version,)).fetchone()['body']==original_body
+            assert conn.execute('SELECT remote_status FROM blogger_draft_receipts WHERE job_id=%s',(bound['id'],)).fetchone()['remote_status']=='DRAFT'
         return
     assert result['status']=='draft_created', result
     conn.execute("UPDATE publishing_jobs SET available_at=now() WHERE blog_id=%s",(blog,))

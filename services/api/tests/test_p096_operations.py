@@ -1,0 +1,88 @@
+import os
+from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
+from uuid import uuid4
+
+import psycopg
+import pytest
+from psycopg import sql
+from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
+from test_keyword_authoring import setup_job
+from test_pipeline import lab as shared_lab
+from woori import google_oauth, keyword_jobs, trend_editorial
+
+lab=shared_lab
+
+
+def test_token_refresh_lock_is_compatible_with_callers_job_foreign_key(monkeypatch):
+    # Dedicated disposable test schema, never an operational connection/table.
+    url=os.environ['MIGRATION_DATABASE_URL']
+    schema='woori_test_p096_'+uuid4().hex
+    with psycopg.connect(url,autocommit=True,row_factory=dict_row) as owner:
+        identity=owner.execute('SELECT current_database() db,current_user role').fetchone()
+        assert identity=={'db':'woori_blog_agent_test','role':'woori_test_owner'}
+        owner.execute(sql.SQL('CREATE SCHEMA {}').format(sql.Identifier(schema)))
+        try:
+            owner.execute(sql.SQL('CREATE TABLE {}.google_connections(id uuid PRIMARY KEY,status text,expires_at timestamptz,access_ciphertext text)').format(sql.Identifier(schema)))
+            owner.execute(sql.SQL('CREATE TABLE {}.jobs(id uuid PRIMARY KEY,oauth_id uuid REFERENCES {}.google_connections(id))').format(sql.Identifier(schema),sql.Identifier(schema)))
+            key=uuid4()
+            owner.execute(sql.SQL("INSERT INTO {}.google_connections VALUES (%s,'connected',now()+interval '1 hour','test-cipher')").format(sql.Identifier(schema)),(key,))
+            @contextmanager
+            def separate():
+                with psycopg.connect(url,row_factory=dict_row) as token:
+                    token.execute(sql.SQL('SET LOCAL search_path TO {}').format(sql.Identifier(schema)))
+                    token.execute("SET LOCAL lock_timeout='300ms'")
+                    yield token
+            monkeypatch.setattr(google_oauth,'connection',separate)
+            monkeypatch.setattr(google_oauth,'decrypt',lambda _: 'isolated-token')
+            with psycopg.connect(url) as parent:
+                parent.execute(sql.SQL('INSERT INTO {}.jobs VALUES (%s,%s)').format(sql.Identifier(schema)),(uuid4(),key))
+                with pytest.raises(psycopg.errors.LockNotAvailable), separate() as token:
+                    token.execute('SELECT * FROM google_connections WHERE id=%s FOR UPDATE',(key,))
+                assert google_oauth.access_token(key)=='isolated-token'
+                parent.rollback()
+        finally:
+            assert schema.startswith('woori_test_p096_')
+            owner.execute(sql.SQL('DROP SCHEMA {} CASCADE').format(sql.Identifier(schema)))
+
+
+@pytest.mark.parametrize('expired',[False,True])
+def test_usage_recovery_preserves_job_and_requires_current_slot(lab,monkeypatch,tmp_path,expired):
+    conn,api,headers,payload=setup_job(lab,monkeypatch)
+    @contextmanager
+    def shared():
+        with conn.transaction():yield conn
+    monkeypatch.setattr(trend_editorial,'connection',shared)
+    monkeypatch.setattr(trend_editorial,'slot_is_current',lambda _:not expired)
+    monkeypatch.setattr(trend_editorial,'current_observations',lambda *_:[{'id':uuid4()}])
+    response=api.post('/admin/keyword-authoring',headers=headers,json=payload)
+    job=response.json()['id'];topic=uuid4()
+    conn.execute("INSERT INTO trend_topics(id,normalized_key,representative_geo,representative_query,grouping_method,grouping_confidence,grouping_status) VALUES (%s,%s,'KR','test topic','single_observation',1,'exact_query_cluster_not_event_confirmed')",(topic,uuid4().hex))
+    request=conn.execute("INSERT INTO trend_generation_requests(topic_id,duplicate_key,contract,state,authoring_job_id) VALUES (%s,%s,%s,'failed',%s) RETURNING id",
+        (topic,uuid4().hex,Jsonb({'collection_slot':datetime.now(UTC).isoformat()}),job)).fetchone()['id']
+    conn.execute("UPDATE codex_authoring_jobs SET job_type='google_trends',trend_request_id=%s,state='failed',error_code='codex_usage_limit' WHERE id=%s",(request,job))
+    retry={'request_key':str(uuid4())}
+    monkeypatch.setattr(keyword_jobs,'authoring_backoff',lambda _:{'active':True,'provider_reset_at':None})
+    result=api.post(f'/admin/keyword-authoring/{job}/retry',headers=headers,json=retry)
+    assert result.status_code==(409 if expired else 429)
+    monkeypatch.setattr(keyword_jobs,'authoring_backoff',lambda _:None)
+    result=api.post(f'/admin/keyword-authoring/{job}/retry',headers=headers,json=retry)
+    if expired:
+        assert result.status_code==409 and 'expired_collection_slot' in result.text
+        return
+    assert result.status_code==201,result.text
+    assert result.json()['id']==job and result.json()['state']=='queued'
+    assert api.post(f'/admin/keyword-authoring/{job}/retry',headers=headers,json=retry).json()['id']==job
+    assert conn.execute('SELECT count(*) n FROM codex_authoring_jobs WHERE id=%s',(job,)).fetchone()['n']==1
+    monkeypatch.setenv('LOCALAPPDATA',str(tmp_path))
+    assert keyword_jobs.job_workdir(result.json()).name=='attempt-'+retry['request_key']
+
+
+def test_usage_backoff_does_not_invent_provider_reset(lab):
+    conn,_,_=lab
+    conn.execute("INSERT INTO audit_events(event_type,payload) VALUES ('codex.authoring.state','{\"error_code\":\"codex_usage_limit\"}')")
+    result=keyword_jobs.authoring_backoff(conn)
+    assert result['active'] and result['provider_reset_at'] is None
+    assert result['basis']=='local_backoff_not_provider_reset'
+    assert datetime.fromisoformat(result['not_before'])<=datetime.now(UTC)+timedelta(minutes=15)
