@@ -1339,7 +1339,7 @@ def tick(
         raise ValueError("invalid_backoff")
     if allow_trends_auto_publications:
         live = process_next_live_job(trends_auto_only=True)
-        if live is not None:
+        if live is not None and live.get('status') != 'external_backoff':
             return {"job_type": "trends_auto_blogger_live", **live,
                     "simulation_only": False, "auto_enabled": True}
     if allow_scheduled_auto_publications:

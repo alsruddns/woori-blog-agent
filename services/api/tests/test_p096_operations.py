@@ -123,3 +123,15 @@ def test_blogger_backoff_preserves_jobs_and_does_not_dispatch(lab,monkeypatch):
     assert publication_worker.process_next_live_job(trends_auto_only=True)['status']=='external_backoff'
     assert publication_worker.process_next_live_job(trends_auto_only=True)['job_id'] is None
     assert conn.execute("SELECT count(*) n FROM audit_events WHERE event_type='publication.trends_auto.external_backoff' AND payload->>'source_event_id'=%s",(str(pause['event_id']),)).fetchone()['n']==1
+
+
+@pytest.mark.parametrize('lane',['scheduled_auto','manual'])
+def test_trends_backoff_never_starves_existing_publication_lanes(monkeypatch,lane):
+    from woori import publication_worker
+    def process(**flags):
+        if flags.get('trends_auto_only'):return {'status':'external_backoff','job_id':None}
+        return {'status':'isolated_other_lane','job_id':str(uuid4())}
+    monkeypatch.setattr(publication_worker,'process_next_live_job',process)
+    result=publication_worker.tick(allow_trends_auto_publications=True,
+        allow_scheduled_auto_publications=lane=='scheduled_auto',allow_manual_confirmed_publications=lane=='manual')
+    assert result['status']=='isolated_other_lane'
