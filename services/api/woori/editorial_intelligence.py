@@ -977,7 +977,7 @@ def monitor() -> dict[str, Any]:
             """SELECT
           (SELECT count(*) FROM external_content_import_versions) import_versions,
           (SELECT count(DISTINCT import_version_id) FROM editorial_quality_reports WHERE stage='static' AND status='completed' AND engine_version=%s) evaluated,
-          (SELECT count(*) FROM editorial_quality_reports WHERE stage='static' AND result->'suggestions' <> '[]'::jsonb AND engine_version=%s) with_suggestions,
+          (SELECT count(DISTINCT import_version_id) FROM editorial_quality_reports WHERE status='completed' AND result->'suggestions' <> '[]'::jsonb AND engine_version=%s) with_suggestions,
           (SELECT count(*) FROM editorial_quality_reports WHERE stage='static' AND result->'checks' @> '{"safe_html":false}' AND engine_version=%s) static_unsafe,
           (SELECT count(DISTINCT new_version_id) FROM editorial_suggestion_events WHERE action='apply') edited_versions,
           (SELECT count(*) FROM codex_authoring_jobs WHERE job_type='google_trends' AND started_at IS NOT NULL) authoring_executions,

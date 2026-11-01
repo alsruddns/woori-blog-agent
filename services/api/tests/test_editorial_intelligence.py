@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
+from psycopg.types.json import Jsonb
 from test_content_imports import valid_item
 from test_pipeline import lab as shared_lab
 from test_trend_editorial import observation
@@ -14,6 +15,39 @@ from woori import editorial_scoring as scoring
 
 lab = shared_lab
 BASE = "/admin/research/editorial-intelligence"
+
+
+def test_monitor_counts_deep_suggestions_without_static_findings(editor):
+    conn, api, h = editor
+    saved, _payload = manuscript(editor)
+    report = api.post(f"{BASE}/imports/{saved['import_id']}/evaluate", headers=h).json()
+    # A separate current rule revision with only a completed deep finding must
+    # count as a manuscript needing attention, even without a static report.
+    from woori import editorial_quality
+
+    previous = editorial_quality.VERSION
+    try:
+        editorial_quality.VERSION = "isolated-deep-monitor"
+        conn.execute(
+            """INSERT INTO editorial_quality_reports(import_id,import_version_id,content_version_id,
+            engine_version,stage,status,result,ai_calls) VALUES(%s,%s,%s,%s,'codex','completed',%s,0)""",
+            (
+                saved["import_id"],
+                report["import_version_id"],
+                report["content_version_id"],
+                editorial_quality.VERSION,
+                Jsonb(
+                    {
+                        "suggestions": [{"id": "fixture"}],
+                        "fact_verified": False,
+                        "publish_ready": False,
+                    }
+                ),
+            ),
+        )
+        assert api.get(BASE + "/monitor", headers=h).json()["totals"]["with_suggestions"] == 1
+    finally:
+        editorial_quality.VERSION = previous
 
 
 @pytest.fixture
