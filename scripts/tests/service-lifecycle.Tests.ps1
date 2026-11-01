@@ -68,7 +68,7 @@ Describe 'Windows service lifecycle ownership and startup policy' {
   It 'keeps startup detached from per-save triggers and gates scheduled Auto explicitly' {
     $bootstrap = Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\start-services.ps1') -Raw
     $bootstrap | Should Match 'start-publication-worker\.ps1|start\.ps1'
-    $bootstrap | Should Match 'scheduled-auto'
+    $bootstrap | Should Match 'manual-confirmed'
     $bootstrap | Should Match 'Postgres'
     $bootstrap | Should Match 'already_ready'
     $autostart = Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\manage-autostart.ps1') -Raw
@@ -94,11 +94,11 @@ Describe 'Windows service lifecycle ownership and startup policy' {
   $apply | Should Match 'schemaStatus\.schema_version'
   }
 
-  It 'keeps login startup publication mode aligned with the verified combined worker mode' {
+  It 'keeps login startup in the current manual-confirmed worker mode' {
     $bootstrap = Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\start-services.ps1') -Raw
-    $bootstrap | Should Match 'scheduled-auto-and-manual'
-    $bootstrap | Should Match 'start\.ps1.*PublicationMode scheduled-auto-manual-trends'
-    $bootstrap | Should Not Match 'PublicationMode scheduled-auto(?:\s|$)'
+    $bootstrap | Should Match 'operations-manual-confirmed'
+    $bootstrap | Should Match "'-PublicationMode','manual-confirmed'"
+    $bootstrap | Should Not Match 'operations-scheduled-auto|PublicationMode scheduled-auto'
   }
 
   It 'defines the eight project desktop shortcuts and hides the PowerShell launcher' {

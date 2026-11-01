@@ -1,10 +1,45 @@
 param(
   [ValidateRange(30,900)][int]$DatabaseTimeoutSeconds = 300,
   [ValidateRange(1,10)][int]$ServiceAttempts = 3,
-  [switch]$ExplicitUserStart
+  [switch]$ExplicitUserStart,
+  [switch]$FunctionsOnly
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'server-common.ps1')
+
+function Test-ValidatedStartupSource([string]$ValidatedCommit, [string]$Head) {
+  if ($ValidatedCommit -notmatch '^[0-9a-f]{40}$' -or $Head -notmatch '^[0-9a-f]{40}$') { return $false }
+  if ($ValidatedCommit -ceq $Head) { return $true }
+  & git -C $script:ProjectRoot merge-base --is-ancestor $ValidatedCommit $Head
+  if ($LASTEXITCODE -ne 0) { return $false }
+  $paths = @(& git -C $script:ProjectRoot diff --name-only $ValidatedCommit $Head)
+  if ($LASTEXITCODE -ne 0) { throw 'Could not compare startup source with its validated commit.' }
+  # Documentation-only descendants do not invalidate already tested binaries.
+  # Every script, configuration, dependency and application change still blocks.
+  $runtimeChanges = @($paths | Where-Object { $_ -notmatch '^docs/|^(README|CHANGELOG)\.md$' })
+  return $runtimeChanges.Count -eq 0
+}
+
+function Invoke-StartupProcess([string]$ScriptPath, [string[]]$ChildArguments) {
+  & powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File $ScriptPath @ChildArguments | Out-Host
+  return $LASTEXITCODE
+}
+
+function Invoke-StartupChild([string[]]$ChildArguments) {
+  # A separate PowerShell process gives exit/return a local boundary. Never
+  # interpret the last Git/readiness command's stale LASTEXITCODE as startup.
+  $childExit = Invoke-StartupProcess (Join-Path $PSScriptRoot 'start.ps1') $ChildArguments
+  if ($childExit -ne 0) { throw "Startup child failed (exit=$childExit service=$($ChildArguments[1]))." }
+}
+
+function Get-StartupMutexName {
+  $hash = [Security.Cryptography.SHA256]::Create()
+  try {
+    $identity = $script:ProjectRoot.ToLowerInvariant() + '|' + [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    $digest = [BitConverter]::ToString($hash.ComputeHash([Text.Encoding]::UTF8.GetBytes($identity))).Replace('-','')
+    return 'Global\WooriBlogAgent-Startup-' + $digest
+  } finally { $hash.Dispose() }
+}
 
 function Invoke-ReadinessJson([string[]]$Arguments) {
   $python = Join-Path $script:ProjectRoot '.venv\Scripts\python.exe'
@@ -40,7 +75,7 @@ function Ensure-HttpService([string]$Name, [int]$Port, [string]$HealthUrl) {
       $table = Get-ProcessTable
       $owners = @($listeners | ForEach-Object { $table | Where-Object Id -eq ([int]$_) | Select-Object -First 1 })
       $owned = @($owners | Where-Object { Test-ExactCheckoutServiceProcess $_ $Name })
-      if (-not $owned.Count) {
+      if ($owned.Count -ne $listeners.Count) {
         Write-LifecycleLog $Name 'port_conflict' "port=$Port owner_pids=$($listeners -join ',')"
         throw "$Name port $Port is occupied by a process not verified as this checkout. It was left untouched."
       }
@@ -59,8 +94,8 @@ function Ensure-HttpService([string]$Name, [int]$Port, [string]$HealthUrl) {
       throw "$Name has checkout-owned process PID(s) $ids but no listener; no duplicate was started."
     }
     try {
-      & (Join-Path $PSScriptRoot 'start.ps1') -Service $Name
-      if ($LASTEXITCODE -eq 0 -and (Test-LoopbackHttp $HealthUrl 5)) { return }
+      Invoke-StartupChild @('-Service',$Name)
+      if (Test-LoopbackHttp $HealthUrl 5) { return }
     } catch {
       Write-LifecycleLog $Name 'start_attempt_failed' "attempt=$attempt error_type=$($_.Exception.GetType().Name)"
     }
@@ -88,30 +123,40 @@ function Ensure-ResearchWorker {
   }
   for ($attempt=1; $attempt -le $ServiceAttempts; $attempt++) {
     try {
-      & (Join-Path $PSScriptRoot 'start.ps1') -Service research_worker
-      if ($LASTEXITCODE -eq 0) { return }
+      if ($attempt -gt 1 -and @(Get-CheckoutServiceProcesses (Get-ProcessTable) 'worker').Count) {
+        throw 'Research Worker process appeared after an earlier attempt; no duplicate was started.'
+      }
+      Invoke-StartupChild @('-Service','research_worker')
+      $ready = Invoke-ReadinessJson @('--worker','research_worker')
+      if ($ready.exit -eq 0 -and $ready.value.ready) { return }
     } catch { Write-LifecycleLog 'research_worker' 'start_attempt_failed' "attempt=$attempt error_type=$($_.Exception.GetType().Name)" }
     if ($attempt -lt $ServiceAttempts) { Start-Sleep -Seconds ([Math]::Min(5 * $attempt,20)) }
   }
   throw "Research Worker failed to start after $ServiceAttempts attempts."
 }
 
-function Ensure-PublicationWorker {
+function Get-PublicationStartupStatus {
   $python = Join-Path $script:ProjectRoot '.venv\Scripts\python.exe'
   $entry = Join-Path $PSScriptRoot 'publication-worker.py'
   $raw = & $python $entry --status 2>$null
   $exit = $LASTEXITCODE
   $status = $null
   if ($raw) { try { $status = ($raw -join "`n") | ConvertFrom-Json } catch { } }
-  if ($exit -eq 0 -and $status -and $status.heartbeat_fresh -and $status.heartbeat.process_id) {
+  return @{ exit=$exit; value=$status }
+}
+
+function Ensure-PublicationWorker {
+  $probe = Get-PublicationStartupStatus
+  $status = $probe.value
+  if ($probe.exit -eq 0 -and $status -and $status.heartbeat_fresh -and $status.heartbeat.process_id) {
     $table = Get-ProcessTable
     $worker = $table | Where-Object Id -eq ([int]$status.heartbeat.process_id) | Select-Object -First 1
     if ($worker -and (Test-ExactCheckoutServiceProcess $worker 'publication_worker')) {
-      if ([string]$worker.CommandLine -match '--operations-scheduled-auto-and-manual-and-trends(?:\s|$)') {
-        Write-LifecycleLog 'publication_worker' 'already_ready' "pid=$($worker.Id) mode=scheduled-auto-manual-trends"
+      if ([string]$worker.CommandLine -match '--operations-manual-confirmed(?:\s|$)') {
+        Write-LifecycleLog 'publication_worker' 'already_ready' "pid=$($worker.Id) mode=manual-confirmed"
         return
       }
-      Write-LifecycleLog 'publication_worker' 'mode_mismatch' "pid=$($worker.Id) required=scheduled-auto-manual-trends"
+      Write-LifecycleLog 'publication_worker' 'mode_mismatch' "pid=$($worker.Id) required=manual-confirmed"
       throw "Publication Worker is already running in a different mode. It was left running; review with scripts/status.ps1 before any safe mode transition."
     }
   }
@@ -123,15 +168,28 @@ function Ensure-PublicationWorker {
   }
   for ($attempt=1; $attempt -le $ServiceAttempts; $attempt++) {
     try {
-      & (Join-Path $PSScriptRoot 'start.ps1') -Service publication_worker -PublicationMode scheduled-auto-manual-trends
-      if ($LASTEXITCODE -eq 0) { return }
+      if ($attempt -gt 1 -and @(Get-CheckoutServiceProcesses (Get-ProcessTable) 'publication_worker').Count) {
+        throw 'Publication Worker process appeared after an earlier attempt; no duplicate was started.'
+      }
+      Invoke-StartupChild @('-Service','publication_worker','-PublicationMode','manual-confirmed')
+      return
     } catch { Write-LifecycleLog 'publication_worker' 'start_attempt_failed' "attempt=$attempt error_type=$($_.Exception.GetType().Name)" }
     if ($attempt -lt $ServiceAttempts) { Start-Sleep -Seconds ([Math]::Min(5 * $attempt,20)) }
   }
-  throw "Publication Worker failed to start in scheduled-auto-manual-trends mode after $ServiceAttempts attempts."
+  throw "Publication Worker failed to start in manual-confirmed mode after $ServiceAttempts attempts."
 }
 
+if ($FunctionsOnly) { return }
+$startupMutex = New-Object Threading.Mutex($false, (Get-StartupMutexName))
+$startupLockHeld = $false
 try {
+  try { $startupLockHeld = $startupMutex.WaitOne(0) }
+  catch [Threading.AbandonedMutexException] { $startupLockHeld = $true }
+  if (-not $startupLockHeld) {
+    Write-LifecycleLog 'startup' 'already_in_progress' 'another_coordinator_owns_startup_lock=true'
+    Write-Output 'Startup already in progress; no duplicate coordinator or services started.'
+    return
+  }
   if (Test-IntentionalStopForCurrentSession) {
     if (-not $ExplicitUserStart) {
       Write-LifecycleLog 'startup' 'suppressed_after_intentional_stop' 'same_windows_logon_session=true'
@@ -148,7 +206,7 @@ try {
     Write-LifecycleLog 'startup' 'uncommitted_source_changes' "tracked_change_count=$($dirty.Count)"
     throw 'Tracked source changes are not committed; automatic service startup is blocked until verification and explicit service reflection.'
   }
-  if (-not $validated -or [string]$validated.commit -cne $head) {
+  if (-not $validated -or -not (Test-ValidatedStartupSource ([string]$validated.commit) $head)) {
     $validatedCommit = if ($validated) { [string]$validated.commit } else { 'missing' }
     Write-LifecycleLog 'startup' 'source_not_verified' "head=$head validated_commit=$validatedCommit"
     throw 'Current develop HEAD has not passed scripts/apply-verified-changes.ps1 validation; no service was started.'
@@ -163,4 +221,7 @@ try {
 } catch {
   Write-LifecycleLog 'startup' 'failed' "error_type=$($_.Exception.GetType().Name)"
   throw
+} finally {
+  if ($startupLockHeld) { $startupMutex.ReleaseMutex() }
+  $startupMutex.Dispose()
 }

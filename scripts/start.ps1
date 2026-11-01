@@ -3,11 +3,11 @@ param([ValidateSet('api','dashboard','worker','research_worker','publication_wor
 . (Join-Path $PSScriptRoot 'server-common.ps1')
 if ($Service -eq 'publication_worker') {
   & (Join-Path $PSScriptRoot 'start-publication-worker.ps1') -Mode $PublicationMode
-  exit $LASTEXITCODE
+  exit 0
 }
 if ($Service -in @('worker','research_worker')) {
   & (Join-Path $PSScriptRoot 'start-research-worker.ps1')
-  exit $LASTEXITCODE
+  exit 0
 }
 $manifest = Read-ServerManifest
 $table = Get-ProcessTable
