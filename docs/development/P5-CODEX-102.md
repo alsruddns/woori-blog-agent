@@ -42,3 +42,11 @@ automation-5의 실제 2026-10-31 12:00 KST 실행은 Dashboard proxy 연결 거
 ### 실제 실행 출처 재검사 보강
 
 설정된 RRULE 슬롯만으로 실제 예약 실행을 입증할 수 없으므로, 저장 CLI가 현재 Desktop 세션 resolver 결과를 함께 보존하도록 추가했다. 복구 API는 그 session_id의 실제 세션 파일을 다시 읽고 scheduled/manual trigger·occurrence/manual_run_id 일치를 검사한다. 기존 실패 슬롯의 세션을 현재 작성한 scheduled 원고에 붙이는 재라벨링도 막는다(실제 시작 후 6시간 이내의 실행 시각만 수용). 출처가 없는 레거시 pending은 삭제하지 않고 actual_invocation_unverified 검토 보류다. 개발 세션은 예약/Run now를 사칭할 수 없다. 관련 회귀2건 추가 후 신규 P10218건 통과. 이 보강으로 API와 Research Worker는 검증된 최종 코드에 대해 동일한 cooperative 교체를 한 번 더 수행하며 강제 종료하지 않는다.
+
+### 순차 반영 및 호환성 체크포인트
+
+- 핵심 코드 `28d8eff`, 실행 출처 재검사 `8a8e638`. 통합 **155 passed (10.71초)**. 이후 순차 업그레이드 호환성 회귀1건을 추가해 P102 **19 passed** 및 Ruff/mypy 통과했다. 신규 고유 회귀는 모두19건이며 앞서 검증한 기존 테스트137건과 합쳐156건이다.
+- 최초 정상 교체: API3596→5680(launcher8612), Research19264→1948. HTTP200/heartbeat 정상. 기존 startup coordinator2912는 API의 정상 종료 후 자연 완료되어 예약 작업은 Ready/LastTaskResult0이 됐다. 작업 취소/force/Task Stop은 실행하지 않았다. Dashboard27044/Publication17652/PostgreSQL6880 유지.
+- 출처 재검사 보강 후 Worker1948의 추가 cooperative 종료를 요청했으나45초 안에 완료되지 않았다. 실제 Codex 작업은 없었고 기존 `topics.build_candidates`의168시간 cross-geo proposal 동기 일괄 처리 중임을 읽기 전용으로 확인했다. heartbeat는 계속 fresh다. 원고/수집 처리를 끊거나 DB backend를 취소하지 않는다. 이 실행이 나중에 예고 없이 종료되지 않도록 **이번 작업이 만든 정확한 stop request만 회수**하고 Worker를 유지한다.
+- 그래서 API가 구 intake 요청에도 대응하도록 보강했다. request에 session evidence가 없으면 임의 경로 대신 정확한 key/hash/raw bytes가 일치하는 프로젝트 pending 파일에서 evidence를 읽고 실제 Desktop trigger를 똑같이 재검사한다. 이 호환 경로는 격리 DB에서 실제 Import/native Version까지 회귀 검증했다. API만 추가 cooperative 교체하면 이미 반영된 Worker28d8eff도 새 pending 파일을 안전하게 복구할 수 있다. Worker 최종 source marker 반영은 다음 정상 시작으로 남긴다.
+- 관찰된 별도 한계: 기존 주제 일괄 처리 중에는 동일 Worker의 intake tick이 지연될 수 있다. 60초는 poll 설정이지 모든 부하에서60초 이내 처리를 보장하는 SLA가 아니다. 이번 작업에서 이 과거 전체 그룹화 알고리즘이나 수집 정책은 변경하지 않았다.

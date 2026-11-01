@@ -113,6 +113,22 @@ def test_slot_config_is_not_a_trigger_and_old_slot_cannot_be_current_execution(m
     assert VERIFY_INVOCATION(parsed, {"session_id": session}) is False
 
 
+def test_old_intake_can_recover_evidence_from_exact_pending_file(setup, monkeypatch, tmp_path):
+    conn, api, headers = setup
+    register(conn)
+    data = envelope()
+    evidence = {"session_id": str(uuid4())}
+    monkeypatch.setattr(pending, "ROOT", tmp_path)
+    pending.save_pending(
+        tmp_path / ".local/gpt-scheduled-import", json.dumps(data).encode(), invocation=evidence
+    )
+    monkeypatch.setattr(
+        pending, "verify_saved_invocation", lambda envelope, received: received == evidence
+    )
+    result = api.post(PATH, headers=headers, json=body(data))
+    assert result.json()["status"] == "imported", result.text
+
+
 def test_proxy_refused_uses_fixed_backend_broker():
     seen = []
 

@@ -248,7 +248,24 @@ def recover_manuscript(request: RecoveryRequest) -> dict[str, Any]:
                     "import_id": existing["payload"].get("import_id"),
                 }
             )
-        if not verify_saved_invocation(envelope, request.invocation_evidence):
+        invocation_evidence = request.invocation_evidence
+        # Rolling upgrade: an older intake process sends only bytes/hash. Read
+        # evidence from the exact immutable pending record, never from a URL or
+        # arbitrary caller path; then revalidate the real Desktop transcript.
+        if invocation_evidence is None:
+            directories = _safe_directories(ROOT / ".local/gpt-scheduled-import")
+            saved_path = directories["pending"] / (key + ".pending.json")
+            try:
+                if not _is_reparse_point(saved_path) and saved_path.stat().st_size <= 1048576:
+                    saved = json.loads(saved_path.read_text(encoding="utf-8"))
+                    if (
+                        saved.get("manuscript_sha256") == request.manuscript_sha256
+                        and saved.get("manuscript_utf8") == request.manuscript_utf8
+                    ):
+                        invocation_evidence = saved.get("invocation_evidence")
+            except (OSError, ValueError):
+                pass
+        if not verify_saved_invocation(envelope, invocation_evidence):
             return finish({"status": "review_required", "reason": "actual_invocation_unverified"})
         now = datetime.now(UTC)
         source_time = (

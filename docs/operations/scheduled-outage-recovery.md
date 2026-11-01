@@ -42,6 +42,11 @@ language, research standards, taxonomy, run-mode resolver, or occurrence identit
    conflicts; do not replace it or allocate a fresh occurrence. The pending file
    records manuscript_saved/import_pending, exact slot, topic, target, path, time
    and duplicate_check_unavailable. No manuscript means do not report saved.
+   The helper also preserves the resolver's actual Desktop session identity.
+   Recovery re-reads that session's trigger and matches its scheduled occurrence
+   or manual run. A configured RRULE alone is insufficient. Missing context is
+   review-held; a historical session cannot relabel a newly written draft as its
+   scheduled execution (execution time must remain within 6 hours of that start).
 8. The Research Worker checks pending files on its normal 60-second intake poll.
    Recovery authenticates to the existing API and rechecks configured occurrence,
    prior occurrence Import, event/title/content duplicates, format, safe HTML and
