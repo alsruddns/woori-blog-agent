@@ -669,7 +669,7 @@ def save_verified_draft(job_id: UUID, blog_id: UUID, version_id: UUID, result: d
     if result.get("status") != "DRAFT" or not result.get("post_verified"):
         raise GoogleFailure("draft_readback_mismatch")
     with connection() as conn:
-        job = conn.execute("SELECT publication_state,publication_mode,blog_id,content_version_id,attempts FROM publishing_jobs WHERE id=%s AND publication_lane IN ('trends_auto','manual') FOR UPDATE",(job_id,)).fetchone()
+        job = conn.execute("SELECT publication_state,publication_mode,blog_id,content_version_id,attempts FROM publishing_jobs WHERE id=%s AND publication_lane IN ('trends_auto','manual','scheduled_auto') FOR UPDATE",(job_id,)).fetchone()
         if not job or job["publication_mode"] != "draft" or job["blog_id"] != blog_id or job["content_version_id"] != version_id:
             raise GoogleFailure("draft_job_identity_mismatch")
         conn.execute("""INSERT INTO blogger_draft_receipts(job_id,blog_id,content_version_id,remote_post_id,remote_status)
@@ -685,7 +685,7 @@ def save_verified_draft(job_id: UUID, blog_id: UUID, version_id: UUID, result: d
             post_id=str(result["post_id"]),status=result.get("http_status"),metadata={"remote_status":"DRAFT","recovered":recovered})
         conn.execute("""UPDATE publishing_jobs SET status='succeeded',publication_state='draft_saved',
             live_stage='draft_created',remote_post_id=%s,lease_until=NULL,last_error_category=NULL,updated_at=now()
-            WHERE id=%s AND publication_mode='draft' AND publication_lane IN ('trends_auto','manual')""",(str(result["post_id"]),job_id))
+            WHERE id=%s AND publication_mode='draft' AND publication_lane IN ('trends_auto','manual','scheduled_auto')""",(str(result["post_id"]),job_id))
         _append_audit(conn,"publication.draft.saved",{"job_id":str(job_id),"post_id":str(result["post_id"]),
             "remote_status":"DRAFT","public_write_performed":False,"review_status":"pending"})
         linked = conn.execute("SELECT import_id FROM external_content_import_content_links WHERE content_version_id=%s LIMIT 1",(version_id,)).fetchone()
@@ -800,6 +800,9 @@ def process_next_live_job(
               AND (%s=false OR j.publication_lane='trends_auto')
               AND EXISTS (SELECT 1 FROM manual_publication_approval_events fresh WHERE fresh.job_id=j.id
                 AND fresh.created_at>(SELECT max(created_at) FROM audit_events WHERE event_type='publication.manual_only.activated'))
+              AND EXISTS (SELECT 1 FROM automation_publication_grants control_grant CROSS JOIN automation_controls control
+                WHERE control_grant.job_id=j.id AND control_grant.lane='manual' AND control.id=1
+                  AND control.manual_publishing_enabled AND control_grant.epoch=control.manual_epoch)
               AND j.status='queued' AND j.scheduled_at<=now() AND j.available_at<=now()
             ORDER BY CASE WHEN j.publication_lane<>'trends_auto' AND (SELECT language_code FROM blogger_blogs bb WHERE bb.id=j.blog_id)='en'
             THEN 0 ELSE 1 END,j.scheduled_at,j.id FOR UPDATE OF j SKIP LOCKED LIMIT 1""",
@@ -1350,6 +1353,10 @@ def tick(
     allow_manual_confirmed_publications: bool = False, allow_trends_auto_publications: bool = False,
 ) -> dict[str, Any] | None:
     """Process one explicitly approved private draft or one due fake job."""
+    if allow_live_publications or allow_manual_confirmed_publications or allow_scheduled_auto_publications or allow_trends_auto_publications:
+        from .automation_auto import tick as controlled_auto_tick
+        automatic=controlled_auto_tick()
+        if automatic is not None:return {'job_type':'controlled_auto',**automatic}
     from .publication_operation import manual_requests_allowed
     if not manual_requests_allowed():
         return None

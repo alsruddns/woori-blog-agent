@@ -140,6 +140,12 @@ New Trends policy events may use `daily_limit=NULL` to mean no application daily
 
 All automatic Blogger writes are suspended. Historical cost attestations and policies remain audit evidence, not runtime permission. The shared outbound gate additionally requires a fresh exact-version manual approval, running manual Job, unrestricted Google status and emergency stop cleared. Current Google restriction remains active; no production write probes, account/project rotation or paid fallback are permitted. Collection, authoring and Import are independent. A 403 write response persists the restriction and stops retries. No new provider, pricing basis or quota was introduced.
 
+## P5-CODEX-103 operator controls (2026-11-02)
+
+No provider, price basis, quota, billing credential, AI transport or external host is added. Policy lookups use fixed authenticated loopback/API/repository helpers; failures block automatic authoring and wire writes. The existing Google read verification uses the reviewed Blogger GET path and normal OAuth only. Four active blog reads succeeded; this does not verify writing. Operator-reported restriction release is separate from that result and from local emergency stop.
+
+The requested final operating policy is Trends ON, automatic authoring ON, automatic publication OFF, manual publication ON and emergency stop OFF. A manual write still requires a new exact-version administrator action and all existing cost, OAuth, duplicate and scope checks. Future automatic ON requires explicit blog/mode confirmation (LIVE separately), fresh-epoch eligible jobs, existing quality/rights/evidence gates and the same outbound cost/interval limits. Historical approvals or queued jobs alone grant no permission. OFF and the wire admission use one DB lock; no retry/provider/account/token/proxy workaround is introduced. No production write probe is authorized or performed.
+
 ## P5-CODEX-099+101 editorial assistance (2026-11-01)
 
 Topic normalization, scoped operator-reviewed aliases, ranking, local-history checks, static manuscript checks, version comparison and suggestion application are local operations with no AI or provider request. Scores are unproven editorial heuristics, not factual approval or measured token savings.

@@ -23,6 +23,7 @@ if __name__ == "__main__":
             "researching",
             "writing",
             "usage_limit_waiting",
+            "policy_waiting",
             "failed",
         ),
     )

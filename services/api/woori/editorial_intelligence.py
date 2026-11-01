@@ -662,8 +662,9 @@ def rank_candidates(
 
 
 def assess_current(slot: datetime | None = None) -> dict[str, int]:
+    from .automation_controls import allowed
     from .trend_editorial import current_slot
-
+    if not allowed('trends_collection_enabled'):return {}
     slot = slot or current_slot()
     counts: dict[str, int] = {}
     with connection() as conn:

@@ -111,6 +111,13 @@ export default function ExternalImportWorkspace({ embedded = false, detailReques
   onPublicationRequested?: (jobId: string) => void;
 } = {}) {
   const [items, setItems] = useState<Row[]>([]);
+  const [manualControlAllowed, setManualControlAllowed] = useState(false);
+  useEffect(() => {
+    let active = true;
+    const check = async () => { try { const response = await fetch("/api/automation-controls", { cache: "no-store" }); const data = await response.json(); if (active) setManualControlAllowed(response.ok && data.settings?.manual_publishing_enabled === true && data.settings?.emergency_stop === false && data.settings?.blogger_api_restricted === false); } catch { if (active) setManualControlAllowed(false); } };
+    void check(); const timer = setInterval(() => void check(), 5000); window.addEventListener("woori-automation-policy-changed", check);
+    return () => { active = false; clearInterval(timer); window.removeEventListener("woori-automation-policy-changed", check); };
+  }, []);
   const [originFilter, setOriginFilter] = useState("all");
   const [listPage, setListPage] = useState(1);
   const [listPageCount, setListPageCount] = useState(0);
@@ -338,6 +345,7 @@ export default function ExternalImportWorkspace({ embedded = false, detailReques
     .find(target => String(target.id) === publicationTargetId);
   const selectedManual = selectedManualTarget?.manual_publication as Row | undefined;
   const manualPublishDisabledReasons = [
+    ...(!manualControlAllowed ? ["운영 제어센터의 수동 발행 설정·긴급 정지·API 접근 상태를 확인하세요."] : []),
     ...(manualOutcomeUnknown ? ["발행 응답을 확인하지 못했습니다. 상태를 다시 확인한 후 진행하세요."] : []),
     ...(busy ? ["발행 요청을 처리 중입니다."] : []),
     ...(!latestVersion?.content_version_id ? ["게시할 최신 원고 버전을 확인할 수 없습니다."] : []),

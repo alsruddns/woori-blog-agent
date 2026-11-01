@@ -40,6 +40,8 @@ def _has_blogger_cost_policy_attestation(conn: Any) -> bool:
 
 def dashboard_snapshot(conn: Any) -> dict[str, Any]:
     """Return observed state only; configured schedules are not execution proof."""
+    from .automation_controls import read as read_controls
+    automation=read_controls(conn)
     # The application role intentionally cannot read schema_migrations. Migration
     # markers are also append-only in audit_events, which is visible to the app.
     schema = conn.execute(
@@ -382,7 +384,11 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
     manual_publish_lane_ready = bool(
         verified_write_targets and blogger_cost_policy_attested
         and publication_worker_fresh and not bool(global_config.get("emergency_stopped", False))
+        and automation['manual_publishing_enabled'] and not automation['blogger_api_restricted']
     )
+    automatic_write_ready=bool(automation['auto_publishing_enabled'] and verified_write_targets
+        and blogger_cost_policy_attested and publication_worker_fresh and not automation['emergency_stop']
+        and not automation['blogger_api_restricted'])
     blocked_live_jobs = sum(
         count for key, count in publication_counts.items()
         if key.startswith(("blocked:", "uncertain:", "failed:"))
@@ -494,7 +500,7 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
             "recent_public_url":latest_publication["remote_url"] if latest_publication else None,
             "url_note":"게시 기록에 공개 URL 필드가 없어 링크를 추정하지 않습니다.",
             "queued_mock_jobs":sum(v for k,v in publication_counts.items() if k.startswith("queued:")),
-            "live_writes_enabled":False,"auto_enabled":False,"emergency_stopped":bool(global_config.get("emergency_stopped",False)),
+            "live_writes_enabled":bool(manual_publish_lane_ready or automatic_write_ready),"auto_enabled":automation['auto_publishing_enabled'],"emergency_stopped":bool(global_config.get("emergency_stopped",False)),
             "manual_publication_available":manual_publish_lane_ready,
             "manual_publication_write_scope_targets":verified_write_targets,
             "manual_publication_policy_attested":blogger_cost_policy_attested,

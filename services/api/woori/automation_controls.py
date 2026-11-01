@@ -1,0 +1,436 @@
+"""Independent persisted operator controls. No setting confers editorial approval."""
+
+from __future__ import annotations
+
+from collections.abc import Iterator
+from contextlib import contextmanager
+from datetime import UTC, datetime
+from typing import Any, Literal
+from uuid import UUID
+
+import httpx
+import psycopg
+from fastapi import APIRouter, HTTPException
+from psycopg.types.json import Jsonb
+from pydantic import BaseModel, ConfigDict, Field
+
+from .db import connection
+
+
+def authoring_permission(*, transport: httpx.BaseTransport | None = None) -> dict[str, Any]:
+    """Service-owned lookup, no Dashboard dependency or credential output."""
+    from .config import settings
+
+    try:
+        with httpx.Client(
+            trust_env=False, follow_redirects=False, timeout=3, transport=transport
+        ) as client:
+            response = client.get(
+                "http://127.0.0.1:8100/admin/automation-controls",
+                headers={"Authorization": "Bearer " + settings().admin_token},
+            )
+        if response.status_code in {401, 403}:
+            return {
+                "allowed": False,
+                "reason": "automation_policy_access_denied",
+                "source": "backend_api",
+            }
+        if response.status_code != 200:
+            raise ValueError("backend_unavailable")
+        state = response.json()["settings"]
+        if type(state.get('auto_manuscript_enabled')) is not bool or type(state.get('revision')) is not int or state['revision']<1:
+            raise ValueError('invalid_policy_response')
+        enabled = state["auto_manuscript_enabled"] is True
+        return {
+            "allowed": enabled,
+            "revision": state["revision"],
+            "reason": None if enabled else "automatic_authoring_disabled",
+            "source": "backend_api",
+        }
+    except (OSError, ValueError, KeyError, httpx.HTTPError):
+        try:
+            with connection() as conn:
+                state = read(conn)
+            enabled = state["auto_manuscript_enabled"] is True
+            return {
+                "allowed": enabled,
+                "revision": state["revision"],
+                "reason": None if enabled else "automatic_authoring_disabled",
+                "source": "repository",
+            }
+        except (OSError, ValueError, RuntimeError, psycopg.Error):
+            return {
+                "allowed": False,
+                "reason": "automation_policy_unavailable",
+                "source": "unavailable",
+            }
+
+
+VERSION = "automation-controls/1"
+router = APIRouter(prefix="/admin/automation-controls")
+
+
+def read(conn: Any, *, lock: bool = False) -> dict[str, Any]:
+    row = conn.execute(
+        """SELECT c.*,t.enabled AS trends_collection_enabled,t.interval_minutes,
+        p.emergency_stopped AS emergency_stop,p.blogger_api_restricted
+        FROM automation_controls c CROSS JOIN trend_collection_settings t
+        CROSS JOIN publication_mode_settings p
+        WHERE c.id=1 AND t.id=1 AND p.scope_type='global' AND p.scope_key=''
+        """
+        + (" FOR SHARE OF c,p,t" if lock else "")
+    ).fetchone()
+    if not row:
+        raise RuntimeError("automation_controls_unavailable")
+    return dict(row)
+
+
+def allowed(key: str) -> bool:
+    if key not in {
+        "auto_manuscript_enabled",
+        "trends_collection_enabled",
+        "auto_publishing_enabled",
+        "manual_publishing_enabled",
+    }:
+        return False
+    try:
+        with connection() as conn:
+            return bool(read(conn)[key])
+    except (psycopg.Error, OSError, RuntimeError):
+        return False
+
+
+def acknowledge(conn: Any, service: str, pid: int) -> None:
+    state = read(conn)
+    conn.execute(
+        """INSERT INTO automation_runtime_ack(service_name,process_id,revision,engine_version,last_seen_at)
+        VALUES(%s,%s,%s,%s,clock_timestamp()) ON CONFLICT(service_name) DO UPDATE SET
+        process_id=EXCLUDED.process_id,revision=EXCLUDED.revision,engine_version=EXCLUDED.engine_version,last_seen_at=EXCLUDED.last_seen_at""",
+        (service, pid, state["revision"], VERSION),
+    )
+
+
+@router.get("")
+def snapshot() -> dict[str, Any]:
+    with connection() as conn:
+        state = read(conn)
+        workers = conn.execute(
+            """SELECT h.service_name,h.process_id,h.status,h.last_seen_at,
+            a.revision AS applied_revision,a.engine_version,a.last_seen_at AS policy_seen_at,
+            (a.process_id=h.process_id AND a.revision=%s AND a.last_seen_at>now()-interval '45 seconds'
+             AND h.status='running' AND h.last_seen_at>now()-interval '45 seconds') AS policy_applied
+            FROM worker_heartbeats h LEFT JOIN automation_runtime_ack a USING(service_name)""",
+            (state["revision"],),
+        ).fetchall()
+        history = conn.execute(
+            "SELECT id,created_at,payload FROM audit_events WHERE event_type='automation.controls.changed' ORDER BY id DESC LIMIT 25"
+        ).fetchall()
+        blogs = conn.execute(
+            "SELECT id,display_name,language_code,url FROM blogger_blogs WHERE active ORDER BY language_code,display_name"
+        ).fetchall()
+        recent = conn.execute("""SELECT
+            (SELECT max(collected_at) FROM trend_observations) AS last_collection,
+            (SELECT max(received_at) FROM external_content_imports) AS last_import,
+            (SELECT max(started_at) FROM codex_authoring_jobs) AS last_authoring,
+            (SELECT count(*) FROM codex_authoring_jobs WHERE state='queued') AS authoring_queued,
+            (SELECT count(*) FROM codex_authoring_jobs WHERE state IN ('researching','writing','validating')) AS authoring_running,
+            (SELECT count(DISTINCT geo) FROM trend_collection_slots) AS region_count""").fetchone()
+        job_count = conn.execute(
+            """SELECT count(*) AS n FROM publishing_jobs j
+            JOIN automation_publication_grants g ON g.job_id=j.id
+            WHERE j.status='queued' AND ((g.lane='auto' AND g.epoch=%s AND %s)
+              OR (g.lane='manual' AND g.epoch=%s AND %s))""",
+            (
+                state["auto_epoch"],
+                state["auto_publishing_enabled"],
+                state["manual_epoch"],
+                state["manual_publishing_enabled"],
+            ),
+        ).fetchone()
+        last_publication = conn.execute(
+            "SELECT remote_status,remote_url,remote_verified_at FROM publishing_records ORDER BY remote_verified_at DESC NULLS LAST LIMIT 1"
+        ).fetchone()
+    blocked = (
+        "긴급 정지로 차단"
+        if state["emergency_stop"]
+        else "Google API 제한으로 차단"
+        if state["blogger_api_restricted"]
+        else None
+    )
+    applied = {w["service_name"]: bool(w["policy_applied"]) for w in workers}
+    effective = {}
+    for key, worker in [
+        ("trends_collection_enabled", "research_worker"),
+        ("auto_manuscript_enabled", "research_worker"),
+        ("auto_publishing_enabled", "publication_worker"),
+        ("manual_publishing_enabled", "publication_worker"),
+    ]:
+        effective[key] = (
+            "신규 실행 중지"
+            if not state[key]
+            else blocked
+            if "publishing" in key and blocked
+            else "정상"
+            if applied.get(worker)
+            else "Worker 적용 대기 또는 연결 실패"
+        )
+    return {
+        "settings": state,
+        "effective": effective,
+        "workers": workers,
+        "history": history,
+        "blogs": blogs,
+        "recent": recent,
+        "eligible_jobs": job_count["n"] if job_count and not blocked and applied.get('publication_worker') else 0,
+        "last_publication": last_publication,
+        "api_engine_version": VERSION,
+        "google_write_verified": False,
+        "google_write_verification_note": "읽기 성공 또는 사용자 제한 해제 확인은 쓰기 성공의 증거가 아닙니다.",
+    }
+
+
+class Change(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    expected_revision: int = Field(ge=1)
+    actor: str = Field(min_length=2, max_length=100)
+    reason: str = Field(min_length=10, max_length=500)
+    trends_collection_enabled: bool | None = None
+    auto_manuscript_enabled: bool | None = None
+    auto_publishing_enabled: bool | None = None
+    manual_publishing_enabled: bool | None = None
+    emergency_stop: bool | None = None
+    auto_mode: Literal["draft", "publish"] | None = None
+    auto_blog_ids: list[str] | None = None
+    confirm_auto: bool = False
+    confirm_live: bool = False
+    confirm_emergency_release: bool = False
+    google_account_available: bool | None = None
+
+
+@router.put("")
+def change(request: Change) -> dict[str, Any]:
+    with connection() as conn:
+        conn.execute("SELECT pg_advisory_xact_lock(20261102,103)")
+        before = read(conn, lock=True)
+        if before["revision"] != request.expected_revision:
+            raise HTTPException(409, "설정이 변경되었습니다. 최신 상태를 다시 불러오세요.")
+        after = {
+            **before,
+            **request.model_dump(
+                exclude_none=True,
+                exclude={
+                    "actor",
+                    "reason",
+                    "expected_revision",
+                    "confirm_auto",
+                    "confirm_live",
+                    "confirm_emergency_release",
+                    "google_account_available",
+                },
+            ),
+        }
+        before["auto_blog_ids"] = [str(x) for x in before["auto_blog_ids"]]
+        after["auto_blog_ids"] = sorted({str(x) for x in after["auto_blog_ids"]})
+        before["auto_blog_ids"] = sorted(before["auto_blog_ids"])
+        auto_changed = any(
+            after[k] != before[k] for k in ("auto_publishing_enabled", "auto_mode", "auto_blog_ids")
+        )
+        if after["auto_publishing_enabled"] and auto_changed:
+            if not request.confirm_auto or not after["auto_blog_ids"]:
+                raise HTTPException(422, "대상 Blogger와 자동 발행 범위 확인이 필요합니다.")
+            if after["auto_mode"] == "publish" and not request.confirm_live:
+                raise HTTPException(422, "LIVE 자동 공개에 대한 별도 확인이 필요합니다.")
+            try:
+                targets = [UUID(str(x)) for x in after["auto_blog_ids"]]
+            except ValueError:
+                raise HTTPException(422, "잘못된 Blogger 식별자입니다.") from None
+            counted = conn.execute(
+                "SELECT count(*) n FROM blogger_blogs WHERE id=ANY(%s::uuid[]) AND active",
+                (targets,),
+            ).fetchone()
+            count = counted["n"] if counted else 0
+            if count != len(set(targets)):
+                raise HTTPException(422, "활성 등록 Blogger만 선택할 수 있습니다.")
+        if (
+            before["emergency_stop"]
+            and not after["emergency_stop"]
+            and not request.confirm_emergency_release
+        ):
+            raise HTTPException(422, "긴급 정지 해제를 명시적으로 확인해야 합니다.")
+        conn.execute(
+            """UPDATE automation_controls SET auto_manuscript_enabled=%s,auto_publishing_enabled=%s,
+            manual_publishing_enabled=%s,auto_mode=%s,auto_blog_ids=%s::uuid[],
+            auto_epoch=CASE WHEN %s THEN gen_random_uuid() ELSE auto_epoch END,
+            auto_enabled_at=CASE WHEN %s THEN clock_timestamp() ELSE auto_enabled_at END,
+            manual_epoch=CASE WHEN %s THEN gen_random_uuid() ELSE manual_epoch END,
+            manual_enabled_at=CASE WHEN %s THEN clock_timestamp() ELSE manual_enabled_at END,
+            google_account_report=CASE WHEN %s::boolean IS NULL THEN google_account_report WHEN %s THEN 'user_reported_available' ELSE 'restricted' END,
+            revision=revision+1,updated_at=clock_timestamp() WHERE id=1""",
+            (
+                after["auto_manuscript_enabled"],
+                after["auto_publishing_enabled"],
+                after["manual_publishing_enabled"],
+                after["auto_mode"],
+                [str(x) for x in after["auto_blog_ids"]],
+                auto_changed,
+                auto_changed,
+                after["manual_publishing_enabled"] != before["manual_publishing_enabled"],
+                after["manual_publishing_enabled"] != before["manual_publishing_enabled"],
+                request.google_account_available,
+                request.google_account_available,
+            ),
+        )
+        conn.execute(
+            "UPDATE trend_collection_settings SET enabled=%s WHERE id=1",
+            (after["trends_collection_enabled"],),
+        )
+        conn.execute(
+            "UPDATE publication_mode_settings SET emergency_stopped=%s,blogger_api_restricted=CASE WHEN %s::boolean IS NULL THEN blogger_api_restricted ELSE NOT %s END,updated_at=clock_timestamp() WHERE scope_type='global' AND scope_key=''",
+            (
+                after["emergency_stop"],
+                request.google_account_available,
+                request.google_account_available,
+            ),
+        )
+        saved = read(conn)
+        changes = [
+            {"key": key, "before": before[key], "after": saved[key]}
+            for key in saved
+            if key not in {"revision", "updated_at"} and before.get(key) != saved[key]
+        ]
+        conn.execute(
+            "INSERT INTO audit_events(event_type,payload) VALUES('automation.controls.changed',%s)",
+            (
+                Jsonb(
+                    {
+                        "actor": request.actor,
+                        "reason": request.reason,
+                        "changes": changes,
+                        "revision": saved["revision"],
+                        "result": "persisted_worker_ack_pending",
+                        "old_jobs_reauthorized": False,
+                    },
+                    dumps=lambda v: __import__("json").dumps(v, default=str),
+                ),
+            ),
+        )
+    return {"saved": True, "revision": saved["revision"], "application": "pending_worker_ack"}
+
+
+@router.post("/verify-google-readonly")
+def verify_google() -> dict[str, Any]:
+    from . import blogger_service
+    from .google_http import GoogleFailure
+
+    with connection() as conn:
+        blogs = conn.execute(
+            "SELECT id FROM blogger_blogs WHERE active AND oauth_connection_id IS NOT NULL ORDER BY id LIMIT 4"
+        ).fetchall()
+    results = []
+    for blog in blogs:
+        try:
+            result = blogger_service.test_connection(blog["id"])
+            results.append(
+                {
+                    "blog_id": str(blog["id"]),
+                    "read_available": bool(result.get("tested")),
+                    "write_verified": False,
+                }
+            )
+        except GoogleFailure as exc:
+            results.append(
+                {
+                    "blog_id": str(blog["id"]),
+                    "read_available": False,
+                    "reason": exc.category,
+                    "http_status": exc.status,
+                    "write_verified": False,
+                }
+            )
+            if exc.status in {403, 429}:
+                break
+    with connection() as conn:
+        payload = {
+            "checked_at": datetime.now(UTC).isoformat(),
+            "results": results,
+            "write_verified": False,
+        }
+        conn.execute(
+            "UPDATE automation_controls SET read_check_result=%s WHERE id=1", (Jsonb(payload),)
+        )
+        conn.execute(
+            "INSERT INTO audit_events(event_type,payload) VALUES('automation.google.read_checked',%s)",
+            (Jsonb(payload),),
+        )
+    return payload
+
+
+def grant_manual(conn: Any, job_id: Any, mode: str) -> None:
+    state = read(conn)
+    if not state["manual_publishing_enabled"]:
+        raise HTTPException(409, "수동 발행이 비활성화되었습니다.")
+    conn.execute(
+        "INSERT INTO automation_publication_grants(job_id,epoch,lane,publication_mode) VALUES(%s,%s,'manual',%s)",
+        (job_id, state["manual_epoch"], mode),
+    )
+
+
+def job_permitted(conn: Any, job_id: Any, *, running: bool = False) -> bool:
+    state = read(conn)
+    row = conn.execute(
+        """SELECT j.status,j.blog_id,j.content_version_id,g.* FROM automation_publication_grants g
+        JOIN publishing_jobs j ON j.id=g.job_id JOIN content_versions v ON v.id=j.content_version_id
+        WHERE g.job_id=%s AND NOT EXISTS(SELECT 1 FROM content_versions newer
+         WHERE newer.group_id=v.group_id AND newer.localization_id IS NOT DISTINCT FROM v.localization_id
+         AND newer.version>v.version)""",
+        (job_id,),
+    ).fetchone()
+    if (
+        not row
+        or (running and row["status"] != "running")
+        or state["emergency_stop"]
+        or state["blogger_api_restricted"]
+    ):
+        return False
+    if row["lane"] == "manual":
+        return bool(state["manual_publishing_enabled"] and row["epoch"] == state["manual_epoch"])
+    return bool(
+        state["auto_publishing_enabled"]
+        and row["epoch"] == state["auto_epoch"]
+        and row["blog_id"] in state["auto_blog_ids"]
+        and row["publication_mode"] == state["auto_mode"]
+    )
+
+
+@contextmanager
+def write_guard(path: str | None = None, method: str = "POST") -> Iterator[None]:
+    """OFF commits only after in-flight HTTP finishes; every later writer rechecks."""
+    from .google_http import GoogleFailure
+
+    try:
+        with connection() as conn:
+            conn.execute("SELECT pg_advisory_xact_lock(20261102,103)")
+            read(conn)
+            from .publication_operation import blogger_writes_allowed
+
+            if not blogger_writes_allowed():
+                raise GoogleFailure("authoring_only_blogger_writes_suspended")
+            from .automation_auto import AUTO_JOB
+            from .external_policy import _manual_publication_approval
+
+            approval = _manual_publication_approval.get()
+            job_id = AUTO_JOB.get() or (approval[0] if approval else None)
+            if AUTO_JOB.get() and method != "POST":
+                raise GoogleFailure("automatic_update_not_authorized")
+            if job_id and path:
+                target = conn.execute(
+                    "SELECT b.blog_id FROM publishing_jobs j JOIN blogger_blogs b ON b.id=j.blog_id WHERE j.id=%s",
+                    (job_id,),
+                ).fetchone()
+                if not target or not path.startswith("/blogs/" + str(target["blog_id"]) + "/"):
+                    raise GoogleFailure("publication_job_target_mismatch")
+            yield
+    except GoogleFailure:
+        raise
+    except (psycopg.Error, OSError, RuntimeError):
+        raise GoogleFailure("automation_policy_unavailable") from None

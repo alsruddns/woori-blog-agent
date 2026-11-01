@@ -35,6 +35,23 @@ def _live_response(
     body: dict[str, Any] | None = None,
     transport: httpx.MockTransport | None = None,
 ) -> tuple[dict[str, Any], int]:
+    if method == "GET":
+        return _live_response_unlocked(connection_id=connection_id,operation=operation,method=method,path=path,params=params,body=body,transport=transport)
+    from .automation_controls import write_guard
+    with write_guard(path=path,method=method):
+        return _live_response_unlocked(connection_id=connection_id,operation=operation,method=method,path=path,params=params,body=body,transport=transport)
+
+
+def _live_response_unlocked(
+    *,
+    connection_id: UUID,
+    operation: str,
+    method: str,
+    path: str,
+    params: dict[str, str] | None = None,
+    body: dict[str, Any] | None = None,
+    transport: httpx.MockTransport | None = None,
+) -> tuple[dict[str, Any], int]:
     """Send one guarded Google request; injected transports are test-only."""
     from .publication_operation import blogger_writes_allowed
     if method != "GET" and not blogger_writes_allowed():

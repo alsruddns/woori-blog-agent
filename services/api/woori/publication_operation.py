@@ -9,6 +9,9 @@ def manual_requests_allowed() -> bool:
     """Only after the actual Google restriction and emergency stop are cleared."""
     try:
         with connection() as conn:
+            from .automation_controls import read
+            if not read(conn)['manual_publishing_enabled']:
+                return False
             row = conn.execute(
                 "SELECT blogger_write_mode,blogger_api_restricted,emergency_stopped FROM publication_mode_settings "
                 "WHERE scope_type='global' AND scope_key=''"
@@ -25,10 +28,19 @@ def blogger_writes_allowed() -> bool:
     from .external_policy import _manual_publication_approval
 
     approval = _manual_publication_approval.get()
+    from .automation_auto import AUTO_JOB, context_allowed
+    if AUTO_JOB.get():
+        try:
+            return context_allowed()
+        except (psycopg.Error,OSError,RuntimeError):
+            return False
     if not approval or not manual_requests_allowed():
         return False
     try:
         with connection() as conn:
+            from .automation_controls import job_permitted
+            if not job_permitted(conn,approval[0],running=True):
+                return False
             return bool(conn.execute(
                 """SELECT 1 FROM manual_publication_approval_events a
                 JOIN publishing_jobs j ON j.id=a.job_id

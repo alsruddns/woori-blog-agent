@@ -351,6 +351,9 @@ def _blogger_operation_is_approved(operation: str) -> bool:
     if approval is None:
         return False
     if operation == "blogger_public_publish":
+        from .automation_auto import AUTO_JOB, context_allowed
+        if AUTO_JOB.get():
+            return context_allowed(operation)
         scoped_blog_id = _scheduled_publication_blog_id.get()
         if scoped_blog_id is not None:
             return _scheduled_publication_approval(scoped_blog_id) is not None

@@ -7,6 +7,7 @@ import json
 import math
 import re
 import unicodedata
+from collections.abc import Callable
 from datetime import UTC, datetime
 from difflib import SequenceMatcher
 from typing import Any
@@ -143,8 +144,13 @@ def _audit(conn: Any, event: str, **payload: Any) -> None:
     )
 
 
-def _propose_cross_geo_pairs(conn: Any, rows: list[dict[str, Any]]) -> int:
+class TopicMaintenancePaused(RuntimeError):
+    pass
+
+
+def _propose_cross_geo_pairs(conn: Any, rows: list[dict[str, Any]], should_stop: Callable[[],bool] | None = None) -> int:
     proposals = 0
+    compared = 0
     by_geo: dict[str, list[dict[str, Any]]] = {}
     normalized = {row['id']: normalize_query(row['query']) for row in rows}
     # Repeated collection slots retain distinct observations. Compare their
@@ -158,6 +164,9 @@ def _propose_cross_geo_pairs(conn: Any, rows: list[dict[str, Any]]) -> int:
             for left in by_geo[left_geo]:
                 lnorm = normalized[left['id']]
                 for right in by_geo[right_geo]:
+                    compared += 1
+                    if should_stop and compared % 1000 == 0 and should_stop():
+                        raise TopicMaintenancePaused('topic_maintenance_checkpoint')
                     rnorm = normalized[right['id']]
                     key = (lnorm, rnorm)
                     if key not in comparisons:
@@ -333,7 +342,10 @@ def _assess_topic(conn: Any, topic_id: UUID, run_id: UUID | None = None) -> dict
     return dict(row)
 
 
-def build_candidates(lookback_hours: int = LOOKBACK_HOURS) -> dict[str, Any]:
+def build_candidates(lookback_hours: int = LOOKBACK_HOURS, *, should_stop: Callable[[],bool] | None = None) -> dict[str, Any]:
+    from .automation_controls import allowed
+    if not allowed('trends_collection_enabled'):
+        return {'observation_count':0,'topic_count':0,'memberships_added':0,'grouping_proposals_added':0,'assessments':[],'status':'disabled'}
     with connection() as conn:
         _assert_schema(conn)
         observations = conn.execute(
@@ -347,6 +359,7 @@ def build_candidates(lookback_hours: int = LOOKBACK_HOURS) -> dict[str, Any]:
         created = 0
         changed_topic_ids: list[UUID] = []
         for (geo, key), rows in groups.items():
+            if should_stop and should_stop():raise TopicMaintenancePaused('topic_maintenance_checkpoint')
             if not key:
                 continue
             topic_id = uuid5(NAMESPACE_URL, f"woori-blog-trend-topic:{geo}:{key}")
@@ -366,7 +379,7 @@ def build_candidates(lookback_hours: int = LOOKBACK_HOURS) -> dict[str, Any]:
                     (topic_id, row["id"], "Exact normalized query and same source geography; event identity remains unconfirmed."),
                 ).fetchone()
                 created += bool(inserted)
-        proposals = _propose_cross_geo_pairs(conn, [dict(row) for row in observations])
+        proposals = _propose_cross_geo_pairs(conn, [dict(row) for row in observations], should_stop)
         unique_ids = sorted(set(changed_topic_ids), key=str)
         assessments = [_assess_topic(conn, topic_id) for topic_id in unique_ids]
         if created or proposals or assessments:

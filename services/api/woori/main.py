@@ -10,6 +10,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
 from .ai import EngineFailure
+from .automation_controls import router as automation_controls_router
 from .blogger_routes import router as blogger_router
 from .config import settings
 from .content_imports import router as content_imports_router
@@ -39,6 +40,7 @@ def authorize(credentials: Annotated[HTTPAuthorizationCredentials | None, Depend
 
 
 app.include_router(research_router, dependencies=[Depends(authorize)])
+app.include_router(automation_controls_router, dependencies=[Depends(authorize)])
 app.include_router(localized_publications_router, dependencies=[Depends(authorize)])
 app.include_router(content_imports_router, dependencies=[Depends(authorize)])
 app.include_router(scheduled_pending_router, dependencies=[Depends(authorize)])

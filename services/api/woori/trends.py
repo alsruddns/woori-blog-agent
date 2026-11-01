@@ -207,6 +207,8 @@ def collect_geo(geo: str, *, slot_at: datetime | None = None) -> dict[str, Any]:
     """Serialize each region; a successful region/slot is never collected twice."""
     if geo not in ALLOWED_GEOS:
         raise ValueError('trend_geo_not_allowlisted')
+    from .automation_controls import allowed
+    if not allowed('trends_collection_enabled'):return {'status':'disabled','geo':geo,'item_count':0}
     config=collection_settings()
     bucket=slot_at or configured_slot(datetime.now(UTC),config)
     with connection() as guard:

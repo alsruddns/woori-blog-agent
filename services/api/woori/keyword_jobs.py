@@ -428,6 +428,10 @@ def generate(job:dict[str,Any]) -> None:
             article=json.loads(raw)
         else:
             runner_options = {'require_opened_sources': False} if job['job_type']=='google_trends' else {}
+            from .automation_controls import allowed
+            if job['job_type']=='google_trends' and not allowed('auto_manuscript_enabled'):
+                state(job_id,'queued',error_code='automatic_authoring_disabled')
+                return
             article,evidence=codex_runner.execute(work,prompt,
                 trend_output_schema() if job['job_type']=='google_trends' else output_schema(),
                 lambda phase,data:state(job_id,phase,**data),lambda:cancelled(job_id),**runner_options)
@@ -476,8 +480,10 @@ def run_one() -> None:
                     update(conn,old['id'],'failed',error_code='worker_interrupted',completed_at=datetime.now(UTC))
                 backoff=authoring_backoff(conn)
                 if backoff and backoff['active']:return
-                job=conn.execute("SELECT * FROM codex_authoring_jobs WHERE state='queued' AND job_type IN ('user_keyword','google_trends') ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1").fetchone()
+                from .automation_controls import allowed
+                job=conn.execute("SELECT * FROM codex_authoring_jobs WHERE state='queued' AND job_type IN ('user_keyword','google_trends') AND (job_type='user_keyword' OR %s) ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1",(allowed('auto_manuscript_enabled'),)).fetchone()
                 if not job:return
+                if job['job_type']=='google_trends' and not allowed('auto_manuscript_enabled'):return
                 if job['job_type']=='google_trends' and not job['execution_id']:
                     from .trend_editorial import current_observations, slot_is_current, transition
                     request=conn.execute('SELECT * FROM trend_generation_requests WHERE id=%s FOR UPDATE',(job['trend_request_id'],)).fetchone()

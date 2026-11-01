@@ -1,3 +1,11 @@
+## P5-CODEX-103 independent automation controls (2026-11-02)
+
+- `/operations/automation` is the authoritative persisted operator control surface. Reuse Trends enabled and publication emergency/restriction fields; do not equate a Google restriction report/read success with write verification or operator approval.
+- Scheduled authoring must pass `scripts/automation-policy-check.py` before research and again before writing. Its fixed trusted helper may internally use service configuration for authenticated loopback/repository policy reads without exposing credentials. OFF or unavailable means policy_waiting, never guessed ON. Desktop Run now remains manual under existing invocation/user authorization. Existing manuscripts/Import/quality/edit/export remain available.
+- P102's save-only exception for unknown duplicates applies only after automatic authoring policy is confirmed ON. Preserve all 15 schedules and actual occurrence provenance.
+- Automatic publishing remains OFF for this task. Future explicit admin ON selects blogs and Draft/LIVE, with separate LIVE confirmation, current-epoch grants and current quality/rights/duplicate gates. It never retroactively authorizes old Job queues. Scheduled model tasks still end at Import and never create publication work or call Blogger.
+- Manual publishing requires both its switch and the existing exact-version user request; OFF/on cycles invalidate prior grants. Emergency stop blocks both lanes independently. Recheck policy at the HTTP boundary under the shared settings/write lock; no paid API, provider, account or proxy fallback is allowed.
+
 ## P5-CODEX-102 scheduled outage recovery (2026-11-02)
 
 - Read `docs/operations/scheduled-outage-recovery.md` for every scheduled or Desktop Run now manuscript. This supersedes earlier stop-before-research wording only when the fixed preflight explicitly permits research and local saving with Import pending.

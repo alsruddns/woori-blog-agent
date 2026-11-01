@@ -92,6 +92,12 @@ def _live_write_capability(
     from .publication_operation import manual_requests_allowed
     scheduled = trends = False
     manual = manual and manual_requests_allowed()
+    from .automation_controls import read as control_state
+    control=control_state(conn)
+    applied=conn.execute("SELECT 1 AS ready FROM automation_runtime_ack WHERE service_name='publication_worker' AND revision=%s AND process_id=%s AND last_seen_at>now()-interval '45 seconds'",
+        (control.get('revision'),heartbeat.get('process_id') if heartbeat else None)).fetchone()
+    scheduled=bool(control.get('auto_publishing_enabled') and fresh and applied and owner_policy
+        and not control.get('emergency_stop',True) and not control.get('blogger_api_restricted',True) and no_billable_credentials)
     return {"scheduled_auto": scheduled, "manual_confirmed": manual, "trends_auto": trends,
             "live_dispatch": bool(scheduled_worker or manual_worker),
             "reason": reason, "worker_fresh": fresh, "execution_mode": mode}
@@ -782,6 +788,8 @@ def create_manual_live_request(request: ManualLiveRequestInput) -> dict[str, Any
         ).fetchone()
         if approval is None:
             raise HTTPException(503, "Manual publication approval event was not persisted")
+        from .automation_controls import grant_manual
+        grant_manual(conn,inserted['id'],request.publication_mode)
         review = conn.execute(
             """INSERT INTO post_publication_reviews
             (publishing_job_id,blog_id,content_version_id,import_id,content_id,review_status,review_notes)
@@ -988,6 +996,7 @@ def save_mode_settings(request: ModeSettingsInput) -> dict[str, Any]:
 @router.post("/emergency-stop")
 def engage_emergency_stop(request: EmergencyStopInput) -> dict[str, Any]:
     with connection() as conn:
+        conn.execute('SELECT pg_advisory_xact_lock(20261102,103)')
         settings = _mode_settings(conn)
         if settings["migration_required"]:
             raise HTTPException(409, "Publication settings migration 042 is required")

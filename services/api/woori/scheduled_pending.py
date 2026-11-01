@@ -394,13 +394,14 @@ def recover_pending_once(
     return results
 
 
-def record_progress(root: Path, invocation: dict[str, Any], status: str) -> dict[str, Any]:
+def record_progress(root: Path, invocation: dict[str, Any], status: str, reason: str | None = None) -> dict[str, Any]:
     if status not in {
         "scheduled",
         "duplicate_check_running",
         "researching",
         "writing",
         "usage_limit_waiting",
+        "policy_waiting",
         "failed",
     }:
         raise ValueError("unsupported_progress_state")
@@ -427,6 +428,7 @@ def record_progress(root: Path, invocation: dict[str, Any], status: str) -> dict
         "occurrence_id_source": invocation.get("occurrence_id_source"),
         "scheduler_occurrence_id": invocation.get("scheduler_occurrence_id"),
         "self_reported_progress": True,
+        "reason": reason,
         "blogger_writes": 0,
     }
     _exclusive_json(directories["progress"] / (str(value["id"]) + ".json"), value)
@@ -446,6 +448,7 @@ class ProgressRecord(BaseModel):
         "imported",
         "duplicate_skipped",
         "usage_limit_waiting",
+        "policy_waiting",
         "failed",
     ]
     recorded_at: datetime
@@ -457,6 +460,7 @@ class ProgressRecord(BaseModel):
     scheduler_occurrence_id: str | None
     self_reported_progress: Literal[True]
     blogger_writes: Literal[0]
+    reason: str | None = Field(default=None,max_length=200)
 
 
 @router.post("/admin/research/scheduled-manuscripts/progress")

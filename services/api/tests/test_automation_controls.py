@@ -1,0 +1,468 @@
+from contextlib import contextmanager
+from uuid import UUID, uuid4
+
+import pytest
+from test_content_imports import valid_item
+from test_pipeline import lab as shared_lab
+from woori import (
+    automation_auto,
+    blogger_writes,
+    content_imports,
+    editorial_intelligence,
+    external_policy,
+    keyword_jobs,
+    publication_operation,
+    publication_worker,
+    publications,
+    trend_editorial,
+    trends,
+)
+from woori import automation_controls as controls
+
+lab = shared_lab
+BASE = "/admin/automation-controls"
+
+
+@pytest.fixture
+def center(lab, monkeypatch):
+    conn, api, h = lab
+
+    @contextmanager
+    def shared():
+        with conn.transaction():
+            yield conn
+
+    for module in (
+        controls,
+        automation_auto,
+        publications,
+        publication_operation,
+        publication_worker,
+        content_imports,
+        trends,
+        trend_editorial,
+        editorial_intelligence,
+        keyword_jobs,
+        blogger_writes,
+    ):
+        monkeypatch.setattr(module, "connection", shared)
+    return conn, api, h
+
+
+def update(center, **kw):
+    _, api, h = center
+    revision = api.get(BASE, headers=h).json()["settings"]["revision"]
+    return api.put(
+        BASE,
+        headers=h,
+        json={
+            "expected_revision": revision,
+            "actor": "isolated admin",
+            "reason": "Isolated explicit operator control change",
+            **kw,
+        },
+    )
+
+
+def test_snapshot_is_real_and_auth_required(center):
+    _, api, h = center
+    assert api.get(BASE).status_code == 401
+    data = api.get(BASE, headers=h)
+    assert data.status_code == 200, data.text
+    assert data.json()["settings"]["auto_publishing_enabled"] is False
+    assert data.json()["google_write_verified"] is False
+    assert data.json()["effective"]["auto_publishing_enabled"] == "신규 실행 중지"
+
+
+def test_independent_switches_persist_and_audit(center):
+    conn, api, h = center
+    assert update(center, trends_collection_enabled=False).status_code == 200
+    assert controls.allowed("trends_collection_enabled") is False
+    assert update(center, auto_manuscript_enabled=False).status_code == 200
+    assert update(center, manual_publishing_enabled=False).status_code == 200
+    current = api.get(BASE, headers=h).json()["settings"]
+    assert not current["trends_collection_enabled"] and not current["auto_manuscript_enabled"]
+    assert not current["manual_publishing_enabled"] and not current["auto_publishing_enabled"]
+    event = conn.execute(
+        "SELECT payload FROM audit_events WHERE event_type='automation.controls.changed' ORDER BY id DESC LIMIT 1"
+    ).fetchone()["payload"]
+    assert event["actor"] == "isolated admin" and event["changes"]
+    assert update(center, trends_collection_enabled=True).status_code == 200
+    assert controls.allowed("trends_collection_enabled") is True
+
+
+def test_off_blocks_real_collection_and_topic_scoring_without_remote_call(center, monkeypatch):
+    update(center, trends_collection_enabled=False, auto_manuscript_enabled=False)
+    monkeypatch.setattr(trends, "_collect_geo", lambda *a: pytest.fail("collection must not start"))
+    assert trends.collect_geo("KR")["status"] == "disabled"
+    assert trends.schedule_tick()["status"] == "disabled"
+    assert editorial_intelligence.assess_current() == {}
+    assert trend_editorial.dispatch()["created"] == 0
+
+
+def test_emergency_and_account_release_are_independent_and_confirmed(center):
+    _, api, h = center
+    assert update(center, emergency_stop=False).status_code == 422
+    assert update(center, google_account_available=True).status_code == 200
+    state = api.get(BASE, headers=h).json()["settings"]
+    assert state["emergency_stop"] and not state["blogger_api_restricted"]
+    assert update(center, emergency_stop=False, confirm_emergency_release=True).status_code == 200
+    assert publication_operation.manual_requests_allowed() is True
+    assert update(center, manual_publishing_enabled=False).status_code == 200
+    assert publication_operation.manual_requests_allowed() is False
+    assert api.get(BASE, headers=h).json()["settings"]["auto_publishing_enabled"] is False
+
+
+def test_auto_enable_requires_scope_live_confirmation_and_preserves_stop(center):
+    conn, api, h = center
+    conn.execute(
+        "INSERT INTO blogger_blogs(language_code,url,blog_id,display_name,active) VALUES('en','https://control-fixture.blogspot.com','1234567890123456','Control fixture',true)"
+    )
+    blog = str(
+        conn.execute(
+            "SELECT id FROM blogger_blogs WHERE url='https://control-fixture.blogspot.com'"
+        ).fetchone()["id"]
+    )
+    assert update(center, auto_publishing_enabled=True).status_code == 422
+    assert (
+        update(
+            center,
+            auto_publishing_enabled=True,
+            auto_blog_ids=[blog],
+            auto_mode="publish",
+            confirm_auto=True,
+        ).status_code
+        == 422
+    )
+    assert (
+        update(
+            center,
+            auto_publishing_enabled=True,
+            auto_blog_ids=[blog],
+            auto_mode="publish",
+            confirm_auto=True,
+            confirm_live=True,
+        ).status_code
+        == 200
+    )
+    data = api.get(BASE, headers=h).json()
+    assert data["settings"]["emergency_stop"] is True
+    assert data["effective"]["auto_publishing_enabled"] == "긴급 정지로 차단"
+    assert publication_worker.tick(allow_manual_confirmed_publications=True) is None
+
+
+def test_revision_conflict_and_strict_boolean(center):
+    _, api, h = center
+    payload = {
+        "expected_revision": 1,
+        "actor": "isolated",
+        "reason": "valid operator reason",
+        "auto_manuscript_enabled": "false",
+    }
+    assert api.put(BASE, headers=h, json=payload).status_code == 422
+    update(center, auto_manuscript_enabled=False)
+    payload["auto_manuscript_enabled"] = True
+    assert api.put(BASE, headers=h, json=payload).status_code == 409
+
+
+def make_job(center, lane="manual", mode="publish"):
+    conn, api, h = center
+    result = api.post(
+        "/admin/research/content-imports",
+        headers=h,
+        json={"submitted_by": "isolated control", "item": valid_item(content_id=str(uuid4()))},
+    ).json()
+    version = UUID(result["content_version_id"])
+    blog = conn.execute(
+        "INSERT INTO blogger_blogs(language_code,url,blog_id,display_name,active) VALUES('en',%s,'1234567890123456','Isolated control',true) RETURNING id",
+        (f"https://control-{uuid4().hex}.blogspot.com",),
+    ).fetchone()["id"]
+    profile = conn.execute(
+        "INSERT INTO language_profiles(language_code,target_country) VALUES('en','US') ON CONFLICT(language_code,target_country) DO UPDATE SET search_intent=language_profiles.search_intent RETURNING id"
+    ).fetchone()["id"]
+    policy = conn.execute(
+        "INSERT INTO publishing_policies(language_code,blog_id,profile_id,active) VALUES('en',%s,%s,true) RETURNING id",
+        (blog, profile),
+    ).fetchone()["id"]
+    oauth = conn.execute(
+        "INSERT INTO google_connections(label,status,scopes) VALUES('isolated grant','connected',ARRAY['https://www.googleapis.com/auth/blogger']) RETURNING id"
+    ).fetchone()["id"]
+    conn.execute("UPDATE blogger_blogs SET oauth_connection_id=%s WHERE id=%s", (oauth, blog))
+    job = conn.execute(
+        """INSERT INTO publishing_jobs(policy_id,blog_id,content_version_id,idempotency_key,scheduled_at,status,publication_state,adapter_type,simulation_only,publication_lane,oauth_connection_id,live_stage,publication_mode)
+        VALUES(%s,%s,%s,%s,now(),'running','publishing','blogger_live',false,%s,%s,'draft_needed',%s) RETURNING id""",
+        (policy, blog, version, uuid4().hex, lane, oauth, mode),
+    ).fetchone()["id"]
+    return job, blog, version
+
+
+def test_only_new_grants_execute_and_toggle_invalidates_old_manual_job(center):
+    conn, _, _ = center
+    job, _, _ = make_job(center)
+    update(
+        center, google_account_available=True, emergency_stop=False, confirm_emergency_release=True
+    )
+    assert controls.job_permitted(conn, job) is False
+    controls.grant_manual(conn, job, "publish")
+    assert controls.job_permitted(conn, job, running=True) is True
+    update(center, manual_publishing_enabled=False)
+    assert controls.job_permitted(conn, job) is False
+    update(center, manual_publishing_enabled=True)
+    assert controls.job_permitted(conn, job) is False
+
+
+def test_db_unavailable_fails_closed_without_affecting_imports(center, monkeypatch):
+    import psycopg
+
+    @contextmanager
+    def unavailable():
+        raise psycopg.OperationalError("isolated failure")
+        yield
+
+    monkeypatch.setattr(controls, "connection", unavailable)
+    assert controls.allowed("auto_manuscript_enabled") is False
+    from woori.google_http import GoogleFailure
+
+    with pytest.raises(GoogleFailure, match="policy_unavailable"), controls.write_guard():
+        pytest.fail("no HTTP admission")
+
+
+def test_worker_ack_is_revision_and_pid_bound(center):
+    conn, api, h = center
+    conn.execute(
+        "INSERT INTO worker_heartbeats(service_name,process_id,status,last_seen_at) VALUES('research_worker',123,'running',now()) ON CONFLICT(service_name) DO UPDATE SET process_id=123,status='running',last_seen_at=now()"
+    )
+    controls.acknowledge(conn, "research_worker", 123)
+    assert api.get(BASE, headers=h).json()["effective"]["trends_collection_enabled"] == "정상"
+    update(center, auto_manuscript_enabled=False)
+    assert api.get(BASE, headers=h).json()["effective"]["trends_collection_enabled"] != "정상"
+
+
+@pytest.mark.parametrize("mode", ["draft", "publish"])
+def test_mock_auto_dispatch_modes_and_off_invalidate_grants(center, monkeypatch, mode):
+    from datetime import UTC, datetime
+
+    conn, _, _ = center
+    job, blog, _version = make_job(center, "scheduled_auto", mode)
+    assert (
+        update(
+            center,
+            auto_publishing_enabled=True,
+            auto_blog_ids=[str(blog)],
+            auto_mode=mode,
+            confirm_auto=True,
+            confirm_live=mode == "publish",
+            google_account_available=True,
+            emergency_stop=False,
+            confirm_emergency_release=True,
+        ).status_code
+        == 200
+    )
+    state = controls.read(conn)
+    conn.execute(
+        "INSERT INTO automation_publication_grants(job_id,epoch,lane,publication_mode) VALUES(%s,%s,'auto',%s)",
+        (job, state["auto_epoch"], mode),
+    )
+    conn.execute(
+        "UPDATE publishing_jobs SET status='queued',publication_state='publication_queued' WHERE id=%s",
+        (job,),
+    )
+    snapshot = {
+        "title": "Approved synthetic article",
+        "safe_html": "<p>Approved test only</p>",
+        "blogger_labels": [],
+        "blockers": [],
+    }
+    monkeypatch.setattr(automation_auto, "readiness", lambda *args: ({}, snapshot, []))
+    monkeypatch.setattr(automation_auto, "enqueue", lambda *args: 0)
+    monkeypatch.setattr(
+        "woori.scheduled_duplicates.find_remote_duplicate", lambda *args, **kw: {"status": "clear"}
+    )
+    calls = []
+
+    class Publisher:
+        def create_draft(self, *args, **kw):
+            assert automation_auto.context_allowed()
+            calls.append("DRAFT")
+            return {
+                "post_id": "12345",
+                "status": "DRAFT",
+                "post_verified": True,
+                "http_status": 200,
+            }
+
+        def publish_draft(self, *args, **kw):
+            assert automation_auto.context_allowed("blogger_public_publish")
+            calls.append("LIVE")
+            return {
+                "post_id": "12345",
+                "status": "LIVE",
+                "readback_verified": True,
+                "published_at": datetime.now(UTC),
+                "url": "https://control.blogspot.com/test",
+            }
+
+    first = automation_auto.tick(publisher=Publisher())
+    assert first["status"] == ("draft_saved" if mode == "draft" else "draft_created"), first
+    assert calls == ["DRAFT"]
+    if mode == "publish":
+        conn.execute("UPDATE publishing_jobs SET available_at=now() WHERE id=%s", (job,))
+        second = automation_auto.tick(publisher=Publisher())
+        assert second["status"] == "published", second
+        assert calls == ["DRAFT", "LIVE"]
+    assert update(center, auto_publishing_enabled=False).status_code == 200
+    assert controls.job_permitted(conn, job) is False
+
+
+def test_unknown_remote_duplicate_never_writes_and_never_retries(center, monkeypatch):
+    conn, _, _ = center
+    job, blog, _ = make_job(center, "scheduled_auto", "draft")
+    update(
+        center,
+        auto_publishing_enabled=True,
+        auto_blog_ids=[str(blog)],
+        confirm_auto=True,
+        google_account_available=True,
+        emergency_stop=False,
+        confirm_emergency_release=True,
+    )
+    state = controls.read(conn)
+    conn.execute(
+        "INSERT INTO automation_publication_grants(job_id,epoch,lane,publication_mode) VALUES(%s,%s,'auto','draft')",
+        (job, state["auto_epoch"]),
+    )
+    conn.execute("UPDATE publishing_jobs SET status='queued' WHERE id=%s", (job,))
+    monkeypatch.setattr(automation_auto, "enqueue", lambda *a: 0)
+    monkeypatch.setattr(automation_auto, "readiness", lambda *a: ({}, {"title": "Test"}, []))
+    monkeypatch.setattr(
+        "woori.scheduled_duplicates.find_remote_duplicate", lambda *a, **kw: {"status": "unknown"}
+    )
+    assert automation_auto.tick(publisher=object())["status"] == "uncertain"
+    assert automation_auto.tick(publisher=object()) is None
+
+
+def test_wire_guard_serializes_with_other_policy_writers(monkeypatch):
+    from woori.db import connection
+
+    monkeypatch.setattr(publication_operation, "blogger_writes_allowed", lambda: True)
+    with controls.write_guard(), connection() as other:
+        assert (
+            other.execute("SELECT pg_try_advisory_xact_lock(20261102,103) acquired").fetchone()[
+                "acquired"
+            ]
+            is False
+        )
+    with connection() as other:
+        assert (
+            other.execute("SELECT pg_try_advisory_xact_lock(20261102,103) acquired").fetchone()[
+                "acquired"
+            ]
+            is True
+        )
+
+
+def test_auto_enqueue_only_new_versions_and_never_reauthorize_backlog(center, monkeypatch):
+    conn, _, _ = center
+    job, blog, version = make_job(center)
+    update(
+        center,
+        auto_publishing_enabled=True,
+        auto_blog_ids=[str(blog)],
+        confirm_auto=True,
+        google_account_available=True,
+        emergency_stop=False,
+        confirm_emergency_release=True,
+    )
+    monkeypatch.setattr(external_policy, "_blogger_policy_approval", lambda: {"approved": True})
+    selected = conn.execute(
+        "SELECT policy_id,oauth_connection_id FROM publishing_jobs WHERE id=%s", (job,)
+    ).fetchone()
+    monkeypatch.setattr(automation_auto, "readiness", lambda *args: (dict(selected), {}, []))
+    assert automation_auto.enqueue(conn, controls.read(conn)) == 0
+
+    newer = conn.execute(
+        """INSERT INTO content_versions(group_id,language,localization_id,version,title,body,created_at)
+        SELECT group_id,language,localization_id,version+1,title,body,clock_timestamp() FROM content_versions WHERE id=%s RETURNING id""",
+        (version,),
+    ).fetchone()["id"]
+    assert automation_auto.enqueue(conn, controls.read(conn)) == 1
+    newjob = conn.execute(
+        "SELECT id FROM publishing_jobs WHERE content_version_id=%s", (newer,)
+    ).fetchone()["id"]
+    assert controls.job_permitted(conn, newjob) is True
+    update(center, auto_publishing_enabled=False)
+    update(center, auto_publishing_enabled=True, auto_blog_ids=[str(blog)], confirm_auto=True)
+    assert controls.job_permitted(conn, newjob) is False
+    assert automation_auto.enqueue(conn, controls.read(conn)) == 0
+
+
+def test_authoring_policy_does_not_depend_on_dashboard_and_fails_closed(center, monkeypatch):
+    import httpx
+    import psycopg
+
+    def refused(request):
+        raise httpx.ConnectError("isolated API refusal")
+
+    assert controls.authoring_permission(transport=httpx.MockTransport(refused))["allowed"] is True
+    update(center, auto_manuscript_enabled=False)
+    result = controls.authoring_permission(transport=httpx.MockTransport(refused))
+    assert result["allowed"] is False and result["source"] == "repository"
+
+    @contextmanager
+    def unavailable():
+        raise psycopg.OperationalError("isolated policy unavailable")
+        yield
+
+    monkeypatch.setattr(controls, "connection", unavailable)
+    result = controls.authoring_permission(transport=httpx.MockTransport(refused))
+    assert result["allowed"] is False and result["source"] == "unavailable"
+    assert (
+        controls.authoring_permission(transport=httpx.MockTransport(lambda r: httpx.Response(401)))[
+            "reason"
+        ]
+        == "automation_policy_access_denied"
+    )
+
+
+def test_derived_maintenance_checkpoint_leaves_history_unchanged(center):
+    from woori import topics
+
+    conn, _, _ = center
+    before = conn.execute("SELECT count(*) n FROM trend_grouping_proposals").fetchone()["n"]
+    rows = [
+        {
+            "id": uuid4(),
+            "query": f"{geo} unique {i}" if geo == "US" else f"different article {i}",
+            "geo": geo,
+        }
+        for geo in ("US", "KR")
+        for i in range(40)
+    ]
+    with pytest.raises(topics.TopicMaintenancePaused), conn.transaction(force_rollback=True):
+        topics._propose_cross_geo_pairs(conn, rows, lambda: True)
+    assert conn.execute("SELECT count(*) n FROM trend_grouping_proposals").fetchone()["n"] == before
+
+
+def test_auto_off_does_not_starve_explicit_manual_authoring(center, monkeypatch):
+    conn, _, _ = center
+    _, blog, _ = make_job(center)
+    created = []
+    for index, kind in enumerate(("google_trends", "user_keyword")):
+        row = conn.execute(
+            """INSERT INTO codex_authoring_jobs(request_key,request_sha256,job_type,blog_id,language_code,target_country,category,keyword,options,model,created_at)
+            VALUES(%s,%s,%s,%s,'en','US','finance','isolated keyword','{}','isolated-model',now()+(%s*interval '1 second')) RETURNING id""",
+            (uuid4(), "a" * 64, kind, blog, index),
+        ).fetchone()
+        created.append(row["id"])
+    update(center, auto_manuscript_enabled=False)
+    selected = []
+    monkeypatch.setattr(keyword_jobs, "authoring_backoff", lambda _: None)
+    monkeypatch.setattr(keyword_jobs, "generate", lambda job: selected.append(job["id"]))
+    keyword_jobs.run_one()
+    assert selected == [created[1]]
+    assert (
+        conn.execute(
+            "SELECT state FROM codex_authoring_jobs WHERE id=%s", (created[0],)
+        ).fetchone()["state"]
+        == "queued"
+    )

@@ -158,6 +158,8 @@ def put_blog_geo_mappings(request:BlogGeoMappings) -> dict[str,Any]:
 
 def reconcile(limit: int = 200) -> dict[str,int]:
     """Bounded backlog, existing exact-query groups; no lexical cross-language auto merges."""
+    from .automation_controls import allowed
+    if not allowed('trends_collection_enabled'):return {'created':0,'held':0}
     slot=current_slot()
     with connection() as conn:
         # Expire only candidates which have not started authoring. Never delete
@@ -357,6 +359,8 @@ def prior_authoring_requests(conn:Any,key:str,blog_id:UUID) -> list[dict[str,Any
 def dispatch(limit:int=1) -> dict[str,int]:
     """Convert approved research queues to distinct Codex jobs; never enqueue publication."""
     from . import codex_runner
+    from .automation_controls import allowed
+    if not allowed('auto_manuscript_enabled'):return {'created':0}
     created=0
     with connection() as conn:
         conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('trend-codex-dispatch',0))")

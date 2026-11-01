@@ -33,12 +33,18 @@ def dispatch_queue_counts(conn: Any) -> dict[str, int]:
         and worker['execution_mode'] in {'operations-manual-confirmed','operations-scheduled-auto-and-manual','operations-scheduled-auto-and-manual-and-trends'})
     cutoff_row = conn.execute("SELECT max(created_at) cutoff FROM audit_events WHERE event_type='publication.manual_only.activated'").fetchone()
     cutoff = cutoff_row['cutoff'] if cutoff_row else None
-    jobs = conn.execute("""SELECT j.publication_lane,j.scheduled_at,j.available_at,
+    jobs = conn.execute("""SELECT j.id,j.publication_lane,j.scheduled_at,j.available_at,
         (SELECT max(a.created_at) FROM manual_publication_approval_events a WHERE a.job_id=j.id) approval_at
         FROM publishing_jobs j WHERE j.status='queued' AND j.adapter_type='blogger_live' AND NOT j.simulation_only""").fetchall()
     result = {'live_queued': 0,'live_due': 0,'auto_paused': 0,'manual_action_required': 0,'preserved_live_queued': len(jobs)}
     for row in jobs:
         state = pending_state(row['publication_lane'],row['approval_at'],cutoff,permitted)
+        if permitted:
+            from .automation_controls import job_permitted
+            if not job_permitted(conn,row['id']):
+                state='manual_action_required' if row['publication_lane']=='manual' else 'auto_paused'
+            elif row['publication_lane']!='manual':
+                state='queued'
         if state=='queued':
             result['live_queued'] += 1
             result['live_due'] += int(row['scheduled_at']<=now and row['available_at']<=now)

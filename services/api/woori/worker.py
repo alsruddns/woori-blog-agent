@@ -7,6 +7,7 @@ import sys
 import threading
 import time
 from collections import Counter
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlparse
@@ -169,6 +170,9 @@ def heartbeat(
               execution_mode=EXCLUDED.execution_mode""",
             (service_name, os.getpid(), status, error_category, execution_mode),
         )
+        if service_name != 'evaluation_worker':
+            from .automation_controls import acknowledge
+            acknowledge(conn,service_name,os.getpid())
         if previous is None or (
             int(previous["process_id"]) != os.getpid()
             or previous["status"] != status
@@ -225,12 +229,12 @@ def tick() -> bool:
     return True
 
 
-def collect_trends_and_build_topics() -> dict[str, object]:
+def collect_trends_and_build_topics(should_stop: Callable[[],bool] | None = None) -> dict[str, object]:
     """Build exact-query, evidence-gated candidates only after a real feed collection."""
     result = trends.schedule_tick()
     result['editorial_triage'] = trend_editorial.reconcile()
     if result.get("status") in {"succeeded", "partial"} and result.get("successes", 0):
-        result["candidate_build"] = topics.build_candidates()
+        result["candidate_build"] = topics.build_candidates(should_stop=should_stop) if should_stop else topics.build_candidates()
         result["research_triage"] = topics.select_research_candidates(
             settings().trend_research_hourly_limit
         )
@@ -246,6 +250,8 @@ def scheduled_import_intake_tick() -> dict[str, object]:
         if not claim or not claim["acquired"]:
             return {"processed_count": 0, "results": [], "skipped": "another_worker_holds_inbox_lock"}
         try:
+            from .automation_controls import acknowledge
+            acknowledge(lock_conn,'scheduled_import_intake',os.getpid())
             result = scheduled_import_inbox.process_inbox_once(
                 PROJECT_ROOT / ".local" / "gpt-scheduled-import",
                 "http://127.0.0.1:8100",
@@ -327,7 +333,6 @@ def main() -> None:
     service_name = "evaluation_worker" if evaluation_mode else "research_worker"
     process_guard = acquire_process_lock(service_name)
     started_at = time.monotonic()
-    next_scheduled_import_poll = started_at
     stop = threading.Event()
     degraded = threading.Event()
     def request_stop(_signum: int, _frame: object) -> None:
@@ -347,6 +352,22 @@ def main() -> None:
 
     heartbeat_thread = threading.Thread(target=beat, name="research-worker-heartbeat", daemon=True)
     heartbeat_thread.start()
+    def intake_loop() -> None:
+        while not stop.is_set():
+            try:
+                intake=scheduled_import_intake_tick()
+                if intake['processed_count']:
+                    result_value=intake.get('results',[])
+                    values=result_value if isinstance(result_value,list) else []
+                    counts=Counter(item['status'] for item in values if isinstance(item,dict))
+                    print('Scheduled import intake completed: '+','.join(f'{key}={value}' for key,value in sorted(counts.items())),flush=True)
+            except (psycopg.Error,OSError,RuntimeError,ValueError):
+                print('Scheduled intake unavailable; files preserved for the next poll.',flush=True)
+            stop.wait(SCHEDULED_IMPORT_POLL_SECONDS)
+    intake_thread = None
+    if not evaluation_mode and not args.diagnostic_only:
+        intake_thread=threading.Thread(target=intake_loop,name='scheduled-import-intake',daemon=False)
+        intake_thread.start()
     try:
         while not stop.is_set():
             if consume_worker_stop_request(service_name=service_name):
@@ -363,7 +384,8 @@ def main() -> None:
                 else:
                     # Exact-query topic grouping and evidence scoring are local-only;
                     # it never creates a manuscript or publication by itself.
-                    collect_trends_and_build_topics()
+                    from .automation_controls import allowed
+                    collect_trends_and_build_topics(lambda: stop.is_set() or _stop_request_path(os.getpid()).exists() or not allowed('trends_collection_enabled'))
                     trend_editorial.expire_pending()
                     trend_editorial.queue_selected()
                     trend_editorial.dispatch()
@@ -373,18 +395,8 @@ def main() -> None:
                     pipeline.tick(evaluation_only=False)
                     tick()
                     keyword_jobs.tick()
-                    if time.monotonic() >= next_scheduled_import_poll:
-                        next_scheduled_import_poll = time.monotonic() + SCHEDULED_IMPORT_POLL_SECONDS
-                        intake = scheduled_import_intake_tick()
-                        if intake["processed_count"]:
-                            results_value = intake.get("results", [])
-                            results = results_value if isinstance(results_value, list) else []
-                            counts = Counter(result["status"] for result in results if isinstance(result, dict))
-                            print(
-                                "Scheduled import intake completed: "
-                                + ",".join(f"{status}={count}" for status, count in sorted(counts.items())),
-                                flush=True,
-                            )
+            except topics.TopicMaintenancePaused:
+                print("Derived topic maintenance paused at a rollback-safe checkpoint.",flush=True)
             except psycopg.Error:
                 degraded.set()
                 print("Database unavailable; reconnecting without logging credentials", flush=True)
@@ -402,6 +414,7 @@ def main() -> None:
     finally:
         keyword_jobs.shutdown()
         stop.set()
+        if intake_thread is not None:intake_thread.join()
         heartbeat_thread.join(timeout=2)
         try:
             heartbeat("stopped", service_name=service_name)
