@@ -275,10 +275,11 @@ class Decision(BaseModel):
     reason:str=Field(min_length=3,max_length=2000)
     category:str|None=None
     blog_id:UUID|None=None
+    new_event_confirmed:bool=False
 
 
 def queue_topic(conn:Any,topic_id:UUID,blog_id:UUID,*,selection_rank:int|None=None,
-                processing_order:int|None=None) -> dict[str,Any]:
+                processing_order:int|None=None,new_event_key:UUID|None=None) -> dict[str,Any]:
     from .keyword_jobs import targets
     current=latest(conn,topic_id)
     if not current or current['state'] not in {'selected','generation_queued'}:raise HTTPException(409,'topic_not_selected')
@@ -306,9 +307,18 @@ def queue_topic(conn:Any,topic_id:UUID,blog_id:UUID,*,selection_rank:int|None=No
             if same_slot['topic_id']!=topic_id or same_slot['state'] not in {'generation_queued','generating'}:
                 raise HTTPException(409,'topic_already_requested_for_blog')
             return dict(conn.execute('SELECT * FROM trend_generation_requests WHERE id=%s',(same_slot['id'],)).fetchone())
-        if not all(recoverable_usage_request(p) for p in previous):raise HTTPException(409,'topic_already_requested_for_blog')
-        recovery=previous[0]['authoring_job_id']
-        duplicate=hashlib.sha256(f"trend-usage-recovery:{topic['normalized_key']}:{blog_id}:{newest['slot_at'].astimezone(UTC).isoformat()}".encode()).hexdigest()
+        if new_event_key:
+            if any(p['state'] in {'generation_queued','generating'} for p in previous):
+                raise HTTPException(409,'active_topic_job_must_be_preserved')
+            from .config import settings
+            used=conn.execute("SELECT count(*) n FROM trend_generation_requests WHERE created_at>=now()-interval '1 hour'").fetchone()
+            if used['n']>=settings().trend_research_hourly_limit:
+                raise HTTPException(409,'trend_authoring_hourly_capacity')
+            duplicate=hashlib.sha256(f'trend-operator-reviewed-new-event:{topic_id}:{blog_id}:{new_event_key}'.encode()).hexdigest()
+        else:
+            if not all(recoverable_usage_request(p) for p in previous):raise HTTPException(409,'topic_already_requested_for_blog')
+            recovery=previous[0]['authoring_job_id']
+            duplicate=hashlib.sha256(f"trend-usage-recovery:{topic['normalized_key']}:{blog_id}:{newest['slot_at'].astimezone(UTC).isoformat()}".encode()).hexdigest()
     contract={'version':'trend-authoring/2','trend_topic_id':str(topic_id),
         'source_observation_ids':[str(o['id']) for o in observations], 'country':topic['representative_geo'],
         'source_country':topic['representative_geo'],
@@ -317,10 +327,15 @@ def queue_topic(conn:Any,topic_id:UUID,blog_id:UUID,*,selection_rank:int|None=No
         'search_volume_raw':newest['source_volume_label'],'volume_kind':'bucket_lower_bound; not internationally comparable',
         'collected_at':newest['collected_at'].isoformat(),'collection_slot':newest['slot_at'].isoformat(),
         'selection_reason':current['reason'],
+        'editorial_selection':(current.get('evidence') or {}).get('selection'),
         'raw_material':newest['raw_payload'],'duplicate_key':duplicate,'category':category,
         'selection_rank':selection_rank,'processing_order':processing_order,
         'content_type':'trends_major_issue','requires_codex_evaluation':True,'remote_duplicate_status':'not_checked'}
     if recovery:contract['recovery_of_job_id']=str(recovery)
+    if new_event_key:
+        contract.update(operator_new_event_review_key=str(new_event_key),
+                        previous_request_ids=[str(p['id']) for p in previous],
+                        event_identity_basis='authenticated_operator_review_not_provider_attestation')
     row=conn.execute('''INSERT INTO trend_generation_requests(topic_id,duplicate_key,contract)
         VALUES(%s,%s,%s) ON CONFLICT(duplicate_key) DO UPDATE SET duplicate_key=EXCLUDED.duplicate_key RETURNING *''',
         (topic_id,duplicate,Jsonb(contract))).fetchone()
@@ -384,6 +399,8 @@ def queue_selected() -> dict[str,int]:
     from .config import settings
     from .keyword_jobs import targets
     slot=current_slot()
+    from .editorial_intelligence import assess_current
+    assess_current(slot)
     with connection() as conn:
         conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('trend-selected-queue',0))")
         from .keyword_jobs import authoring_backoff
@@ -418,7 +435,7 @@ def queue_selected() -> dict[str,int]:
                   AND contract->>'target_blog_id'=%s AND (contract->>'collection_slot')::timestamptz=%s''',
                 (mapping['geo'],str(mapping['blog_id']),slot.isoformat())).fetchone()
             if already and (already['active'] or already['n']>=3):continue
-            rows=conn.execute('''SELECT t.id,t.representative_query,t.normalized_key,t.source_language,
+            rows=conn.execute('''SELECT t.id,t.representative_query,t.normalized_key,t.source_language,o.id observation_id,o.geo,
                     o.source_volume_lower_bound,o.source_volume_label,o.trend_started_at,o.collected_at,o.raw_payload,
                     e.state,e.category,e.reason_code
                 FROM trend_topics t
@@ -431,24 +448,28 @@ def queue_selected() -> dict[str,int]:
                   AND o.trend_started_at IS NOT NULL
                 ORDER BY o.source_volume_lower_bound DESC,o.trend_started_at DESC,o.collected_at DESC,t.id LIMIT 100''',
                 (mapping['geo'],slot)).fetchall()
+            from .editorial_intelligence import rank_candidates
+            rows=rank_candidates(conn,[dict(r) for r in rows],mapping['blog_id'],slot)
             for rank,row in enumerate(rows,1):
+                if row['selection']['decision']!='selected':continue
                 previous=prior_authoring_requests(conn,row['normalized_key'],mapping['blog_id'])
                 if previous and (not all(recoverable_usage_request(p) for p in previous)
                         or any(slot_is_current(p['contract'].get('collection_slot')) for p in previous)):continue
-                state,code,category=classify(row['representative_query'],row['raw_payload'])
-                if state!='selected' or not (row['category'] or category):continue
+                _state,code,category='selected','editorial_intelligence_selected',row['selection']['category']
+                if not (row['category'] or category):continue
                 category=row['category'] or category
                 current=latest(conn,row['id'])
-                if not current or current['state'] in {'review_candidate','pending_classification','collected'} or previous:
+                if current and current['state']=='discarded' and current['actor'] not in {'system:trend-slot'}:continue
+                if not current or current['state'] in {'selected','review_candidate','pending_classification','collected','discarded'} or previous:
                     transition(conn,row['id'],'selected',code,
                         '현재 수집 회차의 검색량·최신성·주제 적합성으로 Codex 독립 조사를 선정했습니다. 근거나 사실 승인으로 간주하지 않습니다.',
                         'system:trend-country-rank',category=category,evidence={'geo':mapping['geo'],
                         'volume_lower_bound':row['source_volume_lower_bound'],'trend_started_at':row['trend_started_at'].isoformat(),
-                        'collection_slot':slot.isoformat(),'rank_basis':'within_geo_volume_desc_then_started_desc'})
+                        'collection_slot':slot.isoformat(),'selection':row['selection'],'rank_basis':'weighted_within_geo_editorial_priority'})
                 queued=queue_topic(conn,row['id'],mapping['blog_id'],selection_rank=rank,
                                    processing_order=mapping['processing_order'])
                 transition(conn,row['id'],'generation_queued','automatic_country_rank_queue',
-                    '국가별 검색량 내림차순 후보를 공통 Codex Runner의 웹 조사 큐로 전달했습니다.',
+                    '국가별 편집 우선순위 후보를 공통 Codex Runner의 웹 조사 큐로 전달했습니다.',
                     'system:trend-slot',category=category,evidence={'generation_request_id':str(queued['id']),
                     'geo':mapping['geo'],'blog_id':str(mapping['blog_id']),'processing_order':mapping['processing_order']})
                 created+=1
@@ -479,19 +500,28 @@ def expire_pending(limit:int=100) -> int:
 @router.post('/topics/{topic_id}/decision')
 def decision(topic_id:UUID,request:Decision) -> dict[str,Any]:
     with connection() as conn:
+        if request.new_event_confirmed and request.action=='queue':
+            conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('trend-selected-queue',0))")
         topic=conn.execute('SELECT * FROM trend_topics WHERE id=%s',(topic_id,)).fetchone()
         if not topic:raise HTTPException(404,'topic_not_found')
         if request.category and request.category not in {c['slug'] for c in EDITORIAL_CATEGORIES}:raise HTTPException(422,'unknown_category')
         conn.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',('trend-editorial:'+str(topic_id),))
         current=latest(conn,topic_id)
-        if current and current['state'] in {'generating','imported','published'}:raise HTTPException(409,'existing_authoring_result_must_be_preserved')
+        if current and (current['state']=='generating' or (current['state'] in {'imported','published'} and not (request.new_event_confirmed and request.action=='queue'))):
+            raise HTTPException(409,'existing_authoring_result_must_be_preserved')
         if request.action in {'select','reevaluate','queue'} and not current_observations(conn,topic_id):
             raise HTTPException(409,'expired_collection_slot')
         state={'select':'selected','discard':'discarded','reevaluate':'review_candidate','queue':'generation_queued'}[request.action]
         category=request.category or (current['category'] if current else None)
         if request.action=='queue':
             if not request.blog_id:raise HTTPException(422,'target_blog_required')
-            row=queue_topic(conn,topic_id,request.blog_id)
+            if request.new_event_confirmed:
+                if len(request.reason.strip())<20:
+                    raise HTTPException(422,'specific_new_event_review_reason_required')
+                transition(conn,topic_id,'selected','operator_new_event_review',request.reason,'authenticated_operator',
+                           category=category,evidence={'request_key':str(request.request_key),'new_event_confirmed':True,
+                           'publication_authority':False})
+            row=queue_topic(conn,topic_id,request.blog_id,new_event_key=request.request_key if request.new_event_confirmed else None)
             transition(conn,topic_id,state,'operator_queue',request.reason,'authenticated_operator',category=category,key=request.request_key)
             return row
         if request.action=='reevaluate':

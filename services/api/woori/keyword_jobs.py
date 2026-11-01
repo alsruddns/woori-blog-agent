@@ -181,7 +181,7 @@ def list_jobs() -> dict[str,Any]:
 
 def authoring_backoff(conn:Any) -> dict[str,Any]|None:
     row=conn.execute("""SELECT created_at,payload->>'error_code' error_code FROM audit_events
-        WHERE event_type='codex.authoring.state' AND payload->>'error_code' IN ('codex_usage_limit','codex_capacity_unavailable')
+        WHERE event_type IN ('codex.authoring.state','editorial.deep.failed') AND payload->>'error_code' IN ('codex_usage_limit','codex_capacity_unavailable')
         ORDER BY id DESC LIMIT 1""").fetchone()
     if not row:return None
     deadline=row['created_at']+timedelta(minutes=15 if row['error_code']=='codex_usage_limit' else 5)

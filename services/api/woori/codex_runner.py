@@ -103,7 +103,8 @@ def canonical_url(value: str) -> str:
 
 
 def execute(work: Path, prompt: str, schema: dict[str, Any], callback: Callable[[str,dict[str,Any]],None],
-            cancelled: Callable[[],bool], timeout: float=600, *, require_opened_sources: bool=True) -> tuple[dict[str,Any],dict[str,Any]]:
+            cancelled: Callable[[],bool], timeout: float=600, *, require_opened_sources: bool=True,
+            require_web_research: bool=True) -> tuple[dict[str,Any],dict[str,Any]]:
     status=engine_status()
     if not status['available']:
         raise CodexFailure(status['error_code'])
@@ -166,7 +167,7 @@ def execute(work: Path, prompt: str, schema: dict[str, Any], callback: Callable[
             if item.get('type')=='agent_message': callback('writing',{})
         if proc.wait(timeout=5)!=0 or not output.exists():
             raise CodexFailure(failure)
-        if not evidence['web_search_count'] or (require_opened_sources and not evidence['opened_urls']):
+        if require_web_research and (not evidence['web_search_count'] or (require_opened_sources and not evidence['opened_urls'])):
             raise CodexFailure('web_research_not_observed')
         if output.stat().st_size>256*1024:
             raise CodexFailure('codex_output_limit')

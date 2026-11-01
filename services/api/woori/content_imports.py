@@ -1145,6 +1145,8 @@ def submit_content_import(request: ImportSubmission) -> dict[str, Any]:
             )
         else:
             manual_origin_event = None
+        from .editorial_intelligence import evaluate_version
+        evaluate_version(conn, row["id"])
         return {"import_id": str(row["id"]), "state": row["state"], "duplicate": duplicate,
             "content_sha256": content_sha256, "category": request.item.category,
             "suggested_labels": labels, "reader_language_decisions": recommendations,
@@ -1470,53 +1472,60 @@ def capture_scheduled_live_source_evidence(import_id: UUID) -> dict[str, Any]:
 @router.post("/{import_id}/versions", status_code=201)
 def create_import_version(import_id: UUID, request: ImportVersionRequest) -> dict[str, Any]:
     with connection() as conn:
-        _require_import_review_schema(conn)
-        imported = _require_import(conn, import_id)
-        latest = _latest_version(conn, import_id)
-        if str(latest["id"]) != str(request.base_version_id):
-            raise HTTPException(409, "This manuscript changed after editing began; reload the latest version.")
-        # Existing schema stores the validated labels, not the boolean topic-origin
-        # input. Permit the existing category set plus its locale issue label while
-        # preserving the exact labels the reviewer supplied.
-        allowed_labels = suggested_labels(str(imported["category"]), str(imported["language_code"]),
-            google_trends_based=True)
-        if any(label not in allowed_labels for label in request.blogger_labels):
-            raise HTTPException(422, "Unrecognized or unreviewed Blogger label")
-        seo = request.seo_metadata.model_dump(mode="json")
-        digest = _version_digest(request.title, request.body_markdown, seo, request.blogger_labels)
-        duplicate = conn.execute(
-            "SELECT id,version_number FROM external_content_import_versions WHERE import_id=%s AND content_sha256=%s",
-            (import_id, digest),
-        ).fetchone()
-        if duplicate:
-            return {"version_id": str(duplicate["id"]), "version_number": duplicate["version_number"], "duplicate": True, "publish_ready": False}
-        next_number = int(latest["version_number"]) + 1
-        version = conn.execute(
-            """INSERT INTO external_content_import_versions(import_id,version_number,parent_version_id,title,
-              body_markdown,seo_metadata,blogger_labels,content_sha256,author_label,change_reason)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id,version_number,content_sha256,created_at""",
-            (import_id, next_number, latest["id"], request.title, request.body_markdown,
-             Jsonb(seo), Jsonb(request.blogger_labels), digest, request.author_label, request.reason),
-        ).fetchone()
-        assert version is not None
-        previous_link = conn.execute(
-            "SELECT content_version_id FROM external_content_import_content_links WHERE import_id=%s AND import_version_id=%s",
-            (import_id, latest["id"]),
-        ).fetchone()
-        if not previous_link:
-            raise HTTPException(409, "The prior imported version has no manuscript model mapping")
-        content_version_id = _link_manuscript_version(
-            conn, import_id, imported, version["id"], request.title, request.body_markdown,
-            previous_link["content_version_id"],
-        )
-        _audit(conn, "content.import.version_created", {"import_id": str(import_id), "version_id": str(version["id"]),
-            "parent_version_id": str(latest["id"]), "version_number": next_number,
-            "content_version_id": str(content_version_id), "content_sha256": digest,
-            "author_label": request.author_label, "reason": request.reason[:300]})
-        return {"version_id": str(version["id"]), "version_number": next_number,
-            "content_version_id": str(content_version_id),
-            "content_sha256": digest, "created_at": version["created_at"], "duplicate": False,
-            "generation_ready": False, "publish_ready": False}
+        return _create_import_version(conn, import_id, request)
+
+
+def _create_import_version(conn: Any, import_id: UUID, request: ImportVersionRequest) -> dict[str, Any]:
+    conn.execute('SELECT id FROM external_content_imports WHERE id=%s FOR UPDATE', (import_id,))
+    _require_import_review_schema(conn)
+    imported = _require_import(conn, import_id)
+    latest = _latest_version(conn, import_id)
+    if str(latest["id"]) != str(request.base_version_id):
+        raise HTTPException(409, "This manuscript changed after editing began; reload the latest version.")
+    # Existing schema stores the validated labels, not the boolean topic-origin
+    # input. Permit the existing category set plus its locale issue label while
+    # preserving the exact labels the reviewer supplied.
+    allowed_labels = suggested_labels(str(imported["category"]), str(imported["language_code"]),
+        google_trends_based=True)
+    if any(label not in allowed_labels for label in request.blogger_labels):
+        raise HTTPException(422, "Unrecognized or unreviewed Blogger label")
+    seo = request.seo_metadata.model_dump(mode="json")
+    digest = _version_digest(request.title, request.body_markdown, seo, request.blogger_labels)
+    duplicate = conn.execute(
+        "SELECT id,version_number FROM external_content_import_versions WHERE import_id=%s AND content_sha256=%s",
+        (import_id, digest),
+    ).fetchone()
+    if duplicate:
+        return {"version_id": str(duplicate["id"]), "version_number": duplicate["version_number"], "duplicate": True, "publish_ready": False}
+    next_number = int(latest["version_number"]) + 1
+    version = conn.execute(
+        """INSERT INTO external_content_import_versions(import_id,version_number,parent_version_id,title,
+          body_markdown,seo_metadata,blogger_labels,content_sha256,author_label,change_reason)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id,version_number,content_sha256,created_at""",
+        (import_id, next_number, latest["id"], request.title, request.body_markdown,
+         Jsonb(seo), Jsonb(request.blogger_labels), digest, request.author_label, request.reason),
+    ).fetchone()
+    assert version is not None
+    previous_link = conn.execute(
+        "SELECT content_version_id FROM external_content_import_content_links WHERE import_id=%s AND import_version_id=%s",
+        (import_id, latest["id"]),
+    ).fetchone()
+    if not previous_link:
+        raise HTTPException(409, "The prior imported version has no manuscript model mapping")
+    content_version_id = _link_manuscript_version(
+        conn, import_id, imported, version["id"], request.title, request.body_markdown,
+        previous_link["content_version_id"],
+    )
+    _audit(conn, "content.import.version_created", {"import_id": str(import_id), "version_id": str(version["id"]),
+        "parent_version_id": str(latest["id"]), "version_number": next_number,
+        "content_version_id": str(content_version_id), "content_sha256": digest,
+        "author_label": request.author_label, "reason": request.reason[:300]})
+    from .editorial_intelligence import evaluate_version
+    evaluate_version(conn, import_id, version["id"])
+    return {"version_id": str(version["id"]), "version_number": next_number,
+        "content_version_id": str(content_version_id),
+        "content_sha256": digest, "created_at": version["created_at"], "duplicate": False,
+        "generation_ready": False, "publish_ready": False}
 
 
 def prepare_scheduled_publishable_version(import_id: UUID) -> dict[str, Any]:

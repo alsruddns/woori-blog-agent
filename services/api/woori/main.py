@@ -14,6 +14,7 @@ from .blogger_routes import router as blogger_router
 from .config import settings
 from .content_imports import router as content_imports_router
 from .db import connection
+from .editorial_intelligence import router as editorial_intelligence_router
 from .google_http import GoogleFailure
 from .keyword_jobs import router as keyword_authoring_router
 from .localized_publications import router as localized_publications_router
@@ -44,6 +45,7 @@ app.include_router(blogger_router, dependencies=[Depends(authorize)])
 app.include_router(publications_router, dependencies=[Depends(authorize)])
 app.include_router(keyword_authoring_router, dependencies=[Depends(authorize)])
 app.include_router(trend_editorial_router, dependencies=[Depends(authorize)])
+app.include_router(editorial_intelligence_router, dependencies=[Depends(authorize)])
 
 
 @app.exception_handler(EngineFailure)

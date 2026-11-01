@@ -1,6 +1,7 @@
 "use client";
 
 import ManuscriptCopy from "./manuscript-copy";
+import EditorialQuality from "../manuscripts/editorial-quality";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 
@@ -450,7 +451,7 @@ export default function ExternalImportWorkspace({ embedded = false, detailReques
           {detail.claim_evidence && <section><h4>주장 근거 자동 대조</h4><p>전체 {detail.claim_evidence.claim_count}개 · 원문 범위 확인 {detail.claim_evidence.source_span_confirmed_count}개 · 자동 사실 승인 {detail.claim_evidence.verified_count}개. 의미·권리 검토가 필요합니다.</p>{detail.claim_evidence.claims.map((claim, index) => <p key={index}>{String(claim.claim_id)}: {Array.isArray(claim.reasons) ? claim.reasons.map(String).join(", ") : "검토 필요"}</p>)}</section>}
           {(Array.isArray(detail.item.claims) ? detail.item.claims as Row[] : []).map(claim => <article className="history-card" key={String(claim.claim_id)}><strong>{String(claim.claim)}</strong><p>연결된 외부 출처: {Array.isArray(claim.source_ids) ? claim.source_ids.map(sourceId => (Array.isArray(detail.item.sources) ? detail.item.sources as Row[] : []).find(source => source.source_id === sourceId)?.title ?? "출처명 미확인").join(" · ") : "—"} · 제출 상태: {displayState(claim.verification_status)} · 사실 상태 주장: {displayState(claim.factual_state)}</p><details><summary>제출된 발췌문 보기</summary><blockquote>{String(claim.evidence_excerpt)}</blockquote></details></article>)}
         </section>}
-        {detailTab === "quality" && <section className="workspace-panel" id="import-quality"><h3>품질·SEO 검사</h3>{latestAssessment ? <QualityAssessmentPanel assessment={latestAssessment} /> : <p className="empty-state">아직 품질·SEO 검사를 실행하지 않았습니다.</p>}</section>}
+        {detailTab === "quality" && <section className="workspace-panel" id="import-quality"><EditorialQuality contentVersionId={String(latestVersion.content_version_id??"")} onChanged={()=>void openDetail(selectedId).then(()=>setDetailTab("quality"))}/><h3>기존 근거·SEO 검사</h3>{latestAssessment ? <QualityAssessmentPanel assessment={latestAssessment} /> : <p className="empty-state">아직 품질·SEO 검사를 실행하지 않았습니다.</p>}</section>}
         {detailTab === "preview" && <section className="workspace-panel" id="import-preview">{previewDocument ? <><div className="section-heading"><div><h3>게시용 HTML 미리보기</h3><p>디자인 렌더러 결과 · {String(preview?.html_sha256 ?? latestAssessment?.html_sha256 ?? "")} · 실제 Blogger 테마 적용 결과와 다를 수 있습니다.</p></div></div><iframe data-testid="import-html-preview" title="게시용 원고 미리보기" sandbox="" srcDoc={previewDocument} /></> : <p className="empty-state">먼저 원고 편집 탭에서 품질·HTML 검사를 실행하고 게시용 미리보기를 엽니다.</p>}</section>}
         {detailTab === "distribution" && <>
           {Boolean(detail.item.blogger_delivery) && <section className="workspace-panel"><h3>Blogger 저장 상태</h3>

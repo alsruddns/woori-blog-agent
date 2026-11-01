@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useSearchParams } from "next/navigation";
 import styles from "./article-preview.module.css";
+import EditorialQuality from "./editorial-quality";
 
 type Row = Record<string, unknown>;
 type ListResult = { items: Row[]; page: number; page_size: number; total: number; languages: string[]; categories: string[] };
@@ -441,6 +442,7 @@ export default function ManuscriptWorkspace() {
             </section>}
             {tab === "sources" && <div className="detail-section">{((detail.sources as Row[] | undefined) ?? []).length === 0 ? <p className="empty-state">연결된 출처가 없습니다.</p> : (detail.sources as Row[]).map(source => <article className="source-card" key={value(source, "id")}><h3>{value(source, "source_name")}</h3><p>게시 {dateLabel(value(source, "published_at"))} · 수집 {dateLabel(value(source, "collected_at"))} · 권리 {value(source, "rights") || "확인 필요"}</p><a href={value(source, "url")} target="_blank" rel="noreferrer">원문 열기 ↗</a></article>)}<h3>검증된 사실</h3>{((detail.facts as Row[] | undefined) ?? []).map(fact => <article className="source-card" key={value(fact, "id")}><strong>검증 사실</strong><p>{value(fact, "source_excerpt")}</p><small>검증 상태: {stateLabel(value(fact, "verification_status"))}</small></article>)}</div>}
             {tab === "quality" && <div className="detail-section"><p className={machinePassed ? "quality-ok" : "quality-held"}>{machinePassed ? "기계 검사 통과 · 의미 정확성과 자연스러움은 사람 검토가 필요합니다." : "품질 검토가 필요합니다. 이 상태에서는 발행할 수 없습니다."}</p><QualityChecks value={detail.checks} />
+              <EditorialQuality key={value(detail,"content_version_id")} contentVersionId={value(detail,"content_version_id")} />
               <details><summary>기계 검사 원본 데이터</summary><pre>{JSON.stringify(detail.checks ?? {}, null, 2)}</pre></details>
               {detail.review_actions_allowed ? <>
               <form onSubmit={event => { event.preventDefault(); const form = new FormData(event.currentTarget); void submit("article-review-events", { evaluation_id: value(detail, "id"), content_version_id: value(detail, "content_version_id"), idempotency_key: crypto.randomUUID(), reviewer_name: String(form.get("reviewer") ?? "") }); }}><h3>편집 검토 시작</h3><label>검토자<input name="reviewer" required minLength={2} maxLength={80} /></label><button disabled={saving}>검토 시작 기록</button></form>
