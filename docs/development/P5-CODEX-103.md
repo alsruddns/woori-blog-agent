@@ -40,3 +40,17 @@ Google 접근: 기존 승인된 제한/비용 gate를 통해 활성 Blogger4개�
 ## 최종 적용 체크포인트
 
 코드 커밋, 실제 PID/설정 적용, Worker ACK, 자동 쓰기0, 기존37 Job 보존, 원격 push 및 남은 제한은 후속 기록에 추가한다. 자기 참조 커밋은 `git log --grep=P5-CODEX-103`로 연결한다. main 병합 없음.
+
+### 운영 적용 완료 — 2026-11-02 02:11 KST
+
+- 구현 커밋 `0f46ddc`. 운영 schema77, 위 백업을 보존했다. 현재 설정 revision7은 **Trends=true / auto_manuscript=true / auto_publishing=false / manual_publishing=true / emergency_stop=false**다. 기존 프로젝트 API 제한 게이트도 사용자 확인에 따라false로 저장했으며 `google_account_report=user_reported_available`, 실제 write_verified=false로 분리했다. 자동 모드는 미활성 Draft, 자동 대상 목록은 비어 있다.
+- 적용 감사282396에 순서와 매 단계 결과를 저장했다. 자동 발행OFF 저장→실제 tick 무처리 확인→TrendsON→자동 원고ON→수동ON→계정 신고/로컬 제한 해제→긴급 정지OFF. 긴급 정지 해제 직전/직후 자동OFF, 진행 중 발행0, 기존 Job grant0을 확인했다. 같은 값을 재확인한 단계는 개별 changed 필드가 비어 있을 수 있으며 실제 적용 요청/단계별 revision은 이 감사에 보존된다.
+- 기존 Research1948의 정확한 파생 트랜잭션에 statement 취소 신호를 보냈다(282170/282171). 282382에서 원래 트랜잭션 종료를 확인했고 서비스 heartbeat가 stopped로 바뀐 후에만 새 Worker를 시작했다. 추가 신호0, 프로세스 kill0/backend termination0. 기존 PostgreSQL/Crypto/Task Scheduler는 중지하지 않았다.
+- API28088(launcher29708), Dashboard30680(launcher26608), Research10232, Publication28516에0f46ddc를 정상 반영했다. HTTP API health/운영 제어센터/sources/manuscripts 모두200. API와 Dashboard 실제 설정 응답의 여섯 bool 값이 일치했다. 두 Worker는 PID가 일치하는 **revision7 / automation-controls/1 ACK**를15초 heartbeat로 갱신하고 오류 없이 running이다. 설정을 저장한 뒤 API·Dashboard·Research 프로세스를 교체해도 값이 동일함을 확인했다. Publication Worker는 저장 전 새 코드로 시작했고 이후 hot revision7을 적용했다.
+- 실제 Import intake thread도 Research10232/revision7을60초마다 ACK한다(02:08:36→02:10:36). 02:10 정상 수집 회차는 **11개 지역 모두 succeeded**다. 누락 회차를 되살리지 않았다. 자동 작성 정책 조회는 실제 API와 API503 주입 시 실제 repository 모두 allowed=true/revision7로 일치했다.
+- 최종 운영 감사282656: 기존37 Job의 id/status/publication_state/remote_post_id가 시작 snapshot과 완전 일치, 새 publication grant0, Blogger POST/PATCH/PUT/DELETE0, 새 write operation0, live attempt0. 자동 발행은 한 번도 활성화하지 않았다. 긴급 정지 해제만으로 기존 queued/failed Job을 재개하지 않았다. 사용자 직접 클릭 없이 수동 Job을 만들지 않았다.
+- 운영 Chromium **2건 추가 통과**, 실제3100에서1440/390 다크 테마·다섯 설정·계정 확인과 쓰기 미검증·Worker 적용표시·가로 넘침 없음/pageerror0 확인. 비GET API 요청을 테스트에서 차단했다. Mock UI8 + 실제 UI2 = 브라우저10건. 실제 화면은 `assets/P5-CODEX-103-live-{desktop,mobile}.png`, Mock 화면2장도 보존한다. 추가 E2E 파일은 ESLint/TypeScript 통과했으며 제품 runtime 코드는0f46ddc와 같다.
+- Task Scheduler Ready/LastTaskResult0 유지. PostgreSQL16 Running/Auto PID6880 유지, 재시작 없음. Crypto 변경 없음. baseline 대비 원고·Version·게시/감사 이력 삭제 없음. 테스트 원고를 운영에 만들지 않아 이번 관찰 구간의 신규 Import는0건이며, 실제15개 예약의 다음 작성/Import 실행 실적은 별도 관찰 대상이다. Import 경로는 격리 DB와 실제 poll ACK로 검증했으며 신규 운영 Import 성공으로 과장하지 않는다.
+- 남은 제한: 실제 Blogger 수동 쓰기는 별도 exact-version 관리자 클릭 전까지 미검증. 과거 policy 테스트8건의 baseline 실패는 유지되며 전체 suite green을 주장하지 않는다. 과거 전체 grouping은 여전히 비용이 큰 파생 계산이지만 이제 OFF/stop 체크포인트와 독립 Import polling을 갖춘다.
+
+최종 test/docs 커밋 및 원격 SHA는 후속 Git 기록으로 연결한다. 다음 정상 시작 marker를 검증된 test/docs 후속 HEAD로 갱신하되 실제 runtime applied_commit은0f46ddc로 보존한다. 기존 stash는 삭제/pop하지 않는다.
