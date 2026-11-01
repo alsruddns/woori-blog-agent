@@ -1,3 +1,10 @@
+## P5-CODEX-102 scheduled outage recovery (2026-11-02)
+
+- Read `docs/operations/scheduled-outage-recovery.md` for every scheduled or Desktop Run now manuscript. This supersedes earlier stop-before-research wording only when the fixed preflight explicitly permits research and local saving with Import pending.
+- Scheduled model code still must not read .env, credentials, execute SQL, call Blogger or call arbitrary APIs. The fixed generation-only `scripts/scheduled-preflight-broker.py`, invoked internally by the existing duplicate CLI, is a trusted service helper authorized to use existing service configuration for authenticated loopback/repository lookup. No credential is returned to the model. This is not permission to bypass an authentication/schema rejection or publication controls.
+- Unknown uniqueness permits evidence-led research and immutable pending storage only. It never permits ready delivery/Import until the authenticated recovery path confirms local uniqueness. Existing matches and ambiguous pending-history matches continue to block duplicate originals. Preserve actual scheduled/manual identity, source/rights/quality gates and original files.
+- Research Worker recovery ends at review-held Import and native Content Version. No automatic Publishing Job, Blogger Draft/Publish/Update, approval, API restriction change or emergency-stop change is permitted. Earlier Scheduled Auto authorization does not enable writes for this task.
+
 ## User keyword authoring: P5-CODEX-080 (2026-10-30)
 
 - The authenticated user_keyword request queue may invoke the official installed Codex CLI using current ChatGPT login and the approved, actually tested model. This external authoring lane is separate from retired internal generation providers and from Desktop Scheduled tasks. Never relabel its output as scheduled.

@@ -1,0 +1,40 @@
+# P5-CODEX-102 — 예약 원고 장애 분리 및 복구
+
+작업 일시: 2026-11-02 KST. 기준 develop `ff738dafd295597997c3001ddc02097e4815096a`.
+
+## 문제와 보호 범위
+
+automation-5의 실제 2026-10-31 12:00 KST 실행은 Dashboard proxy 연결 거절 3회 후 조사/작성 전에 중단됐다. 원래 세션 `01a18fea-2ffa-7c73-8847-279b022f3e0c`, occurrence `codex-slot:automation-5:20261031T1200KST`와 설정 RRULE을 확인했다. 이 ID는 프로젝트 파생 키이며 scheduler 발급 ID가 아니다. 실패 이력은 수정하지 않는다.
+
+시작 Git은 develop, 기존 미추적 Playwright 산출물 두 폴더만 있었다. P099/101 stash `c879d3dfe08a87baae278944ba6c0caf9426847a`는 그대로 보존한다. 기존 시작 스크립트/잠금/PID 보호를 수정하지 않는다. PostgreSQL16 Running/Auto PID6880 및 Crypto 클러스터는 건드리지 않는다. publication manual_only, API 제한, 긴급 정지, Auto disabled와 기존 Publishing Job은 유지한다.
+
+## 구현 및 변경 목적
+
+- `scripts/scheduled_duplicate_check.py`: 기존 프록시 우선, generation의 전송 장애/5xx에만 고정 broker fallback. 인증/권한/422 거절과 publication은 우회하지 않는다. 원래 실패 진단을 dashboard_failure로 보존한다.
+- `scheduled_preflight.py`, `scripts/scheduled-preflight-broker.py`: 인증된 loopback API -> 기존과 동일한 repository 중복 함수 -> 보존 파일의 존재 확인. 모델 프롬프트에 인증정보를 전달하지 않는다. DB/index 불완전 상태에서 not_found를 만들지 않는다. index는 존재 증거만 제공한다. 모든 경로 실패 시 조사/로컬 보관만 허용하고 Import는 pending이다.
+- `scheduled_pending.py`, `scripts/save-pending-manuscript.py`: 검증된 원고를 incoming에서 읽어 별도 pending에 hash/실행 모드/Automation/정확한 슬롯/파생 키/주제/대상/작성 시각과 함께 원자적 exclusive 저장. 동일 실행/blog/언어의 다른 payload는 충돌. 기존 파일과 byte-identical 원고를 보존한다. 모델 호출, DB 연결, Import는 이 저장 명령에서 실행하지 않는다.
+- `content_imports.py`: 기존 중복 검사·Import writer·scheduled origin writer에 기존 트랜잭션 재사용을 추가했다. 보류 원고 복구는 인증된 API에서 occurrence/event 잠금, 기존 Import/사건/제목/ID 중복, 실제 저장 RRULE, 형식, 안전 HTML, 작성/자료 기준 시각을 재검사한다. 24시간은 보수적인 초기 자동 복구 한도이며 성능 최적값이 아니다. 오래된/미래 시각/위험 HTML은 review_required, 불명확한 중복은 import_pending. Import/native Content Version/provenance/복구 감사는 동일 트랜잭션에서 commit하며 실패하면 전체 rollback한다. 원래 unknown 사전 검사 메타데이터는 덮어쓰지 않고 복구 결과를 별도로 감사한다.
+- `scheduled_import_inbox.py`, `main.py`: 기존 Research Worker의 60초 intake에서 보류 원고·progress outbox를 처리한다. API가 없으면 pending 유지. ready에 잘못 놓인 unknown 원고도 API Import 전에 pending으로 격리한다. 회차당 원고 처리 상한4를 유지한다. 기존 파일+별도 immutable receipt로 Import/Content Version을 연결한다. 새 auth recovery/progress 경로는 Blogger·발행 Job에 연결하지 않는다.
+- `scripts/scheduled-progress.py`: 실제 Desktop 세션 resolver로 확인한 scheduled/manual 실행의 진행 상태를 로컬 append-only 기록하고 복구 후 DB 감사에 멱등 동기화. usage_limit_waiting을 별도 기록한다. 원고가 이미 저장된 이후 실패는 writing failed가 아닌 import_pending. 진행 상태는 self-reported이며 조사 완료·사실 확인·승인 증거가 아니다.
+- `AGENTS.md`, `docs/operations/scheduled-outage-recovery.md`: 기존 장애 시 즉시 중단 지침을 위의 좁은 save-only 예외로 대체한다. Blogger 자동 Draft/Publish/Update와 Auto/긴급 정지 변경은 계속 금지한다.
+- `scripts/update-scheduled-outage-contract.py`: 기본 dry-run. 기존 15개 실제 ACTIVE/cron 프로젝트 설정만 대상으로 원래 prompt를 보존하고 공통 계약 참조를 추가한다. 설정 원본과 전후 SHA는 `.local/p102-automation-contract-backup`에 보관했다. 15개 모두 prompt 외 전체 TOML 값(ID/RRULE/언어 지침/모델/대상/Local/project 등)이 그대로임을 확인했다. 새 작업 등록/예약 변경/실제 15회 실행 성공을 주장하지 않는다.
+
+## DB 및 감사
+
+운영 변경 전 `backups/20261101T154054Z.dump` 31,543,310 bytes 백업, pg_restore catalog 검증. 신규 migration은 필요 없다. 기존 append-only audit와 Import/Version 구조를 재사용한다. 시작 감사278498, 실제 대체 조회 및 15개 계약 변경 확인 감사278872. 원고/Version/과거 실패 이력 삭제·수정 없음.
+
+## 운영 조사와 재현
+
+원래 실패 세션의 정확한 event key `weekly-global-finance-2026-10-31`, EN/US, Blogger `5240203250707821039`, 원래 주제로 조회했다. 해당 사건 Import와 해당 occurrence 원고 파일은 없었다. 정상 프록시 결과와 **프록시 connection_refused만 주입하고 실제 API에 연결한 결과**, **API503만 주입하고 실제 repository에 연결한 결과** 모두 local_status=not_found/draft_import_allowed=true로 일치했다. overall unknown/remote not_checked는 그대로이며 Blogger는 조회하지 않았다. 정상 서비스를 실제로 꺼서 장애를 만들지 않았다.
+
+이는 조회 장애 수정의 운영 증거이며 과거 슬롯의 재실행 성공이 아니다. 현재 개발 세션을 Desktop cron/Run now로 위장하지 않았다. 과거 실패 슬롯에 새 원고·scheduled envelope·Import ID를 만들지 않았다. 재실행은 실제 지원되는 invocation의 출처와 시점 구분이 필요하다. 실제 재실행 원고/Import가 없음을 최종 보고에 명시한다.
+
+## 검증 체크포인트
+
+격리 test DB, 강제 rollback 공유 트랜잭션으로 검증. 기존 예약/Import/occurrence/수동 실행/Trends/키워드/P099 품질/자동 발행 차단을 포함한 통합 suite **151 passed**. 이후 추가한 ready-unknown/사건 중복 회귀 테스트는 최종 체크포인트에 기록한다. 변경 모듈 mypy 통과, 변경 범위 Ruff 확인. Dashboard 코드를 변경하지 않아 기존 Dashboard build를 재실행하지 않는다. 운영 프록시/API HTTP와 Worker heartbeat는 최종 반영 후 확인한다.
+
+커밋/푸시, 관련 서비스의 안전 반영 여부, 마지막 테스트 수와 남은 항목은 다음 체크포인트와 `git log --grep=P5-CODEX-102`로 연결한다. main 병합 없음.
+
+### 코드 검증 완료 체크포인트
+
+최종 변경 범위 통합 **153 passed (10.85초)**. 신규 P102 회귀16건 포함. Ruff 전부 통과, API/main/Import/보류 복구/broker mypy 확인. 서비스 중지 없이 실제 원래 식별자의 프록시/직접 API/repository 결과 일치를 확인했다. 정상 API의 graceful stop dry-run이 일반 established 소켓 하나를 감지했다. 추가 조사에서 8100 클라이언트 연결은 없고 API PID3596 내부 asyncio 자기 소켓쌍(64575↔64576)만 확인했다. force나 작업 취소는 하지 않는다. 반영 시 해당 listener의 정확한 checkout/PID/Windows owner/instance identity와 활성8100 연결을 재검증하고 기존 identity-bound stop-file 채널만 사용한다. Research Worker도 기존 cooperative stop으로 현재 동기 작업을 마친 후에만 교체한다. Dashboard/Publication Worker/DB/Crypto는 교체하지 않는다.

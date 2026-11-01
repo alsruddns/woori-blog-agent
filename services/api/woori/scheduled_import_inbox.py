@@ -111,7 +111,7 @@ def _safe_directories(root: Path) -> dict[str, Path]:
         raise ValueError("inbox_root_must_not_be_a_symlink")
     resolved_root = root.resolve(strict=True)
     directories: dict[str, Path] = {}
-    for name in ("incoming", "ready", "processing", "processed", "rejected", "failed", "quarantine"):
+    for name in ("incoming", "ready", "processing", "processed", "rejected", "failed", "quarantine", "pending", "pending_receipts", "pending_sources", "progress", "progress_receipts"):
         path = root / name
         path.mkdir(exist_ok=True)
         if _is_reparse_point(path) or path.resolve(strict=True).parent != resolved_root:
@@ -290,7 +290,10 @@ def process_inbox_once(
         trust_env=False,
         transport=transport,
     ) as client:
-        ready_files = sorted(directories["ready"].glob("*.ready.json"))[:max_files]
+        from .scheduled_pending import recover_pending_once, sync_progress_once
+        sync_progress_once(root, client)
+        results.extend(recover_pending_once(root, client, max_files=max_files))
+        ready_files = sorted(directories["ready"].glob("*.ready.json"))[:max(0, max_files-len(results))]
         for source in ready_files:
             file_key = _file_key(source)
             if _is_reparse_point(source) or not source.is_file():
@@ -314,6 +317,16 @@ def process_inbox_once(
                 file_sha256 = hashlib.sha256(raw).hexdigest()
                 file_hashes[file_key] = file_sha256
                 envelope = validate_envelope(raw)
+                if isinstance(envelope, ScheduledImportEnvelope) and (
+                    envelope.scheduled_origin.draft_import_allowed is False
+                    or envelope.scheduled_origin.local_duplicate_status == "unknown"
+                ):
+                    from .scheduled_pending import save_pending
+                    saved = save_pending(root, raw)
+                    _move(processing, directories["pending_sources"] / processing.name)
+                    results.append({"file_key": file_key, "status": "import_pending",
+                                    "reason": "duplicate_check_unavailable", "pending_path": saved["path"]})
+                    continue
             except ValidationError as exc:
                 validation_errors = _safe_validation_errors(exc)
                 try:

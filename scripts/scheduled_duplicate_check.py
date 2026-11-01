@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
+import sys
 import time
 from datetime import date
+from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
@@ -70,7 +73,35 @@ def _safe_http_validation_detail(error: HTTPError) -> list[dict[str, str]]:
     ]
 
 
-def check_duplicate(payload: dict[str, Any], *, opener=_open_local_proxy) -> dict[str, Any]:
+def _broker(payload: dict[str, Any]) -> dict[str, Any]:
+    root = Path(__file__).resolve().parents[1]
+    try:
+        run = subprocess.run(
+            [sys.executable, str(root / "scripts" / "scheduled-preflight-broker.py")],
+            input=json.dumps(payload), text=True, capture_output=True, cwd=root,
+            timeout=25, check=False,
+        )
+        result = json.loads(run.stdout)
+        if run.returncode == 0 and isinstance(result, dict) and result.get("status") in KNOWN_STATUSES:
+            return result
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        pass
+    return {"status": "unknown", "local_status": "unknown", "draft_import_allowed": False,
+            "research_allowed": True, "local_save_allowed": True, "import_status": "pending",
+            "hold_reason": "duplicate_check_unavailable", "reason": "local_broker_unavailable"}
+
+
+def check_duplicate(payload: dict[str, Any], *, opener=_open_local_proxy, fallback=_broker) -> dict[str, Any]:
+    result = _check_proxy(payload, opener=opener)
+    outage = result.get("reason") == "duplicate_preflight_transport_error" or (
+        result.get("reason") == "duplicate_preflight_http_error" and result.get("http_status", 0) >= 500
+    )
+    if payload.get("stage") == "generation" and outage:
+        return {**fallback(payload), "dashboard_failure": result}
+    return result
+
+
+def _check_proxy(payload: dict[str, Any], *, opener=_open_local_proxy) -> dict[str, Any]:
     """Call only the same-origin read-only duplicate preflight; never access secrets."""
     request = Request(
         ENDPOINT,

@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from contextlib import nullcontext
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -399,9 +400,13 @@ class DuplicateCheckRequest(BaseModel):
 
 @router.post("/duplicate-check")
 def scheduled_duplicate_check(request: DuplicateCheckRequest) -> dict[str, Any]:
+    return _scheduled_duplicate_check(request)
+
+
+def _scheduled_duplicate_check(request: DuplicateCheckRequest, existing_conn: psycopg.Connection[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Read-only idempotency preflight for Scheduled tasks; uncertainty never means absent."""
     def finish(result: dict[str, Any]) -> dict[str, Any]:
-        with connection() as audit_conn:
+        with (nullcontext(existing_conn) if existing_conn is not None else connection()) as audit_conn:
             audit_conn.execute(
                 """INSERT INTO audit_events(event_type,language_code,payload)
                 VALUES ('content_import.scheduled_duplicate_check',%s,%s)""",
@@ -426,7 +431,7 @@ def scheduled_duplicate_check(request: DuplicateCheckRequest) -> dict[str, Any]:
             )
         return result
 
-    with connection() as conn:
+    with (nullcontext(existing_conn) if existing_conn is not None else connection()) as conn:
         blog = conn.execute(
             """SELECT id,blog_id,language_code,url,active,connection_verified_at,
             oauth_connection_id FROM blogger_blogs WHERE blog_id=%s AND language_code=%s""",
@@ -1024,6 +1029,10 @@ def record_claim_evidence_assessment(import_id: UUID) -> dict[str, Any]:
 
 @router.post("", status_code=201)
 def submit_content_import(request: ImportSubmission) -> dict[str, Any]:
+    return _submit_content_import(request)
+
+
+def _submit_content_import(request: ImportSubmission, existing_conn: psycopg.Connection[dict[str, Any]] | None = None) -> dict[str, Any]:
     canonical = request.item.model_dump_json(exclude_none=False)
     content_sha256 = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
     idempotency_key = hashlib.sha256(
@@ -1037,7 +1046,7 @@ def submit_content_import(request: ImportSubmission) -> dict[str, Any]:
                               google_trends_based=request.item.google_trends_based)
     if request.item.google_trends_based and labels[0] not in request.item.blogger_labels:
         raise HTTPException(422, "Google Trends manuscript requires the locale issue label")
-    with connection() as conn:
+    with (nullcontext(existing_conn) if existing_conn is not None else connection()) as conn:
         _require_import_review_schema(conn)
         exists = conn.execute("SELECT to_regclass('public.external_content_imports') AS relation").fetchone()
         if not exists or not exists.get("relation"):
@@ -1243,7 +1252,7 @@ def record_scheduled_import_origin(
 
 
 def _record_scheduled_import_origin(
-    import_id: UUID, request: ScheduledImportOrigin
+    import_id: UUID, request: ScheduledImportOrigin, existing_conn: psycopg.Connection[dict[str, Any]] | None = None
 ) -> dict[str, Any]:
     canonical = request.model_dump_json(exclude_none=False)
     origin_sha256 = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
@@ -1251,7 +1260,7 @@ def _record_scheduled_import_origin(
         f"scheduled-origin:{request.task_id}:{request.occurrence_id}".encode()
     ).hexdigest()
     target_url = f"https://{urlsplit(str(request.target_blog_url)).hostname}".lower()
-    with connection() as conn:
+    with (nullcontext(existing_conn) if existing_conn is not None else connection()) as conn:
         imported = conn.execute(
             "SELECT generation_method,language_code FROM external_content_imports WHERE id=%s",
             (import_id,),
