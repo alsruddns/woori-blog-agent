@@ -9,8 +9,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services" / "api"))
 
 if __name__ == "__main__":
-    from woori.scheduled_import_inbox import _is_reparse_point
-    from woori.scheduled_pending import save_pending
+    from woori.automation_invocation import resolve_current_invocation
+    from woori.content_imports import ScheduledImportEnvelope
+    from woori.scheduled_import_inbox import _is_reparse_point, validate_envelope
+    from woori.scheduled_pending import save_pending, verify_saved_invocation
 
     parser = argparse.ArgumentParser()
     parser.add_argument("path", type=Path)
@@ -31,7 +33,17 @@ if __name__ == "__main__":
             or not 0 < path.stat().st_size <= 262144
         ):
             raise ValueError("requires_safe_incoming_part")
-        result = save_pending(incoming.parent, path.read_bytes(), args.target_blog_id)
+        raw = path.read_bytes()
+        envelope = validate_envelope(raw)
+        origin = (
+            envelope.scheduled_origin
+            if isinstance(envelope, ScheduledImportEnvelope)
+            else envelope.manual_origin
+        )
+        invocation = resolve_current_invocation(str(origin.automation_id), project_root=ROOT)
+        if not verify_saved_invocation(envelope, invocation):
+            raise ValueError("manuscript_invocation_mismatch")
+        result = save_pending(incoming.parent, raw, args.target_blog_id, invocation)
     except (OSError, ValueError, TypeError) as exc:
         print(json.dumps({"saved": False, "reason": type(exc).__name__}))
         raise SystemExit(2) from None

@@ -19,6 +19,7 @@ from psycopg.types.json import Jsonb
 from pydantic import BaseModel, ConfigDict, Field
 
 from . import content_imports as imports
+from .automation_invocation import resolve_current_invocation
 from .db import connection
 from .scheduled_import_inbox import (
     ImportEnvelope,
@@ -66,6 +67,38 @@ def pending_key(envelope: ImportEnvelope, target_blog_id: str | None = None) -> 
     return hashlib.sha256(canonical([mode, run, blog, envelope.item.language_code])).hexdigest()
 
 
+def verify_saved_invocation(envelope: ImportEnvelope, evidence: dict[str, Any] | None) -> bool:
+    """Re-read the actual Desktop trigger; configured RRULE alone is not a run."""
+    if not evidence or not isinstance(evidence.get("session_id"), str):
+        return False
+    origin = (
+        envelope.scheduled_origin
+        if isinstance(envelope, imports.ScheduledImportEnvelope)
+        else envelope.manual_origin
+    )
+    try:
+        actual = resolve_current_invocation(
+            str(origin.automation_id),
+            project_root=ROOT,
+            environ={"CODEX_THREAD_ID": evidence["session_id"]},
+        )
+        if isinstance(envelope, imports.ScheduledImportEnvelope):
+            scheduled_origin = envelope.scheduled_origin
+            started = datetime.fromisoformat(actual["executed_at"])
+            return (
+                actual["execution_mode"] == "scheduled"
+                and actual["occurrence_id"] == scheduled_origin.occurrence_id
+                and started <= scheduled_origin.executed_at <= started + timedelta(hours=6)
+            )
+        return bool(
+            actual["execution_mode"] == "manual"
+            and actual["manual_run_id"] == envelope.manual_origin.manual_run_id
+            and actual["session_id"] == str(envelope.manual_origin.session_id)
+        )
+    except (OSError, ValueError, TypeError, KeyError):
+        return False
+
+
 def _exclusive_json(path: Path, value: dict[str, Any]) -> None:
     staged = path.parent / (uuid4().hex + ".part")
     try:
@@ -79,7 +112,12 @@ def _exclusive_json(path: Path, value: dict[str, Any]) -> None:
         staged.unlink(missing_ok=True)
 
 
-def save_pending(root: Path, raw: bytes, target_blog_id: str | None = None) -> dict[str, Any]:
+def save_pending(
+    root: Path,
+    raw: bytes,
+    target_blog_id: str | None = None,
+    invocation: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     if not 0 < len(raw) <= 262144:
         raise ValueError("pending_envelope_size_invalid")
     envelope = validate_envelope(raw)
@@ -112,6 +150,7 @@ def save_pending(root: Path, raw: bytes, target_blog_id: str | None = None) -> d
         "manuscript_sha256": digest,
         # Preserve exact raw bytes for unchanged retries and provenance.
         "manuscript_utf8": raw.decode("utf-8"),
+        "invocation_evidence": invocation,
     }
     value["scheduled_slot"] = (
         value["scheduled_slot"].isoformat() if value["scheduled_slot"] else None
@@ -128,7 +167,7 @@ def save_pending(root: Path, raw: bytes, target_blog_id: str | None = None) -> d
         try:
             _exclusive_json(target, value)
         except FileExistsError:
-            return save_pending(root, raw, target_blog_id)
+            return save_pending(root, raw, target_blog_id, invocation)
     return {k: v for k, v in value.items() if k != "manuscript_utf8"} | {"path": str(target)}
 
 
@@ -137,6 +176,7 @@ class RecoveryRequest(BaseModel):
     manuscript_utf8: str = Field(min_length=1, max_length=262144)
     manuscript_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     target_blog_id: str | None = None
+    invocation_evidence: dict[str, Any] | None = None
 
 
 @router.post("/admin/research/content-imports/scheduled-recovery")
@@ -208,6 +248,8 @@ def recover_manuscript(request: RecoveryRequest) -> dict[str, Any]:
                     "import_id": existing["payload"].get("import_id"),
                 }
             )
+        if not verify_saved_invocation(envelope, request.invocation_evidence):
+            return finish({"status": "review_required", "reason": "actual_invocation_unverified"})
         now = datetime.now(UTC)
         source_time = (
             envelope.scheduled_origin.source_as_of
@@ -298,6 +340,7 @@ def recover_pending_once(
                     "manuscript_utf8": data["manuscript_utf8"],
                     "manuscript_sha256": data["manuscript_sha256"],
                     "target_blog_id": data["target_blog_id"],
+                    "invocation_evidence": data.get("invocation_evidence"),
                 },
             )
             result = (

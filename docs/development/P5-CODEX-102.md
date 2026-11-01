@@ -38,3 +38,7 @@ automation-5의 실제 2026-10-31 12:00 KST 실행은 Dashboard proxy 연결 거
 ### 코드 검증 완료 체크포인트
 
 최종 변경 범위 통합 **153 passed (10.85초)**. 신규 P102 회귀16건 포함. Ruff 전부 통과, API/main/Import/보류 복구/broker mypy 확인. 서비스 중지 없이 실제 원래 식별자의 프록시/직접 API/repository 결과 일치를 확인했다. 정상 API의 graceful stop dry-run이 일반 established 소켓 하나를 감지했다. 추가 조사에서 8100 클라이언트 연결은 없고 API PID3596 내부 asyncio 자기 소켓쌍(64575↔64576)만 확인했다. force나 작업 취소는 하지 않는다. 반영 시 해당 listener의 정확한 checkout/PID/Windows owner/instance identity와 활성8100 연결을 재검증하고 기존 identity-bound stop-file 채널만 사용한다. Research Worker도 기존 cooperative stop으로 현재 동기 작업을 마친 후에만 교체한다. Dashboard/Publication Worker/DB/Crypto는 교체하지 않는다.
+
+### 실제 실행 출처 재검사 보강
+
+설정된 RRULE 슬롯만으로 실제 예약 실행을 입증할 수 없으므로, 저장 CLI가 현재 Desktop 세션 resolver 결과를 함께 보존하도록 추가했다. 복구 API는 그 session_id의 실제 세션 파일을 다시 읽고 scheduled/manual trigger·occurrence/manual_run_id 일치를 검사한다. 기존 실패 슬롯의 세션을 현재 작성한 scheduled 원고에 붙이는 재라벨링도 막는다(실제 시작 후 6시간 이내의 실행 시각만 수용). 출처가 없는 레거시 pending은 삭제하지 않고 actual_invocation_unverified 검토 보류다. 개발 세션은 예약/Run now를 사칭할 수 없다. 관련 회귀2건 추가 후 신규 P10218건 통과. 이 보강으로 API와 Research Worker는 검증된 최종 코드에 대해 동일한 cooperative 교체를 한 번 더 수행하며 강제 종료하지 않는다.

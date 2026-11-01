@@ -16,6 +16,7 @@ from scripts.scheduled_duplicate_check import check_duplicate
 
 lab = shared_lab
 PATH = "/admin/research/content-imports/scheduled-recovery"
+VERIFY_INVOCATION = pending.verify_saved_invocation
 
 
 @pytest.fixture
@@ -30,6 +31,7 @@ def setup(lab, monkeypatch):
     monkeypatch.setattr(pending, "connection", shared)
     monkeypatch.setattr(content_imports, "connection", shared)
     monkeypatch.setattr(pending, "verify_configured_slot", lambda **kw: {"verified": True})
+    monkeypatch.setattr(pending, "verify_saved_invocation", lambda *a: True)
     return conn, api, headers
 
 
@@ -80,6 +82,35 @@ def body(data):
 
     raw = json.dumps(data).encode()
     return {"manuscript_utf8": raw.decode(), "manuscript_sha256": hashlib.sha256(raw).hexdigest()}
+
+
+def test_recovery_requires_actual_session_evidence(setup, monkeypatch):
+    _, api, headers = setup
+    monkeypatch.setattr(pending, "verify_saved_invocation", VERIFY_INVOCATION)
+    data = envelope()
+    result = api.post(PATH, headers=headers, json=body(data))
+    assert result.json()["status"] == "review_required"
+    assert result.json()["reason"] == "actual_invocation_unverified"
+
+
+def test_slot_config_is_not_a_trigger_and_old_slot_cannot_be_current_execution(monkeypatch):
+    from woori.scheduled_import_inbox import validate_envelope
+
+    data = envelope()
+    parsed = validate_envelope(json.dumps(data).encode())
+    session = str(uuid4())
+    actual = {
+        "execution_mode": "scheduled",
+        "occurrence_id": data["scheduled_origin"]["occurrence_id"],
+        "executed_at": data["scheduled_origin"]["executed_at"],
+    }
+    monkeypatch.setattr(pending, "resolve_current_invocation", lambda *a, **kw: actual)
+    assert VERIFY_INVOCATION(parsed, {"session_id": session}) is True
+    actual["execution_mode"] = "manual"
+    assert VERIFY_INVOCATION(parsed, {"session_id": session}) is False
+    actual["execution_mode"] = "scheduled"
+    actual["executed_at"] = (datetime.now(UTC) - timedelta(days=2)).isoformat()
+    assert VERIFY_INVOCATION(parsed, {"session_id": session}) is False
 
 
 def test_proxy_refused_uses_fixed_backend_broker():
