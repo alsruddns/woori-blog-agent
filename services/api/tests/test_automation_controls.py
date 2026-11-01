@@ -128,6 +128,7 @@ def test_auto_enable_requires_scope_live_confirmation_and_preserves_stop(center)
         update(
             center,
             auto_publishing_enabled=True,
+            trends_auto_publishing_enabled=True,
             auto_blog_ids=[blog],
             auto_mode="publish",
             confirm_auto=True,
@@ -138,6 +139,7 @@ def test_auto_enable_requires_scope_live_confirmation_and_preserves_stop(center)
         update(
             center,
             auto_publishing_enabled=True,
+            trends_auto_publishing_enabled=True,
             auto_blog_ids=[blog],
             auto_mode="publish",
             confirm_auto=True,
@@ -165,12 +167,25 @@ def test_revision_conflict_and_strict_boolean(center):
     assert api.put(BASE, headers=h, json=payload).status_code == 409
 
 
-def make_job(center, lane="manual", mode="publish"):
+def make_job(center, lane="manual", mode="publish", method=None):
     conn, api, h = center
+    from woori.editorial_taxonomy import suggested_labels
+
+    method = method or (
+        "codex_trends_export" if lane == "scheduled_auto" else "manual_codex_import"
+    )
+    item = valid_item(
+        content_id=str(uuid4()),
+        generation_method=method,
+        google_trends_based=method == "codex_trends_export",
+        blogger_labels=suggested_labels(
+            "policy", "en", google_trends_based=method == "codex_trends_export"
+        ),
+    )
     result = api.post(
         "/admin/research/content-imports",
         headers=h,
-        json={"submitted_by": "isolated control", "item": valid_item(content_id=str(uuid4()))},
+        json={"submitted_by": "isolated control", "item": item},
     ).json()
     version = UUID(result["content_version_id"])
     blog = conn.execute(
@@ -248,6 +263,7 @@ def test_mock_auto_dispatch_modes_and_off_invalidate_grants(center, monkeypatch,
         update(
             center,
             auto_publishing_enabled=True,
+            trends_auto_publishing_enabled=True,
             auto_blog_ids=[str(blog)],
             auto_mode=mode,
             confirm_auto=True,
@@ -258,11 +274,8 @@ def test_mock_auto_dispatch_modes_and_off_invalidate_grants(center, monkeypatch,
         ).status_code
         == 200
     )
-    state = controls.read(conn)
-    conn.execute(
-        "INSERT INTO automation_publication_grants(job_id,epoch,lane,publication_mode) VALUES(%s,%s,'auto',%s)",
-        (job, state["auto_epoch"], mode),
-    )
+    link_trends(conn, _version, blog)
+    origin_grant(conn, job, _version, controls.read(conn), blog, mode)
     conn.execute(
         "UPDATE publishing_jobs SET status='queued',publication_state='publication_queued' WHERE id=%s",
         (job,),
@@ -320,6 +333,7 @@ def test_unknown_remote_duplicate_never_writes_and_never_retries(center, monkeyp
     update(
         center,
         auto_publishing_enabled=True,
+        trends_auto_publishing_enabled=True,
         auto_blog_ids=[str(blog)],
         confirm_auto=True,
         google_account_available=True,
@@ -327,10 +341,11 @@ def test_unknown_remote_duplicate_never_writes_and_never_retries(center, monkeyp
         confirm_emergency_release=True,
     )
     state = controls.read(conn)
-    conn.execute(
-        "INSERT INTO automation_publication_grants(job_id,epoch,lane,publication_mode) VALUES(%s,%s,'auto','draft')",
-        (job, state["auto_epoch"]),
-    )
+    version = conn.execute(
+        "SELECT content_version_id FROM publishing_jobs WHERE id=%s", (job,)
+    ).fetchone()["content_version_id"]
+    link_trends(conn, version, blog)
+    origin_grant(conn, job, version, state, blog, "draft")
     conn.execute("UPDATE publishing_jobs SET status='queued' WHERE id=%s", (job,))
     monkeypatch.setattr(automation_auto, "enqueue", lambda *a: 0)
     monkeypatch.setattr(automation_auto, "readiness", lambda *a: ({}, {"title": "Test"}, []))
@@ -363,10 +378,11 @@ def test_wire_guard_serializes_with_other_policy_writers(monkeypatch):
 
 def test_auto_enqueue_only_new_versions_and_never_reauthorize_backlog(center, monkeypatch):
     conn, _, _ = center
-    job, blog, version = make_job(center)
+    job, blog, version = make_job(center, method="codex_trends_export")
     update(
         center,
         auto_publishing_enabled=True,
+        trends_auto_publishing_enabled=True,
         auto_blog_ids=[str(blog)],
         confirm_auto=True,
         google_account_available=True,
@@ -385,6 +401,21 @@ def test_auto_enqueue_only_new_versions_and_never_reauthorize_backlog(center, mo
         SELECT group_id,language,localization_id,version+1,title,body,clock_timestamp() FROM content_versions WHERE id=%s RETURNING id""",
         (version,),
     ).fetchone()["id"]
+    original_link = conn.execute(
+        "SELECT * FROM external_content_import_content_links WHERE content_version_id=%s",
+        (version,),
+    ).fetchone()
+    import_version = conn.execute(
+        """INSERT INTO external_content_import_versions(import_id,version_number,parent_version_id,title,body_markdown,seo_metadata,blogger_labels,content_sha256,author_label,change_reason)
+        SELECT import_id,version_number+1,id,title||' revised',body_markdown,seo_metadata,blogger_labels,%s,author_label,'Isolated new version'
+        FROM external_content_import_versions WHERE id=%s RETURNING id""",
+        (uuid4().hex + uuid4().hex, original_link["import_version_id"]),
+    ).fetchone()["id"]
+    conn.execute(
+        "INSERT INTO external_content_import_content_links(import_id,import_version_id,content_version_id) VALUES(%s,%s,%s)",
+        (original_link["import_id"], import_version, newer),
+    )
+    link_trends(conn, version, blog)
     assert automation_auto.enqueue(conn, controls.read(conn)) == 1
     newjob = conn.execute(
         "SELECT id FROM publishing_jobs WHERE content_version_id=%s", (newer,)
@@ -465,4 +496,48 @@ def test_auto_off_does_not_starve_explicit_manual_authoring(center, monkeypatch)
             "SELECT state FROM codex_authoring_jobs WHERE id=%s", (created[0],)
         ).fetchone()["state"]
         == "queued"
+    )
+
+
+def link_trends(conn, version, blog):
+    """Actual isolated Import -> Codex Job -> topic -> observation lineage."""
+    from psycopg.types.json import Jsonb
+    from test_trend_editorial import observation
+
+    imported = conn.execute(
+        "SELECT import_id FROM external_content_import_content_links WHERE content_version_id=%s",
+        (version,),
+    ).fetchone()["import_id"]
+    topic = uuid4()
+    conn.execute(
+        "INSERT INTO trend_topics(id,normalized_key,representative_geo,representative_query,grouping_method,grouping_confidence,grouping_status) VALUES(%s,%s,'US','synthetic','single_observation',1,'exact_query_cluster_not_event_confirmed')",
+        (topic, uuid4().hex),
+    )
+    obs = observation(conn, "synthetic publication origin", geo="US")
+    conn.execute(
+        "INSERT INTO trend_topic_memberships(topic_id,observation_id,grouping_rationale) VALUES(%s,%s,'Isolated linked source')",
+        (topic, obs),
+    )
+    job = conn.execute(
+        """INSERT INTO codex_authoring_jobs(request_key,request_sha256,job_type,blog_id,language_code,target_country,category,keyword,options,state,model,import_id,content_version_id,completed_at)
+     VALUES(%s,%s,'google_trends',%s,'en','US','technology','synthetic','{}','imported_review','isolated',%s,%s,clock_timestamp()) RETURNING id""",
+        (uuid4(), "a" * 64, blog, imported, version),
+    ).fetchone()["id"]
+    request = conn.execute(
+        "INSERT INTO trend_generation_requests(topic_id,duplicate_key,contract,state,authoring_job_id) VALUES(%s,%s,%s,'imported',%s) RETURNING id",
+        (topic, uuid4().hex, Jsonb({"target_blog_id": str(blog)}), job),
+    ).fetchone()["id"]
+    conn.execute("UPDATE codex_authoring_jobs SET trend_request_id=%s WHERE id=%s", (request, job))
+    return job
+
+
+def origin_grant(conn, job, version, state, blog, mode="draft"):
+    from woori import publication_origin
+
+    origin = publication_origin.classify(conn, version, blog)
+    assert origin["kind"] == "google_trends", origin
+    conn.execute(
+        """INSERT INTO automation_publication_grants(job_id,epoch,lane,publication_mode,manuscript_origin,source_epoch,origin_import_id,origin_content_version_id)
+     VALUES(%s,%s,'auto',%s,'google_trends',%s,%s,%s)""",
+        (job, state["auto_epoch"], mode, state["trends_auto_epoch"], origin["import_id"], version),
     )

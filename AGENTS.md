@@ -1,3 +1,10 @@
+## P5-CODEX-104 origin-specific automatic publication controls (2026-11-02)
+
+- The persisted master automatic switch is a mandatory upper gate. Trends and scheduled source switches are independent and default OFF. This task leaves all three OFF; collection/automatic authoring/manual publishing stay ON and local emergency stop stays OFF. Never infer write permission or activate automatic publishing from an API restriction report.
+- Classify origin only from linked Import/native Content Version, completed Trends Job/request/topic, or verified Desktop scheduled execution evidence and exact Blogger/occurrence metadata. Manual and unknown origins cannot automatically publish. A project-derived occurrence is not scheduler attestation.
+- Source activation rotates only its own epoch/cutoff; old grants and old Import completion times never become newly authorized by editing a manuscript or toggling another path. Preserve existing Job queues. Recheck origin/settings/quality/duplicate safety at Blogger wire admission using the common policy and existing serialized guard. Missing settings or evidence fail closed.
+- The common scheduled invocation helper may atomically retain local execution identity receipts; these prove neither facts nor approval. Revalidate against the original Desktop session. Preserve all 15 schedule configurations and existing Import/manual workflows. Scheduled model tasks still end at Import and never publish.
+
 ## P5-CODEX-103 independent automation controls (2026-11-02)
 
 - `/operations/automation` is the authoritative persisted operator control surface. Reuse Trends enabled and publication emergency/restriction fields; do not equate a Google restriction report/read success with write verification or operator approval.

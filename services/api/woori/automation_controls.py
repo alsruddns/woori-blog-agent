@@ -38,8 +38,12 @@ def authoring_permission(*, transport: httpx.BaseTransport | None = None) -> dic
         if response.status_code != 200:
             raise ValueError("backend_unavailable")
         state = response.json()["settings"]
-        if type(state.get('auto_manuscript_enabled')) is not bool or type(state.get('revision')) is not int or state['revision']<1:
-            raise ValueError('invalid_policy_response')
+        if (
+            type(state.get("auto_manuscript_enabled")) is not bool
+            or type(state.get("revision")) is not int
+            or state["revision"] < 1
+        ):
+            raise ValueError("invalid_policy_response")
         enabled = state["auto_manuscript_enabled"] is True
         return {
             "allowed": enabled,
@@ -66,7 +70,7 @@ def authoring_permission(*, transport: httpx.BaseTransport | None = None) -> dic
             }
 
 
-VERSION = "automation-controls/1"
+VERSION = "automation-controls/2"
 router = APIRouter(prefix="/admin/automation-controls")
 
 
@@ -91,6 +95,8 @@ def allowed(key: str) -> bool:
         "trends_collection_enabled",
         "auto_publishing_enabled",
         "manual_publishing_enabled",
+        "trends_auto_publishing_enabled",
+        "scheduled_auto_publishing_enabled",
     }:
         return False
     try:
@@ -118,9 +124,10 @@ def snapshot() -> dict[str, Any]:
             """SELECT h.service_name,h.process_id,h.status,h.last_seen_at,
             a.revision AS applied_revision,a.engine_version,a.last_seen_at AS policy_seen_at,
             (a.process_id=h.process_id AND a.revision=%s AND a.last_seen_at>now()-interval '45 seconds'
-             AND h.status='running' AND h.last_seen_at>now()-interval '45 seconds') AS policy_applied
+             AND h.status='running' AND h.last_seen_at>now()-interval '45 seconds'
+             AND (h.service_name<>'publication_worker' OR a.engine_version=%s)) AS policy_applied
             FROM worker_heartbeats h LEFT JOIN automation_runtime_ack a USING(service_name)""",
-            (state["revision"],),
+            (state["revision"], VERSION),
         ).fetchall()
         history = conn.execute(
             "SELECT id,created_at,payload FROM audit_events WHERE event_type='automation.controls.changed' ORDER BY id DESC LIMIT 25"
@@ -138,11 +145,17 @@ def snapshot() -> dict[str, Any]:
         job_count = conn.execute(
             """SELECT count(*) AS n FROM publishing_jobs j
             JOIN automation_publication_grants g ON g.job_id=j.id
-            WHERE j.status='queued' AND ((g.lane='auto' AND g.epoch=%s AND %s)
+            WHERE j.status='queued' AND ((g.lane='auto' AND g.epoch=%s AND %s AND
+                ((g.manuscript_origin='google_trends' AND %s AND g.source_epoch=%s)
+                 OR (g.manuscript_origin='scheduled' AND %s AND g.source_epoch=%s)))
               OR (g.lane='manual' AND g.epoch=%s AND %s))""",
             (
                 state["auto_epoch"],
                 state["auto_publishing_enabled"],
+                state["trends_auto_publishing_enabled"],
+                state["trends_auto_epoch"],
+                state["scheduled_auto_publishing_enabled"],
+                state["scheduled_auto_epoch"],
                 state["manual_epoch"],
                 state["manual_publishing_enabled"],
             ),
@@ -164,10 +177,15 @@ def snapshot() -> dict[str, Any]:
         ("auto_manuscript_enabled", "research_worker"),
         ("auto_publishing_enabled", "publication_worker"),
         ("manual_publishing_enabled", "publication_worker"),
+        ("trends_auto_publishing_enabled", "publication_worker"),
+        ("scheduled_auto_publishing_enabled", "publication_worker"),
     ]:
         effective[key] = (
             "신규 실행 중지"
             if not state[key]
+            else "전체 자동 발행 OFF로 차단 중"
+            if key in {"trends_auto_publishing_enabled", "scheduled_auto_publishing_enabled"}
+            and not state["auto_publishing_enabled"]
             else blocked
             if "publishing" in key and blocked
             else "정상"
@@ -181,7 +199,9 @@ def snapshot() -> dict[str, Any]:
         "history": history,
         "blogs": blogs,
         "recent": recent,
-        "eligible_jobs": job_count["n"] if job_count and not blocked and applied.get('publication_worker') else 0,
+        "eligible_jobs": job_count["n"]
+        if job_count and not blocked and applied.get("publication_worker")
+        else 0,
         "last_publication": last_publication,
         "api_engine_version": VERSION,
         "google_write_verified": False,
@@ -198,6 +218,8 @@ class Change(BaseModel):
     auto_manuscript_enabled: bool | None = None
     auto_publishing_enabled: bool | None = None
     manual_publishing_enabled: bool | None = None
+    trends_auto_publishing_enabled: bool | None = None
+    scheduled_auto_publishing_enabled: bool | None = None
     emergency_stop: bool | None = None
     auto_mode: Literal["draft", "publish"] | None = None
     auto_blog_ids: list[str] | None = None
@@ -235,6 +257,17 @@ def change(request: Change) -> dict[str, Any]:
         auto_changed = any(
             after[k] != before[k] for k in ("auto_publishing_enabled", "auto_mode", "auto_blog_ids")
         )
+        route_changes = {
+            route: after[route + "_auto_publishing_enabled"]
+            != before[route + "_auto_publishing_enabled"]
+            for route in ("trends", "scheduled")
+        }
+        for route, changed in route_changes.items():
+            if changed and after[route + "_auto_publishing_enabled"]:
+                if not request.confirm_auto:
+                    raise HTTPException(422, "경로별 자동 발행 활성화 범위를 확인해야 합니다.")
+                if after["auto_mode"] == "publish" and not request.confirm_live:
+                    raise HTTPException(422, "LIVE 자동 공개를 별도로 확인해야 합니다.")
         if after["auto_publishing_enabled"] and auto_changed:
             if not request.confirm_auto or not after["auto_blog_ids"]:
                 raise HTTPException(422, "대상 Blogger와 자동 발행 범위 확인이 필요합니다.")
@@ -260,6 +293,11 @@ def change(request: Change) -> dict[str, Any]:
         conn.execute(
             """UPDATE automation_controls SET auto_manuscript_enabled=%s,auto_publishing_enabled=%s,
             manual_publishing_enabled=%s,auto_mode=%s,auto_blog_ids=%s::uuid[],
+            trends_auto_publishing_enabled=%s,scheduled_auto_publishing_enabled=%s,
+            trends_auto_epoch=CASE WHEN %s THEN gen_random_uuid() ELSE trends_auto_epoch END,
+            trends_auto_enabled_at=CASE WHEN %s THEN clock_timestamp() ELSE trends_auto_enabled_at END,
+            scheduled_auto_epoch=CASE WHEN %s THEN gen_random_uuid() ELSE scheduled_auto_epoch END,
+            scheduled_auto_enabled_at=CASE WHEN %s THEN clock_timestamp() ELSE scheduled_auto_enabled_at END,
             auto_epoch=CASE WHEN %s THEN gen_random_uuid() ELSE auto_epoch END,
             auto_enabled_at=CASE WHEN %s THEN clock_timestamp() ELSE auto_enabled_at END,
             manual_epoch=CASE WHEN %s THEN gen_random_uuid() ELSE manual_epoch END,
@@ -272,6 +310,12 @@ def change(request: Change) -> dict[str, Any]:
                 after["manual_publishing_enabled"],
                 after["auto_mode"],
                 [str(x) for x in after["auto_blog_ids"]],
+                after["trends_auto_publishing_enabled"],
+                after["scheduled_auto_publishing_enabled"],
+                route_changes["trends"],
+                route_changes["trends"],
+                route_changes["scheduled"],
+                route_changes["scheduled"],
                 auto_changed,
                 auto_changed,
                 after["manual_publishing_enabled"] != before["manual_publishing_enabled"],
@@ -378,28 +422,56 @@ def grant_manual(conn: Any, job_id: Any, mode: str) -> None:
 def job_permitted(conn: Any, job_id: Any, *, running: bool = False) -> bool:
     state = read(conn)
     row = conn.execute(
-        """SELECT j.status,j.blog_id,j.content_version_id,g.* FROM automation_publication_grants g
+        """SELECT j.status,j.blog_id,j.content_version_id,j.publication_mode AS job_publication_mode,g.* FROM automation_publication_grants g
         JOIN publishing_jobs j ON j.id=g.job_id JOIN content_versions v ON v.id=j.content_version_id
         WHERE g.job_id=%s AND NOT EXISTS(SELECT 1 FROM content_versions newer
          WHERE newer.group_id=v.group_id AND newer.localization_id IS NOT DISTINCT FROM v.localization_id
          AND newer.version>v.version)""",
         (job_id,),
     ).fetchone()
-    if (
-        not row
-        or (running and row["status"] != "running")
-        or state["emergency_stop"]
-        or state["blogger_api_restricted"]
-    ):
+    if not row or (running and row["status"] != "running"):
         return False
     if row["lane"] == "manual":
-        return bool(state["manual_publishing_enabled"] and row["epoch"] == state["manual_epoch"])
-    return bool(
-        state["auto_publishing_enabled"]
-        and row["epoch"] == state["auto_epoch"]
-        and row["blog_id"] in state["auto_blog_ids"]
-        and row["publication_mode"] == state["auto_mode"]
+        return bool(
+            state["manual_publishing_enabled"]
+            and row["epoch"] == state["manual_epoch"]
+            and not state["emergency_stop"]
+            and not state["blogger_api_restricted"]
+        )
+    from . import publication_origin
+
+    origin = publication_origin.classify(conn, row["content_version_id"], row["blog_id"])
+    candidate = dict(row)
+    if row["job_publication_mode"] != row["publication_mode"]:
+        return False
+    if running:
+        from .automation_auto import readiness
+
+        _content, _snapshot, quality_reasons = readiness(
+            conn, row["content_version_id"], row["blog_id"]
+        )
+        candidate["quality_ready"] = _content is not None and not quality_reasons
+    candidate["duplicate"] = bool(
+        conn.execute(
+            """SELECT 1 FROM publishing_records p
+        JOIN external_content_import_content_links l ON l.content_version_id=p.content_version_id
+        WHERE p.blog_id=%s AND l.import_id=%s AND p.job_id<>%s AND p.remote_status IN ('LIVE','DRAFT') LIMIT 1""",
+            (row["blog_id"], origin.get("import_id"), job_id),
+        ).fetchone()
     )
+    result = publication_origin.decide(
+        state, origin, row["blog_id"], candidate, row["content_version_id"]
+    )
+    if not result["allowed"]:
+        publication_origin.record_block(
+            conn,
+            row["content_version_id"],
+            row["blog_id"],
+            state["revision"],
+            result,
+            "job_admission",
+        )
+    return bool(result["allowed"])
 
 
 @contextmanager

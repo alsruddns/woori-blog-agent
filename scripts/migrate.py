@@ -7,7 +7,7 @@ import psycopg
 from dotenv import dotenv_values
 
 root = Path(__file__).resolve().parents[1]
-MAX_SUPPORTED_SCHEMA_VERSION = 77
+MAX_SUPPORTED_SCHEMA_VERSION = 78
 parser = argparse.ArgumentParser()
 parser.add_argument("--status", action="store_true", help="Read-only operations schema version check")
 args = parser.parse_args()
@@ -346,4 +346,8 @@ with psycopg.connect(url) as conn:
         conn.execute("SET LOCAL lock_timeout='3s'")
         conn.execute("SET LOCAL statement_timeout='30s'")
         conn.execute((root / 'scripts/077_automation_controls.sql').read_text(encoding='utf-8'), prepare=False)
-print("Project migrations through 077 verified")
+    if current < 78:
+        conn.execute("SET LOCAL lock_timeout='3s'")
+        conn.execute("SET LOCAL statement_timeout='30s'")
+        conn.execute((root / 'scripts/078_origin_publication_controls.sql').read_text(encoding='utf-8'), prepare=False)
+print("Project migrations through 078 verified")

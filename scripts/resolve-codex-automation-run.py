@@ -22,17 +22,42 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         result = resolve_current_invocation(args.automation_id, project_root=ROOT)
-        if result['execution_mode']=='scheduled':
-            check=subprocess.run([sys.executable,str(ROOT/'scripts/automation-policy-check.py')],
-                cwd=ROOT,capture_output=True,text=True,timeout=12,check=False)
-            policy=json.loads(check.stdout)
-            if check.returncode!=0 or policy.get('allowed') is not True:
+        if result["execution_mode"] == "scheduled":
+            check = subprocess.run(
+                [sys.executable, str(ROOT / "scripts/automation-policy-check.py")],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                timeout=12,
+                check=False,
+            )
+            policy = json.loads(check.stdout)
+            if check.returncode != 0 or policy.get("allowed") is not True:
                 from woori.scheduled_pending import record_progress
-                record_progress(ROOT/'.local/gpt-scheduled-import',result,'policy_waiting',str(policy.get('reason','automatic_authoring_disabled'))[:200])
-                print(json.dumps({'resolved':False,'status':'policy_waiting','reason':policy.get('reason','automatic_authoring_disabled'),
-                                  'invocation':result,'policy':policy},ensure_ascii=True))
+
+                record_progress(
+                    ROOT / ".local/gpt-scheduled-import",
+                    result,
+                    "policy_waiting",
+                    str(policy.get("reason", "automatic_authoring_disabled"))[:200],
+                )
+                print(
+                    json.dumps(
+                        {
+                            "resolved": False,
+                            "status": "policy_waiting",
+                            "reason": policy.get("reason", "automatic_authoring_disabled"),
+                            "invocation": result,
+                            "policy": policy,
+                        },
+                        ensure_ascii=True,
+                    )
+                )
                 return 3
-            result['automation_policy']=policy
+            from woori.scheduled_execution_receipts import record
+
+            record(result)
+            result["automation_policy"] = policy
     except (OSError, TypeError, ValueError, json.JSONDecodeError, subprocess.TimeoutExpired) as exc:
         print(json.dumps({"resolved": False, "reason": str(exc)[:200]}, ensure_ascii=True))
         return 2

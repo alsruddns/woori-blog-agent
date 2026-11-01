@@ -11,6 +11,7 @@ from uuid import UUID
 from psycopg.types.json import Jsonb
 
 from . import automation_controls as controls
+from . import publication_origin
 from .db import connection
 
 AUTO_JOB: ContextVar[str | None] = ContextVar("automation_job", default=None)
@@ -44,9 +45,20 @@ def readiness(
     row = publications._candidate(conn, version, blog)
     if not row:
         return None, {}, ["content_or_blog_unavailable"]
-    reasons = [x for x in publications._assess(row)["reasons"] if x != "production_writes_disabled"]
+    # Admission is checked separately at the wire; avoid recursively entering
+    # AUTO_JOB while rechecking content safety immediately before HTTP.
+    reasons = publications._assess(row, check_write_policy=False)["reasons"]
     snapshot = publications._manual_publication_snapshot(conn, dict(row))
     reasons.extend(snapshot["blockers"])
+    from .editorial_quality import VERSION as QUALITY_VERSION
+
+    report = conn.execute(
+        """SELECT result FROM editorial_quality_reports WHERE content_version_id=%s
+        AND engine_version=%s AND stage='static' AND status='completed' ORDER BY created_at DESC LIMIT 1""",
+        (version, QUALITY_VERSION),
+    ).fetchone()
+    if not report or report["result"].get("checks", {}).get("safe_html") is False:
+        reasons.append("quality_review_required")
     newest = conn.execute(
         "SELECT id FROM content_versions WHERE group_id=%s AND localization_id IS NOT DISTINCT FROM %s ORDER BY version DESC,created_at DESC LIMIT 1",
         (row["group_id"], row["localization_id"]),
@@ -74,11 +86,29 @@ def enqueue(conn: Any, state: dict[str, Any]) -> int:
         JOIN blogger_blogs b ON b.language_code=l.language_code AND b.active
         WHERE b.id=ANY(%s::uuid[]) AND v.created_at>%s
           AND NOT EXISTS(SELECT 1 FROM publishing_jobs j WHERE j.blog_id=b.id AND j.content_version_id=v.id AND NOT j.simulation_only)
-        ORDER BY v.created_at,v.id LIMIT 10""",
+        ORDER BY v.created_at,v.id""",
         (state["auto_blog_ids"], state["auto_enabled_at"]),
     ).fetchall()
     created = 0
     for item in rows:
+        if created >= 10:
+            break
+        origin = publication_origin.classify(conn, item["id"], item["blog_id"])
+        route = publication_origin.ROUTES.get(origin["kind"])
+        grant = {
+            "epoch": state["auto_epoch"],
+            "publication_mode": state["auto_mode"],
+            "source_epoch": state.get(str(route) + "_auto_epoch"),
+            "manuscript_origin": origin["kind"],
+            "origin_import_id": origin.get("import_id"),
+            "origin_content_version_id": item["id"],
+        }
+        decision = publication_origin.decide(state, origin, item["blog_id"], grant, item["id"])
+        if not decision["allowed"]:
+            publication_origin.record_block(
+                conn, item["id"], item["blog_id"], state["revision"], decision, "enqueue"
+            )
+            continue
         row, _snapshot, reasons = readiness(conn, item["id"], item["blog_id"])
         if reasons or row is None:
             continue
@@ -100,8 +130,17 @@ def enqueue(conn: Any, state: dict[str, Any]) -> int:
         if not job:
             continue
         conn.execute(
-            "INSERT INTO automation_publication_grants(job_id,epoch,lane,publication_mode) VALUES(%s,%s,'auto',%s)",
-            (job["id"], state["auto_epoch"], state["auto_mode"]),
+            """INSERT INTO automation_publication_grants(job_id,epoch,lane,publication_mode,manuscript_origin,
+            source_epoch,origin_import_id,origin_content_version_id) VALUES(%s,%s,'auto',%s,%s,%s,%s,%s)""",
+            (
+                job["id"],
+                state["auto_epoch"],
+                state["auto_mode"],
+                origin["kind"],
+                grant["source_epoch"],
+                origin["import_id"],
+                item["id"],
+            ),
         )
         conn.execute(
             "INSERT INTO audit_events(event_type,payload) VALUES('automation.auto_job.created',%s)",
@@ -113,6 +152,8 @@ def enqueue(conn: Any, state: dict[str, Any]) -> int:
                         "epoch": str(state["auto_epoch"]),
                         "mode": state["auto_mode"],
                         "quality_promoted": False,
+                        "manuscript_origin": origin["kind"],
+                        "import_id": origin["import_id"],
                     }
                 ),
             ),
@@ -142,8 +183,16 @@ def tick(*, publisher: Any = None) -> dict[str, Any] | None:
         job = conn.execute(
             """SELECT j.* FROM publishing_jobs j JOIN automation_publication_grants g ON g.job_id=j.id
             WHERE g.lane='auto' AND g.epoch=%s AND j.status='queued' AND j.available_at<=now()
+              AND ((g.manuscript_origin='google_trends' AND %s AND g.source_epoch=%s)
+                   OR (g.manuscript_origin='scheduled' AND %s AND g.source_epoch=%s))
               AND j.scheduled_at<=now() ORDER BY j.scheduled_at,j.id FOR UPDATE OF j SKIP LOCKED LIMIT 1""",
-            (state["auto_epoch"],),
+            (
+                state["auto_epoch"],
+                state["trends_auto_publishing_enabled"],
+                state["trends_auto_epoch"],
+                state["scheduled_auto_publishing_enabled"],
+                state["scheduled_auto_epoch"],
+            ),
         ).fetchone()
         if not job:
             return None
@@ -200,7 +249,7 @@ def tick(*, publisher: Any = None) -> dict[str, Any] | None:
         with connection() as conn:
             conn.execute(
                 "UPDATE publishing_jobs SET status='succeeded',publication_state='published',live_stage='published',remote_post_id=%s,lease_until=NULL,updated_at=now() WHERE id=%s",
-                (result['post_id'],job["id"]),
+                (result["post_id"], job["id"]),
             )
             conn.execute(
                 """INSERT INTO publishing_records(job_id,blog_id,content_version_id,remote_post_id,remote_url,published_at,remote_status,remote_verified_at)
@@ -211,7 +260,7 @@ def tick(*, publisher: Any = None) -> dict[str, Any] | None:
                     job["content_version_id"],
                     result["post_id"],
                     result.get("url"),
-                    result['published_at'],
+                    result["published_at"],
                 ),
             )
             conn.execute(

@@ -94,11 +94,11 @@ def _live_write_capability(
     manual = manual and manual_requests_allowed()
     from .automation_controls import read as control_state
     control=control_state(conn)
-    applied=conn.execute("SELECT 1 AS ready FROM automation_runtime_ack WHERE service_name='publication_worker' AND revision=%s AND process_id=%s AND last_seen_at>now()-interval '45 seconds'",
+    applied=conn.execute("SELECT 1 AS ready FROM automation_runtime_ack WHERE service_name='publication_worker' AND revision=%s AND process_id=%s AND engine_version='automation-controls/2' AND last_seen_at>now()-interval '45 seconds'",
         (control.get('revision'),heartbeat.get('process_id') if heartbeat else None)).fetchone()
     scheduled=bool(control.get('auto_publishing_enabled') and fresh and applied and owner_policy
         and not control.get('emergency_stop',True) and not control.get('blogger_api_restricted',True) and no_billable_credentials)
-    return {"scheduled_auto": scheduled, "manual_confirmed": manual, "trends_auto": trends,
+    return {"scheduled_auto": scheduled and bool(control.get("scheduled_auto_publishing_enabled")), "manual_confirmed": manual, "trends_auto": scheduled and bool(control.get("trends_auto_publishing_enabled")),
             "live_dispatch": bool(scheduled_worker or manual_worker),
             "reason": reason, "worker_fresh": fresh, "execution_mode": mode}
 
@@ -1073,7 +1073,7 @@ def transition_allowed(current: str, target: str) -> bool:
     return target in transitions_allowed().get(current, ())
 
 
-def _assess(row: dict[str, Any] | None) -> dict[str, Any]:
+def _assess(row: dict[str, Any] | None, *, check_write_policy: bool = True) -> dict[str, Any]:
     if row is None:
         return {"state": "draft", "reasons": ["content_or_blog_not_found"]}
     reasons: list[str] = []
@@ -1113,7 +1113,7 @@ def _assess(row: dict[str, Any] | None) -> dict[str, Any]:
         reasons.append("human_review_pending")
     if not row.get("publication_approval_approved", False):
         reasons.append("publication_approval_missing_or_stale")
-    if not external_policy._blogger_operation_is_approved("blogger_public_publish"):
+    if check_write_policy and not external_policy._blogger_operation_is_approved("blogger_public_publish"):
         reasons.append("production_writes_disabled")
     if not row["publish_ready"]:
         reasons.append("publish_ready_disabled")
