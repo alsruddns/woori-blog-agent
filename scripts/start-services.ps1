@@ -21,8 +21,23 @@ function Test-ValidatedStartupSource([string]$ValidatedCommit, [string]$Head) {
 }
 
 function Invoke-StartupProcess([string]$ScriptPath, [string[]]$ChildArguments) {
-  & powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File $ScriptPath @ChildArguments | Out-Host
-  return $LASTEXITCODE
+  # Native pipelines can stay open through a detached grandchild's inherited
+  # handles. Redirect all streams and wait for this launcher PID, not its tree.
+  $logs = Get-ProjectLogDirectory
+  $requestId = [guid]::NewGuid().ToString('N')
+  $stdout = Join-Path $logs "startup-child-$requestId.stdout.log"
+  $stderr = Join-Path $logs "startup-child-$requestId.stderr.log"
+  $stdin = Join-Path $logs "startup-child-$requestId.stdin"
+  [IO.File]::WriteAllText($stdin,'')
+  $arguments = @('-NoProfile','-NonInteractive','-WindowStyle','Hidden','-ExecutionPolicy','Bypass','-File',('"'+$ScriptPath+'"')) + $ChildArguments
+  $child = Start-Process -FilePath 'powershell.exe' -ArgumentList $arguments -WindowStyle Hidden -PassThru `
+    -WorkingDirectory $script:ProjectRoot -RedirectStandardInput $stdin -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+  $null = $child.Handle
+  if (-not $child.WaitForExit(90000)) {
+    throw "Startup child PID $($child.Id) did not exit within 90 seconds; left untouched. Inspect $stderr."
+  }
+  if ($null -eq $child.ExitCode) { throw "Startup child PID $($child.Id) exited without a verifiable exit code." }
+  return $child.ExitCode
 }
 
 function Invoke-StartupChild([string[]]$ChildArguments) {

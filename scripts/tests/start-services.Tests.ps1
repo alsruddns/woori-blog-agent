@@ -77,4 +77,15 @@ Describe 'Startup coordinator regressions' {
     (Get-StartupMutexName) | Should Match '^Global\\WooriBlogAgent-Startup-[A-F0-9]{64}$'
     (Get-StartupMutexName) | Should Be (Get-StartupMutexName)
   }
+
+  It 'waits only for the launcher when a hidden detached child remains alive' {
+    $path=Join-Path $TestDrive 'detached.ps1'
+    Set-Content -LiteralPath $path -Value @'
+Start-Process powershell.exe -ArgumentList '-NoProfile -NonInteractive -Command "Start-Sleep -Seconds 4"' -WindowStyle Hidden
+exit 0
+'@
+    $timer=[Diagnostics.Stopwatch]::StartNew()
+    (Invoke-StartupProcess $path @()) | Should Be 0
+    $timer.Elapsed.TotalSeconds | Should BeLessThan 4
+  }
 }
