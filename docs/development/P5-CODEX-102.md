@@ -50,3 +50,16 @@ automation-5의 실제 2026-10-31 12:00 KST 실행은 Dashboard proxy 연결 거
 - 출처 재검사 보강 후 Worker1948의 추가 cooperative 종료를 요청했으나45초 안에 완료되지 않았다. 실제 Codex 작업은 없었고 기존 `topics.build_candidates`의168시간 cross-geo proposal 동기 일괄 처리 중임을 읽기 전용으로 확인했다. heartbeat는 계속 fresh다. 원고/수집 처리를 끊거나 DB backend를 취소하지 않는다. 이 실행이 나중에 예고 없이 종료되지 않도록 **이번 작업이 만든 정확한 stop request만 회수**하고 Worker를 유지한다.
 - 그래서 API가 구 intake 요청에도 대응하도록 보강했다. request에 session evidence가 없으면 임의 경로 대신 정확한 key/hash/raw bytes가 일치하는 프로젝트 pending 파일에서 evidence를 읽고 실제 Desktop trigger를 똑같이 재검사한다. 이 호환 경로는 격리 DB에서 실제 Import/native Version까지 회귀 검증했다. API만 추가 cooperative 교체하면 이미 반영된 Worker28d8eff도 새 pending 파일을 안전하게 복구할 수 있다. Worker 최종 source marker 반영은 다음 정상 시작으로 남긴다.
 - 관찰된 별도 한계: 기존 주제 일괄 처리 중에는 동일 Worker의 intake tick이 지연될 수 있다. 60초는 poll 설정이지 모든 부하에서60초 이내 처리를 보장하는 SLA가 아니다. 이번 작업에서 이 과거 전체 그룹화 알고리즘이나 수집 정책은 변경하지 않았다.
+
+### 최종 운영 확인 — 2026-11-02 01:06 KST
+
+- 최종 코드 `30d91a2`가 API28992(launcher17768)에 반영됐다. Research1948은 최초 P102 반영 코드28d8eff로 정상 실행 중이며, 새로운 API의 정확한 pending 파일 기반 호환 경로로 실제 실행 출처 검사를 받는다. 이번 작업의 stop-request는 identity/timestamp를 확인하고 회수했으며 남아 있지 않다. 다음 정상 시작용 validated source는30d91a2/build `.next-p5-p099-final`, 이전 marker 사본 보존. 현재 API/Worker applied_commit은 각각의 실제 반영 버전을 그대로 기록했다.
+- API `/health`, Dashboard `/sources`와 `/manuscripts` 모두 HTTP200. 새 recovery API는 미인증401/잘못된 입력422로 인증·요청 차단을 확인했다. 기존 P099 API도200이다. Dashboard 코드는 변경·재시작하지 않았으며 신규 UI 배포를 주장하지 않는다.
+- 최종 감사279408: Research/Publication heartbeat fresh, 오류 없음. Trends ON/10분/11지역. manual_only/API 제한/긴급 정지 유지. 시작 감사278498 이후 Blogger provider 호출0, publication event0, publication dispatch attempt0. 새 자동 발행/기존 대기 Job 재개 증거 없음. API/수집·원고 설정과 15개 예약은 활성 상태로 유지했다.
+- 감사279076의 `publishing_jobs_created=0`은 일부 명명된 queue audit event 개수였으며 전체 job 생성 수의 직접 측정으로 해석하면 안 된다. 이 metric의 한계를279408 정정 이벤트에 남겼고, 실제 dispatch ledger와 전체 publication event inventory로 검증했다. 초기 최종 확인용 SELECT의 없는 created_at 컬럼 오류는 읽기 전용 트랜잭션이 rollback됐고 서비스/데이터를 수정하지 않았다.
+- Task Scheduler WooriBlogAgent-Worker Ready / LastTaskResult0. coordinator가 자연 종료한 결과다. Task 취소·비활성화 없음. PostgreSQL16 Auto/Running PID6880, Crypto 변경 없음. Dashboard27044/Publication17652 유지.
+- 정상 운영 원고를 테스트 목적으로 만들지 않았다. 해당 과거 occurrence의 원고·Import는 없으며, 이 개발 실행은 유효한 Desktop 예약 재실행/Run now가 아니므로 새 scheduled 원고나 Import ID를 보고하지 않는다. pending 원고도 현재0건이다. 이번 작업 중 관찰한 새 일반 Import는0건으로, 실제 15개 예약의 다음 실행 및 복구 후 Import 실적은 아직 관찰되지 않았다.
+- 검증 합계: 기존 통합155건 통과 후 호환성 회귀1건 추가 검증, 고유156건(P10219 + 기존137). 실패를 성공 처리하지 않았다. 마지막 P102 suite19/19, Ruff/mypy 통과. 기존 startup 스크립트/동시 실행 잠금/종료 코드/PID 보호 무변경. 배포용 migration 없음.
+- 남은 관찰: 다음 실제15개 예약 실행/Import receipt, 이전 failed occurrence의 별도 유효한 수동 복구, 장시간 Trends 일괄 처리 중 intake 지연. Worker 최종 source 자체의 재시작 반영은 다음 정상 시작에 수행하며 현재 정상 처리 작업을 중단하지 않는다. publication 권한과 유료 API는 활성화하지 않았다.
+
+최종 Git 커밋은 이 문서 전용 후속 기록 및 원격 HEAD로 연결한다. develop push 이후 원격 SHA 일치를 확인한다. P099/101 stash 및 원래 미추적 Playwright 산출물 두 폴더는 보존한다.
