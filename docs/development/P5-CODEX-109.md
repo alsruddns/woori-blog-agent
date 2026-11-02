@@ -73,7 +73,11 @@ Worker의 새 revision-bound claim은 Automation grant가 필요하다. 기존 T
 - Mock 중복 테스트: manual/scheduled/Trends 모두 자신의 원격 postId만 제외하는 매개변수 검사.
 - 브라우저 1440px/390px: P109 Dashboard UI 변경 없음. 실브라우저 UI 작업/검증은 해당 없음.
 - Blogger API POST/PUT/PATCH/DELETE: 0건. 실제 운영 LIVE 생성: 0건.
-- Worker/API 재시작: 아직 수행하지 않음. 서비스 상태를 보호했고, Trends auto 설정이 OFF인 가운데 코드 반영 재시작은 생략함.
+- Worker/API 반영: `apply-verified-changes.ps1 -Apply`가 변경 범위 테스트·mypy·wheel·격리 Dashboard production build 통과 후 API 및 Publication Worker만 안전하게 재시작했다. 양쪽 모두 정상 종료/작업주기 종료를 확인했고 강제 종료는 없었다.
+- 반영 후 API HTTP 200, API PID 25944, Publication Worker PID 33016이며 둘 다 commit `76bf22963e88aaa3adabbc3804d961477d607726`을 실행 중이다. Research Worker PID 8848 및 Dashboard PID 24972는 변경 대상이 아니어서 재시작하지 않았다.
+- API·Research Worker·Publication Worker는 모두 운영 설정 revision 13을 계속 적용한다. 수집 30분 / 발행 최소 30분 및 다른 운영 설정은 변경하지 않았다.
+- 안전 반영 스크립트 전체 API 검사: 93 passed, wheel 생성 및 격리 Dashboard production build 통과. 별도 변경 범위 통합: 168 passed.
+- 스크립트 이전 Runtime baseline `5d07e16` 대비 개발 DB 설정은 바뀌지 않았고 Migration 081 상태를 유지한다.
 
 ## 변경 파일
 
@@ -96,5 +100,5 @@ Worker의 새 revision-bound claim은 Automation grant가 필요하다. 기존 T
 ## Git / 감사
 
 - 작업 시작/완료 및 주요 변경은 개발 기록에 남겼다. 운영 DB 설정은 변경하지 않아 설정 변경 감사 이벤트는 만들지 않았다.
-- Commit hash: 이 기록을 포함한 커밋은 `git log -- docs/development/P5-CODEX-109.md`에서 확인한다.
+- Commit hash: 이 기록을 포함한 최종 문서 커밋은 `git log -- docs/development/P5-CODEX-109.md`에서 확인한다.
 - origin/develop push 상태는 최종 보고에서 별도로 확인한다.
