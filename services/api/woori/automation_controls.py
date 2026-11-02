@@ -453,6 +453,10 @@ def job_permitted(conn: Any, job_id: Any, *, running: bool = False) -> bool:
     ).fetchone()
     if not row or (running and row["status"] != "running"):
         return False
+    from .publication_discards import discarded
+
+    if discarded(conn, row["content_version_id"], row["blog_id"]):
+        return False
     if row["lane"] == "manual":
         return bool(
             state["manual_publishing_enabled"]

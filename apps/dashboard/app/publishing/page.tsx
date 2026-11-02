@@ -6,8 +6,9 @@ export const dynamic = "force-dynamic";
 
 export default async function Page({searchParams}:{searchParams:Promise<Record<string,string|string[]|undefined>>}) {
   const raw=await searchParams;
-  const filters=Object.fromEntries(["view","q","language_code","blog_id","page"].map(key=>[key,typeof raw[key]==="string"?raw[key]:""])) as Record<string,string>;
-  const query=new URLSearchParams(Object.entries(filters).filter(([,value])=>value));
+  const filters=Object.fromEntries(["section","view","q","language_code","blog_id","origin","page"].map(key=>[key,typeof raw[key]==="string"?raw[key]:""])) as Record<string,string>;
+  const query=new URLSearchParams(Object.entries(filters).filter(([key,value])=>key!=="section"&&value));
+  query.set("compact","true");
   let data: PublicationData | null = null;
   let loadState: "ready" | "unauthenticated" | "unavailable" | "server_error" = "unavailable";
   try {

@@ -45,6 +45,10 @@ def readiness(
     row = publications._candidate(conn, version, blog)
     if not row:
         return None, {}, ["content_or_blog_unavailable"]
+    from .publication_discards import discarded
+
+    if discarded(conn, version, blog):
+        return None, {}, ["manuscript_discarded"]
     # Admission is checked separately at the wire; avoid recursively entering
     # AUTO_JOB while rechecking content safety immediately before HTTP.
     from . import publication_origin
@@ -138,6 +142,8 @@ def enqueue(conn: Any, state: dict[str, Any]) -> int:
         JOIN content_localizations l ON l.id=v.localization_id
         JOIN blogger_blogs b ON b.language_code=l.language_code AND b.active
         WHERE b.id=ANY(%s::uuid[]) AND v.created_at>%s
+          AND NOT EXISTS(SELECT 1 FROM manuscript_discards d WHERE d.group_id=v.group_id
+            AND d.blog_id=b.id AND d.status='discarded')
           AND NOT EXISTS(SELECT 1 FROM publishing_jobs j WHERE j.blog_id=b.id AND j.content_version_id=v.id AND NOT j.simulation_only)
         ORDER BY v.created_at,v.id""",
         (state["auto_blog_ids"], state["auto_enabled_at"]),
@@ -244,6 +250,9 @@ def tick(*, publisher: Any = None) -> dict[str, Any] | None:
         job = conn.execute(
             """SELECT j.* FROM publishing_jobs j JOIN automation_publication_grants g ON g.job_id=j.id
             WHERE g.lane='auto' AND g.epoch=%s AND j.status='queued' AND j.available_at<=now()
+              AND NOT EXISTS(SELECT 1 FROM content_versions v JOIN manuscript_discards d
+                ON d.group_id=v.group_id AND d.blog_id=j.blog_id AND d.status='discarded'
+                WHERE v.id=j.content_version_id)
               AND ((g.manuscript_origin='google_trends' AND %s AND g.source_epoch=%s)
                    OR (g.manuscript_origin='scheduled' AND %s AND g.source_epoch=%s))
               AND j.scheduled_at<=now() ORDER BY j.scheduled_at,j.id FOR UPDATE OF j SKIP LOCKED LIMIT 1""",

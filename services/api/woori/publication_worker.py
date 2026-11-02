@@ -312,6 +312,8 @@ def enqueue_scheduled_auto_jobs() -> dict[str, Any]:
             JOIN blogger_blogs b ON b.language_code=i.language_code AND b.active
             JOIN google_connections g ON g.id=b.oauth_connection_id
             WHERE i.generation_method='chatgpt_scheduled_export'
+              AND NOT EXISTS(SELECT 1 FROM manuscript_discards d WHERE d.group_id=cv.group_id
+                AND d.blog_id=b.id AND d.status='discarded')
               AND v.version_number=(SELECT max(v2.version_number) FROM external_content_import_versions v2 WHERE v2.import_id=i.id)
             ORDER BY i.received_at,i.id"""
         ).fetchall()
@@ -794,6 +796,9 @@ def process_next_live_job(
             retry_count,max_retries,publication_state,live_stage,remote_post_id,oauth_connection_id,
             publication_lane,publication_mode
             FROM publishing_jobs j WHERE NOT j.simulation_only AND j.adapter_type='blogger_live'
+              AND NOT EXISTS(SELECT 1 FROM content_versions v JOIN manuscript_discards d
+                ON d.group_id=v.group_id AND d.blog_id=j.blog_id AND d.status='discarded'
+                WHERE v.id=j.content_version_id)
               AND (%s=false OR j.publication_lane='scheduled_auto')
               AND (%s=false OR (j.publication_lane='manual' AND EXISTS (
                 SELECT 1 FROM manual_publication_approval_events a WHERE a.job_id=j.id

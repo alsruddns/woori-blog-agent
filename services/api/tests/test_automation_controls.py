@@ -298,6 +298,32 @@ def test_only_new_grants_execute_and_toggle_invalidates_old_manual_job(center):
     assert controls.job_permitted(conn, job) is False
 
 
+def test_discarded_manuscript_blocks_granted_job_at_wire(center):
+    conn, _, _ = center
+    job, blog, version = make_job(center)
+    update(center, google_account_available=True, emergency_stop=False, confirm_emergency_release=True)
+    controls.grant_manual(conn, job, "publish")
+    assert controls.job_permitted(conn, job, running=True) is True
+    conn.execute(
+        """INSERT INTO manuscript_discards(group_id,blog_id,content_version_id,status,previous_view,reason,actor)
+        SELECT group_id,%s,id,'discarded','queue','Isolated wire safety test','test operator'
+        FROM content_versions WHERE id=%s""",
+        (blog, version),
+    )
+    assert controls.job_permitted(conn, job, running=True) is False
+
+
+def test_publication_display_origin_uses_import_lineage(center):
+    conn, _, _ = center
+    _, blog, version = make_job(center)
+    from woori.publication_origin import classify_display_many
+
+    missing = str(uuid4())
+    result = classify_display_many(conn, [(str(version), str(blog)), (missing, str(blog))])
+    assert result[(str(version), str(blog))]["kind"] == "manual"
+    assert result[(missing, str(blog))]["kind"] == "unknown"
+
+
 def test_db_unavailable_fails_closed_without_affecting_imports(center, monkeypatch):
     import psycopg
 

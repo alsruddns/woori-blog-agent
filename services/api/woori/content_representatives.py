@@ -44,6 +44,34 @@ def same_manuscript_content(title: Any, body: Any, prior_title: Any, prior_body:
     return SequenceMatcher(None, current, prior, autojunk=False).ratio() >= 0.88
 
 
+class PublicationDuplicateIndex:
+    """Same list suppression rule with each body normalized only once."""
+
+    def __init__(self) -> None:
+        self.exact: set[tuple[str, str, str]] = set()
+        self.by_title: dict[tuple[str, str, str], list[str]] = {}
+
+    def add(self, blog_id: Any, language: Any, title: Any, body: Any) -> bool:
+        scope = (str(blog_id), str(language))
+        normalized = normalized_body(body)
+        title_key = normalized_title(title)
+        digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest() if normalized else ""
+        exact_key = (*scope, digest)
+        if digest and exact_key in self.exact:
+            return False
+        key = (*scope, title_key)
+        if normalized and title_key:
+            for prior in self.by_title.get(key, []):
+                if min(len(normalized), len(prior)) / max(len(normalized), len(prior)) >= 0.70:
+                    if SequenceMatcher(None, normalized, prior, autojunk=False).ratio() >= 0.88:
+                        return False
+        if digest:
+            self.exact.add(exact_key)
+            if title_key:
+                self.by_title.setdefault(key, []).append(normalized)
+        return True
+
+
 def dedupe_manuscript_rows(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
     """Keep the newest representative per explicit lineage or confirmed body duplicate.
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import ExternalImportWorkspace from "../imports/external-import-workspace";
 import PostPublicationReviewPanel from "./post-publication-review-panel";
 import PublicationWorkerPanel from "./publication-worker-panel";
@@ -17,6 +17,10 @@ type Item = {
   auto_publication_failure?: boolean; failure_stage?: string | null; failure_reason_code?: string | null;
   manual_publication_available?: boolean; retry_count?: number;
   published_title?: string; published_content_version_id?: string;
+  origin_kind?: "google_trends" | "scheduled" | "manual" | "unknown";
+  origin_reason?: string; automation_id?: string; scheduled_slot?: string; occurrence_id?: string;
+  authoring_job_id?: string; trend_request_id?: string;
+  previous_view?: string; discard_reason?: string; discard_actor?: string; discarded_at?: string;
 };
 type ModeSetting = { scope_type: string; scope_key: string; configured_mode: string; daily_auto_limit: number; minimum_interval_minutes: number; allowed_start_hour?:number; allowed_end_hour?:number; timezone?:string; allowed_categories?:string[]; excluded_topics?:string[]; max_source_age_hours?:number; retry_limit?:number };
 export type PublicationData = {
@@ -40,7 +44,8 @@ export type PublicationData = {
   auto_candidate_count: number; auto_runtime_status: string;
   operational_limits?: {timezone:string;global_daily:number;language_daily:Record<string,number|null>;language_hourly:Record<string,number>;english_daily_policy:string;blog_minimum_interval_minutes:number;account_minimum_interval_minutes:number};
 };
-const tabs = [["queue", "발행 대기"], ["review", "검토 필요"], ["published", "게시 완료"], ["held", "실패·보류"], ["auto_failure", "자동발행실패"]] as const;
+const tabs = [["queue", "발행 대기"], ["review", "검토 필요"], ["published", "게시 완료"], ["held", "실패·보류"], ["auto_failure", "자동발행실패"], ["discarded", "폐기 보관함"]] as const;
+const originLabels = { google_trends: "Google Trends", scheduled: "Codex 예약", manual: "수동 작성", unknown: "출처 미확인" } as const;
 const languageLabel = (code: string) => ({ko:"한국어",en:"영어",ja:"일본어","zh-CN":"중국어 간체"}[code] ?? code);
 const statusLabel = (status: string) => ({review_needed:"검토 필요",queueable:"발행 자격 충족 · Job 없음",queued:"Worker 처리 대기",auto_paused:"자동 발행 중지로 보류",manual_action_required:"수동 요청 확인 필요 · 실행 차단",draft_saved:"Blogger 비공개 초안 저장 완료",publishing:"게시 중",published:"게시 완료",quality_held:"품질 보류",publication_blocked:"게시 차단",failed:"실패",uncertain:"결과 확인 필요",auto_publication_failed:"자동발행실패"}[status] ?? status);
 const reasonLabel = (reason: string) => ({
@@ -75,14 +80,22 @@ const kst = (value?: string | null) => value ? new Intl.DateTimeFormat("ko-KR", 
 
 export default function PublicationManager({ initial,initialFilters={} }: { initial: PublicationData;initialFilters?:Record<string,string> }) {
   const [data, setData] = useState(initial);
+  const [topTab,setTopTab]=useState<"publication"|"jobs">(initialFilters.section==="jobs"?"jobs":"publication");
   const initialGlobalMode=initial.mode_policy.settings.find(item=>item.scope_type==="global"&&!item.scope_key);
   const [view, setView] = useState<(typeof tabs)[number][0]>((initial.view as (typeof tabs)[number][0]) || "review");
-  const [query, setQuery] = useState(initialFilters.q??""); const [language, setLanguage] = useState(initialFilters.language_code??""); const [blog, setBlog] = useState(initialFilters.blog_id??"");
+  const [query, setQuery] = useState(initialFilters.q??""); const [language, setLanguage] = useState(initialFilters.language_code??""); const [blog, setBlog] = useState(initialFilters.blog_id??""); const [origin,setOrigin]=useState(initialFilters.origin??"");
   const [page, setPage] = useState(initial.page??1); const [loading, setLoading] = useState(false); const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState<string>(view);
   const [emergencyBusy, setEmergencyBusy] = useState(false);
   const [notice,setNotice]=useState("");
   const [monitorRefresh,setMonitorRefresh]=useState(0);
+  const [selection,setSelection]=useState<string[]>([]);
+  const [discardTargets,setDiscardTargets]=useState<Item[]>([]);
+  const [discardReason,setDiscardReason]=useState("");
+  const [discardActor,setDiscardActor]=useState("관리자");
+  const [discardBusy,setDiscardBusy]=useState(false);
+  const searchTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
+  const refreshRequest=useRef(0);
   const [detailRequest,setDetailRequest]=useState<{id:string;version:string;target:string;publish:boolean;nonce:number}>();
   const openManuscript=(item:Item,publish=false)=>{if(item.import_id)setDetailRequest(previous=>({id:item.import_id!,version:item.content_version_id,target:item.blog_id,publish,nonce:(previous?.nonce??0)+1}));};
   const [scheduledBlogs,setScheduledBlogs]=useState<string[]>([]);
@@ -96,9 +109,11 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
   const [startHour,setStartHour]=useState(initialGlobalMode?.allowed_start_hour??9); const [endHour,setEndHour]=useState(initialGlobalMode?.allowed_end_hour??17);
   const [maxAge,setMaxAge]=useState(initialGlobalMode?.max_source_age_hours??24); const [retryLimit,setRetryLimit]=useState(initialGlobalMode?.retry_limit??0);
   const [categories,setCategories]=useState(initialGlobalMode?.allowed_categories?.join(", ")??""); const [excludedTopics,setExcludedTopics]=useState(initialGlobalMode?.excluded_topics?.join(", ")??"");
-  async function refresh(nextPage = page, nextView = view) {
+  async function refresh(nextPage = page, nextView = view, searchQuery = query, filterChange: Record<string,string> = {}) {
+    const requestId=++refreshRequest.current;
     setLoading(true); setError("");
-    const params = new URLSearchParams({ view: nextView, q: query, language_code: language, blog_id: blog, page: String(nextPage), page_size: "25" });
+    const params = new URLSearchParams({ view: nextView, q: searchQuery, language_code: language, blog_id: blog, origin, page: String(nextPage), page_size: "25", compact: "true" });
+    Object.entries(filterChange).forEach(([key,value])=>params.set(key,value));
     try {
       const response = await fetch(`/api/publications?${params}`, { cache:"no-store" });
       if (!response.ok) throw new Error("발행 현황을 불러오지 못했습니다.");
@@ -109,22 +124,51 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
         if (!corrected.ok) throw new Error("발행 현황을 갱신하지 못했습니다.");
         next = await corrected.json() as PublicationData;
       }
-      setData(next); setPage(nextPage); setView(nextView); setActiveTab(nextView);
+      if(requestId!==refreshRequest.current)return;
+      setData(next); setPage(nextPage); setView(nextView); setActiveTab(nextView);setSelection([]);
       const url=new URL(window.location.href);params.forEach((value,key)=>url.searchParams.set(key,value));window.history.replaceState(null,"",url.pathname+url.search);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "연결 오류"); }
-    finally { setLoading(false); }
+    } catch (cause) { if(requestId===refreshRequest.current)setError(cause instanceof Error ? cause.message : "연결 오류"); }
+    finally { if(requestId===refreshRequest.current)setLoading(false); }
+  }
+  useEffect(()=>{const onPop=()=>setTopTab(new URL(window.location.href).searchParams.get("section")==="jobs"?"jobs":"publication");window.addEventListener("popstate",onPop);return()=>window.removeEventListener("popstate",onPop);},[]);
+  useEffect(()=>()=>{if(searchTimer.current)clearTimeout(searchTimer.current);},[]);
+  function chooseTop(next:"publication"|"jobs"){
+    setTopTab(next);const url=new URL(window.location.href);
+    if(next==="jobs")url.searchParams.set("section","jobs");else url.searchParams.delete("section");
+    window.history.pushState({section:next},"",url.pathname+url.search);window.scrollTo({top:0,behavior:"auto"});
+  }
+  const itemKey=(item:Item)=>`${item.content_version_id}:${item.blog_id}`;
+  function openDiscard(targets:Item[]){setDiscardTargets(targets);setDiscardReason("");setError("");}
+  async function submitDiscard(){
+    if(discardActor.trim().length<2||discardReason.trim().length<10){setError("작업자 2자 이상과 사유 10자 이상을 입력하세요.");return;}
+    const restoring=view==="discarded";
+    setDiscardBusy(true);setError("");
+    try{
+      const response=await fetch(`/api/publications/discards${restoring?"/restore":""}`,{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({actor:discardActor.trim(),reason:discardReason.trim(),targets:discardTargets.map(item=>({content_version_id:item.content_version_id,blog_id:item.blog_id,previous_view:restoring?(item.previous_view??"review"):view}))}),
+      });
+      const result=await response.json() as {success_count?:number;failure_count?:number;failures?:{reason:string}[];detail?:string};
+      if(!response.ok)throw new Error(result.detail??`요청 실패 (HTTP ${response.status})`);
+      const succeeded=result.success_count??0;const failed=result.failure_count??0;
+      setNotice(`${restoring?"복원":"폐기"} ${succeeded}건 완료${failed?` · ${failed}건 실패 (${(result.failures??[]).map(item=>item.reason).join(", ")})`:""}`);
+      setDiscardTargets([]);setSelection([]);setMonitorRefresh(value=>value+1);
+      await refresh(1,view);
+    }catch(cause){setError(cause instanceof Error?cause.message:"원고 상태 변경 실패");}
+    finally{setDiscardBusy(false);}
   }
   useEffect(() => {
     let pending=false; const controller=new AbortController();
-    const poll=async()=>{if(pending||document.visibilityState!=="visible")return;pending=true;
-      try {const params=new URLSearchParams({view,q:query,language_code:language,blog_id:blog,page:String(page),page_size:"25"});
+    const poll=async()=>{if(pending||topTab!=="publication"||document.visibilityState!=="visible")return;pending=true;
+      const requestId=++refreshRequest.current;
+      try {const params=new URLSearchParams({view,q:query,language_code:language,blog_id:blog,origin,page:String(page),page_size:"25",compact:"true"});
         const response=await fetch(`/api/publications?${params}`,{cache:"no-store",signal:controller.signal});
         if(!response.ok)throw new Error("발행 현황 자동 갱신에 실패했습니다.");
         const next=await response.json() as PublicationData;
-        if(page>Math.max(next.page_count??1,1))setPage(Math.max(next.page_count??1,1));else setData(next);
+        if(requestId===refreshRequest.current){if(page>Math.max(next.page_count??1,1))setPage(Math.max(next.page_count??1,1));else setData(next);}
       }catch(cause){if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:"발행 현황 갱신 실패");}finally{pending=false;}};
-    const timer=setInterval(()=>void poll(),10000);return()=>{clearInterval(timer);controller.abort();};
-  },[view,query,language,blog,page]);
+    const timer=setInterval(()=>void poll(),30000);return()=>{clearInterval(timer);controller.abort();};
+  },[view,query,language,blog,origin,page,topTab]);
   async function emergencyStop() {
     setEmergencyBusy(true); setError("");
     try { const r = await fetch("/api/publications/emergency-stop", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({enabled:true}) });
@@ -179,7 +223,12 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
   const shownCount = data.total_count ?? items.length;
   const globalMode = data.mode_policy.settings.find(x => x.scope_type === "global" && !x.scope_key);
   return <div className="publication-manager">
-    <PublicationWorkerPanel refreshKey={monitorRefresh} onOpenImport={job=>{if(job.import_id)setDetailRequest(previous=>({id:job.import_id!,version:job.content_version_id??"",target:job.blog_id??"",publish:false,nonce:(previous?.nonce??0)+1}));}} />
+    <nav className="workspace-tabs publication-top-tabs" role="tablist" aria-label="발행 운영 영역">
+      <button type="button" role="tab" aria-selected={topTab==="publication"} onClick={()=>chooseTop("publication")}>발행 관리</button>
+      <button type="button" role="tab" aria-selected={topTab==="jobs"} onClick={()=>chooseTop("jobs")}>Job 관리</button>
+    </nav>
+    {topTab==="jobs" ? <PublicationWorkerPanel refreshKey={monitorRefresh} onOpenImport={job=>{if(job.import_id){chooseTop("publication");setDetailRequest(previous=>({id:job.import_id!,version:job.content_version_id??"",target:job.blog_id??"",publish:false,nonce:(previous?.nonce??0)+1}));}}} /> : <>
+    {notice&&<p role="status" className="publication-notice">{notice}</p>}
     <ExternalImportWorkspace embedded detailRequest={detailRequest} onPublicationRequested={jobId=>{setNotice(`발행 Job ${jobId} 등록 완료 · 실제 게시 결과는 Worker 모니터에서 확인하세요.`);setMonitorRefresh(x=>x+1);void refresh();}} />
     <section className="publishing-summary" aria-label="원고 목록 요약">
       <article><span>실제 공개 게시</span><strong>{data.actual_published_count ?? counts.published ?? 0}건</strong></article>
@@ -197,7 +246,7 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
     </nav>
     {error && <p className="quality-held" role="alert">{error}</p>}
     {activeTab === "post-review" ? <PostPublicationReviewPanel /> : activeTab === "scheduled-auto" ? <section className="workspace-panel publication-section scheduled-auto-section" aria-labelledby="scheduled-auto-title">
-      <div className="section-heading"><div><p className="eyebrow">예약 원고만 적용 · 일반 Auto·Trends와 별도</p><h2 id="scheduled-auto-title">예약 원고 자동 게시 관리</h2><p>Codex 예약 원고만 대상으로 합니다. 기본은 중지이며, 첫 공개 게시에는 원고별 별도 확인이 필요합니다.</p></div>
+       <div className="section-heading"><div><p className="eyebrow">예약 원고만 적용 · 일반 Auto·Trends와 별도</p><h2 id="scheduled-auto-title">예약 원고 자동 게시 관리</h2><p>Codex 예약 원고만 대상으로 합니다. 활성 범위, 품질, 중복 및 Blogger 쓰기 정책을 충족해야 공개됩니다.</p></div>
         <strong className={data.mode_policy.scheduled_auto_policy?.enabled ? "status-positive" : "status-muted"} role="status">{data.mode_policy.scheduled_auto_policy?.enabled ? "예약 Auto 활성" : "예약 Auto 중지"}</strong></div>
       <div className="scheduled-auto-grid">
         <article><h3>1. 대상 블로그</h3><p>실제 Blogger 읽기 연결을 확인한 활성 블로그만 승인 범위에 포함됩니다.</p>
@@ -253,30 +302,44 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
       <p>발행 한도는 상한입니다. 이 화면은 Blogger 실제 게시를 수행하지 않습니다.</p>
     </section> : <section className="workspace-panel publication-section">
       <div className="section-heading"><div><h2>{tabs.find(x=>x[0]===view)?.[1]}</h2><p>{shownCount}건 · 최신 대표 버전 기준 · 이전 버전은 원고 상세의 변경 이력에서 확인합니다.</p></div></div>
-      <form className="publication-filters" onSubmit={event => { event.preventDefault(); void refresh(1,view); }}>
-        <label>제목·주제 검색<input value={query} onChange={e=>setQuery(e.target.value)} placeholder="검색어" /></label>
-        <label>언어<select value={language} onChange={e=>setLanguage(e.target.value)}><option value="">모든 언어</option>{data.mode_policy.languages.map(x=><option key={x.code} value={x.code}>{x.display_name || languageLabel(x.code)}</option>)}</select></label>
-        <label>블로그<select value={blog} onChange={e=>setBlog(e.target.value)}><option value="">모든 블로그</option>{data.mode_policy.blogs.map(x=><option key={x.id} value={x.id}>{x.display_name}</option>)}</select></label>
+       <form className="publication-filters" onSubmit={event => { event.preventDefault(); if(searchTimer.current)clearTimeout(searchTimer.current); void refresh(1,view); }}>
+         <label>제목·주제 검색<input value={query} onChange={e=>{const next=e.target.value;setQuery(next);if(searchTimer.current)clearTimeout(searchTimer.current);searchTimer.current=setTimeout(()=>void refresh(1,view,next),320);}} placeholder="검색어" /></label>
+         <label>언어<select value={language} onChange={event=>{setLanguage(event.target.value);void refresh(1,view,query,{language_code:event.target.value});}}><option value="">모든 언어</option>{data.mode_policy.languages.map(x=><option key={x.code} value={x.code}>{x.display_name || languageLabel(x.code)}</option>)}</select></label>
+         <label>블로그<select value={blog} onChange={event=>{setBlog(event.target.value);void refresh(1,view,query,{blog_id:event.target.value});}}><option value="">모든 블로그</option>{data.mode_policy.blogs.map(x=><option key={x.id} value={x.id}>{x.display_name}</option>)}</select></label>
+         <label>생성 출처<select value={origin} onChange={event=>{setOrigin(event.target.value);void refresh(1,view,query,{origin:event.target.value});}}><option value="">모든 출처</option>{Object.entries(originLabels).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>
         <button type="submit" disabled={loading}>검색</button>
       </form>
-      {loading ? <p className="empty-state">불러오는 중…</p> : items.length ? <div className="publication-table-scroll"><table><thead><tr><th>원고</th><th>언어</th><th>대상 블로그</th><th>주제·출처</th><th>상태</th><th>시각</th>{view==="published"&&<th>게시 URL</th>}{view==="auto_failure"&&<th>복구</th>}</tr></thead><tbody>
+       {(view!=="published")&&<div className="publication-selection-actions"><label><input type="checkbox" checked={items.length>0&&selection.length===items.length} onChange={event=>setSelection(event.target.checked?items.map(itemKey):[])}/> 현재 페이지 전체 선택</label><span>{selection.length}건 선택</span><button type="button" className="secondary-button" disabled={!selection.length} onClick={()=>openDiscard(items.filter(item=>selection.includes(itemKey(item))))}>{view==="discarded"?"선택 복원":"선택 폐기"}</button></div>}
+       {loading ? <div className="publication-skeleton" role="status">목록을 불러오는 중…</div> : items.length ? <div className="publication-table-scroll"><table><thead><tr>{view!=="published"&&<th>선택</th>}<th>원고</th><th>생성 출처</th><th>언어</th><th>대상 블로그</th><th>주제·출처</th><th>상태</th><th>시각</th>{view==="published"&&<th>게시 URL</th>}<th>작업</th></tr></thead><tbody>
         {items.map(item=><tr key={`${item.id}-${item.blog_id}`}>
+           {view!=="published"&&<td><input type="checkbox" aria-label={`${item.title} 선택`} checked={selection.includes(itemKey(item))} onChange={event=>setSelection(current=>event.target.checked?[...current,itemKey(item)]:current.filter(key=>key!==itemKey(item)))}/></td>}
           <td>{item.import_id
             ? <button type="button" className="import-title" onClick={()=>openManuscript(item)}>{item.title || "제목 없음"}</button>
             : item.evaluation_id
               ? <a href={`/manuscripts?open_evaluation_id=${encodeURIComponent(item.evaluation_id)}&open_content_version_id=${encodeURIComponent(item.content_version_id)}&return_to=${encodeURIComponent(`/publishing?view=${view}&page=${page}&q=${query}&language_code=${language}&blog_id=${blog}`)}`}>{item.title || "제목 없음"}</a>
               : <span>{item.title || "제목 없음"}</span>}
-            <small>현재 버전 {item.content_version_id.slice(0,8)} · {item.google_trends_based ? "Google Trends" : item.generation_method === "chatgpt_scheduled_export" ? "Codex 예약" : item.generation_method === "manual_codex_import" ? "수동 Import" : "내부 원고"}</small>
+            <small>현재 버전 {item.content_version_id.slice(0,8)} <span className="publication-mobile-origin">· {originLabels[item.origin_kind??"unknown"]}</span></small>
+            {item.automation_id&&<small>Automation {item.automation_id} · {item.scheduled_slot??item.occurrence_id??"예약 슬롯 미확인"}</small>}{item.trend_request_id&&<small>Trends 회차 {item.trend_request_id}</small>}
+            {view==="discarded"&&<small>폐기 전 {item.previous_view??"미확인"} · {item.discard_actor??"작업자 미확인"} · {item.discard_reason??"사유 미확인"}</small>}
             {item.published_title && <small>게시 당시 제목: {item.published_title} · 게시 버전 {item.published_content_version_id?.slice(0,8)} · 현재 Blogger 제목은 별도 원격 확인이 필요합니다.</small>}</td>
-          <td>{languageLabel(item.language_code)}</td><td>{item.blog_name || item.url}</td>
+           <td className="publication-desktop-origin"><span className={`publication-origin publication-origin-${item.origin_kind??"unknown"}`}>{originLabels[item.origin_kind??"unknown"]}</span></td><td>{languageLabel(item.language_code)}</td><td>{item.blog_name || item.url}</td>
           <td>{item.topic || item.source_names || "주제·출처 정보 없음"}</td>
           <td>{statusLabel(item.status)}{item.failure_reason_code && <small>실패 단계 {item.failure_stage ?? "미확인"} · {reasonLabel(item.failure_reason_code)}</small>}{item.retry_count !== undefined && <small>재시도 {item.retry_count}회</small>}{item.eligibility_reasons?.length ? <small>{item.eligibility_reasons.slice(0,2).map(reasonLabel).join(" · ")}</small> : null}{item.simulation_only && <small>모의 작업</small>}</td>
           <td>{kst(item.next_publish_at || item.created_at)}</td>
           {view==="published"&&<td>{item.remote_url&&item.remote_status==="LIVE"&&item.remote_verified_at?<a href={item.remote_url} target="_blank" rel="noreferrer">게시물 열기</a>:"원격 게시 확인 없음"}{item.remote_post_id&&<small>postId {item.remote_post_id}</small>}</td>}
-          {view==="auto_failure"&&<td>{item.import_id ? <button type="button" className="secondary-button" onClick={()=>openManuscript(item,true)}>Blogger에 수동 발행</button> : "상세 원고 연결 없음"}</td>}
+           <td>{view==="published"?"이력 보존":<div className="publication-row-actions">{view==="auto_failure"&&item.import_id&&<button type="button" className="secondary-button" onClick={()=>openManuscript(item,true)}>수동 발행</button>}<button type="button" className="secondary-button" onClick={()=>openDiscard([item])}>{view==="discarded"?"복원":"폐기"}</button></div>}</td>
         </tr>)}
       </tbody></table></div> : <p className="empty-state">이 상태의 원고가 없습니다.</p>}
       <div className="publication-pagination"><button disabled={page<=1||loading} onClick={()=>void refresh(page-1,view)}>이전</button><span>{page} / {Math.max(data.page_count ?? 0,1)}</span><button disabled={page>=(data.page_count??0)||loading} onClick={()=>void refresh(page+1,view)}>다음</button></div>
-    </section>}
+     </section>}
+     </>}
+     {discardTargets.length>0&&<div className="publication-discard-backdrop" role="presentation"><section role="dialog" aria-modal="true" aria-label={view==="discarded"?"원고 복원 확인":"원고 폐기 확인"} className="workspace-panel publication-discard-dialog">
+       <h2>{view==="discarded"?"선택 원고 복원":"선택 원고 폐기"}</h2><p>{discardTargets.length}건 · 기존 Version·Job·감사 기록은 보존됩니다. {view==="discarded"?"복원해도 Job은 다시 실행되지 않습니다.":"Blogger에 이미 시작된 쓰기는 취소를 보장할 수 없습니다."}</p>
+       <ul>{discardTargets.map(item=><li key={itemKey(item)}>{item.title} · {item.blog_name||item.url} · {originLabels[item.origin_kind??"unknown"]} · {statusLabel(item.status)}</li>)}</ul>
+       <label>작업자<input value={discardActor} onChange={event=>setDiscardActor(event.target.value)} /></label>
+       <label>사유 (10자 이상)<textarea value={discardReason} onChange={event=>setDiscardReason(event.target.value)} rows={3} /></label>
+       {error&&<p role="alert" className="quality-held">{error}</p>}
+       <div className="publication-discard-actions"><button type="button" className="secondary-button" disabled={discardBusy} onClick={()=>setDiscardTargets([])}>취소</button><button type="button" disabled={discardBusy||discardActor.trim().length<2||discardReason.trim().length<10} onClick={()=>void submitDiscard()}>{discardBusy?"처리 중…":view==="discarded"?"선택 복원":"선택 폐기"}</button></div>
+     </section></div>}
   </div>;
 }

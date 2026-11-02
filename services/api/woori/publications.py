@@ -13,9 +13,9 @@ from fastapi import APIRouter, HTTPException, Query
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from . import blogger_service, external_policy
+from . import blogger_service, external_policy, publication_discards
 from .blogger_writes import BloggerLivePublisher
-from .content_representatives import same_manuscript_content
+from .content_representatives import PublicationDuplicateIndex
 from .db import connection
 from .google_http import GoogleFailure
 from .publication_daily import (
@@ -704,6 +704,8 @@ def scheduled_first_post_status(import_id: Annotated[UUID, Query()]) -> dict[str
 def create_manual_live_request(request: ManualLiveRequestInput) -> dict[str, Any]:
     """Record a user's exact-version public-publish confirmation and queue a manual job."""
     with connection() as conn:
+        if publication_discards.discarded(conn, request.content_version_id, request.blog_id):
+            raise HTTPException(409, "Discarded manuscript cannot be published; restore and review it first")
         migration = conn.execute(
             "SELECT to_regclass('public.manual_publication_approval_events') AS ready"
         ).fetchone()
@@ -1326,6 +1328,8 @@ def _manual_publication_blockers(
     """Hard safety and operational checks; quality gaps remain follow-ups."""
     if row is None:
         return ["content_or_blog_not_found"]
+    if publication_discards.discarded(conn, row["content_version_id"], blog_id):
+        return ["manuscript_discarded"]
     from .publication_operation import manual_requests_allowed
     if not manual_requests_allowed():
         return ["blogger_api_restricted_manual_only"]
@@ -1408,15 +1412,116 @@ def publication_list_flow(row: dict[str, Any]) -> str:
     return 'publishing' if row.get('active_job_status') == 'running' else 'queued'
 
 
+class DiscardTarget(BaseModel):
+    content_version_id: UUID
+    blog_id: UUID
+    previous_view: Literal["queue", "review", "held", "auto_failure"] = "review"
+
+
+class DiscardRequest(BaseModel):
+    targets: list[DiscardTarget] = Field(min_length=1, max_length=100)
+    actor: str = Field(min_length=2, max_length=120)
+    reason: str = Field(min_length=10, max_length=1000)
+
+
+class RestoreRequest(BaseModel):
+    targets: list[DiscardTarget] = Field(min_length=1, max_length=100)
+    actor: str = Field(min_length=2, max_length=120)
+    reason: str = Field(min_length=10, max_length=1000)
+
+
+def _discard_batch(request: DiscardRequest | RestoreRequest, *, restore: bool) -> dict[str, Any]:
+    successes: list[dict[str, str]] = []
+    failures: list[dict[str, str]] = []
+    seen: set[tuple[UUID, UUID]] = set()
+    with connection() as conn:
+        # The same transaction lock covers the actual Blogger HTTP request.
+        # If a write has begun, the operator receives a conflict and must recheck remote state.
+        lock = conn.execute("SELECT pg_try_advisory_xact_lock(20261102,103) acquired").fetchone()
+        if not lock or not lock["acquired"]:
+            raise HTTPException(409, "A Blogger write is in progress; refresh the publication state before discarding")
+        for target in request.targets:
+            key = (target.content_version_id, target.blog_id)
+            if key in seen:
+                continue
+            seen.add(key)
+            identity = publication_discards.current(conn, *key)
+            output = {"content_version_id": str(key[0]), "blog_id": str(key[1])}
+            if identity is None:
+                failures.append({**output, "reason": "manuscript_or_target_not_found"})
+                continue
+            if restore:
+                if identity["discard_status"] != "discarded":
+                    failures.append({**output, "reason": "not_discarded"})
+                    continue
+                conn.execute(
+                    """UPDATE manuscript_discards SET status='restored',restored_at=clock_timestamp(),
+                    updated_at=clock_timestamp() WHERE id=%s""",
+                    (identity["discard_id"],),
+                )
+            else:
+                published = conn.execute(
+                    """SELECT 1 FROM publishing_records p JOIN content_versions v ON v.id=p.content_version_id
+                    WHERE v.group_id=%s AND p.blog_id=%s AND p.remote_status='LIVE' LIMIT 1""",
+                    (identity["group_id"], key[1]),
+                ).fetchone()
+                if published:
+                    failures.append({**output, "reason": "already_published"})
+                    continue
+                if identity["discard_status"] == "discarded":
+                    failures.append({**output, "reason": "already_discarded"})
+                    continue
+                conn.execute(
+                    """INSERT INTO manuscript_discards(group_id,blog_id,content_version_id,status,previous_view,reason,actor)
+                    VALUES(%s,%s,%s,'discarded',%s,%s,%s)
+                    ON CONFLICT(group_id,blog_id) DO UPDATE SET
+                      content_version_id=EXCLUDED.content_version_id,status='discarded',
+                      previous_view=EXCLUDED.previous_view,reason=EXCLUDED.reason,actor=EXCLUDED.actor,
+                      discarded_at=clock_timestamp(),restored_at=NULL,updated_at=clock_timestamp()""",
+                    (identity["group_id"], key[1], key[0], target.previous_view,
+                     request.reason.strip(), request.actor.strip()),
+                )
+                conn.execute(
+                    """UPDATE publishing_jobs j SET status='blocked',publication_state='publication_blocked',
+                      last_error_category='manuscript_discarded',updated_at=clock_timestamp()
+                    FROM content_versions v WHERE v.id=j.content_version_id AND v.group_id=%s
+                      AND j.blog_id=%s AND j.status='queued'""",
+                    (identity["group_id"], key[1]),
+                )
+            successes.append(output)
+        conn.execute(
+            "INSERT INTO audit_events(event_type,payload) VALUES(%s,%s)",
+            ("publication.manuscripts.restored" if restore else "publication.manuscripts.discarded",
+             Jsonb({"actor": request.actor.strip(), "reason": request.reason.strip(),
+                    "successes": successes, "failures": failures, "automatic_job_restarted": False})),
+        )
+    return {"success_count": len(successes), "failure_count": len(failures),
+            "successes": successes, "failures": failures}
+
+
+@router.post("/discards")
+def discard_manuscripts(request: DiscardRequest) -> dict[str, Any]:
+    return _discard_batch(request, restore=False)
+
+
+@router.post("/discards/restore")
+def restore_manuscripts(request: RestoreRequest) -> dict[str, Any]:
+    return _discard_batch(request, restore=True)
+
+
 @router.get("")
 def list_publications(
-    view: Literal["queue", "review", "published", "held", "auto_failure"] = Query("review"),
+    view: Literal["queue", "review", "published", "held", "auto_failure", "discarded"] = Query("review"),
     q: str = Query("", max_length=200),
     language_code: str = Query("", max_length=35),
     blog_id: str = Query("", max_length=64),
+    origin: Literal["", "google_trends", "scheduled", "manual", "unknown"] = Query(""),
+    compact: bool = Query(False),
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
 ) -> dict[str, Any]:
+    origin = origin if isinstance(origin, str) else ""
+    compact = compact if isinstance(compact, bool) else False
     with connection() as conn:
         mode_data = _mode_settings(conn)
         from .publication_operation import manual_requests_allowed
@@ -1462,10 +1567,11 @@ def list_publications(
               active_job.id AS active_job_id,active_job.status AS active_job_status,
               active_job.publication_state AS active_job_publication_state,
               active_job.publication_lane AS active_job_lane,active_job.approval_at,
-              active_job.scheduled_at AS next_publish_at
+               active_job.scheduled_at AS next_publish_at,d.status AS discard_status
             FROM latest
             JOIN languages lang ON lang.code=latest.language_code
             LEFT JOIN google_connections g ON g.id=latest.oauth_connection_id
+             LEFT JOIN manuscript_discards d ON d.group_id=latest.group_id AND d.blog_id=latest.blog_uuid
             LEFT JOIN language_profiles lp ON lp.language_code=latest.language_code AND lp.target_country=latest.target_country
             LEFT JOIN publishing_policies p ON p.blog_id=latest.blog_uuid AND p.profile_id=lp.id
             LEFT JOIN LATERAL (SELECT machine_passed,human_review_required,publish_ready,status,id,model
@@ -1505,7 +1611,8 @@ def list_publications(
         ).fetchall()
         jobs = conn.execute(
             f"""SELECT j.id,j.content_version_id,j.blog_id,b.language_code,b.url,v.title AS content_title,
-                j.status,j.publication_state,j.scheduled_at,j.schedule_timezone,j.block_reasons,
+                 j.status,j.publication_state,j.scheduled_at,j.schedule_timezone,j.block_reasons,
+                 d.status AS discard_status,
                 j.attempts,j.retry_count,j.last_error_category,j.updated_at,
                 j.adapter_type,j.simulation_only,j.live_stage,j.remote_post_id,j.publication_lane,
                 imported.import_id,imported.generation_method,
@@ -1521,6 +1628,7 @@ def list_publications(
                 ,(SELECT count(*) FROM live_publication_attempts la WHERE la.job_id=j.id) AS live_attempt_count
             FROM publishing_jobs j JOIN blogger_blogs b ON b.id=j.blog_id
             LEFT JOIN content_versions v ON v.id=j.content_version_id
+             LEFT JOIN manuscript_discards d ON d.group_id=v.group_id AND d.blog_id=j.blog_id
             LEFT JOIN LATERAL (SELECT i.id AS import_id,i.generation_method
               FROM external_content_import_content_links l JOIN external_content_imports i ON i.id=l.import_id
               WHERE l.content_version_id=j.content_version_id ORDER BY i.received_at DESC,i.id DESC LIMIT 1
@@ -1531,10 +1639,10 @@ def list_publications(
         ).fetchall()
         attempts = conn.execute(
             "SELECT id,job_id,scenario,outcome,fake_post_id,result,created_at FROM publication_attempts ORDER BY created_at DESC LIMIT 50"
-        ).fetchall()
+        ).fetchall() if not compact else []
         live_attempt_relation = conn.execute(
             "SELECT to_regclass('public.live_publication_attempts') AS name"
-        ).fetchone()
+        ).fetchone() if not compact else None
         live_attempt_relation_name = live_attempt_relation["name"] if live_attempt_relation else None
         live_attempts = conn.execute(
             """SELECT id,job_id,attempt_no,operation,outcome,remote_post_id,http_status,error_category,created_at
@@ -1562,10 +1670,14 @@ def list_publications(
         if published_total is None:
             raise HTTPException(503, "Published count is unavailable")
         latest_candidates: list[dict[str, Any]] = []
-        seen_bodies: dict[tuple[str, str], list[tuple[str, str, str]]] = {}
+        seen_bodies = PublicationDuplicateIndex()
         duplicate_suppressed = 0
+        discarded_candidate_count = 0
         for raw_candidate in rows:
             candidate = dict(raw_candidate)
+            if candidate.get("discard_status") == "discarded":
+                discarded_candidate_count += 1
+                continue
             if candidate.get('active_job_id'):
                 candidate['pending_operational_state'] = pending_state(candidate.get('active_job_lane'), candidate.get('approval_at'), pause_cutoff, manual_permitted)
             candidate["id"] = str(candidate["content_version_id"])
@@ -1574,16 +1686,9 @@ def list_publications(
             candidate["blog_id"] = str(candidate["blog_uuid"])
             body = str(candidate.pop("body", ""))
             candidate["body_sha256"] = _body_digest(body)
-            body_scope = (candidate["blog_id"], candidate["language_code"])
-            scoped_seen = seen_bodies.setdefault(body_scope, [])
-            if any(
-                (bool(body) and digest == candidate["body_sha256"])
-                or same_manuscript_content(candidate["title"], body, prior_title, prior_body)
-                for digest, prior_title, prior_body in scoped_seen
-            ):
+            if not seen_bodies.add(candidate["blog_id"], candidate["language_code"], candidate["title"], body):
                 duplicate_suppressed += 1
                 continue
-            scoped_seen.append((candidate["body_sha256"], str(candidate["title"]), body))
             candidate["version_language"] = candidate["language_code"]
             candidate["blog_language"] = candidate["language_code"]
             candidate["blog_id_value"] = candidate["blogger_blog_id"]
@@ -1637,7 +1742,7 @@ def list_publications(
             WHERE r.remote_status='LIVE' AND r.remote_verified_at IS NOT NULL
             ORDER BY r.published_at DESC,r.id DESC"""
         ).fetchall()]
-        held_jobs = [dict(row) for row in jobs if (row["status"] in {"blocked", "failed", "uncertain"}
+        held_jobs = [dict(row) for row in jobs if row.get("discard_status") != "discarded" and (row["status"] in {"blocked", "failed", "uncertain"}
                      or row["publication_state"] in {"quality_held", "publication_blocked", "publication_failed"}) and not row["resolved_by_live"]]
 
         paused_items: list[dict[str, Any]] = []
@@ -1719,6 +1824,7 @@ def list_publications(
             )
             SELECT e.id,e.event_type,e.payload,i.generation_method,i.language_code,
               current_v.title,b.id AS blog_record_id,b.display_name AS blog_name,b.url,
+              d.status AS discard_status,
               current_v.id AS content_version_id,v.id AS failure_content_version_id,
               (SELECT COALESCE(max(j.retry_count),0)::int FROM publishing_jobs j
                WHERE j.content_version_id=v.id AND j.blog_id=b.id) AS retry_count
@@ -1729,6 +1835,7 @@ def list_publications(
               WHERE cl.import_id=i.id AND cv.localization_id IS NOT DISTINCT FROM v.localization_id
               ORDER BY cv.version DESC,cv.created_at DESC,cv.id DESC LIMIT 1) current_v ON true
             LEFT JOIN blogger_blogs b ON b.id=NULLIF(e.payload->>'blog_record_id','')::uuid
+            LEFT JOIN manuscript_discards d ON d.group_id=v.group_id AND d.blog_id=b.id
             WHERE e.event_type='publication.auto_failure.recorded'
               AND NOT EXISTS (SELECT 1 FROM publishing_jobs j
                 JOIN external_content_import_content_links l
@@ -1741,6 +1848,8 @@ def list_publications(
         ).fetchall()
         for row in failure_events:
             failure = dict(row)
+            if failure.get("discard_status") == "discarded":
+                continue
             key = (str(failure.get("content_version_id")), str(failure.get("blog_record_id")))
             if any((item.get("content_version_id"), item.get("blog_id")) == key for item in auto_failure_items):
                 continue
@@ -1762,22 +1871,71 @@ def list_publications(
                 "import_id": payload.get("import_id"), "job_id": payload.get("job_id"),
             })
 
+        discarded_rows = conn.execute(
+            """SELECT d.id,d.group_id,d.blog_id,d.previous_view,d.reason,d.actor,d.discarded_at,
+              v.id AS content_version_id,v.title,b.display_name AS blog_name,b.url,l.language_code,
+              imported.id AS import_id,imported.generation_method
+            FROM manuscript_discards d JOIN content_versions original ON original.id=d.content_version_id
+            JOIN content_localizations l ON l.id=original.localization_id
+            JOIN blogger_blogs b ON b.id=d.blog_id
+            JOIN LATERAL (SELECT id,title FROM content_versions cv WHERE cv.group_id=d.group_id
+              AND cv.localization_id=original.localization_id ORDER BY version DESC,created_at DESC,id DESC LIMIT 1) v ON true
+            LEFT JOIN LATERAL (SELECT i.id,i.generation_method FROM external_content_import_content_links link
+              JOIN external_content_imports i ON i.id=link.import_id WHERE link.content_version_id=original.id
+              ORDER BY i.received_at DESC,i.id DESC LIMIT 1) imported ON true
+            WHERE d.status='discarded' ORDER BY d.discarded_at DESC,d.id DESC"""
+        ).fetchall()
+        discarded_items = [{
+            "item_type": "discarded", "id": str(row["id"]),
+            "group_id": str(row["group_id"]), "content_version_id": str(row["content_version_id"]),
+            "title": row["title"], "blog_id": str(row["blog_id"]), "blog_name": row["blog_name"],
+            "url": row["url"], "language_code": row["language_code"], "status": "discarded",
+            "previous_view": row["previous_view"], "discard_reason": row["reason"],
+            "discard_actor": row["actor"], "discarded_at": row["discarded_at"],
+            "created_at": row["discarded_at"], "topic": row["title"],
+            "import_id": str(row["import_id"]) if row["import_id"] else None,
+            "generation_method": row["generation_method"],
+        } for row in discarded_rows]
         all_views = {
             "queue": queue_items,
             "review": review_items,
             "published": published_items,
             "held": held_items,
             "auto_failure": auto_failure_items,
+            "discarded": discarded_items,
         }
         summary = {
             "queue": len(queue_items), "review": len(review_items),
             "published": len(published_items), "held": len(held_items),
             "auto_failure": len(auto_failure_items),
+            "discarded": len(discarded_items),
             "latest_manuscripts": len(latest_candidates),
             "duplicate_suppressed": duplicate_suppressed,
-            "excluded_non_operational": max(0, int(raw_latest_count) - len(latest_candidates) - duplicate_suppressed),
+            "excluded_non_operational": max(0, int(raw_latest_count) - len(latest_candidates) - duplicate_suppressed - discarded_candidate_count),
         }
         query = q.strip().casefold()
+        from . import publication_origin
+
+        origin_keys = list({
+            (str(item.get("published_content_version_id") or item.get("failure_content_version_id") or item.get("content_version_id") or ""),
+             str(item.get("blog_id") or ""))
+            for view_items in all_views.values() for item in view_items
+            if item.get("blog_id") and (item.get("content_version_id") or item.get("failure_content_version_id"))
+        })
+        origin_cache = publication_origin.classify_display_many(conn, origin_keys)
+
+        def attach_origin(item: dict[str, Any]) -> dict[str, Any]:
+            version = str(item.get("published_content_version_id") or item.get("failure_content_version_id") or item.get("content_version_id") or "")
+            blog = str(item.get("blog_id") or "")
+            key = (version, blog)
+            result = origin_cache.get(key, {"kind": "unknown", "reason": "origin_identity_invalid"})
+            item["origin_kind"] = result["kind"]
+            item["origin_reason"] = result.get("reason")
+            for field in ("automation_id", "scheduled_slot", "occurrence_id", "authoring_job_id", "trend_request_id"):
+                if result.get(field):
+                    item[field] = str(result[field])
+            return result
+
         for name, view_items in all_views.items():
             filtered = [item for item in view_items if
                 (not language_code or item.get('language_code') == language_code)
@@ -1785,6 +1943,8 @@ def list_publications(
                 and (not query or query in " ".join(str(item.get(key) or "") for key in (
                     'title','topic','published_title','source_names','remote_post_id','content_version_id','id'
                 )).casefold())]
+            if origin:
+                filtered = [item for item in filtered if attach_origin(item)["kind"] == origin]
             all_views[name] = filtered
             summary[name] = len(filtered)
         selected = all_views[view]
@@ -1793,8 +1953,10 @@ def list_publications(
         page = min(page, page_count)
         start = (page - 1) * page_size
         items = selected[start:start + page_size]
+        for item in items:
+            attach_origin(item)
         return {
-            "candidates": [dict(row) for row in latest_candidates],
+            "candidates": [] if compact else [dict(row) for row in latest_candidates],
             "items": [dict(row) for row in items],
             "view": view,
             "summary": summary,
@@ -1802,7 +1964,7 @@ def list_publications(
             "page": page,
             "page_size": page_size,
             "page_count": page_count,
-            "jobs": [dict(row) for row in jobs],
+            "jobs": [] if compact else [dict(row) for row in jobs],
             "simulations": [dict(row) for row in attempts],
             "live_attempts": [dict(row) for row in live_attempts],
             "worker": dict(worker) if worker else None,
@@ -2042,6 +2204,8 @@ def resolve_post_publication_review_item(review_id: UUID, item_id: UUID) -> dict
 @router.post("/requests", status_code=201)
 def create_request(request: RequestInput) -> dict[str, Any]:
     with connection() as conn:
+        if publication_discards.discarded(conn, request.content_version_id, request.blog_id):
+            raise HTTPException(409, "Discarded manuscript cannot be queued")
         row = _candidate(conn, request.content_version_id, request.blog_id)
         if row is None:
             raise HTTPException(404, "Content version or registered blog not found")
@@ -2143,6 +2307,8 @@ def create_request(request: RequestInput) -> dict[str, Any]:
 def create_live_request(request: RequestInput) -> dict[str, Any]:
     """Queue a real Blogger workflow only after exact content and operations gates pass."""
     with connection() as conn:
+        if publication_discards.discarded(conn, request.content_version_id, request.blog_id):
+            raise HTTPException(409, "Discarded manuscript cannot be published")
         migration = conn.execute(
             "SELECT to_regclass('public.live_publication_attempts') AS ready"
         ).fetchone()
