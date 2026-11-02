@@ -17,6 +17,7 @@
 - Draft/LIVE 및 대상 Blogger를 독립적으로 저장한다. 전체 자동 발행이 ON인 상태의 변경도 확인 절차를 거치며, LIVE 선택은 별도 체크가 필요하다. 백엔드도 LIVE 전환과 대상 Blogger 유효성을 확인한다.
 - 예약 원고는 실제 Import/occurrence/receipt 기원 확인과 기존 `_scheduled_eligibility` 근거·권리·형식 검사를 사용한다. 일반 원고의 수동 승인 값을 사실 검증 통과로 바꾸지 않는다. 기존 P099 정적 평가, 최신 Content Version, HTML/중복 검사는 유지한다.
 - 신규 revision 기반 자동 발행 경로만 Worker에서 Job을 생성한다. 구형 예약 Import 전수 스캔을 일반 순회에서 제거해 과거 Job 및 Import 재활성화를 막는다. 기존 예약 정책 이벤트는 별도 정확한 Blogger 범위 승인으로 유지한다.
+- 운영 반영 전 검토에서 신규 경로의 예약 정책 일일 한도 누락을 확인했다. 기존 KST 일일 한도를 신규 Job 생성에도 적용하고, 한도 도달 시 감사 차단 사유를 남긴다. 이는 한 Blogger에서 하루에 발행할 수 있는 예약 원고 수를 제한한다.
 
 ## 운영 사전 확인 및 백업
 
@@ -33,7 +34,7 @@
 
 ## 검증 체크포인트
 
-- 격리 DB의 변경 범위 74 tests passed: 설정/기원/예약 근거 검사. Ruff 및 세 모듈 strict mypy 통과.
+- 격리 DB의 변경 범위 75 tests passed: 설정/기원/예약 근거/일일 한도 검사. Ruff 및 세 모듈 strict mypy 통과.
 - Dashboard ESLint, TypeScript, 독립 Production Build `.next-p5-p106-final` 통과.
 - Mock API Playwright 데스크톱 1440px·모바일 390px 각 2개, 총 4건 통과: 전체 스위치, 모달, LIVE 이중 확인, Draft/LIVE 저장, 저장 실패 유지/재시도, 새로고침 revision, 가로 넘침 없음. 다크 테마 이미지 저장. 실제 Blogger 쓰기 0건.
 - 옛 `test_publications.py`/`test_blogger_live_policy.py`의 선택 실행 3건은 구형 fixture가 현행 수동/자동 wire guard를 구성하지 않아 실패했다. P104 기준선에 이미 존재하던 실패이며, 제품의 발행 차단을 약화시켜 맞추지 않았다. 같은 실행의 다른 8건은 통과했다. 운영 반영 전 신규 경로의 Mock 검증은 별도로 유지한다.

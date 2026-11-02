@@ -223,6 +223,22 @@ def test_manual_worker_does_not_requeue_legacy_scheduled_imports(center, monkeyp
     assert publication_worker.tick(allow_manual_confirmed_publications=True) is None
 
 
+def test_new_scheduled_lane_preserves_existing_kst_daily_ceiling(center):
+    from psycopg.types.json import Jsonb
+
+    conn, _, _ = center
+    job, blog, _ = make_job(center, lane="scheduled_auto")
+    conn.execute(
+        """INSERT INTO scheduled_publication_policy_events
+        (action,approved_blog_ids,daily_limit,actor_label,reason,idempotency_key)
+        VALUES('enabled',%s,1,'isolated admin','Isolated scheduled daily ceiling check',%s)""",
+        (Jsonb([str(blog)]), uuid4().hex),
+    )
+    assert not automation_auto.scheduled_daily_available(conn, blog)
+    conn.execute("UPDATE publishing_jobs SET status='blocked' WHERE id=%s", (job,))
+    assert automation_auto.scheduled_daily_available(conn, blog)
+
+
 def make_job(center, lane="manual", mode="publish", method=None):
     conn, api, h = center
     from woori.editorial_taxonomy import suggested_labels

@@ -103,6 +103,24 @@ def readiness(
     return dict(row), snapshot, sorted(set(reasons))
 
 
+def scheduled_daily_available(conn: Any, blog_id: UUID) -> bool:
+    """Use the existing scoped Scheduled Auto KST daily ceiling."""
+    policy = conn.execute(
+        """SELECT action,daily_limit FROM scheduled_publication_policy_events
+        ORDER BY id DESC LIMIT 1"""
+    ).fetchone()
+    daily = conn.execute(
+        """SELECT count(*)::int AS n FROM publishing_jobs
+        WHERE publication_lane='scheduled_auto' AND blog_id=%s
+          AND status IN ('queued','running','uncertain','succeeded')
+          AND scheduled_at >= date_trunc('day',now() AT TIME ZONE 'Asia/Seoul')
+            AT TIME ZONE 'Asia/Seoul'""",
+        (blog_id,),
+    ).fetchone()
+    return bool(policy and policy["action"] == "enabled" and daily is not None
+                and int(daily["n"]) < int(policy["daily_limit"]))
+
+
 def enqueue(conn: Any, state: dict[str, Any]) -> int:
     if (
         not state["auto_publishing_enabled"]
@@ -142,6 +160,14 @@ def enqueue(conn: Any, state: dict[str, Any]) -> int:
         if not decision["allowed"]:
             publication_origin.record_block(
                 conn, item["id"], item["blog_id"], state["revision"], decision, "enqueue"
+            )
+            continue
+        # Preserve the scoped Scheduled Auto daily ceiling in the new lane.
+        if origin["kind"] == "scheduled" and not scheduled_daily_available(conn, item["blog_id"]):
+            publication_origin.record_block(
+                conn, item["id"], item["blog_id"], state["revision"],
+                {"allowed": False, "reasons": ["scheduled_daily_publication_limit_or_policy_unavailable"], "origin": "scheduled"},
+                "enqueue",
             )
             continue
         row, _snapshot, reasons = readiness(conn, item["id"], item["blog_id"])
