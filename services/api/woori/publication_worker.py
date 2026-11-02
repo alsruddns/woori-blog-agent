@@ -973,6 +973,7 @@ def process_next_live_job(
                     "blogger_draft_create" if draft_mode else "blogger_public_publish"
                 )
         elif lane == "manual":
+            assert snapshot is not None
             publish_operation_approved = bool(
                 manual_approval
                 and manual_approval["job_id"] == job_id

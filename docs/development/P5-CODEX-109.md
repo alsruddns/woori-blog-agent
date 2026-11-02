@@ -68,6 +68,7 @@ Worker의 새 revision-bound claim은 Automation grant가 필요하다. 기존 T
 - 추가 통합 테스트: `test_publication_interval.py`, `test_blogger_live_policy.py`, `test_automation_controls.py`, `test_publication_origin_controls.py`를 포함한 전체 변경 범위 — 168 passed.
 - Ruff: 변경 Python 및 테스트 파일 6개 통과.
 - Python compile: 변경 런타임 모듈 2개 통과.
+- 서비스 반영 사전 검증에서 mypy가 optional snapshot narrowing 문제를 처음 발견했다. manual lane의 snapshot 비어있지 않음을 명시적으로 검사하도록 보강했고, Ruff·mypy·py_compile 재실행은 통과했다. 첫 사전 검증은 서비스 정지 전에 종료되어 운영 PID에는 영향이 없었다.
 - Mock 통합 테스트: Trends 정책 이벤트 저장을 writer context 없이 허용하되, 자동 Job에는 현재 epoch grant를 생성하고, LIVE/DRAFT 상태를 분리 확인.
 - Mock 중복 테스트: manual/scheduled/Trends 모두 자신의 원격 postId만 제외하는 매개변수 검사.
 - 브라우저 1440px/390px: P109 Dashboard UI 변경 없음. 실브라우저 UI 작업/검증은 해당 없음.
