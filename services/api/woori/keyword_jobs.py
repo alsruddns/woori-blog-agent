@@ -557,9 +557,9 @@ def import_pending(*,transport:httpx.BaseTransport|None=None,api_url:str='http:/
                         'system:trend-codex',evidence={'authoring_job_id':str(job['id']),'error_code':code})
 
 
-def tick() -> None:
+def tick(*, import_results:bool=True) -> None:
     global _thread
-    import_pending()
+    if import_results:import_pending()
     if _thread is None or not _thread.is_alive():
         _stop.clear();_thread=threading.Thread(target=run_one,name='codex-authoring',daemon=True);_thread.start()
 

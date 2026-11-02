@@ -31,6 +31,12 @@ class QueryAlias(BaseModel):
     reason: str = Field(min_length=10, max_length=1000)
 
 
+@router.get("/pipeline")
+def pipeline_status() -> dict[str, Any]:
+    from .research_stages import snapshot
+    return snapshot()
+
+
 @router.get("/aliases")
 def query_aliases() -> dict[str, Any]:
     with connection() as conn:
@@ -516,12 +522,15 @@ def rank_candidates(
         ORDER BY v.created_at DESC LIMIT 2000""",
         (blog_id,),
     ).fetchall()
+    # One cache lookup per country batch, not one query per candidate. The
+    # immutable settings revision is independent of the scoring engine version.
+    cached_scores = {str(r["observation_id"]): r for r in conn.execute(
+        """SELECT observation_id,result FROM editorial_topic_scores WHERE observation_id=ANY(%s::uuid[])
+        AND blog_id=%s AND engine_version=%s AND settings_id=%s""",
+        ([r["observation_id"] for r in rows],blog_id,scoring.VERSION,config["id"])).fetchall()}
     ranked = []
     for row in rows:
-        cached = conn.execute(
-            "SELECT result FROM editorial_topic_scores WHERE observation_id=%s AND blog_id=%s AND engine_version=%s",
-            (row["observation_id"], blog_id, scoring.VERSION),
-        ).fetchone()
+        cached = cached_scores.get(str(row["observation_id"]))
         if cached:
             result = cached["result"]
         else:

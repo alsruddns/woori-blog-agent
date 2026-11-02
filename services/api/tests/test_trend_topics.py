@@ -25,10 +25,11 @@ def test_repeated_slots_compare_query_once_and_preserve_observation_pairs(monkey
             for query in ('same event', 'unrelated query')]
     class Sink:
         def __init__(self): self.proposals = []
-        def execute(self, sql, params):
-            self.proposals.append(params)
-            return self
-        def fetchone(self): return {'id': uuid4()}
+        def cursor(self):return self
+        def __enter__(self):return self
+        def __exit__(self,*args):pass
+        def executemany(self,sql,params):
+            self.proposals.extend(params);self.rowcount=len(params)
     sink = Sink()
     assert topics._propose_cross_geo_pairs(sink, rows) == 18
     assert len(comparisons) == 4

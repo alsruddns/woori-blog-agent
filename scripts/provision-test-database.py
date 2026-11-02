@@ -71,6 +71,7 @@ MIGRATIONS = [ROOT / "scripts" / f"{i:03d}_{name}.sql" for i, name in [
     (76, "editorial_intelligence"),
     (77, "automation_controls"),
     (78, "origin_publication_controls"),
+    (79, "research_stage_isolation"),
 ]]
 
 

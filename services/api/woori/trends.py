@@ -6,6 +6,7 @@ import hashlib
 import re
 import time
 import xml.etree.ElementTree as ET
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from email.utils import parsedate_to_datetime
@@ -33,6 +34,7 @@ SCHEDULE_TIMEZONE = ZoneInfo("Asia/Seoul")
 SCHEDULE_START_WINDOW = timedelta(minutes=5)
 MAX_ATTEMPTS_PER_GEO_HOUR = 2
 RETRYABLE_FAILURES = {
+    "trend_feed_wall_timeout",
     "trend_feed_network_error", "trend_feed_response_limit", "http_500", "http_502",
     "http_503", "http_504",
 }
@@ -215,11 +217,12 @@ def collect_geo(geo: str, *, slot_at: datetime | None = None) -> dict[str, Any]:
         locked=guard.execute("SELECT pg_try_advisory_lock(hashtextextended('trend-slot-collection',0)) acquired").fetchone()
         if not locked or not locked['acquired']:return {'status':'busy','geo':geo,'item_count':0}
         try:
-            existing=guard.execute("SELECT run_id,result FROM trend_collection_slots WHERE geo=%s AND slot_at=%s AND result->>'status'='succeeded'",(geo,bucket)).fetchone()
-            if existing:return {'status':'already_collected','geo':geo,'run_id':str(existing['run_id']),'item_count':existing['result'].get('item_count',0),'new_items':0}
+            existing=guard.execute("SELECT run_id,result FROM trend_collection_slots WHERE geo=%s AND slot_at=%s",(geo,bucket)).fetchone()
+            if existing and existing['result'].get('status')=='succeeded':return {'status':'already_collected','geo':geo,'run_id':str(existing['run_id']),'item_count':existing['result'].get('item_count',0),'new_items':0}
             if config['backoff_until'] and config['backoff_until']>datetime.now(UTC):
                 return {'status':'blocked','geo':geo,'item_count':0,'failure_category':'provider_backoff'}
             result=_collect_geo(geo)
+            result['attempt_number']=int(existing['result'].get('attempt_number',1))+1 if existing else 1
             if result.get('http_status') in (403,429) or result.get('failure_category')=='provider_quota_or_rate_limit':
                 guard.execute("UPDATE trend_collection_settings SET backoff_until=now()+interval '1 hour' WHERE id=1")
                 guard.execute("INSERT INTO audit_events(event_type,payload) VALUES('trend.collection.provider_backoff',%s)",
@@ -280,7 +283,11 @@ def _collect_geo(geo: str) -> dict[str, Any]:
                 )
             blocks: list[bytes] = []
             size = 0
-            for block in response.iter_bytes(65536):
+            # Yield received chunks immediately so trickle responses cannot
+            # hide behind a 64KiB buffer and reset the per-read timeout forever.
+            for block in response.iter_bytes():
+                if time.monotonic()-started>30:
+                    return _save_failure(run_id,geo,"failed","trend_feed_wall_timeout",http_status)
                 size += len(block)
                 if size > MAX_RESPONSE_BYTES or time.monotonic() - started > 20:
                     return _save_failure(
@@ -646,7 +653,8 @@ def legacy_schedule_tick(now: datetime | None = None) -> dict[str, Any]:
             )
 
 
-def schedule_tick(now: datetime | None = None) -> dict[str, Any]:
+def schedule_tick(now: datetime | None = None, *, on_progress:Callable[[int],None]|None=None,
+                  should_stop:Callable[[],bool]|None=None) -> dict[str, Any]:
     """Collect all eleven geographies once per configured KST slot, serially."""
     current=now or datetime.now(UTC)
     if current.tzinfo is None:raise ValueError('scheduler_time_must_be_timezone_aware')
@@ -659,16 +667,21 @@ def schedule_tick(now: datetime | None = None) -> dict[str, Any]:
         locked=guard.execute('SELECT pg_try_advisory_lock(hashtextextended(%s,0)) acquired',(SCHEDULER_LOCK,)).fetchone()
         if not locked or not locked['acquired']:return {'status':'busy','external_calls':0}
         try:
-            existing=guard.execute('SELECT geo,result FROM trend_collection_slots WHERE slot_at=%s',(bucket,)).fetchall()
-            attempted={row['geo'] for row in existing}
+            existing=guard.execute('SELECT geo,result,updated_at FROM trend_collection_slots WHERE slot_at=%s',(bucket,)).fetchall()
+            attempted={row['geo'] for row in existing if not (
+                row['result'].get('status')=='failed' and
+                (row['result'].get('failure_category') in RETRYABLE_FAILURES or row['result'].get('http_status') in {500,502,503,504}) and
+                int(row['result'].get('attempt_number',1))<2 and current-row['updated_at']>=timedelta(seconds=60))}
             if len(attempted)>=len(ALLOWED_GEOS):
                 return {'status':'slot_complete','slot_at':bucket.isoformat(),'external_calls':0}
             guard.execute("INSERT INTO audit_events(event_type,payload) VALUES('trend.sweep.started',%s)",
                 (Jsonb({'slot_at':bucket.isoformat(),'interval_minutes':config['interval_minutes']}),))
             results=[]
             for geo in sorted(ALLOWED_GEOS-attempted):
+                if should_stop and should_stop():break
                 if now is None and configured_slot(datetime.now(UTC),config)!=bucket:break
                 result=collect_geo(geo,slot_at=bucket);results.append(result)
+                if on_progress:on_progress(len(attempted)+len(results))
                 if result.get('status')=='blocked' and result.get('failure_category') in {
                     'provider_backoff','provider_quota_or_rate_limit','external_policy_blocked'}:break
             successes=sum(r.get('status')=='succeeded' for r in results)

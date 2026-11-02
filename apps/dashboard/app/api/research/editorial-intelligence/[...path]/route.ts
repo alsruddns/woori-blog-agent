@@ -6,7 +6,7 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
   if (!process.env.ADMIN_TOKEN) return NextResponse.json({ error: "API unavailable" }, { status: 503 });
   const { path } = await context.params;
   const route = path.join("/");
-  const allowed = request.method === "GET" ? /^(aliases|settings|topics|monitor|versions\/[0-9a-f-]{36}|imports\/[0-9a-f-]{36}\/compare)$/.test(route)
+  const allowed = request.method === "GET" ? /^(aliases|settings|topics|monitor|pipeline|versions\/[0-9a-f-]{36}|imports\/[0-9a-f-]{36}\/compare)$/.test(route)
     : request.method === "PUT" ? route === "settings"
     : request.method === "POST" && /^(aliases|assess-current|imports\/[0-9a-f-]{36}\/(evaluate|deep-review)|reports\/[0-9a-f-]{36}\/(suggestions|recheck))$/.test(route);
   if (!allowed) return NextResponse.json({ error: "Unsupported operation" }, { status: 404 });

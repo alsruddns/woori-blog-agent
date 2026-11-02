@@ -355,8 +355,14 @@ def main() -> None:
     def intake_loop() -> None:
         while not stop.is_set():
             try:
-                intake=scheduled_import_intake_tick()
-                if intake['processed_count']:
+                from . import research_stages
+                def poll_inbox(job:object) -> dict[str,object]:
+                    result=scheduled_import_intake_tick()
+                    research_stages.progress(job,'scheduled_inbox_polled',int(result['processed_count']))
+                    return result
+                outcome=research_stages.execute('research_import','scheduled:'+datetime.now(UTC).strftime('%Y%m%dT%H%M'),poll_inbox)
+                intake=outcome.get('result',{'processed_count':0})
+                if intake.get('processed_count',0):
                     result_value=intake.get('results',[])
                     values=result_value if isinstance(result_value,list) else []
                     counts=Counter(item['status'] for item in values if isinstance(item,dict))
@@ -365,9 +371,27 @@ def main() -> None:
                 print('Scheduled intake unavailable; files preserved for the next poll.',flush=True)
             stop.wait(SCHEDULED_IMPORT_POLL_SECONDS)
     intake_thread = None
+    stage_threads: list[threading.Thread] = []
     if not evaluation_mode and not args.diagnostic_only:
         intake_thread=threading.Thread(target=intake_loop,name='scheduled-import-intake',daemon=False)
         intake_thread.start()
+        from . import research_stages
+        def import_results() -> None:
+            # Existing keyword Import retry/idempotency, separate from CLI launch.
+            def poll_codex(job:object) -> dict[str,object]:
+                keyword_jobs.import_pending()
+                research_stages.progress(job,'codex_import_polled')
+                return {'poll_completed':True}
+            research_stages.execute('research_import','codex:'+datetime.now(UTC).strftime('%Y%m%dT%H%M'),poll_codex)
+        for name,operation,interval in (
+            ('trends_collection',lambda:research_stages.collection_tick(stop.is_set),15),
+            ('topic_evaluation',lambda:research_stages.evaluation_tick(stop.is_set),5),
+            ('authoring_admission',lambda:keyword_jobs.tick(import_results=False),5),
+            ('codex_import',import_results,15),
+        ):
+            thread=threading.Thread(target=research_stages.lane_loop,args=(name,stop,operation,interval),
+                name='research-'+name,daemon=False)
+            stage_threads.append(thread);thread.start()
     try:
         while not stop.is_set():
             if consume_worker_stop_request(service_name=service_name):
@@ -382,19 +406,14 @@ def main() -> None:
                 elif args.diagnostic_only:
                     tick()
                 else:
-                    # Exact-query topic grouping and evidence scoring are local-only;
-                    # it never creates a manuscript or publication by itself.
-                    from .automation_controls import allowed
-                    collect_trends_and_build_topics(lambda: stop.is_set() or _stop_request_path(os.getpid()).exists() or not allowed('trends_collection_enabled'))
-                    trend_editorial.expire_pending()
-                    trend_editorial.queue_selected()
-                    trend_editorial.dispatch()
+                    # Collection, current-slot scoring, CLI launch and Import are
+                    # isolated lanes. Historical 168h all-pairs maintenance is
+                    # retained for diagnostics and never runs on this live loop.
                     collection.schedule_tick()
                     collection.tick()
                     pipeline.schedule_tick()
                     pipeline.tick(evaluation_only=False)
                     tick()
-                    keyword_jobs.tick()
             except topics.TopicMaintenancePaused:
                 print("Derived topic maintenance paused at a rollback-safe checkpoint.",flush=True)
             except psycopg.Error:
@@ -412,8 +431,9 @@ def main() -> None:
                 break
             stop.wait(5)
     finally:
-        keyword_jobs.shutdown()
         stop.set()
+        for stage_thread in stage_threads:stage_thread.join()
+        keyword_jobs.shutdown()
         if intake_thread is not None:intake_thread.join()
         heartbeat_thread.join(timeout=2)
         try:

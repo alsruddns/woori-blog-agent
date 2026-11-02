@@ -176,8 +176,9 @@ def reconcile(limit: int = 200) -> dict[str,int]:
                 '이전 회차의 미처리 후보가 만료되었습니다. 원본 관측과 이력은 보존합니다.',
                 'system:trend-slot',category=item['category'],evidence={'current_slot':slot.isoformat()})
         rows=conn.execute('''SELECT o.* FROM trend_observations o
-            WHERE NOT EXISTS(SELECT 1 FROM trend_topic_memberships m WHERE m.observation_id=o.id)
-            ORDER BY collected_at DESC,id LIMIT %s''',(limit,)).fetchall()
+            WHERE EXISTS(SELECT 1 FROM trend_collection_slots s WHERE s.run_id=o.run_id AND s.geo=o.geo AND s.slot_at=%s)
+            AND NOT EXISTS(SELECT 1 FROM trend_topic_memberships m WHERE m.observation_id=o.id)
+            ORDER BY collected_at DESC,id LIMIT %s''',(slot,limit)).fetchall()
         for row in rows:
             key=topics.normalize_query(row['query'])
             if not key:continue

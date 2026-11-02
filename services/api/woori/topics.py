@@ -149,51 +149,50 @@ class TopicMaintenancePaused(RuntimeError):
 
 
 def _propose_cross_geo_pairs(conn: Any, rows: list[dict[str, Any]], should_stop: Callable[[],bool] | None = None) -> int:
-    proposals = 0
-    compared = 0
-    by_geo: dict[str, list[dict[str, Any]]] = {}
-    normalized = {row['id']: normalize_query(row['query']) for row in rows}
-    # Repeated collection slots retain distinct observations. Compare their
-    # query text once, while preserving every original observation-pair proposal.
-    comparisons: dict[tuple[str, str], tuple[str, float, str] | None] = {}
+    """Historical diagnostic maintenance: compare text groups, batch exact pairs.
+
+    Every old observation pair and threshold keeps its original semantics. This
+    potentially large historical materialization is not on the live scheduler.
+    """
+    by_geo: dict[str,dict[str,list[dict[str,Any]]]]={}
     for row in rows:
-        by_geo.setdefault(row["geo"], []).append(row)
-    geos = sorted(by_geo)
-    for index, left_geo in enumerate(geos):
-        for right_geo in geos[index + 1 :]:
-            for left in by_geo[left_geo]:
-                lnorm = normalized[left['id']]
-                for right in by_geo[right_geo]:
-                    compared += 1
-                    if should_stop and compared % 1000 == 0 and should_stop():
-                        raise TopicMaintenancePaused('topic_maintenance_checkpoint')
-                    rnorm = normalized[right['id']]
-                    key = (lnorm, rnorm)
+        by_geo.setdefault(row['geo'],{}).setdefault(normalize_query(row['query']),[]).append(row)
+    proposals=0;compared=0;batch=[]
+    comparisons:dict[tuple[str,str],tuple[str,float,str]|None]={}
+    def flush() -> None:
+        nonlocal proposals
+        if not batch:return
+        if should_stop and should_stop():raise TopicMaintenancePaused('topic_maintenance_checkpoint')
+        with conn.cursor() as cursor:
+            cursor.executemany("""INSERT INTO trend_grouping_proposals(observation_a,observation_b,method,confidence,rationale)
+                VALUES(%s,%s,%s,%s,%s) ON CONFLICT(observation_a,observation_b,method) DO NOTHING""",batch)
+            proposals+=cursor.rowcount
+        batch.clear()
+    geos=sorted(by_geo)
+    for index,left_geo in enumerate(geos):
+        for right_geo in geos[index+1:]:
+            for lnorm,left_rows in by_geo[left_geo].items():
+                for rnorm,right_rows in by_geo[right_geo].items():
+                    compared+=1
+                    if should_stop and compared%1000==0 and should_stop():raise TopicMaintenancePaused('topic_maintenance_checkpoint')
+                    key=(lnorm,rnorm)
                     if key not in comparisons:
-                        ratio = SequenceMatcher(None, lnorm, rnorm).ratio()
-                        ltokens, rtokens = set(lnorm.split()), set(rnorm.split())
-                        shared = ltokens & rtokens
-                        jaccard = len(shared) / max(1, len(ltokens | rtokens))
-                        if lnorm == rnorm:
-                            comparisons[key] = ("same_query_cross_geo", 0.8,
-                                "Exact query text appears in different geographies; event identity is unverified.")
-                        elif shared and ratio >= 0.82 and jaccard >= 0.67:
-                            comparisons[key] = ("lexical_similarity", round(min(ratio, jaccard), 3),
-                                "Lexical overlap proposes review only; it does not establish the same event.")
-                        else:
-                            comparisons[key] = None
-                    match = comparisons[key]
-                    if match is None:
-                        continue
-                    method, confidence, rationale = match
-                    a, b = sorted((left["id"], right["id"]))
-                    inserted = conn.execute(
-                        """INSERT INTO trend_grouping_proposals(observation_a,observation_b,method,
-                        confidence,rationale) VALUES (%s,%s,%s,%s,%s)
-                        ON CONFLICT(observation_a,observation_b,method) DO NOTHING RETURNING id""",
-                        (a, b, method, confidence, rationale),
-                    ).fetchone()
-                    proposals += bool(inserted)
+                        ratio=SequenceMatcher(None,lnorm,rnorm).ratio()
+                        ltokens,rtokens=set(lnorm.split()),set(rnorm.split())
+                        jaccard=len(ltokens&rtokens)/max(1,len(ltokens|rtokens))
+                        if lnorm==rnorm:
+                            comparisons[key]=('same_query_cross_geo',0.8,'Exact query text appears in different geographies; event identity is unverified.')
+                        elif ltokens&rtokens and ratio>=0.82 and jaccard>=0.67:
+                            comparisons[key]=('lexical_similarity',round(min(ratio,jaccard),3),'Lexical overlap proposes review only; it does not establish the same event.')
+                        else:comparisons[key]=None
+                    match=comparisons[key]
+                    if match is None:continue
+                    for left in left_rows:
+                        for right in right_rows:
+                            a,b=sorted((left['id'],right['id']))
+                            batch.append((a,b,*match))
+                            if len(batch)>=1024:flush()
+    flush()
     return proposals
 
 

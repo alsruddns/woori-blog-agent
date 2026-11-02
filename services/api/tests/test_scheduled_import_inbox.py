@@ -624,16 +624,17 @@ def test_worker_inbox_tick_records_sanitized_file_outcome(monkeypatch: pytest.Mo
     statements: list[tuple[str, object]] = []
 
     class FakeResult:
-        def __init__(self, row: dict[str, bool]) -> None:
+        def __init__(self, row: dict[str, bool | int]) -> None:
             self.row = row
 
-        def fetchone(self) -> dict[str, bool]:
+        def fetchone(self) -> dict[str, bool | int]:
             return self.row
 
     class FakeConnection:
         def execute(self, query: str, params: object = None) -> FakeResult:
             statements.append((query, params))
-            row = {"acquired": True} if "pg_try_advisory_lock" in query else {"unlocked": True}
+            row:dict[str,bool|int] = ({"revision":1} if 'FROM automation_controls' in query
+                else {"acquired": True} if "pg_try_advisory_lock" in query else {"unlocked": True})
             return FakeResult(row)
 
     @contextmanager
@@ -662,7 +663,8 @@ def test_worker_inbox_tick_records_sanitized_file_outcome(monkeypatch: pytest.Mo
     result = worker.scheduled_import_intake_tick()
 
     assert result["processed_count"] == 1
-    assert len(statements) == 3
+    assert len(statements) == 5
+    assert any('INSERT INTO automation_runtime_ack' in query for query,_ in statements)
     query, params = statements[-1]
     assert "scheduled_import.file_outcome" in query
     payload = params[0].obj

@@ -1,3 +1,10 @@
+## P5-CODEX-105 isolated research stages (2026-11-02)
+
+- The live Research Worker runs collection, latest-slot P101 evaluation, Codex admission, and Import as isolated lanes. Never put historical 168h all-pairs maintenance, synchronous Codex execution, or deep quality review ahead of the next Trends collection.
+- Use persisted stage UUID/scope/engine/settings identity, progress and checkpoints. A fresh Worker heartbeat does not establish collection freshness or job progress. A slow job remains protected while its stage session lock is held; resume only after lock release. Never force-kill a process or terminate a PostgreSQL backend for recovery.
+- Current collection scope is provider-supplied regions/20-item cap; retain raw observations, country boundaries, latest-slot expiry, single Codex admission, zero-cost/outbound gates and immutable caches. Retry only transient failed regions once; do not replay successful/missed historical sweeps or quota errors.
+- Preserve all P104 settings: collection/authoring/manual ON, master/Trends/scheduled automatic publication OFF, emergency OFF. Scheduled tasks still end at Import. No automatic Blogger writes or publishing authority comes from stage completion.
+
 ## P5-CODEX-104 origin-specific automatic publication controls (2026-11-02)
 
 - The persisted master automatic switch is a mandatory upper gate. Trends and scheduled source switches are independent and default OFF. This task leaves all three OFF; collection/automatic authoring/manual publishing stay ON and local emergency stop stays OFF. Never infer write permission or activate automatic publishing from an API restriction report.

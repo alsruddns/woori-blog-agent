@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from datetime import datetime
+from functools import lru_cache
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -30,6 +31,7 @@ class Weights(BaseModel):
         return self
 
 
+@lru_cache(maxsize=8192)
 def normalize(query: str) -> str:
     # NFKC handles width and compatibility kana; dates and script stay intact.
     # Ambiguous transliterations, simplified/traditional characters and entity
