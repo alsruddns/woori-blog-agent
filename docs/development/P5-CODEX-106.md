@@ -37,6 +37,7 @@
 - 격리 DB의 변경 범위 75 tests passed: 설정/기원/예약 근거/일일 한도 검사. Ruff 및 세 모듈 strict mypy 통과.
 - Dashboard ESLint, TypeScript, 독립 Production Build `.next-p5-p106-final` 통과.
 - Mock API Playwright 데스크톱 1440px·모바일 390px 각 2개, 총 4건 통과: 전체 스위치, 모달, LIVE 이중 확인, Draft/LIVE 저장, 저장 실패 유지/재시도, 새로고침 revision, 가로 넘침 없음. 다크 테마 이미지 저장. 실제 Blogger 쓰기 0건.
+- 운영 read-only Playwright 1440px·390px **2건 통과**, 18:10 주기 복원 뒤 동일 2건 재실행 통과. 따라서 고유 변경 범위 테스트는 Python 75 + Mock UI 4 + 운영 UI 2 = **81건 통과**이며 운영 UI 재실행 2건은 중복 집계하지 않는다. 운영 테스트는 모든 비 GET Dashboard API 요청을 브라우저에서 차단했다.
 - 옛 `test_publications.py`/`test_blogger_live_policy.py`의 선택 실행 3건은 구형 fixture가 현행 수동/자동 wire guard를 구성하지 않아 실패했다. P104 기준선에 이미 존재하던 실패이며, 제품의 발행 차단을 약화시켜 맞추지 않았다. 같은 실행의 다른 8건은 통과했다. 운영 반영 전 신규 경로의 Mock 검증은 별도로 유지한다.
 
 ## 운영 반영 체크포인트
@@ -50,14 +51,23 @@
 - 순서대로 revision 10에서 LIVE 방식과 정확한 Blogger 범위를 저장(전체 OFF), revision 11에서 예약 경로 ON·Trends 경로 OFF를 저장(전체 OFF), revision 12에서 전체 자동 발행을 마지막으로 ON 했다. 최종 활성화 시각은 **2026-11-02 17:36:58.959723 KST**다. revision 10/11/12 감사 이벤트는 각각 292504/292506/292524다. 설정은 PostgreSQL에 저장됐고 Research·Publication Worker 모두 revision **12**, `automation-controls/2`, 최신 heartbeat로 확인했다.
 - 최종값: Trends 수집 ON, Codex 자동 작성 ON, 전체 자동 발행 ON, Trends 경로 OFF, 예약 경로 ON, LIVE 방식, 수동 발행 ON, 긴급 정지 OFF, Blogger API 제한 로컬 플래그 OFF. 전체 ON은 예약 경로만 허용한다. 수동 키워드·unknown 원고 및 과거 원고는 신규 자동 승인 대상이 아니다.
 - 변경 전 스냅샷의 Publishing Job 38건, 게시 기록 18건, Blogger 쓰기 원장 58건을 재조회해 기존 행 변경 **0건**, 건수 증가 **0건**을 확인했다. 기존 15개 예약 TOML SHA-256은 변경 전후 동일했다. 운영 검증에서 Blogger POST/PATCH/PUT/DELETE 요청을 실행하지 않았다. 새로운 정상 예약 Import가 아직 발행 적격으로 완료되지 않아 **실제 LIVE 성공은 미검증**이다.
+- 활성화 직전 마지막 예약 Import는 17:36:57.166347 KST로 전체 자동 발행 시작보다 앞서며, 재발행 대상에서 제외된다. 활성화 뒤 Trends Import 2건은 17:43:08 및 17:44:10 KST에 정상 완료됐고 각각 P099 정적 품질 평가가 완료됐다. Trends 자동 발행은 OFF이므로 Publishing Job은 새로 생성되지 않았다. 이는 원고 작성·Import·평가가 자동 발행 제어와 독립적으로 계속 진행됨을 확인한 범위다.
 - 실제 Dashboard `/operations/automation`을 읽기 전용으로 1440px·390px 각각 확인했다. 7개 스위치의 최종값, LIVE 저장 방식, Blogger 4개 범위, 두 Worker revision 12 ACK, 가로 넘침 0, 브라우저 오류 0. 운영 이미지 `assets/P5-CODEX-106-live-{desktop,mobile}.png`. Playwright 운영 2건 통과; Mock 4건과 분리했다.
 
 ### 수집 주기 발견 및 복원 예약
 
 - P105 작업 중 2026-11-02 12:05 KST 감사 이벤트 288808에서 Trends 수집을 10분에서 60분으로 변경했다. DB에는 기본 `interval_minutes=10`이 남았지만 12:10부터 `pending_interval_minutes=60`이 실제 적용됐다. 따라서 12:10~17:10 수집이 매시 11개 지역씩 성공했으며, 이 구간을 10분 정상 수집이라고 보고하지 않는다. 정체나 제공자 429가 아니라 **운영 주기 설정**이 원인이다.
 - 사용자 지시의 10분 주기를 인증된 관리자 API로 다시 저장했다(감사 이벤트 **292543**). 기존 안전한 경계 규칙에 따라 18:10 KST부터 10분 주기로 복원 예약되며, 중간 누락 회차는 일괄 재실행하지 않는다. 감사 payload의 `before.interval_minutes`는 DB 기본 열 10을 나타내고, 실제 변경 직전 유효 주기는 `pending_interval_minutes=60`이었다. 이후 실제 두 회차는 최종 운영 검증에 따로 기록한다.
+- 18:10 KST 첫 복원 회차는 11/11 지역 성공, `trends_collection` stage `6df468af-b11a-411d-bb32-98e24e752f11` 완료(18:10:07~18:10:23 KST, **15,675ms**).
+- 첫 복원 회차 뒤 `topic_evaluation`도 별도 단계로 완료됐고 측정 처리 시간은 **1,938ms**였다. 18:12에 다시 실행한 읽기 전용 운영 Playwright 1440px/390px 두 건이 통과했으며 Dashboard는 실제 유효 수집 주기 **10분**, 나머지 7개 스위치와 Worker revision 12를 표시했다. 운영 증거 이미지는 해당 시각 화면으로 갱신했다.
+- 18:20 KST 두 번째 회차도 **11/11 지역 성공**, stage `b9fe4a08-0dae-49a3-8f33-cb89224a5d14` 완료(18:20:03~18:20:19 KST, **16,081ms**). 두 회차의 slot 간격은 정확히 10분이다. 운영 API의 유효 interval도 10분이며 Research PID 18928·Publication PID 32492의 revision 12 heartbeat가 18:20 이후 갱신됐다. Publishing Job 38건과 Blogger 쓰기 원장 58건은 계속 동일했다.
 
 ## 남은 문제
 
-- 실제 신규 예약 원고의 LIVE 성공은 향후 정상 예약 실행까지 미검증이다. 읽기 성공은 Blogger 쓰기 권한을 입증하지 않는다. 10분 주기의 18:10 이후 실제 회차와 새 예약 Import/발행은 별도 관찰이 필요하다.
-- 기존 레거시 fixture 선택 테스트 3건은 실패 상태로 남아 있다. Mock 신규 경로 및 운영 화면 검증과 구분한다. 최종 Git commit/push 및 원격 HEAD 확인이 남아 있다.
+- 실제 신규 예약 원고의 LIVE 성공은 향후 정상 예약 실행까지 미검증이다. 읽기 성공은 Blogger 쓰기 권한을 입증하지 않는다. 새 예약 Import/발행은 별도 관찰이 필요하다. 운영 서비스는 정상 실행 중이므로 설정 적용 뒤 불필요한 재시작은 하지 않았다. DB 영속 저장과 세 Worker 설정 재조회는 확인했지만 **설정 적용 후 프로세스 재시작 시험은 미실시**다.
+- 기존 레거시 fixture 선택 테스트 3건은 실패 상태로 남아 있다. Mock 신규 경로 및 운영 화면 검증과 구분한다. 실제 신규 예약 LIVE 성공·설정 적용 후 프로세스 재시작 시험은 위 이유로 미검증이다.
+
+## Git 체크포인트
+
+- 코드 수정 `071c30e`, 예약 일일 한도 보강 `3d1ee9e`, 운영 활성화·브라우저 증거 `9aecf17`을 `develop`에 커밋했다. 최종 회차 관찰 기록의 자기 참조 해시는 후속 `git log`에 연결한다.
+- 기존 stash `stash@{0}`와 두 `.playwright-mcp/` 미추적 디렉터리는 건드리지 않았다. `main` 병합·배포 없음.
