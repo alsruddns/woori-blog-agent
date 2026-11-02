@@ -318,7 +318,7 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
             : item.evaluation_id
               ? <a href={`/manuscripts?open_evaluation_id=${encodeURIComponent(item.evaluation_id)}&open_content_version_id=${encodeURIComponent(item.content_version_id)}&return_to=${encodeURIComponent(`/publishing?view=${view}&page=${page}&q=${query}&language_code=${language}&blog_id=${blog}`)}`}>{item.title || "제목 없음"}</a>
               : <span>{item.title || "제목 없음"}</span>}
-            <small>현재 버전 {item.content_version_id.slice(0,8)} <span className="publication-mobile-origin">· {originLabels[item.origin_kind??"unknown"]}</span></small>
+            <small>현재 버전 {item.content_version_id.slice(0,8)} <span className={`publication-mobile-origin publication-origin publication-origin-${item.origin_kind??"unknown"}`}>{originLabels[item.origin_kind??"unknown"]}</span></small>
             {item.automation_id&&<small>Automation {item.automation_id} · {item.scheduled_slot??item.occurrence_id??"예약 슬롯 미확인"}</small>}{item.trend_request_id&&<small>Trends 회차 {item.trend_request_id}</small>}
             {view==="discarded"&&<small>폐기 전 {item.previous_view??"미확인"} · {item.discard_actor??"작업자 미확인"} · {item.discard_reason??"사유 미확인"}</small>}
             {item.published_title && <small>게시 당시 제목: {item.published_title} · 게시 버전 {item.published_content_version_id?.slice(0,8)} · 현재 Blogger 제목은 별도 원격 확인이 필요합니다.</small>}</td>

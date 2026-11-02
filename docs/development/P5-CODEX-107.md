@@ -25,3 +25,8 @@
 - 중단 지점: 기능 커밋 `7fabe2a`와 운영 Migration 080 완료. API·Dashboard·Publication Worker는 보호 스크립트로 정상 종료·기동했으나, Dashboard는 `.runtime/validated-source.json`에 지정된 이전 격리 빌드를 제공해 새 상위 탭이 보이지 않았다. 읽기 전용 Playwright 1440px·390px 첫 실행 2건 실패는 이 빌드 불일치가 원인이다.
 - `scripts/apply-verified-changes.ps1`의 검증·격리 빌드·서비스 반영 절차를 확인했다. 사전 ruff에서 신규 코드 스타일 2건을 발견해 수정했다. 기존 운영 DB 설정 revision 12는 그대로이며 오래된 queued Trends Job 1건은 Auto grant가 없다. 실제 사용자의 원고에 폐기·복원을 실행하지 않았다.
 - 다음 단계: 변경 코드 커밋 후 검증된 격리 빌드를 반영하고, Playwright 및 운영 정합성을 다시 측정한다.
+
+## 운영 반영 체크포인트
+
+- 표준 반영 스크립트는 ruff·mypy·격리 테스트 39건·Python wheel·Dashboard lint/typecheck/build를 통과하고 커밋 전용 `.next-p5-255f6ccd44a1` 빌드를 만들었다. API에 기존 연결 1건이 있어 보호 스크립트가 종료를 거부해 전체 교체는 중단됐다. 강제 종료하지 않았고 Research Worker는 계속 실행됐다.
+- 검증된 빌드로 Dashboard만 정상 종료·기동한 뒤 PC Playwright는 통과. 모바일 테스트는 PC 전용 컬럼을 선택해 실패했으며, 모바일 제목 아래 출처를 배지로 표시하도록 바꿔 재검증한다. 실제 원고 폐기나 Blogger 쓰기 테스트는 운영에서 하지 않았다.

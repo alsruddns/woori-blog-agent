@@ -14,9 +14,9 @@ test("P107 publication tabs, provenance, archive, and confirmation", async ({ pa
   await expect(page.getByRole("tab", { name: "Job 관리", exact: true })).toHaveAttribute("aria-selected", "false");
   expect(jobs).toHaveLength(0);
   await expect(page.getByLabel("생성 출처")).toBeVisible();
-  await expect(page.locator(".publication-origin").first()).toBeVisible();
+  await expect(page.locator(".publication-origin:visible").first()).toBeVisible();
   await page.getByLabel("생성 출처").selectOption("scheduled");
-  await expect(page.locator(".publication-origin").first()).toContainText("Codex 예약");
+  await expect(page.locator(".publication-origin:visible").first()).toContainText("Codex 예약");
   await page.locator(".publication-section .publication-row-actions button").first().click();
   await expect(page.getByRole("dialog", { name: "원고 폐기 확인" })).toBeVisible();
   await page.getByRole("dialog").getByRole("button", { name: "취소" }).click();
