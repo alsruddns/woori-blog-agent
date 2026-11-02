@@ -386,7 +386,7 @@ def main() -> None:
         for name,operation,interval in (
             ('trends_collection',lambda:research_stages.collection_tick(stop.is_set),15),
             ('topic_evaluation',lambda:research_stages.evaluation_tick(stop.is_set),5),
-            ('authoring_admission',lambda:keyword_jobs.tick(import_results=False),5),
+            ('authoring_admission',research_stages.authoring_tick,5),
             ('codex_import',import_results,15),
         ):
             thread=threading.Thread(target=research_stages.lane_loop,args=(name,stop,operation,interval),

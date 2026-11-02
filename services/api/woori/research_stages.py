@@ -312,6 +312,19 @@ def lane_loop(
         stop.wait(interval)
 
 
+def authoring_tick() -> None:
+    """Drain current-slot handoffs independently of cached score computation.
+
+    dispatch only admits a durable Job; the existing CLI runner still enforces
+    its own single-run lock, quota and current-slot freshness gates.
+    """
+    from . import keyword_jobs, trend_editorial
+
+    trend_editorial.expire_pending()
+    trend_editorial.dispatch()
+    keyword_jobs.tick(import_results=False)
+
+
 def snapshot() -> dict[str, Any]:
     from . import trends
     from .automation_controls import read

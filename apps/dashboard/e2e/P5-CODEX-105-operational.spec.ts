@@ -1,0 +1,20 @@
+import { test, expect } from "playwright/test";
+test.skip(process.env.WOORI_OPERATIONAL_VERIFY !== "1", "Read-only live verification must be explicit");
+test("live collection, evaluation and Import lanes have independent progress", async ({ page }, info) => {
+  const errors: string[] = []; page.on("pageerror", e => errors.push(e.message));
+  await page.addInitScript(() => localStorage.setItem("woori-theme", "dark"));
+  await page.route("**/api/**", route => route.request().method() === "GET" ? route.continue() : route.abort("blockedbyclient"));
+  await page.goto("/operations/research");
+  const monitor = page.getByRole("region", { name: "연구 파이프라인 모니터" });
+  await expect(monitor.getByText("수집 이력 정상 범위", { exact: false })).toBeVisible();
+  await expect(monitor.getByText("측정된 평균 처리 시간", { exact: false })).toBeVisible();
+  const state = await page.evaluate(async () => (await fetch("/api/research/editorial-intelligence/pipeline", { cache: "no-store" })).json());
+  expect(state.collection_delayed).toBe(false);
+  expect(state.runs.some((r: { stage: string; status: string }) => r.stage === "topic_evaluation" && r.status === "completed")).toBe(true);
+  expect(state.runs.some((r: { stage: string; status: string }) => r.stage === "research_import" && r.status === "completed")).toBe(true);
+  expect(state.automatic_publication_enabled).toBe(false);
+  await monitor.getByRole("combobox", { name: "단계", exact: true }).selectOption("topic_evaluation");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect(errors).toEqual([]);
+  await monitor.screenshot({ path: `../../docs/development/assets/P5-CODEX-105-live-${info.project.name}.png` });
+});

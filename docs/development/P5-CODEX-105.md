@@ -47,4 +47,17 @@
 
 ## 남은 검증
 
-운영 DB 적용과 안전한 프로세스 교체 후 실제 회차 증가·평가 시간·허용 범위의 실제 Codex/Import/품질 평가·쓰 기0·설정/기존 기록 보존 결과를 다음 체크포인트에 기록한다. Codex 한도 또는 검증된 출처 부족은 모의 성공과 구분한다.
+운영 DB 적용과 안전한 프로세스 교체 후 실제 회차 증가·평가 시간·허용 범위의 실제 Codex/Import/품질 평가·쓰기0·설정/기존 기록 보존 결과를 다음 체크포인트에 기록한다. Codex 한도 또는 검증된 출처 부족은 모의 성공과 구분한다.
+
+## 운영 복구 1차 — 09:49~09:53 KST
+
+- 구현 `3afdbe0`, 운영 schema79. 종료 전 실제 active Codex0/실제 running publication0/pending write0 확인. Research10232는 기존 stop-file로 파생 비교 체크포인트에서 정상 종료했다. 새 Research12096은 heartbeat 정상. 원본 수집/기존 커밋 자료는 보존됐으며 DB backend cancel/termination, OS force kill, Task Scheduler stop은0건이다.
+- 변경 서비스만 정상 교체: API21936(launcher15628), Dashboard31448(launcher20648), Research12096. Publication32104와 PG16 PID6880/Crypto는 유지. HTTP200, P1047설정/revision9/기존37 Jobs/15 TOML/쓰기 원장 동일.
+- 실제 회차 `09:40`: 새 Worker 시작 시 현재 회차,11/11 성공,09:49:59 완료/16.579초. `09:50`:11/11 성공,09:50:31 완료/17.115초. 과거07:20 이후 누락 회차는 재수집하지 않았고 `research.stage.missed_slots` 감사1개로 남겼다.
+- 실제 평가 UUID `156d9c35-7cdf-4ea0-8bce-132f69b57cca`,09:50 회차,90개 Blogger·국가 후보,**2.920초**. selected15/high_risk2/review_candidate37/insufficient_context36. 실제 scores·원본 쿼리·설정 ID 보존. 레거시 168시간 전체 비교는 실행하지 않았다. 완료 직후 같은 평가를 반복하지 않음을 확인했다.
+- 실제 Codex Job `eab9f9e4-bc08-48c2-a010-4d506a157a42`:09:50:44 시작 →09:52:01 imported_review, error 없음. Import **`84bce453-6778-4112-b5d1-a28ba5085dd6`**, native Content Version **`b73911d6-77b8-4427-a27c-e5dfc85f0616`**. 정적 품질 `trendjournal-quality/3.1` completed. 심층 평가를 추가 호출하지 않았다. Import/정적 완료를 사실 검증·공개 승인으로 승격하지 않았다. 게시 Job을 만들지 않았다.
+- 실제3100 브라우저4 passed: P105 monitor1440/390 + P1047설정 회귀1440/390. 비GET 차단, pageerror/가로 넘침0, 실제 평가·Import poll 진행 표시. P105 live screenshot 보존. P104의 기존 역사 screenshot은 회귀 실행이 생성한 덮어쓰기본을 원래 커밋 bytes로 복원한다.
+- 최종 넓힌 통합에서222 passed/기존 inbox mock1 failed가 있었다. P103이 추가한 ACK read/INSERT를 fake DB가 반영하지 않은 원인이며 제품 ACK를 우회하지 않고 fake revision/ACK assertion을 보강한 후 해당19개 전부 통과했다. 이어 단계/작성/Import45개 통과(새 admission 회귀 포함). 현재 고유 관련 테스트224개가 통과한 범위이며, 전체 저장소 suite 통과를 주장하지 않는다. Ruff,4모듈 strict mypy, Dashboard TS/ESLint/production build 통과.
+- 관찰 중 cached evaluation 완료 뒤 남은 현재 회차 handoff를 계속 admission해야 함을 확인해 admission lane에 기존 expire/dispatch를 연결했다. 점수는 재계산하지 않고, 기존 current-slot·한도·single CLI 잠금을 그대로 사용한다. 첫 실제 Codex가 정상 Import까지 완료됐고 active Codex0임을 확인한 뒤 이 작은 보강만 Research에 정상 반영한다. API/Dashboard/Publication을 다시 재시작할 필요가 없다.
+
+10:00 정상 회차와 이후 실제 결과는 후속 최종 체크포인트에 기록한다.

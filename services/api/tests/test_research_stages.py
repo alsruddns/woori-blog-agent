@@ -16,6 +16,23 @@ from woori.db import connection as independent_connection
 lab = shared_lab
 
 
+def test_current_handoff_admission_continues_without_recomputing_scores(monkeypatch):
+    from woori import keyword_jobs
+
+    calls = []
+    monkeypatch.setattr(trend_editorial, "expire_pending", lambda: calls.append("expire"))
+    monkeypatch.setattr(trend_editorial, "dispatch", lambda: calls.append("dispatch"))
+    monkeypatch.setattr(keyword_jobs, "tick", lambda **kw: calls.append(("admit", kw)))
+    monkeypatch.setattr(
+        editorial_intelligence,
+        "assess_current",
+        lambda *_: pytest.fail("admission must not rescore"),
+    )
+    stages.authoring_tick()
+    stages.authoring_tick()
+    assert calls == ["expire", "dispatch", ("admit", {"import_results": False})] * 2
+
+
 @pytest.fixture
 def lanes(lab, monkeypatch):
     conn, api, headers = lab
@@ -244,25 +261,35 @@ def test_database_lock_wait_is_bounded_without_cancelling_owner():
         ]
 
 
-def test_slow_rss_stream_hits_wall_budget_without_saving_observations(lanes,monkeypatch):
+def test_slow_rss_stream_hits_wall_budget_without_saving_observations(lanes, monkeypatch):
     from types import SimpleNamespace
 
     import httpx
-    conn,_,_=lanes
-    ticks=iter([0,31])
-    monkeypatch.setattr(trends,'time',SimpleNamespace(monotonic=lambda:next(ticks)))
+
+    conn, _, _ = lanes
+    ticks = iter([0, 31])
+    monkeypatch.setattr(trends, "time", SimpleNamespace(monotonic=lambda: next(ticks)))
+
     class SlowStream(httpx.SyncByteStream):
         def __iter__(self):
-            yield b'<rss>'
-            pytest.fail('wall budget must close stream before the next chunk')
+            yield b"<rss>"
+            pytest.fail("wall budget must close stream before the next chunk")
+
     def response(request):
-        assert request.extensions['timeout']['read']==15
-        return httpx.Response(200,stream=SlowStream(),request=request)
-    monkeypatch.setattr(trends,'external_client',lambda *a,**kw:httpx.Client(transport=httpx.MockTransport(response),timeout=kw['timeout']))
-    before=conn.execute('SELECT count(*) n FROM trend_observations').fetchone()['n']
-    result=trends._collect_geo('KR')
-    assert result['status']=='failed' and result['failure_category']=='trend_feed_wall_timeout'
-    assert conn.execute('SELECT count(*) n FROM trend_observations').fetchone()['n']==before
+        assert request.extensions["timeout"]["read"] == 15
+        return httpx.Response(200, stream=SlowStream(), request=request)
+
+    monkeypatch.setattr(
+        trends,
+        "external_client",
+        lambda *a, **kw: httpx.Client(
+            transport=httpx.MockTransport(response), timeout=kw["timeout"]
+        ),
+    )
+    before = conn.execute("SELECT count(*) n FROM trend_observations").fetchone()["n"]
+    result = trends._collect_geo("KR")
+    assert result["status"] == "failed" and result["failure_category"] == "trend_feed_wall_timeout"
+    assert conn.execute("SELECT count(*) n FROM trend_observations").fetchone()["n"] == before
 
 
 def test_monitor_distinguishes_heartbeat_from_stale_collection(lanes):
