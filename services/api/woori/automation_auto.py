@@ -47,7 +47,42 @@ def readiness(
         return None, {}, ["content_or_blog_unavailable"]
     # Admission is checked separately at the wire; avoid recursively entering
     # AUTO_JOB while rechecking content safety immediately before HTTP.
-    reasons = publications._assess(row, check_write_policy=False)["reasons"]
+    from . import publication_origin
+
+    origin = publication_origin.classify(conn, version, blog)
+    if origin["kind"] == "scheduled":
+        from .publication_worker import _scheduled_eligibility
+
+        imported = conn.execute(
+            """SELECT i.*,iv.id AS import_version_id,iv.content_sha256 AS import_hash,
+            l.content_version_id FROM external_content_imports i
+            JOIN external_content_import_versions iv ON iv.import_id=i.id
+            JOIN external_content_import_content_links l ON l.import_id=i.id AND l.import_version_id=iv.id
+            WHERE l.content_version_id=%s AND i.id=%s
+              AND iv.version_number=(SELECT max(newest.version_number)
+                FROM external_content_import_versions newest WHERE newest.import_id=i.id)""",
+            (version, origin["import_id"]),
+        ).fetchone()
+        from .external_policy import _scheduled_publication_approval
+
+        if not imported or _scheduled_publication_approval(str(blog)) is None:
+            reasons = ["scheduled_import_or_policy_unavailable"]
+        else:
+            target = conn.execute(
+                """SELECT b.*,g.status AS oauth_status FROM blogger_blogs b
+                LEFT JOIN google_connections g ON g.id=b.oauth_connection_id WHERE b.id=%s""",
+                (blog,),
+            ).fetchone()
+            reasons = (
+                _scheduled_eligibility(
+                    conn, imported,
+                    {"id": imported["import_version_id"], "content_version_id": version},
+                    target,
+                )["reasons"]
+                if target else ["scheduled_target_unavailable"]
+            )
+    else:
+        reasons = publications._assess(row, check_write_policy=False)["reasons"]
     snapshot = publications._manual_publication_snapshot(conn, dict(row))
     reasons.extend(snapshot["blockers"])
     from .editorial_quality import VERSION as QUALITY_VERSION

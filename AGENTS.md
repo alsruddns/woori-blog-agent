@@ -1,3 +1,9 @@
+## P5-CODEX-106 scheduled LIVE control (2026-11-02)
+
+- The current operator request authorizes scheduled LIVE for future, verified Codex Desktop scheduled imports only. Persisted master Auto and scheduled-route controls, LIVE mode, exact active Blogger scope, the separate current Scheduled Auto policy event, current worker revision, and all source/rights/format/duplicate/wire gates must agree. Google Trends Auto remains OFF. Manual and unknown origins never inherit this authority.
+- Enabling controls or the scoped Scheduled Auto policy must not enqueue old imports, old Publishing Jobs, prior failed/pending occurrences, or revisions of preactivation imports. The current revision-bound lane owns new automatic dispatch; the legacy historical scheduled enqueue is not invoked by worker polling.
+- UI saves require a real actor and reason, modal confirmation for risk-bearing actions, a successful DB response, and matching Worker revision before showing applied status. Read-only Blogger identity checks do not prove a LIVE write succeeded.
+
 ## P5-CODEX-105 isolated research stages (2026-11-02)
 
 - The live Research Worker runs collection, latest-slot P101 evaluation, Codex admission, and Import as isolated lanes. Never put historical 168h all-pairs maintenance, synchronous Codex execution, or deep quality review ahead of the next Trends collection.

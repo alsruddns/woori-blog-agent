@@ -754,7 +754,9 @@ def process_next_live_job(
                 return {'job_id':None,'status':'external_backoff','reason':pause['error_code'],
                         'available_at':pause['not_before'],'public_write_performed':False}
     """Process one fully approved Blogger job; all absent approvals fail closed."""
-    enqueue_scheduled_auto_jobs()
+    # The revision-bound automatic lane owns new scheduled dispatch. The legacy
+    # enqueue routine scans historical imports and must not revive them when an
+    # operator enables the new controls.
     if trends_auto_only:
         from .trends_publication import enqueue_trends_auto_jobs
         enqueue_trends_auto_jobs()

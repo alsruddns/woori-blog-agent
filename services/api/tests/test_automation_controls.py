@@ -167,6 +167,62 @@ def test_revision_conflict_and_strict_boolean(center):
     assert api.put(BASE, headers=h, json=payload).status_code == 409
 
 
+def test_live_mode_and_scope_save_while_master_is_off(center):
+    conn, api, h = center
+    blog = conn.execute(
+        "INSERT INTO blogger_blogs(language_code,url,blog_id,display_name,active) "
+        "VALUES('en',%s,'1234567890123456','Policy fixture',true) RETURNING id",
+        (f"https://policy-{uuid4().hex}.blogspot.com",),
+    ).fetchone()["id"]
+    assert update(center, auto_mode="publish", auto_blog_ids=[str(blog)]).status_code == 422
+    saved = update(center, auto_mode="publish", auto_blog_ids=[str(blog)], confirm_live=True)
+    assert saved.status_code == 200, saved.text
+    state = api.get(BASE, headers=h).json()["settings"]
+    assert state["auto_mode"] == "publish"
+    assert state["auto_blog_ids"] == [str(blog)]
+    assert state["auto_publishing_enabled"] is False
+    assert update(center, scheduled_auto_publishing_enabled=True, confirm_auto=True).status_code == 422
+    assert update(center, scheduled_auto_publishing_enabled=True, confirm_auto=True, confirm_live=True).status_code == 200
+    state = api.get(BASE, headers=h).json()["settings"]
+    assert state["scheduled_auto_publishing_enabled"] is True
+    assert state["auto_publishing_enabled"] is False
+    assert api.get(BASE, headers=h).json()["effective"]["scheduled_auto_publishing_enabled"] == "전체 자동 발행 OFF로 차단 중"
+
+
+def test_scheduled_readiness_uses_existing_scheduled_evidence_gate(center, monkeypatch):
+    from woori import publication_origin
+
+    _, blog, version = make_job(center)
+    with controls.connection() as conn:
+        link = conn.execute(
+            "SELECT import_id FROM external_content_import_content_links WHERE content_version_id=%s",
+            (version,),
+        ).fetchone()
+    monkeypatch.setattr(publication_origin, "classify", lambda *_: {
+        "kind": "scheduled", "import_id": str(link["import_id"])
+    })
+    monkeypatch.setattr(external_policy, "_scheduled_publication_approval", lambda *_: {"scope": ["scheduled_publication"]})
+    monkeypatch.setattr(publication_worker, "_scheduled_eligibility", lambda *_: {"reasons": [], "evidence": {}})
+    monkeypatch.setattr(publications, "_assess", lambda *_args, **_kw: pytest.fail("manual assessment applied to scheduled original"))
+    with controls.connection() as conn:
+        row, snapshot, reasons = automation_auto.readiness(conn, version, blog)
+    assert row is not None and snapshot["import_id"] == str(link["import_id"])
+    assert "human_review_pending" not in reasons
+    monkeypatch.setattr(external_policy, "_scheduled_publication_approval", lambda *_: None)
+    with controls.connection() as conn:
+        _, _, reasons = automation_auto.readiness(conn, version, blog)
+    assert "scheduled_import_or_policy_unavailable" in reasons
+
+
+def test_manual_worker_does_not_requeue_legacy_scheduled_imports(center, monkeypatch):
+    update(center, google_account_available=True, emergency_stop=False,
+           confirm_emergency_release=True)
+    monkeypatch.setattr(automation_auto, "tick", lambda **_kw: None)
+    monkeypatch.setattr(publication_worker, "enqueue_scheduled_auto_jobs",
+                        lambda: pytest.fail("legacy historical enqueue must not run"))
+    assert publication_worker.tick(allow_manual_confirmed_publications=True) is None
+
+
 def make_job(center, lane="manual", mode="publish", method=None):
     conn, api, h = center
     from woori.editorial_taxonomy import suggested_labels

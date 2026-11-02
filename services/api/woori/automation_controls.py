@@ -163,6 +163,9 @@ def snapshot() -> dict[str, Any]:
         last_publication = conn.execute(
             "SELECT remote_status,remote_url,remote_verified_at FROM publishing_records ORDER BY remote_verified_at DESC NULLS LAST LIMIT 1"
         ).fetchone()
+        scheduled_policy = conn.execute(
+            "SELECT action,approved_blog_ids FROM scheduled_publication_policy_events ORDER BY id DESC LIMIT 1"
+        ).fetchone()
     blocked = (
         "긴급 정지로 차단"
         if state["emergency_stop"]
@@ -186,6 +189,11 @@ def snapshot() -> dict[str, Any]:
             else "전체 자동 발행 OFF로 차단 중"
             if key in {"trends_auto_publishing_enabled", "scheduled_auto_publishing_enabled"}
             and not state["auto_publishing_enabled"]
+            else "예약 발행 승인 범위 확인 필요"
+            if key == "scheduled_auto_publishing_enabled"
+            and (not scheduled_policy or scheduled_policy["action"] != "enabled"
+                 or not {str(value) for value in state["auto_blog_ids"]}.issubset(
+                     {str(value) for value in scheduled_policy["approved_blog_ids"]}))
             else blocked
             if "publishing" in key and blocked
             else "정상"
@@ -204,6 +212,7 @@ def snapshot() -> dict[str, Any]:
         else 0,
         "last_publication": last_publication,
         "api_engine_version": VERSION,
+        "scheduled_policy_enabled": bool(scheduled_policy and scheduled_policy["action"] == "enabled"),
         "google_write_verified": False,
         "google_write_verification_note": "읽기 성공 또는 사용자 제한 해제 확인은 쓰기 성공의 증거가 아닙니다.",
     }
@@ -262,6 +271,19 @@ def change(request: Change) -> dict[str, Any]:
             != before[route + "_auto_publishing_enabled"]
             for route in ("trends", "scheduled")
         }
+        if after["auto_mode"] == "publish" and before["auto_mode"] != "publish" and not request.confirm_live:
+            raise HTTPException(422, "LIVE 자동 공개에 대한 별도 확인이 필요합니다.")
+        if after["auto_blog_ids"] != before["auto_blog_ids"]:
+            try:
+                scope_targets = [UUID(str(x)) for x in after["auto_blog_ids"]]
+            except ValueError:
+                raise HTTPException(422, "잘못된 Blogger 식별자입니다.") from None
+            scope_count = conn.execute(
+                "SELECT count(*) n FROM blogger_blogs WHERE id=ANY(%s::uuid[]) AND active",
+                (scope_targets,),
+            ).fetchone()
+            if not scope_count or scope_count["n"] != len(scope_targets):
+                raise HTTPException(422, "활성 등록 Blogger만 선택할 수 있습니다.")
         for route, changed in route_changes.items():
             if changed and after[route + "_auto_publishing_enabled"]:
                 if not request.confirm_auto:
