@@ -30,3 +30,22 @@
 
 - 표준 반영 스크립트는 ruff·mypy·격리 테스트 39건·Python wheel·Dashboard lint/typecheck/build를 통과하고 커밋 전용 `.next-p5-255f6ccd44a1` 빌드를 만들었다. API에 기존 연결 1건이 있어 보호 스크립트가 종료를 거부해 전체 교체는 중단됐다. 강제 종료하지 않았고 Research Worker는 계속 실행됐다.
 - 검증된 빌드로 Dashboard만 정상 종료·기동한 뒤 PC Playwright는 통과. 모바일 테스트는 PC 전용 컬럼을 선택해 실패했으며, 모바일 제목 아래 출처를 배지로 표시하도록 바꿔 재검증한다. 실제 원고 폐기나 Blogger 쓰기 테스트는 운영에서 하지 않았다.
+
+## 최종 운영 검증
+
+- 표준 반영 스크립트가 커밋 `576e502535b18841b2962bcf0c86471db1e11d89`의 검증된 격리 빌드를 생성했다. ruff·mypy·테스트 39건·Python wheel·Dashboard 전체 lint/typecheck/build 통과. API→Dashboard→Publication Worker→Research Worker를 기존 보호 스크립트로 정상 종료하고 순서대로 기동했다. 강제 종료 없음.
+- 운영 API/Dashboard HTTP 200. Research Worker PID 33136, Publication Worker PID 35204 heartbeat running. 양쪽 자동화 정책 applied_revision 12, policy_applied true. Dashboard/API의 설정 revision 12. 수집 ON, 자동 원고 ON, 전체 Auto ON, Trends Auto OFF, 예약 Auto ON·LIVE, 수동 ON, 긴급 정지 OFF. 설정값 변경 없음. 자동화 제어센터 effective 표시도 예약 Auto 정상, Trends Auto 신규 실행 중지로 확인했다.
+- 실제 운영 DB의 `manuscript_discards` 0건. Content Version 487, Publishing Job 40, 게시 기록 20, Import 135. 기준 백업 이후 원고·Import가 각각 3건, 게시 기록 1건 증가했으나 마지막 게시 Job은 20:21 KST 수동 lane이며 P107 작업의 Blogger 쓰기 테스트가 아니다. Blogger 쓰기 원장 62건의 마지막 기록도 20:21 KST로 반영 작업(22:55 KST) 이전이다. 과거 queued Trends Job 1건은 Auto grant가 없고 일괄 재실행되지 않았다.
+- 운영 Dashboard 프록시 compact GET 실측: queue 1,035ms/6KB/0건, review 939ms/81KB/101건, published 934ms/34KB/20건, held 896ms/32KB/17건, auto_failure 920ms/14KB/7건, discarded 1,037ms/6KB/0건. 기준 2.2초/약 400KB와 달리 빈 응답까지 경량화됐다. 단발성 수치이며 p95 500ms 목표는 달성 검증되지 않았다.
+- 읽기 전용 Playwright 1440px·390px 2건 통과. 기본 발행 관리 탭, Job 지연 조회, 출처 배지·필터, 개별 폐기 확인 모달 취소, 보관함, Job 탭 새로고침 URL 유지, 다크 테마, JS 오류 없음, 가로 넘침 없음. 스크린샷은 `docs/development/assets/P5-CODEX-107-publication-dark-{desktop,mobile}.png`, `P5-CODEX-107-{desktop,mobile}.png`.
+- 미확인/남은 문제: 실제 사용자 원고 폐기·복원은 실행하지 않았으며 격리 DB 테스트로만 검증했다. `started_at` 정렬 기준 마지막 Google Trends 수집 성공은 22:10 KST로 현재 시각보다 오래됐다. 최초 ID 정렬 확인에서 20:10을 최신 행으로 잘못 읽었으나 시각 정렬로 정정했다. P107에서는 수집 설정을 변경하지 않았고 수집 주기 정상화까지 주장하지 않는다. 발행 자동화의 향후 정상 예약 원고 LIVE 성공도 이번 작업에서 새로 검증하지 않았다.
+- 자기 참조 최종 문서 커밋 해시는 후속 `git log`에서 확인한다.
+
+## 변경 파일과 이력
+
+- DB: `scripts/080_publication_discards.sql`, `scripts/migrate.py`.
+- API/Worker: `services/api/woori/publications.py`, `publication_discards.py`, `publication_origin.py`, `content_representatives.py`, `automation_auto.py`, `automation_controls.py`, `publication_worker.py`.
+- Dashboard: `apps/dashboard/app/publishing/page.tsx`, `publication-manager.tsx`, `app/api/publications/[[...path]]/route.ts`, `app/style.css`.
+- 검증: `services/api/tests/test_publication_discards.py`, `test_automation_controls.py`, `apps/dashboard/e2e/P5-CODEX-107-operational.spec.ts` 및 위 스크린샷.
+- 관련 문서: `docs/development/P5-CODEX-099-101.md`, `P5-CODEX-103.md`~`P5-CODEX-106.md`, 프로젝트 `AGENTS.md`.
+- 구현 커밋 `7fabe2a`, 수정·검증 체크포인트 `255f6cc`, 모바일 배지 `576e502`. 최종 문서 커밋은 `git log`에 이어서 기록된다.
