@@ -53,7 +53,7 @@
 
 - 구현 `3afdbe0`, 운영 schema79. 종료 전 실제 active Codex0/실제 running publication0/pending write0 확인. Research10232는 기존 stop-file로 파생 비교 체크포인트에서 정상 종료했다. 새 Research12096은 heartbeat 정상. 원본 수집/기존 커밋 자료는 보존됐으며 DB backend cancel/termination, OS force kill, Task Scheduler stop은0건이다.
 - 변경 서비스만 정상 교체: API21936(launcher15628), Dashboard31448(launcher20648), Research12096. Publication32104와 PG16 PID6880/Crypto는 유지. HTTP200, P1047설정/revision9/기존37 Jobs/15 TOML/쓰기 원장 동일.
-- 실제 회차 `09:40`: 새 Worker 시작 시 현재 회차,11/11 성공,09:49:59 완료/16.579초. `09:50`:11/11 성공,09:50:31 완료/17.115초. 과거07:20 이후 누락 회차는 재수집하지 않았고 `research.stage.missed_slots` 감사1개로 남겼다.
+- 실제 회차 `09:40`: 새 Worker 시작 시 현재 회차,11/11 성공,09:50:00.812 완료/16.579초. `09:50`:11/11 성공,09:50:33.249 완료/17.115초. 완료 시각은 새 stage의 `clock_timestamp()`를 사용한다(기존 slot.updated_at은 트랜잭션 시작 시각이므로 완료 시각으로 사용하지 않는다). 과거07:20 이후 누락 회차는 재수집하지 않았고 `research.stage.missed_slots` 감사1개로 남겼다.
 - 실제 평가 UUID `156d9c35-7cdf-4ea0-8bce-132f69b57cca`,09:50 회차,90개 Blogger·국가 후보,**2.920초**. selected15/high_risk2/review_candidate37/insufficient_context36. 실제 scores·원본 쿼리·설정 ID 보존. 레거시 168시간 전체 비교는 실행하지 않았다. 완료 직후 같은 평가를 반복하지 않음을 확인했다.
 - 실제 Codex Job `eab9f9e4-bc08-48c2-a010-4d506a157a42`:09:50:44 시작 →09:52:01 imported_review, error 없음. Import **`84bce453-6778-4112-b5d1-a28ba5085dd6`**, native Content Version **`b73911d6-77b8-4427-a27c-e5dfc85f0616`**. 정적 품질 `trendjournal-quality/3.1` completed. 심층 평가를 추가 호출하지 않았다. Import/정적 완료를 사실 검증·공개 승인으로 승격하지 않았다. 게시 Job을 만들지 않았다.
 - 실제3100 브라우저4 passed: P105 monitor1440/390 + P1047설정 회귀1440/390. 비GET 차단, pageerror/가로 넘침0, 실제 평가·Import poll 진행 표시. P105 live screenshot 보존. P104의 기존 역사 screenshot은 회귀 실행이 생성한 덮어쓰기본을 원래 커밋 bytes로 복원한다.
@@ -61,3 +61,47 @@
 - 관찰 중 cached evaluation 완료 뒤 남은 현재 회차 handoff를 계속 admission해야 함을 확인해 admission lane에 기존 expire/dispatch를 연결했다. 점수는 재계산하지 않고, 기존 current-slot·한도·single CLI 잠금을 그대로 사용한다. 첫 실제 Codex가 정상 Import까지 완료됐고 active Codex0임을 확인한 뒤 이 작은 보강만 Research에 정상 반영한다. API/Dashboard/Publication을 다시 재시작할 필요가 없다.
 
 10:00 정상 회차와 이후 실제 결과는 후속 최종 체크포인트에 기록한다.
+
+## 최종 운영 검증 — 10:02 KST
+
+### 회차 및 평가
+
+| 실제 회차 KST | stage 시작 | stage 완료 | 성공 지역 | 실측 처리 시간 |
+|---|---|---|---|---|
+|09:40(복구 시 현재 회차)|09:49:44.169|09:50:00.812|11/11|16.579초|
+|09:50|09:50:16.066|09:50:33.249|11/11|17.115초|
+|10:00|10:00:08.175|10:00:24.475|11/11|16.228초|
+
+- 실제 slot ID가10분 간격으로 증가했다.09:50/10:00의 정상 주기를 관찰했고, collector가 이전 평가·작성·Import 완료를 선행 조건으로 기다리지 않음을 격리 slow-stage 테스트와 실제 단계 이력으로 검증했다.09:40 회차는 정상 재시작 시점의 현재 회차만 처리했으며 지난 모든 누락 회차를 재생한 것이 아니다.
+-10:00 평가 UUID `13e57d81-8f0f-414f-880d-20513a606f98`:90개 후보,**2.090초**, selected10/duplicate3/review_candidate37/insufficient_context40. 실제 두 평가 평균2.505초. 같은 원고 이력을 다시 발견한 후보3개가 중복으로 분류됐고, 처리 결과를 덮어쓰지 않았다.10:00의 신규 작성 요청0건은 기존 시간당4개 한도에 따른 정상 결과다. 실패한 작성도 소모 한도를 되돌리지 않았다.
+- 수집 UUID:09:40 `d946cd65-33c6-4ead-9345-acc98d3c0519`,09:50 `be50a85a-55ea-46a6-9688-9abfa89e4607`,10:00 `c1015245-be6f-41e6-a537-22771c6748ed`. 복구 전 수시간 트랜잭션과 달리 최종 운영 조회에서5분 초과 트랜잭션0건이었다.
+
+### 실제 Codex·Import·품질 결과
+
+운영의 정상 P101 선정·시간당4개 범위에서 실제 official Codex 실행4건, **Import/새 native Version/정적 평가 완료3건**, 생성 JSON 검증 실패1건이다. 별도 테스트용 키워드나 가짜 원고는 생성하지 않았다.
+
+|Job|언어|Import|Content Version|결과|
+|---|---|---|---|---|
+|`eab9f9e4-bc08-48c2-a010-4d506a157a42`|ja|`84bce453-6778-4112-b5d1-a28ba5085dd6`|`b73911d6-77b8-4427-a27c-e5dfc85f0616`|imported_review|
+|`607ea7df-1d3e-42f1-8b62-de9fc5496d09`|en|`1cbe16e9-aae4-4d61-8b9d-62a98f1ebd2f`|`ba3e44e6-6fb9-4042-abb0-2a507b0f74e2`|imported_review|
+|`363a5b0f-5e64-41e4-b769-b26adac885d8`|en|`4648465f-2fc9-40ab-889d-35535fea29e8`|`d0aa11a4-7ec9-4794-a2dc-779d38ddfd83`|imported_review|
+|`3d2996a5-1d92-4171-b770-286d7b0672d9`|en|없음|없음|failed / json_schema_invalid|
+
+-3건 모두 `trendjournal-quality/3.1` static completed, fact_verified=false/publish_ready=false를 유지한다.1건에 수정 제안1개가 저장됐고 사용자 확인 없이 적용하지 않았다. 심층 평가 추가 호출0건. 원본/기존 Version 보존. 원고 품질 보조 점수를 검증 완료로 해석하지 않는다.
+- JSON 실패1건은 성공으로 수정하거나 필드를 지어내지 않았다. 이번 작업에서 재시도·재가져오기를 강행하지 않았다.09:56의 실패 후에도10:00 수집·평가·Import poll은 정상 진행했다. 별도 사용량 제한 신호는 관찰되지 않았으며, 제공자 토큰 잔량·reset 시각·절약 토큰량은 추정하지 않았다. 서비스 CLI single-run과 기존4개/시간 설정을 유지했다.
+
+### 예약·안전·UI
+
+- P102는 이미 구현된 상태다. 실제 저장 원고의 정확한 scope로 trusted helper의 Backend 결과와 Backend503를 주입한 repository fallback을 재검증했고 둘 다 local_status=already_imported였다. remote_status=not_checked/blogger_read_complete=false를 그대로 유지하고 새 원고를 중복 Import하지 않았다. 실제 정상 서비스를 중지해 장애를 만들지 않았다.
+- 기존15 automation.toml은 checksum 동일/ACTIVE15, 예약 시간/RRULE/프롬프트 변경0. 기존 automation-5의2026-10-31 12:00 KST 프로젝트 파생 occurrence에 새 Import origin event0, pending manuscript file0. 이번 개발 세션을 그 과거 예약 실행으로 위장하지 않았고 실패 슬롯을 성공으로 덮어쓰거나 재실행하지 않았다. 이번 관찰 구간에서15개 각각의 신규 Desktop 예약 전달 성공은 확인하지 않았으며 다음 실제 예약 실행은 별도 관찰 대상이다.
+- 최종 Research **18928 / db8bcfe**, API21936·Dashboard31448 /3afdbe0. Publication **32104** 기존 프로세스 유지. Research12096의 첫 실제 Codex가 정상 종료·Import 완료된 뒤 active Codex0임을 확인하고, admission만 정상 종료/재시작으로 보강했다. Research/Publication 모두 revision9/automation-controls2/fresh PID heartbeat ACK. API health/research monitor/automation center/sources/manuscripts 모두 HTTP200. 새 Worker의 독립 scheduled intake ACK 지속 갱신.
+- 최종 정책은 원래7개 값 및revision9 그대로다. 운영 감사 **283919**에 실제 회차3·평가2·Codex4·Import3·실패1·품질3·쓰기0·보존 결과 기록. Blogger write operation0/live attempt0/외부 비GET Blogger audit0/publication grant0. 기존37 Publishing Jobs와 쓰기 원장,15개 예약 파일 동일. 수동 게시도 직접 요청하지 않았다. PG16 Running/Auto PID6880, Task Scheduler Ready/LastTaskResult0, Crypto 변경0.
+- 최종 Chromium: Mock8 + 실제 P1052 + P104 회귀2 = **고유12 passed**. 실제 P105를 새 Worker/10:00 회차 이후 다시 확인했다.1440/390 다크 테마, 검색/필터, 빈/장애/정체/사용량 대기, import/품질/실측 평가·단계 분리, pageerror/가로 넘침0. 마지막 실제 화면은 `assets/P5-CODEX-105-live-{desktop,mobile}.png`.
+
+### 최종 테스트 및 남은 항목
+
+- 변경 범위 최종 통합 **224 passed (22.63초)**, 실패0. 앞선 통합에서 과거 assessment를 ORDER 없이 가져오던 테스트가 역사 row의 예전 이유 코드를 선택한 경우가 있었다. immutable 이력을 삭제하지 않고 최신 created_at/id를 명시해 현재 평가를 검사하도록 고친 뒤14개 관련 테스트 및 최종224개가 통과했다. 제품 검증 기준을 낮추지 않았다.
+- Ruff 변경 범위 통과, strict mypy4모듈(research stages/DB/P101 scoring/API) 통과, Dashboard TypeScript/ESLint/독립 production build 통과. Next가 검증 중 바꾼 next-env/tsconfig는 원래 bytes로 복원했다. 전체 저장소 suite green으로 확대 해석하지 않는다.
+- 잔여: 위 실제 생성 실패1건의 모델 출력 형식은 별도 검토 대상이다. 심층 의미/사실/권리/편집 검토와 수동 게시 쓰기 성공은 수행하지 않았다. 다음15개 실제 예약 실행 및 장기간 가동 관찰은 이번 짧은 복구 검증과 구분한다. 파이프라인 정체 해결과 운영 반영은 완료했고, 이 제한을 성공으로 덮지 않는다.
+
+최종 test/docs 커밋·origin/develop SHA는 Git 후속 기록에 연결한다. main 병합 없음, 기존 stash 유지, 기존 두 `.playwright-mcp/` 미추적 디렉터리는 그대로 둔다.

@@ -197,7 +197,7 @@ def test_broad_candidate_is_held_and_never_auto_selected(
         (observation_id,),
     ).fetchone()["topic_id"]
     assessment = conn.execute(
-        "SELECT decision,reasons,score FROM trend_topic_assessments WHERE topic_id=%s",
+        "SELECT decision,reasons,score FROM trend_topic_assessments WHERE topic_id=%s ORDER BY created_at DESC,id DESC LIMIT 1",
         (topic_id,),
     ).fetchone()
     assert assessment["decision"] == "held"
