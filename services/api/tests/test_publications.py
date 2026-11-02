@@ -83,8 +83,8 @@ def test_publication_worker_execution_mode_tracks_live_lanes() -> None:
     ) == "operations-scheduled-auto-and-manual-and-trends"
 
 
-def test_volume_caps_are_removed_only_for_trends_auto_lane() -> None:
-    assert not publication_worker.publication_count_limits_apply("trends_auto")
+def test_all_real_publication_lanes_share_volume_caps() -> None:
+    assert publication_worker.publication_count_limits_apply("trends_auto")
     assert publication_worker.publication_count_limits_apply("scheduled_auto")
     assert publication_worker.publication_count_limits_apply("manual")
 
@@ -327,7 +327,9 @@ def test_scheduled_auto_job_is_enqueued_without_any_first_post_event(
     from contextlib import contextmanager
     from uuid import uuid4
 
-    from woori import content_imports
+    from woori import content_imports, publication_operation
+
+    monkeypatch.setattr(publication_operation, "blogger_writes_allowed", lambda: True)
 
     blog_record_id = uuid4()
     import_id = uuid4()
@@ -518,7 +520,9 @@ def test_mock_and_private_draft_modes_never_dispatch_publication_jobs(
 def test_manual_confirmed_lane_is_opt_in_and_kept_separate_from_scheduled_auto(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from woori import publication_worker
+    from woori import publication_operation, publication_worker
+
+    monkeypatch.setattr(publication_operation, "manual_requests_allowed", lambda: True)
 
     calls: list[dict[str, bool]] = []
     monkeypatch.setattr(
@@ -548,59 +552,14 @@ def test_publication_mode_defaults_manual_and_auto_requires_allowlist() -> None:
     assert auto.retry_limit == 0
 
 
-def test_auto_mode_preferences_can_be_saved_without_activating_dispatch(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_auto_mode_preferences_remain_blocked_under_authoring_only_policy() -> None:
+    from fastapi import HTTPException
     from woori import publications
 
-    class FakeConnection:
-        def __init__(self) -> None:
-            self.statements: list[str] = []
-
-        def execute(self, query: str, *_: object, **__: object) -> Any:
-            self.statements.append(query)
-
-            class Result:
-                def fetchall(self) -> list[dict[str, str]]:
-                    return [{"slug": "policy"}]
-
-                def fetchone(self) -> dict[str, Any]:
-                    return {
-                        "scope_type": "global", "scope_key": "", "configured_mode": "auto",
-                        "daily_auto_limit": 1, "minimum_interval_minutes": 1440,
-                        "allowed_start_hour": 9, "allowed_end_hour": 17,
-                        "timezone": "Asia/Seoul", "allowed_categories": ["policy"],
-                        "excluded_topics": [], "max_source_age_hours": 24,
-                        "retry_limit": 0, "emergency_stopped": False,
-                        "operations_auto_approved": False, "updated_at": None,
-                    }
-
-            return Result()
-
-    fake_conn = FakeConnection()
-
-    class Context:
-        def __enter__(self) -> FakeConnection:
-            return fake_conn
-
-        def __exit__(self, *_: object) -> None:
-            return None
-
-    monkeypatch.setattr(publications, "connection", lambda: Context())
-    monkeypatch.setattr(
-        publications,
-        "_mode_settings",
-        lambda _: {"migration_required": False, "emergency_stopped": False},
-    )
-
-    result = publications.save_mode_settings(
-        ModeSettingsInput(configured_mode="auto", allowed_categories=["policy"])
-    )
-    assert result["configured_mode"] == "auto"
-    assert result["live_auto_enabled"] is False
-    assert result["real_writes_enabled"] is False
-    assert result["operations_auto_approved"] is False
-    assert any("publication.mode.changed" in statement for statement in fake_conn.statements)
+    with pytest.raises(HTTPException, match="authoring_only"):
+        publications.save_mode_settings(
+            ModeSettingsInput(configured_mode="auto", allowed_categories=["policy"])
+        )
 
 
 def test_mode_scope_precedence_is_blog_then_language_then_global() -> None:
@@ -969,6 +928,10 @@ def test_emergency_stop_blocks_live_job_before_any_blogger_request(monkeypatch: 
     from contextlib import contextmanager
     from uuid import uuid4
 
+    from woori import publication_operation
+
+    monkeypatch.setattr(publication_operation, "manual_requests_allowed", lambda: True)
+
     job_id, policy_id, blog_id, content_version_id, oauth_id = (uuid4() for _ in range(5))
     job = {
         "id": job_id, "policy_id": policy_id, "blog_id": blog_id,
@@ -1030,7 +993,7 @@ def test_emergency_stop_blocks_live_job_before_any_blogger_request(monkeypatch: 
         lambda: pytest.fail("emergency stop must block before publisher construction"),
     )
 
-    result = publication_worker.process_next_live_job()
+    result = publication_worker.process_next_live_job(manual_confirmed_only=True)
     assert result["status"] == "blocked"
     assert "global_emergency_stop_or_policy_missing" in result["reasons"]
     assert result["live_write_performed"] is False

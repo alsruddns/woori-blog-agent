@@ -72,6 +72,9 @@ def snapshot(view: str, page: int, page_size: int) -> dict[str, Any]:
           AND {failure_resolved_clause('failed_v','b.id','i.id')}
           ORDER BY e.created_at DESC""").fetchall()
         worker = conn.execute("SELECT * FROM worker_heartbeats WHERE service_name='publication_worker'").fetchone()
+        interval_row = conn.execute(
+            "SELECT global_publish_min_interval_minutes FROM automation_controls WHERE id=1"
+        ).fetchone()
     permitted = permitted and heartbeat_state(dict(worker) if worker else None,datetime.now(UTC)) == "running"
     items = []
     for raw in jobs:
@@ -103,7 +106,7 @@ def snapshot(view: str, page: int, page_size: int) -> dict[str, Any]:
     selected = items if view=='all' else [item for item in items if item['state']==view]
     now = datetime.now(UTC)
     last_job = dict(jobs[0]) if jobs else None
-    return {'period':'all_time','period_label':'전체 기간 등록 Job의 현재 상태 · 실제 Blogger · Mock 제외',
+    return {'period':'all_time','global_publish_min_interval_minutes': int(interval_row['global_publish_min_interval_minutes']) if interval_row else None,'period_label':'전체 기간 등록 Job의 현재 상태 · 실제 Blogger · Mock 제외',
             'as_of':now,'counts':counts,'worker':dict(worker) if worker else None,
             'worker_state':heartbeat_state(dict(worker) if worker else None,now),
             'last_job':last_job,'items':selected[(page-1)*page_size:page*page_size],

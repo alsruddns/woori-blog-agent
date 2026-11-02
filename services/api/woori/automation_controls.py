@@ -229,6 +229,7 @@ class Change(BaseModel):
     manual_publishing_enabled: bool | None = None
     trends_auto_publishing_enabled: bool | None = None
     scheduled_auto_publishing_enabled: bool | None = None
+    global_publish_min_interval_minutes: int | None = Field(default=None, ge=30, le=1440)
     emergency_stop: bool | None = None
     auto_mode: Literal["draft", "publish"] | None = None
     auto_blog_ids: list[str] | None = None
@@ -316,6 +317,7 @@ def change(request: Change) -> dict[str, Any]:
             """UPDATE automation_controls SET auto_manuscript_enabled=%s,auto_publishing_enabled=%s,
             manual_publishing_enabled=%s,auto_mode=%s,auto_blog_ids=%s::uuid[],
             trends_auto_publishing_enabled=%s,scheduled_auto_publishing_enabled=%s,
+            global_publish_min_interval_minutes=%s,
             trends_auto_epoch=CASE WHEN %s THEN gen_random_uuid() ELSE trends_auto_epoch END,
             trends_auto_enabled_at=CASE WHEN %s THEN clock_timestamp() ELSE trends_auto_enabled_at END,
             scheduled_auto_epoch=CASE WHEN %s THEN gen_random_uuid() ELSE scheduled_auto_epoch END,
@@ -334,6 +336,7 @@ def change(request: Change) -> dict[str, Any]:
                 [str(x) for x in after["auto_blog_ids"]],
                 after["trends_auto_publishing_enabled"],
                 after["scheduled_auto_publishing_enabled"],
+                after["global_publish_min_interval_minutes"],
                 route_changes["trends"],
                 route_changes["trends"],
                 route_changes["scheduled"],

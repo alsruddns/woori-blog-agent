@@ -135,6 +135,8 @@ P5-CODEX-093 adds an authenticated per-blog Trends enable request as a scoped pu
 
 New Trends policy events may use `daily_limit=NULL` to mean no application daily or per-round publication count ceiling. Worker language/global daily and hourly caps are bypassed only for the `trends_auto` lane; OAuth-connection 2-minute and Blogger-blog 5-minute spacing, duplicate checks, quality/rights review, emergency stop, and external Blogger approval gates remain. This removes application volume caps; it does not imply that Blogger API calls are free or uncapped by Google. Cloud Billing association and public-write zero-cost approval remain unverified, so no Trends Auto policy was activated and no public Blogger write was attempted. Codex unattended generation is also fail-closed under the current runtime baseline.
 
+P5-CODEX-108 supersedes the historical 2-minute account / 5-minute blog spacing above with a single database-backed **30-minute minimum interval across every Blogger write lane and all registered blogs**, including manual Draft/LIVE, Trends, and scheduled publication. Google Trends collection also defaults to 30 minutes, as a separate setting. The shared cadence is an application safety control, not a Google quota guarantee. It does not authorize public writes: current Blogger cost/public-publish approvals and Trends per-blog publication authorization remain mandatory, and this work does not synthesize those approvals or issue production writes.
+
 
 ## P5-CODEX-097 Blogger restriction (2026-10-31)
 

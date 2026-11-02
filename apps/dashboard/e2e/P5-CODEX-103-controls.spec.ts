@@ -1,7 +1,7 @@
 import { test, expect } from "playwright/test";
 
 test.beforeEach(async ({ page }) => {
-  const state = { revision: 1, trends_collection_enabled: true, auto_manuscript_enabled: true, auto_publishing_enabled: false, trends_auto_publishing_enabled: false, scheduled_auto_publishing_enabled: false, manual_publishing_enabled: true, emergency_stop: true, blogger_api_restricted: true, interval_minutes: 10, auto_mode: "draft", auto_blog_ids: [] as string[], google_account_report: "unverified", read_check_result: {} };
+  const state = { revision: 1, trends_collection_enabled: true, auto_manuscript_enabled: true, auto_publishing_enabled: false, trends_auto_publishing_enabled: false, scheduled_auto_publishing_enabled: false, manual_publishing_enabled: true, emergency_stop: true, blogger_api_restricted: true, interval_minutes: 30, global_publish_min_interval_minutes: 30, auto_mode: "draft", auto_blog_ids: [] as string[], google_account_report: "unverified", read_check_result: {} };
   await page.route("**/api/automation-controls**", async route => {
     const request = route.request();
     if (request.method() === "PUT") {
@@ -19,9 +19,10 @@ test.beforeEach(async ({ page }) => {
 test("seven controls, independent OFF and responsive state", async ({ page }, info) => {
   const errors: string[] = []; page.on("pageerror", e => errors.push(e.message));
   await page.goto("/operations/automation");
+  await expect(page.getByText("공통 Blogger 발행 간격: 최소 30분", { exact: false })).toBeVisible();
   await expect(page.getByRole("heading", { name: "자동화 운영 제어센터" })).toBeVisible();
   await expect(page.getByRole("switch")).toHaveCount(7);
-  await expect(page.getByText("10분 주기 · 11개 지역")).toBeVisible();
+  await expect(page.getByText("30분 주기 · 11개 지역")).toBeVisible();
   await page.getByLabel("변경 사유", { exact: true }).fill("격리 화면에서 수집 중지 독립 설정 확인");
   await page.getByRole("switch", { name: "Google Trends 수집" }).click();
   await expect(page.getByRole("switch", { name: "Google Trends 수집" })).toHaveAttribute("aria-checked", "false");

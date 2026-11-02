@@ -19,7 +19,7 @@ def test_ten_minute_sweep_collects_all_regions_once_and_keeps_partial_failure(la
     def shared():
         with conn.transaction():yield conn
     monkeypatch.setattr(trends,'connection',shared)
-    assert trends.collection_settings()['interval_minutes']==10
+    assert trends.collection_settings()['interval_minutes']==30
     seen=[]
     def collect(geo):
         seen.append(geo)
@@ -41,11 +41,11 @@ def test_collection_settings_save_for_next_slot_with_audit(lab,monkeypatch):
         with conn.transaction():yield conn
     monkeypatch.setattr(trends,'connection',shared)
     before=api.get('/admin/research/trends/settings',headers=headers)
-    assert before.status_code==200 and before.json()['interval_minutes']==10
+    assert before.status_code==200 and before.json()['interval_minutes']==30
     response=api.put('/admin/research/trends/settings',headers=headers,json={'enabled':True,'interval_minutes':20})
     assert response.status_code==200,response.text
     after=api.get('/admin/research/trends/settings',headers=headers).json()
-    assert after['interval_minutes']==10 and after['pending_interval_minutes']==20
+    assert after['interval_minutes']==30 and after['pending_interval_minutes']==20
     assert conn.execute("SELECT count(*) n FROM audit_events WHERE event_type='trend.collection.settings_changed'").fetchone()['n']>0
     assert api.put('/admin/research/trends/settings',headers=headers,json={'enabled':True,'interval_minutes':6}).status_code==422
 

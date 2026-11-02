@@ -42,7 +42,7 @@ export type PublicationData = {
       latest_connection_check?: { created_at: string; payload?: { results?: Array<{ blog_record_id: string; verified: boolean; remote_blog_id?: string; reason?: string }> } } | null;
       trends_lane_affected: false } };
   auto_candidate_count: number; auto_runtime_status: string;
-  operational_limits?: {timezone:string;global_daily:number;language_daily:Record<string,number|null>;language_hourly:Record<string,number>;english_daily_policy:string;blog_minimum_interval_minutes:number;account_minimum_interval_minutes:number};
+  operational_limits?: {timezone:string;global_daily:number;language_daily:Record<string,number|null>;language_hourly:Record<string,number>;english_daily_policy:string;global_publish_min_interval_minutes:number|null};
 };
 const tabs = [["queue", "발행 대기"], ["review", "검토 필요"], ["published", "게시 완료"], ["held", "실패·보류"], ["auto_failure", "자동발행실패"], ["discarded", "폐기 보관함"]] as const;
 const originLabels = { google_trends: "Google Trends", scheduled: "Codex 예약", manual: "수동 작성", unknown: "출처 미확인" } as const;
@@ -294,7 +294,7 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
         <label>허용 종료 시각 KST<input type="number" min={0} max={23} value={endHour} onChange={event=>setEndHour(Number(event.target.value))}/></label>
         <button disabled={emergencyBusy||(scopeType!=="global"&&!scopeKey)} onClick={()=>void saveMode()}>{emergencyBusy?"저장 중…":"설정 저장"}</button>
       </div>
-      <h3>코드상 발행 안전 상한</h3><p>KST · 전체 {data.operational_limits?.global_daily??"—"}건/일 · 영어는 잔여량 우선 · 블로그 간격 {data.operational_limits?.blog_minimum_interval_minutes??"—"}분 · Blogger 계정 간격 {data.operational_limits?.account_minimum_interval_minutes??"—"}분</p>
+      <h3>코드상 발행 안전 상한</h3><p>KST · 전체 {data.operational_limits?.global_daily??"—"}건/일 · 영어는 잔여량 우선 · 4개 블로그 공통 최소 간격 {data.operational_limits?.global_publish_min_interval_minutes??"—"}분</p>
       <ul>{Object.entries(data.operational_limits?.language_daily??{}).map(([code,limit])=><li key={code}>{languageLabel(code)} 일일 {limit??"전역 잔여량"}건 · 시간당 {data.operational_limits?.language_hourly[code]??"—"}건</li>)}</ul>
       <h3>저장된 범위별 설정</h3><ul>{data.mode_policy.settings.map(item=><li key={`${item.scope_type}-${item.scope_key}`}>{item.scope_type}:{item.scope_key||"global"} · {item.configured_mode} · {item.daily_auto_limit}건/일 · {item.minimum_interval_minutes}분</li>)}</ul>
       {notice&&<p role="status">{notice}</p>}

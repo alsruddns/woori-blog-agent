@@ -75,12 +75,13 @@ def _live_response_unlocked(
                 trust_env=False,
             )
         with client:
+            access_token = google_oauth.access_token(connection_id)
             response = client.request(
                 method,
                 BASE + path,
                 params=params,
                 json=body,
-                headers={"Authorization": "Bearer " + google_oauth.access_token(connection_id)},
+                headers={"Authorization": "Bearer " + access_token},
             )
     except FreeQuotaExceeded:
         raise GoogleFailure("free_quota_exceeded") from None
@@ -120,9 +121,10 @@ class WriteIntervalWait(GoogleFailure):
         self.available_at = available_at
 
 
-def interval_deadline(account_last: datetime | None, blog_last: datetime | None, now: datetime) -> datetime:
-    return max(now, account_last + timedelta(minutes=2) if account_last else now,
-               blog_last + timedelta(minutes=5) if blog_last else now)
+def interval_deadline(last_write: datetime | None, now: datetime, minimum_minutes: int = 30) -> datetime:
+    if minimum_minutes < 30:
+        raise ValueError("global_publish_interval_must_be_at_least_30_minutes")
+    return max(now, last_write + timedelta(minutes=minimum_minutes) if last_write else now)
 
 
 class BloggerLivePublisher:
@@ -224,35 +226,41 @@ class BloggerLivePublisher:
     @staticmethod
     @contextmanager
     def _account_write_guard(target: dict[str, Any], *, enforce_volume_caps: bool = True) -> Iterator[None]:
-        """Serialize all writes for the selected OAuth grant and enforce durable spacing."""
-        connection_id = str(target["oauth_connection_id"])
+        """Serialize all Blogger writes globally and enforce durable spacing."""
         blog_id = str(target["blog_id"])
         language = str(target["language_code"])
         with connection() as conn:
             locked = conn.execute(
                 "SELECT pg_try_advisory_lock(hashtextextended(%s,0)) AS acquired",
-                ("blogger-live-account:" + connection_id,),
+                ("blogger-global-publication-write",),
             ).fetchone()
             if not locked or not locked["acquired"]:
                 raise GoogleFailure("account_write_in_progress")
             try:
                 limits = conn.execute(
-                    """SELECT max(a.created_at) FILTER (WHERE COALESCE(a.payload->>'connection_id',b.oauth_connection_id::text)=%s) AS account_last,
-                    max(a.created_at) FILTER (WHERE a.payload->>'blog_id'=%s) AS blog_last,
+                    """SELECT max(a.created_at) AS last_write,
                     count(*) FILTER (WHERE a.payload->>'blog_id'=%s
-                      AND a.created_at>=now()-interval '1 hour')::int AS blog_hourly
-                    FROM audit_events a LEFT JOIN blogger_blogs b
-                      ON b.blog_id=a.payload->>'blog_id'
-                    WHERE a.event_type='blogger.write.requested'
-                      AND a.payload->>'mode'='live'""",
-                    (connection_id, blog_id, blog_id),
+                      AND a.created_at>=now()-interval '1 hour'
+                      AND a.event_type='blogger.write.requested')::int AS blog_hourly
+                    FROM audit_events a
+                    WHERE (a.event_type='blogger.write.requested' AND a.payload->>'mode'='live')
+                       OR (a.event_type='external.call.started'
+                           AND a.payload->>'provider'='google_blogger_read'
+                           AND a.payload->>'method' IN ('POST','PATCH','PUT'))""",
+                    (blog_id,),
                 ).fetchone()
-                if limits is None:
+                controls = conn.execute(
+                    "SELECT global_publish_min_interval_minutes FROM automation_controls WHERE id=1"
+                ).fetchone()
+                if limits is None or controls is None:
                     raise GoogleFailure('account_limits_unavailable')
-                if limits["account_last"] and limits["account_last"] > datetime.now(UTC) - timedelta(minutes=2):
-                    raise WriteIntervalWait("account_minimum_interval_not_elapsed", interval_deadline(limits["account_last"], limits["blog_last"], datetime.now(UTC)))
-                if limits["blog_last"] and limits["blog_last"] > datetime.now(UTC) - timedelta(minutes=5):
-                    raise WriteIntervalWait("blog_minimum_interval_not_elapsed", interval_deadline(limits["account_last"], limits["blog_last"], datetime.now(UTC)))
+                now = datetime.now(UTC)
+                deadline = interval_deadline(
+                    limits["last_write"], now,
+                    int(controls["global_publish_min_interval_minutes"]),
+                )
+                if deadline > now:
+                    raise WriteIntervalWait("global_minimum_interval_not_elapsed", deadline)
                 if enforce_volume_caps:
                     hourly_limit = LANGUAGE_HOURLY_LIMITS.get(language, 0)
                     if not hourly_limit or int(limits["blog_hourly"] or 0) >= hourly_limit:
@@ -261,7 +269,7 @@ class BloggerLivePublisher:
             finally:
                 conn.execute(
                     "SELECT pg_advisory_unlock(hashtextextended(%s,0))",
-                    ("blogger-live-account:" + connection_id,),
+                    ("blogger-global-publication-write",),
                 )
 
     @staticmethod
@@ -370,6 +378,82 @@ class BloggerLivePublisher:
                          result, exc.category, exc.status)
             if result is not None:
                 raise GoogleFailure('uncertain_write', exc.status) from None
+            raise
+
+    def create_live(
+        self, key: str, blog_record_id: UUID, title: str, html: str,
+        labels: list[str] | None = None, *, enforce_volume_caps: bool = True,
+    ) -> dict[str, Any]:
+        """Create one public post directly and require Blogger LIVE readback."""
+        target = self._target(blog_record_id)
+        if not title.strip() or not html.strip() or len(title) > 300 or len(html) > 200_000:
+            raise GoogleFailure("invalid_post_payload")
+        payload: dict[str, Any] = {"title": title, "content": html}
+        if labels:
+            if len(labels) > 10 or any(not label.strip() or len(label) > 100 for label in labels):
+                raise GoogleFailure("invalid_labels")
+            payload["labels"] = labels
+        fingerprint = self._fingerprint("create_live", target["blog_id"], payload)
+        previous = self._existing(key, "create_live", fingerprint)
+        if previous is not None:
+            return previous
+        with self._account_write_guard(target, enforce_volume_caps=enforce_volume_caps):
+            previous = self._claim(
+                key, "create_live", fingerprint, blog_id=target["blog_id"],
+                connection_id=target["oauth_connection_id"],
+            )
+            if previous is not None:
+                return previous
+            return self._create_live_claimed(key, target, title, html, payload)
+
+    def _create_live_claimed(
+        self, key: str, target: dict[str, Any], title: str, html: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        result: dict[str, Any] | None = None
+        try:
+            self._verify_target(target)
+            data, status = _live_response(
+                connection_id=target["oauth_connection_id"], operation="blogger_public_publish",
+                method="POST", path=f"/blogs/{target['blog_id']}/posts",
+                params={"isDraft": "false"}, body=payload, transport=self._transport,
+            )
+            post_id = numeric_id(str(data.get("id", "")))
+            if str((data.get("blog") or {}).get("id", "")) != target["blog_id"]:
+                raise GoogleFailure("blogger_response_blog_mismatch", status)
+            if data.get("status") != "LIVE":
+                raise GoogleFailure("live_create_status_mismatch", status)
+            result = {"post_id": post_id, "blog_id": target["blog_id"],
+                      "url": data.get("url"), "status": "LIVE",
+                      "published_at": data.get("published"), "http_status": status,
+                      "live": True, "simulation_only": False, "readback_verified": False,
+                      "connection_id": str(target["oauth_connection_id"])}
+            verified, verify_status = _live_response(
+                connection_id=target["oauth_connection_id"], operation="blogger_read",
+                method="GET", path=f"/blogs/{target['blog_id']}/posts/{post_id}",
+                params={"view": "AUTHOR"}, transport=self._transport,
+            )
+            url = verified.get("url")
+            if (numeric_id(str(verified.get("id", ""))) != post_id
+                    or str((verified.get("blog") or {}).get("id", "")) != target["blog_id"]
+                    or verified.get("status") != "LIVE"
+                    or verified.get("title") != title
+                    or verified.get("content") != html
+                    or not isinstance(url, str) or not url.startswith("https://")
+                    or not isinstance(verified.get("published"), str) or not verified["published"].strip()):
+                raise GoogleFailure("published_readback_mismatch", verify_status)
+            result.update({"url": url, "published_at": verified.get("published"),
+                           "readback_verified": True, "readback_http_status": verify_status})
+            self._finish(key, "create_live", "succeeded", result, None, status)
+            return result
+        except GoogleFailure as exc:
+            uncertain = result is not None or exc.category in {"uncertain_write", "audit_unavailable_after_call"}
+            if result is not None:
+                result["readback_error_category"] = exc.category
+            self._finish(key, "create_live", "uncertain" if uncertain else "failed",
+                         result, exc.category, exc.status)
+            if result is not None:
+                raise GoogleFailure("uncertain_write", exc.status) from None
             raise
 
     def publish_draft(

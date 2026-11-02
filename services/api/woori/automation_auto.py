@@ -179,11 +179,12 @@ def enqueue(conn: Any, state: dict[str, Any]) -> int:
         row, _snapshot, reasons = readiness(conn, item["id"], item["blog_id"])
         if reasons or row is None:
             continue
+        job_lane = "trends_auto" if origin["kind"] == "google_trends" else "scheduled_auto"
         job = conn.execute(
             """INSERT INTO publishing_jobs(policy_id,blog_id,content_version_id,idempotency_key,
             scheduled_at,status,publication_state,adapter_type,simulation_only,block_reasons,oauth_connection_id,
             live_stage,publication_lane,publication_mode)
-            VALUES(%s,%s,%s,%s,now(),'queued','publication_queued','blogger_live',false,'[]',%s,'draft_needed','scheduled_auto',%s)
+            VALUES(%s,%s,%s,%s,now(),'queued','publication_queued','blogger_live',false,'[]',%s,'draft_needed',%s,%s)
             ON CONFLICT(idempotency_key) DO NOTHING RETURNING id""",
             (
                 row["policy_id"],
@@ -191,6 +192,7 @@ def enqueue(conn: Any, state: dict[str, Any]) -> int:
                 item["id"],
                 f"p103-{item['id']}-{item['blog_id']}",
                 row["oauth_connection_id"],
+                job_lane,
                 state["auto_mode"],
             ),
         ).fetchone()
@@ -255,7 +257,9 @@ def tick(*, publisher: Any = None) -> dict[str, Any] | None:
                 WHERE v.id=j.content_version_id)
               AND ((g.manuscript_origin='google_trends' AND %s AND g.source_epoch=%s)
                    OR (g.manuscript_origin='scheduled' AND %s AND g.source_epoch=%s))
-              AND j.scheduled_at<=now() ORDER BY j.scheduled_at,j.id FOR UPDATE OF j SKIP LOCKED LIMIT 1""",
+              AND j.scheduled_at<=now() ORDER BY CASE (SELECT language_code FROM blogger_blogs b WHERE b.id=j.blog_id)
+                WHEN 'en' THEN 0 WHEN 'ko' THEN 1 WHEN 'ja' THEN 2 WHEN 'zh-CN' THEN 3 ELSE 4 END,
+                j.scheduled_at,j.id FOR UPDATE OF j SKIP LOCKED LIMIT 1""",
             (
                 state["auto_epoch"],
                 state["trends_auto_publishing_enabled"],
@@ -291,29 +295,26 @@ def tick(*, publisher: Any = None) -> dict[str, Any] | None:
             raise GoogleFailure("automatic_duplicate_unconfirmed_or_found")
         with job_context(job["id"]):
             if job["live_stage"] == "draft_needed":
-                result = publisher.create_draft(
-                    "pubjob-" + str(job["id"]) + "-draft",
-                    job["blog_id"],
-                    snapshot["title"],
-                    snapshot["safe_html"],
-                    snapshot["blogger_labels"],
-                )
                 if job["publication_mode"] == "draft":
+                    result = publisher.create_draft(
+                        "pubjob-" + str(job["id"]) + "-draft",
+                        job["blog_id"], snapshot["title"], snapshot["safe_html"],
+                        snapshot["blogger_labels"],
+                    )
                     return save_verified_draft(
                         job["id"], job["blog_id"], job["content_version_id"], result
                     )
-                with connection() as conn:
-                    conn.execute(
-                        "UPDATE publishing_jobs SET status='queued',live_stage='draft_created',remote_post_id=%s,available_at=now()+interval '5 minutes',lease_until=NULL,updated_at=now() WHERE id=%s",
-                        (result["post_id"], job["id"]),
-                    )
-                return {"job_id": str(job["id"]), "status": "draft_created"}
-            result = publisher.publish_draft(
-                "pubjob-" + str(job["id"]) + "-publish",
-                job["blog_id"],
-                str(job["remote_post_id"]),
-                source_draft_key="pubjob-" + str(job["id"]) + "-draft",
-            )
+                result = publisher.create_live(
+                    "pubjob-" + str(job["id"]) + "-publish",
+                    job["blog_id"], snapshot["title"], snapshot["safe_html"],
+                    snapshot["blogger_labels"],
+                )
+            else:
+                result = publisher.publish_draft(
+                    "pubjob-" + str(job["id"]) + "-publish",
+                    job["blog_id"], str(job["remote_post_id"]),
+                    source_draft_key="pubjob-" + str(job["id"]) + "-draft",
+                )
         if result.get("status") != "LIVE" or not result.get("readback_verified"):
             raise GoogleFailure("published_readback_mismatch")
         with connection() as conn:

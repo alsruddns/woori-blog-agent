@@ -1524,6 +1524,9 @@ def list_publications(
     compact = compact if isinstance(compact, bool) else False
     with connection() as conn:
         mode_data = _mode_settings(conn)
+        global_publish_interval = conn.execute(
+            "SELECT global_publish_min_interval_minutes FROM automation_controls WHERE id=1"
+        ).fetchone()
         from .publication_operation import manual_requests_allowed
         from .publication_read_state import failure_resolved_clause, pending_state
         manual_permitted = manual_requests_allowed() and bool(mode_data.get("scoped_write_capability", {}).get("manual_confirmed"))
@@ -1981,8 +1984,10 @@ def list_publications(
                 "language_daily": {**LANGUAGE_DAILY_LIMITS, "en": None},
                 "language_hourly": LANGUAGE_HOURLY_LIMITS,
                 "english_daily_policy": "remaining_global_capacity",
-                "blog_minimum_interval_minutes": 5,
-                "account_minimum_interval_minutes": 2,
+                "global_publish_min_interval_minutes": (
+                    int(global_publish_interval["global_publish_min_interval_minutes"])
+                    if global_publish_interval else None
+                ),
             },
             "auto_candidate_count": sum(
                 1 for candidate in latest_candidates if candidate["auto_eligibility"]["eligible"]

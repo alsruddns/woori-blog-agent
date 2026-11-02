@@ -85,8 +85,8 @@ def execution_mode(*, private_drafts: bool = False, live: bool = False,
 
 
 def publication_count_limits_apply(lane: str) -> bool:
-    """Trends Auto has no volume ceiling; other publication lanes keep theirs."""
-    return lane != "trends_auto"
+    """Every real publication lane shares the configured volume ceilings."""
+    return lane in {"manual", "scheduled_auto", "trends_auto"}
 
 
 def _append_audit(conn: Any, event_type: str, payload: dict[str, Any]) -> None:
@@ -519,7 +519,8 @@ def recover_interval_job(job_id: UUID) -> dict[str, Any]:
         job = conn.execute('SELECT * FROM publishing_jobs WHERE id=%s', (job_id,)).fetchone()
         if (not job or job['status'] != 'failed' or job['publication_lane'] != 'manual'
                 or job['live_stage'] != 'draft_needed' or job['remote_post_id']
-                or job['last_error_category'] not in {'account_minimum_interval_not_elapsed','blog_minimum_interval_not_elapsed'}):
+                or job['last_error_category'] not in {'global_minimum_interval_not_elapsed',
+                    'account_minimum_interval_not_elapsed','blog_minimum_interval_not_elapsed'}):
             raise GoogleFailure('interval_recovery_state_invalid')
         candidate = publications._candidate(conn, job['content_version_id'], job['blog_id'])
         snapshot = publications._manual_publication_snapshot(conn, candidate)
@@ -538,12 +539,15 @@ def recover_interval_job(job_id: UUID) -> dict[str, Any]:
             raise GoogleFailure('interval_recovery_job_changed')
         if conn.execute("SELECT 1 FROM blogger_write_operations WHERE idempotency_key=%s", ('live:pubjob-'+str(job_id)+'-draft',)).fetchone() or conn.execute('SELECT 1 FROM publishing_records WHERE job_id=%s', (job_id,)).fetchone():
             raise GoogleFailure('interval_recovery_prior_write_requires_reconciliation')
-        limits = conn.execute("""SELECT max(a.created_at) FILTER (WHERE COALESCE(a.payload->>'connection_id',b.oauth_connection_id::text)=%s) account_last,
-            max(a.created_at) FILTER (WHERE a.payload->>'blog_id'=b.blog_id AND b.id=%s) blog_last
-            FROM audit_events a LEFT JOIN blogger_blogs b ON b.blog_id=a.payload->>'blog_id'
-            WHERE a.event_type='blogger.write.requested' AND a.payload->>'mode'='live'""", (str(job['oauth_connection_id']),job['blog_id'])).fetchone()
-        assert limits is not None
-        available = interval_deadline(limits['account_last'],limits['blog_last'],datetime.now(UTC))
+        limits = conn.execute("""SELECT max(created_at) AS last_write FROM audit_events
+            WHERE event_type IN ('blogger.write.requested','blogger.write.started')
+              AND payload->>'mode'='live'"""
+        ).fetchone()
+        controls = conn.execute("SELECT global_publish_min_interval_minutes FROM automation_controls WHERE id=1").fetchone()
+        if limits is None or controls is None:
+            raise GoogleFailure('account_limits_unavailable')
+        available = interval_deadline(limits['last_write'],datetime.now(UTC),
+            int(controls['global_publish_min_interval_minutes']))
         conn.execute("""UPDATE publishing_jobs SET status='queued',publication_state='publication_queued',
             available_at=%s,lease_until=NULL,updated_at=now() WHERE id=%s""", (available,job_id))
         _append_audit(conn,'publication.manual_interval.recovered',{'job_id':str(job_id),
@@ -737,7 +741,9 @@ def process_next_live_job(
     trends_auto_only: bool = False,
 ) -> dict[str, Any] | None:
     from .publication_operation import manual_requests_allowed
-    if not manual_confirmed_only or not manual_requests_allowed():
+    if not (scheduled_auto_only or manual_confirmed_only or trends_auto_only):
+        return None
+    if manual_confirmed_only and not manual_requests_allowed():
         return None
     if trends_auto_only:
         recovered = recover_verified_trends_draft()
@@ -800,20 +806,42 @@ def process_next_live_job(
                 ON d.group_id=v.group_id AND d.blog_id=j.blog_id AND d.status='discarded'
                 WHERE v.id=j.content_version_id)
               AND (%s=false OR j.publication_lane='scheduled_auto')
-              AND (%s=false OR (j.publication_lane='manual' AND EXISTS (
-                SELECT 1 FROM manual_publication_approval_events a WHERE a.job_id=j.id
-              )))
-              AND (j.publication_lane<>'trends_auto' OR %s=true)
+              AND (%s=false OR j.publication_lane='manual')
               AND (%s=false OR j.publication_lane='trends_auto')
-              AND EXISTS (SELECT 1 FROM manual_publication_approval_events fresh WHERE fresh.job_id=j.id
-                AND fresh.created_at>(SELECT max(created_at) FROM audit_events WHERE event_type='publication.manual_only.activated'))
-              AND EXISTS (SELECT 1 FROM automation_publication_grants control_grant CROSS JOIN automation_controls control
-                WHERE control_grant.job_id=j.id AND control_grant.lane='manual' AND control.id=1
-                  AND control.manual_publishing_enabled AND control_grant.epoch=control.manual_epoch)
+              AND EXISTS (
+                SELECT 1 FROM automation_publication_grants control_grant
+                CROSS JOIN automation_controls control
+                CROSS JOIN publication_mode_settings mode
+                WHERE control_grant.job_id=j.id AND control.id=1
+                  AND mode.scope_type='global' AND mode.scope_key=''
+                  AND NOT mode.emergency_stopped AND NOT mode.blogger_api_restricted
+                  AND control.auto_publishing_enabled
+                  AND (
+                    (j.publication_lane='manual' AND control_grant.lane='manual'
+                      AND control.manual_publishing_enabled
+                      AND control_grant.epoch=control.manual_epoch
+                      AND EXISTS (SELECT 1 FROM manual_publication_approval_events fresh
+                        WHERE fresh.job_id=j.id AND fresh.created_at>(
+                          SELECT max(created_at) FROM audit_events
+                          WHERE event_type='publication.manual_only.activated')))
+                    OR (j.publication_lane='scheduled_auto' AND control_grant.lane='auto'
+                      AND control_grant.manuscript_origin='scheduled'
+                      AND control.scheduled_auto_publishing_enabled
+                      AND control_grant.epoch=control.auto_epoch
+                      AND control_grant.source_epoch=control.scheduled_auto_epoch)
+                    OR (j.publication_lane='trends_auto' AND control_grant.lane='auto'
+                      AND control_grant.manuscript_origin='google_trends'
+                      AND control.trends_auto_publishing_enabled
+                      AND control_grant.epoch=control.auto_epoch
+                      AND control_grant.source_epoch=control.trends_auto_epoch)
+                  )
+              )
               AND j.status='queued' AND j.scheduled_at<=now() AND j.available_at<=now()
-            ORDER BY CASE WHEN j.publication_lane<>'trends_auto' AND (SELECT language_code FROM blogger_blogs bb WHERE bb.id=j.blog_id)='en'
-            THEN 0 ELSE 1 END,j.scheduled_at,j.id FOR UPDATE OF j SKIP LOCKED LIMIT 1""",
-            (scheduled_auto_only, manual_confirmed_only, trends_auto_only, trends_auto_only),
+            ORDER BY CASE WHEN j.publication_lane='manual' THEN j.scheduled_at END NULLS LAST,
+              CASE (SELECT language_code FROM blogger_blogs bb WHERE bb.id=j.blog_id)
+              WHEN 'en' THEN 0 WHEN 'ko' THEN 1 WHEN 'ja' THEN 2 WHEN 'zh-CN' THEN 3 ELSE 4 END,
+              j.scheduled_at,j.id FOR UPDATE OF j SKIP LOCKED LIMIT 1""",
+            (scheduled_auto_only, manual_confirmed_only, trends_auto_only),
         ).fetchone()
         if job is None:
             return None
@@ -987,8 +1015,8 @@ def process_next_live_job(
             return {"job_id": str(job_id), "status": "blocked", "reason": "publication_blog_missing",
                     "live_write_performed": False}
         language = str(blog["language_code"])
-        # Trends Auto has no application daily/hourly count cap. Spacing and
-        # all eligibility, duplicate, emergency-stop, and remote gates remain.
+        # All publication lanes share the same daily/hourly ceilings as well
+        # as the global write spacing and eligibility gates.
         if publication_count_limits_apply(lane):
             today = __import__("datetime").datetime.now(ZoneInfo("Asia/Seoul")).date()
             day_start, day_end = kst_day_bounds(today)
@@ -1102,67 +1130,7 @@ def process_next_live_job(
                     "reason": category, "remote_duplicate_check": remote_check["status"],
                     "retry_count": next_retry if not found else int(job.get("retry_count") or 0),
                     "retry_delay_seconds": retry_delay, "live_write_performed": False}
-    if stage == "draft_needed":
-        operation = "create_draft"
-        write_key = "pubjob-" + str(job_id) + "-draft"
-        try:
-            with external_policy.manual_publication_context(
-                str(job_id), str(blog_id), str(version_id),
-                str(snapshot['title_sha256']), str(snapshot['body_sha256']), str(snapshot['html_sha256'])
-            ):
-                result = publisher.create_draft(
-                    write_key, blog_id,
-                    str(candidate.get("editorial_title") or candidate["title"]),
-                    str(candidate["html_body"]),
-                    list(candidate.get("blogger_labels") or []),
-                    enforce_volume_caps=publication_count_limits_apply(lane),
-                )
-            if draft_mode:
-                return save_verified_draft(job_id, blog_id, version_id, result)
-            with connection() as conn:
-                conn.execute(
-                    """UPDATE publishing_jobs SET status='queued',publication_state='publication_queued',
-                    live_stage='draft_created',remote_post_id=%s,available_at=now()+interval '5 minutes',
-                    lease_until=NULL,updated_at=now() WHERE id=%s AND status='running'""",
-                    (result["post_id"], job_id),
-                )
-                _live_attempt(conn, job_id, attempt_no, operation, write_key, "succeeded",
-                              post_id=str(result["post_id"]), status=result.get("http_status"),
-                              metadata={"draft_readback_verified": bool(result.get("post_verified"))})
-                _append_audit(conn, "publication.live_draft.created", {
-                    "job_id": str(job_id), "content_version_id": str(version_id),
-                    "blog_id": str(blog["blog_id"]), "post_id": str(result["post_id"]),
-                    "private": True, "public_write_performed": False,
-                })
-            return {"job_id": str(job_id), "status": "draft_created", "post_id": result["post_id"],
-                    "next_stage_after_minutes": 5, "public_write_performed": False}
-        except GoogleFailure as exc:
-            if isinstance(exc, WriteIntervalWait):
-                return defer_interval_job(job_id, exc)
-            status = "uncertain" if exc.category in {"uncertain_write", "previous_write_pending_or_uncertain", "idempotency_ledger_unavailable"} else "failed"
-            with connection() as conn:
-                conn.execute(
-                    """UPDATE publishing_jobs SET status=%s,publication_state='publication_failed',
-                    last_error_category=%s,lease_until=NULL,updated_at=now() WHERE id=%s AND status='running'""",
-                    (status, exc.category, job_id),
-                )
-                _live_attempt(conn, job_id, attempt_no, operation, write_key, status, status=exc.status, category=exc.category)
-                _append_audit(conn, "publication.live_draft.failed", {
-                    "job_id": str(job_id), "error_category": exc.category,
-                    "http_status": exc.status, "post_write_replayed": False,
-                })
-                if lane in {"scheduled_auto", "trends_auto"} and link:
-                    _record_auto_failure(
-                        conn, imported=link,
-                        blog={"blog_record_id": blog_id, "blog_id": blog["blog_id"],
-                              "blog_language": language},
-                        stage="blogger_draft_write", reasons=[exc.category], job_id=job_id,
-                        retry_count=int(job.get("retry_count") or 0),
-                    )
-            return {"job_id": str(job_id), "status": status, "reason": exc.category,
-                    "public_write_performed": False}
-
-    if stage != "draft_created" or not claimed["remote_post_id"]:
+    if stage not in {"draft_needed", "draft_created"}:
         with connection() as conn:
             conn.execute(
                 """UPDATE publishing_jobs SET status='uncertain',publication_state='publication_blocked',
@@ -1170,23 +1138,63 @@ def process_next_live_job(
                 (job_id,),
             )
         return {"job_id": str(job_id), "status": "uncertain", "reason": "live_job_stage_invalid"}
-    if draft_mode:
+    if stage == "draft_created" and (not claimed["remote_post_id"] or draft_mode):
         return {"job_id": str(job_id), "status": "uncertain", "reason": "draft_only_job_cannot_publish"}
-    operation = "publish_draft"
-    source_draft_key = "pubjob-" + str(job_id) + "-draft"
-    write_key = "pubjob-" + str(job_id) + "-publish"
+    operation = "create_draft" if stage == "draft_needed" and draft_mode else (
+        "create_live" if stage == "draft_needed" else "publish_draft"
+    )
+    write_key = "pubjob-" + str(job_id) + ("-draft" if operation == "create_draft" else "-publish")
     try:
-        if lane == "scheduled_auto":
+        if operation == "create_draft":
+            with external_policy.manual_publication_context(
+                str(job_id), str(blog_id), str(version_id),
+                str(snapshot['title_sha256']), str(snapshot['body_sha256']), str(snapshot['html_sha256'])
+            ):
+                result = publisher.create_draft(
+                    write_key, blog_id, str(candidate.get("editorial_title") or candidate["title"]),
+                    str(candidate["html_body"]), list(candidate.get("blogger_labels") or []),
+                    enforce_volume_caps=publication_count_limits_apply(lane),
+                )
+            return save_verified_draft(job_id, blog_id, version_id, result)
+        if operation == "create_live":
+            if lane == "scheduled_auto":
+                with external_policy.scheduled_publication_context(str(blog_id)):
+                    result = publisher.create_live(
+                        write_key, blog_id, str(candidate.get("editorial_title") or candidate["title"]),
+                        str(candidate["html_body"]), list(candidate.get("blogger_labels") or []),
+                        enforce_volume_caps=publication_count_limits_apply(lane),
+                    )
+            elif lane == "trends_auto":
+                with external_policy.trends_publication_context(str(blog_id)):
+                    result = publisher.create_live(
+                        write_key, blog_id, str(candidate.get("editorial_title") or candidate["title"]),
+                        str(candidate["html_body"]), list(candidate.get("blogger_labels") or []),
+                        enforce_volume_caps=publication_count_limits_apply(lane),
+                    )
+            else:
+                assert manual_approval is not None
+                with external_policy.manual_publication_context(
+                    str(job_id), str(blog_id), str(version_id),
+                    str(manual_approval["title_sha256"]), str(manual_approval["body_sha256"]),
+                    str(manual_approval["html_sha256"]),
+                ):
+                    result = publisher.create_live(
+                        write_key, blog_id, str(candidate.get("editorial_title") or candidate["title"]),
+                        str(candidate["html_body"]), list(candidate.get("blogger_labels") or []),
+                        enforce_volume_caps=publication_count_limits_apply(lane),
+                    )
+        elif lane == "scheduled_auto":
             with external_policy.scheduled_publication_context(str(blog_id)):
                 result = publisher.publish_draft(
                     write_key, blog_id, str(claimed["remote_post_id"]),
-                    source_draft_key=source_draft_key,
+                    source_draft_key="pubjob-" + str(job_id) + "-draft",
                 )
         elif lane == "trends_auto":
             with external_policy.trends_publication_context(str(blog_id)):
                 result = publisher.publish_draft(
                     write_key, blog_id, str(claimed["remote_post_id"]),
-                    source_draft_key=source_draft_key, enforce_volume_caps=False,
+                    source_draft_key="pubjob-" + str(job_id) + "-draft",
+                    enforce_volume_caps=publication_count_limits_apply(lane),
                 )
         elif lane == "manual":
             assert manual_approval is not None
@@ -1198,12 +1206,12 @@ def process_next_live_job(
             ):
                 result = publisher.publish_draft(
                     write_key, blog_id, str(claimed["remote_post_id"]),
-                    source_draft_key=source_draft_key,
+                    source_draft_key="pubjob-" + str(job_id) + "-draft",
                 )
         else:
             result = publisher.publish_draft(
                 write_key, blog_id, str(claimed["remote_post_id"]),
-                source_draft_key=source_draft_key,
+                source_draft_key="pubjob-" + str(job_id) + "-draft",
             )
         if result.get("status") != "LIVE" or not result.get("readback_verified"):
             raise GoogleFailure("published_readback_mismatch")
@@ -1359,16 +1367,22 @@ def tick(
     allow_live_publications: bool = False, allow_scheduled_auto_publications: bool = False,
     allow_manual_confirmed_publications: bool = False, allow_trends_auto_publications: bool = False,
 ) -> dict[str, Any] | None:
-    """Process one explicitly approved private draft or one due fake job."""
-    if allow_live_publications or allow_manual_confirmed_publications or allow_scheduled_auto_publications or allow_trends_auto_publications:
-        from .automation_auto import tick as controlled_auto_tick
-        automatic=controlled_auto_tick()
-        if automatic is not None:return {'job_type':'controlled_auto',**automatic}
+    """Dispatch the shared persistent publication queue, one write at a time."""
     from .publication_operation import manual_requests_allowed
-    if not manual_requests_allowed():
-        return None
     if not 0 <= backoff_seconds <= 3600:
         raise ValueError("invalid_backoff")
+    # Explicit user requests are FIFO and outrank automatic candidates, while
+    # all lanes remain subject to the shared BloggerLivePublisher rate gate.
+    if allow_manual_confirmed_publications and manual_requests_allowed():
+        live = process_next_live_job(manual_confirmed_only=True)
+        if live is not None:
+            return {"job_type": "manual_confirmed_blogger_live", **live,
+                    "simulation_only": False, "auto_enabled": False}
+    if allow_live_publications or allow_scheduled_auto_publications or allow_trends_auto_publications:
+        from .automation_auto import tick as controlled_auto_tick
+        automatic = controlled_auto_tick()
+        if automatic is not None:
+            return {"job_type": "controlled_auto", **automatic}
     if allow_trends_auto_publications:
         live = process_next_live_job(trends_auto_only=True)
         if live is not None and live.get('status') != 'external_backoff':
@@ -1379,13 +1393,8 @@ def tick(
         if live is not None:
             return {"job_type": "scheduled_auto_blogger_live", **live,
                     "simulation_only": False, "auto_enabled": True}
-    if allow_manual_confirmed_publications:
-        live = process_next_live_job(manual_confirmed_only=True)
-        if live is not None:
-            return {"job_type": "manual_confirmed_blogger_live", **live,
-                    "simulation_only": False, "auto_enabled": False}
-    # No automatic/private/legacy queue is eligible in manual-only operation.
-    return None
+    # No real lane was eligible; continue to the existing explicit private/mock
+    # dispatch below without bypassing the shared Blogger writer gate.
     if allow_live_publications:
         live = process_next_live_job()
         if live is not None:

@@ -21,6 +21,9 @@ def _request(method: str, path: str, params: dict[str, str] | None = None) -> ht
 def test_blogger_gate_requires_owner_approval_but_does_not_change_other_providers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from woori import publication_operation
+
+    monkeypatch.setattr(publication_operation, "blogger_writes_allowed", lambda: True)
     monkeypatch.setattr(external_policy, "billing_credential_names", list)
     monkeypatch.setattr(external_policy, "_audit", lambda *args, **kwargs: None)
     monkeypatch.setattr(external_policy, "_blogger_policy_approval", lambda: None)
@@ -82,6 +85,9 @@ def test_approved_blogger_operations_are_narrowly_allowlisted(
     path: str,
     params: dict[str, str] | None,
 ) -> None:
+    from woori import publication_operation
+
+    monkeypatch.setattr(publication_operation, "blogger_writes_allowed", lambda: True)
     monkeypatch.setattr(external_policy, "billing_credential_names", list)
     monkeypatch.setattr(external_policy, "_audit", lambda *args, **kwargs: None)
     monkeypatch.setattr(
@@ -93,6 +99,9 @@ def test_approved_blogger_operations_are_narrowly_allowlisted(
 def test_publish_route_allows_only_exact_blogger_draft_publish_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from woori import publication_operation
+
+    monkeypatch.setattr(publication_operation, "blogger_writes_allowed", lambda: True)
     monkeypatch.setattr(external_policy, "billing_credential_names", list)
     monkeypatch.setattr(external_policy, "_audit", lambda *args, **kwargs: None)
     monkeypatch.setattr(external_policy, "_blogger_operation_is_approved", lambda op: op == "blogger_public_publish")
@@ -130,6 +139,9 @@ def test_publish_delete_and_unapproved_blogger_shapes_stay_blocked(
     path: str,
     params: dict[str, str] | None,
 ) -> None:
+    from woori import publication_operation
+
+    monkeypatch.setattr(publication_operation, "blogger_writes_allowed", lambda: True)
     monkeypatch.setattr(external_policy, "billing_credential_names", list)
     monkeypatch.setattr(external_policy, "_audit", lambda *args, **kwargs: None)
     monkeypatch.setattr(external_policy, "_blogger_operation_is_approved", lambda op: True)
@@ -233,7 +245,7 @@ def test_live_public_publish_gate_blocks_before_transport_request(
     )
     monkeypatch.setattr("woori.blogger_writes.google_oauth.access_token", lambda _id: "test-token")
 
-    with pytest.raises(GoogleFailure, match="provider_cost_unverified"):
+    with pytest.raises(GoogleFailure, match="authoring_only_blogger_writes_suspended"):
         _live_response(
             connection_id=UUID("00000000-0000-0000-0000-000000000001"),
             operation="blogger_public_publish",
@@ -248,7 +260,9 @@ def test_live_public_publish_gate_blocks_before_transport_request(
 def test_live_draft_is_read_back_before_success_is_recorded(
     monkeypatch: pytest.MonkeyPatch, readback_status: str, verified: bool,
 ) -> None:
-    from woori import blogger_writes
+    from woori import blogger_writes, publication_operation
+
+    monkeypatch.setattr(publication_operation, "blogger_writes_allowed", lambda: True)
 
     blog_record_id = UUID("00000000-0000-0000-0000-000000000001")
     oauth_id = UUID("00000000-0000-0000-0000-000000000002")
@@ -320,7 +334,9 @@ def test_live_draft_is_read_back_before_success_is_recorded(
 def test_live_publish_requires_remote_live_readback_and_uses_same_post(monkeypatch: pytest.MonkeyPatch) -> None:
     from contextlib import nullcontext
 
-    from woori import blogger_writes
+    from woori import blogger_writes, publication_operation
+
+    monkeypatch.setattr(publication_operation, "blogger_writes_allowed", lambda: True)
 
     blog_record_id = UUID("00000000-0000-0000-0000-000000000001")
     oauth_id = UUID("00000000-0000-0000-0000-000000000002")
@@ -379,6 +395,68 @@ def test_live_publish_requires_remote_live_readback_and_uses_same_post(monkeypat
     assert sum(method == "GET" and path.endswith("/posts/456") for method, path in calls) == 2
 
 
+def test_live_creation_uses_is_draft_false_and_requires_verified_live_readback(monkeypatch: pytest.MonkeyPatch) -> None:
+    from contextlib import nullcontext
+
+    from woori import automation_controls, blogger_writes, publication_operation
+
+    blog_record_id = UUID("00000000-0000-0000-0000-000000000001")
+    oauth_id = UUID("00000000-0000-0000-0000-000000000002")
+    calls: list[httpx.Request] = []
+
+    class Result:
+        def __init__(self, value: dict[str, object] | None = None) -> None:
+            self.value = value
+        def fetchone(self) -> dict[str, object] | None:
+            return self.value
+
+    class FakeConnection:
+        def execute(self, query: str, params: tuple[object, ...] = ()) -> Result:
+            if "SELECT b.id,b.language_code" in query:
+                return Result({"id": blog_record_id, "language_code": "en", "url": "https://trend-en.blogspot.com/",
+                    "blog_id": "123", "active": True, "oauth_connection_id": oauth_id,
+                    "oauth_status": "connected", "scopes": [blogger_writes.WRITE_SCOPE]})
+            if "SELECT request_fingerprint,status,result" in query:
+                return Result(None)
+            if "INSERT INTO blogger_write_operations" in query:
+                return Result({"idempotency_key": params[0]})
+            return Result(None)
+
+    @contextmanager
+    def fake_connection():
+        yield FakeConnection()
+
+    monkeypatch.setattr(blogger_writes, "connection", fake_connection)
+    monkeypatch.setattr(blogger_writes.google_oauth, "access_token", lambda _id: "test-token")
+    monkeypatch.setattr(blogger_writes.external_policy, "billing_credential_names", list)
+    monkeypatch.setattr(blogger_writes.external_policy, "_audit", lambda *args, **kwargs: None)
+    monkeypatch.setattr(blogger_writes.external_policy, "_blogger_operation_is_approved", lambda _op: True)
+    monkeypatch.setattr(blogger_writes.external_policy, "guarded_transport", lambda _provider, _operation, transport: transport)
+    monkeypatch.setattr(automation_controls, "write_guard", lambda **_kwargs: nullcontext())
+    monkeypatch.setattr(publication_operation, "blogger_writes_allowed", lambda: True)
+    monkeypatch.setattr(blogger_writes.BloggerLivePublisher, "_account_write_guard",
+                        staticmethod(lambda _target, **_kwargs: nullcontext()))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        if request.url.path.endswith("/blogs/123"):
+            return httpx.Response(200, json={"id": "123", "url": "https://trend-en.blogspot.com"}, request=request)
+        if request.method == "POST":
+            assert request.url.params.get("isDraft") == "false"
+            return httpx.Response(200, json={"id": "456", "blog": {"id": "123"}, "status": "LIVE",
+                "title": "Verified title", "content": "<p>Verified body</p>",
+                "url": "https://trend-en.blogspot.com/2026/11/verified.html", "published": "2026-11-03T00:00:00Z"}, request=request)
+        return httpx.Response(200, json={"id": "456", "blog": {"id": "123"}, "status": "LIVE",
+            "title": "Verified title", "content": "<p>Verified body</p>",
+            "url": "https://trend-en.blogspot.com/2026/11/verified.html", "published": "2026-11-03T00:00:00Z"}, request=request)
+
+    publisher = blogger_writes.BloggerLivePublisher(httpx.MockTransport(handler))
+    result = publisher.create_live("live-once", blog_record_id, "Verified title", "<p>Verified body</p>")
+    assert result["status"] == "LIVE" and result["readback_verified"] is True
+    assert result["post_id"] == "456" and result["url"].endswith("verified.html")
+    assert [request.method for request in calls] == ["GET", "POST", "GET"]
+
+
 def test_trends_can_bypass_volume_cap_but_normal_lane_keeps_it(monkeypatch: pytest.MonkeyPatch) -> None:
     from contextlib import contextmanager
 
@@ -396,7 +474,9 @@ def test_trends_can_bypass_volume_cap_but_normal_lane_keeps_it(monkeypatch: pyte
             if "pg_try_advisory_lock" in query:
                 return Result({"acquired": True})
             if "SELECT max(a.created_at)" in query:
-                return Result({"account_last": None, "blog_last": None, "blog_hourly": 500})
+                return Result({"last_write": None, "blog_hourly": 500})
+            if "global_publish_min_interval_minutes" in query:
+                return Result({"global_publish_min_interval_minutes": 30})
             return Result({"unlocked": True})
 
     @contextmanager

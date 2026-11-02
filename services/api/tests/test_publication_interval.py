@@ -4,14 +4,91 @@ import pytest
 from woori.blogger_writes import interval_deadline
 
 
-@pytest.mark.parametrize(('account_age','blog_age','wait'),[
-    (None,None,0),(30,None,90),(None,10,290),(10,10,290),(121,301,0),
-    (120,300,0),(0,299,120),
+@pytest.mark.parametrize(('age','wait'),[
+    (None,0),(30,1770),(600,1200),(1799,1),(1800,0),
 ])
-def test_deadline_preserves_both_request_scopes(account_age,blog_age,wait):
+def test_deadline_uses_global_30_minimum(age,wait):
     now=datetime(2026,10,30,7,tzinfo=UTC)
-    assert interval_deadline(now-timedelta(seconds=account_age) if account_age is not None else None,
-                             now-timedelta(seconds=blog_age) if blog_age is not None else None,now)==now+timedelta(seconds=wait)
+    assert interval_deadline(now-timedelta(seconds=age) if age is not None else None, now)==now+timedelta(seconds=wait)
+
+
+def test_global_interval_cannot_fall_back_to_ten_minutes_after_restart():
+    now = datetime(2026, 11, 3, 0, 0, tzinfo=UTC)
+    last_request = now - timedelta(minutes=10)
+    # A restarted Worker reads the durable minimum; this is the same pure
+    # deadline calculation used after every request and across all Blogger IDs.
+    assert interval_deadline(last_request, now, 30) == now + timedelta(minutes=20)
+    with pytest.raises(ValueError, match="at_least_30_minutes"):
+        interval_deadline(last_request, now, 10)
+
+
+@pytest.mark.parametrize("blog_id", ["blog-en", "blog-ko", "blog-ja", "blog-zh"])
+def test_durable_global_interval_is_shared_across_blog_targets(monkeypatch, blog_id):
+    """A newly constructed worker reads the same DB interval and last-write anchor."""
+    from contextlib import contextmanager
+
+    from woori import blogger_writes
+
+    started_at = datetime.now(UTC) - timedelta(minutes=12)
+    queries = []
+
+    class Result:
+        def __init__(self, value):
+            self.value = value
+
+        def fetchone(self):
+            return self.value
+
+    class Connection:
+        def execute(self, query, _params=()):
+            queries.append(query)
+            if "pg_try_advisory_lock" in query:
+                return Result({"acquired": True})
+            if "SELECT max(a.created_at)" in query:
+                return Result({"last_write": started_at, "blog_hourly": 0})
+            if "global_publish_min_interval_minutes" in query:
+                return Result({"global_publish_min_interval_minutes": 30})
+            return Result({"unlocked": True})
+
+    @contextmanager
+    def shared_connection():
+        yield Connection()
+
+    monkeypatch.setattr(blogger_writes, "connection", shared_connection)
+    with pytest.raises(blogger_writes.WriteIntervalWait) as exc, \
+            blogger_writes.BloggerLivePublisher._account_write_guard(
+                {"oauth_connection_id": "shared-grant", "blog_id": blog_id,
+                 "language_code": "en"}
+            ):
+        pytest.fail("a different Blogger must not bypass the durable global interval")
+    assert exc.value.available_at == started_at + timedelta(minutes=30)
+    assert any("external.call.started" in query and "'POST','PATCH','PUT'" in query for query in queries)
+
+
+def test_global_write_lock_rejects_concurrent_worker(monkeypatch):
+    from contextlib import contextmanager
+
+    from woori import blogger_writes
+
+    class Result:
+        def fetchone(self):
+            return {"acquired": False}
+
+    class Connection:
+        def execute(self, *_args, **_kwargs):
+            return Result()
+
+    @contextmanager
+    def shared_connection():
+        yield Connection()
+
+    monkeypatch.setattr(blogger_writes, "connection", shared_connection)
+    with pytest.raises(blogger_writes.GoogleFailure, match="account_write_in_progress"), \
+            blogger_writes.BloggerLivePublisher._account_write_guard(
+                {"oauth_connection_id": "shared-grant", "blog_id": "blog-en",
+                 "language_code": "en"}
+            ):
+        pytest.fail("the second worker must not start a parallel Blogger write")
 
 
 def test_guard_stops_before_http_and_binds_spacing_to_selected_oauth(monkeypatch):
@@ -22,17 +99,20 @@ def test_guard_stops_before_http_and_binds_spacing_to_selected_oauth(monkeypatch
     now=datetime.now(UTC)
     params_seen=[]
     class Conn:
-        def execute(self,query,params):
+        def execute(self,query,params=()):
             params_seen.append(params)
             self.limits='SELECT max' in query
+            self.controls='global_publish_min_interval_minutes' in query
             return self
         def fetchone(self):
-            return {'account_last':now,'blog_last':None,'blog_hourly':0} if self.limits else {'acquired':True}
+            if self.limits:return {'last_write':now,'blog_hourly':0}
+            if self.controls:return {'global_publish_min_interval_minutes':30}
+            return {'acquired':True}
     @contextmanager
     def shared():
         yield Conn()
     monkeypatch.setattr(blogger_writes,'connection',shared)
     with pytest.raises(WriteIntervalWait) as exc, blogger_writes.BloggerLivePublisher._account_write_guard({'oauth_connection_id':'selected-grant','blog_id':'selected-blog','language_code':'en'}):
         pytest.fail('write must not begin before its interval')
-    assert exc.value.available_at==now+timedelta(minutes=2)
-    assert ('selected-grant','selected-blog','selected-blog') in params_seen
+    assert exc.value.available_at>=now+timedelta(minutes=29,seconds=59)
+    assert ('blogger-global-publication-write',) in params_seen
