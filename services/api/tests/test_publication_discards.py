@@ -47,7 +47,7 @@ def test_discard_restore_preserves_versions_jobs_and_audit(owner, monkeypatch):
     assert owner.execute("SELECT status FROM publishing_jobs WHERE id=%s", (job,)).fetchone()["status"] == "blocked"
     assert owner.execute("SELECT 1 FROM content_versions WHERE id=%s", (version,)).fetchone()
     assert owner.execute("SELECT count(*) n FROM audit_events").fetchone()["n"] == before + 1
-    listing = dict(q="P107 isolated", language_code="", blog_id="", origin="", compact=True, page=1, page_size=25)
+    listing = {"q": "P107 isolated", "language_code": "", "blog_id": "", "origin": "", "compact": True, "page": 1, "page_size": 25}
     archive = publications.list_publications(view="discarded", **listing)
     assert any(item["content_version_id"] == str(version) for item in archive["items"])
     assert not any(item["content_version_id"] == str(version) for item in

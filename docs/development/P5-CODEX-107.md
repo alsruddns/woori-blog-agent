@@ -19,3 +19,9 @@
 - 병목은 전체 원고의 본문 정규화 반복과 항목별 예약 실행 영수증 파일 재검증이었다. 중복 본문 인덱스와 출처 배치 조회로 해소했다. 운영 DB 신규 코드 직접 호출 compact 결과: review 880ms/약 86KB/25건, published 839ms/약 36KB/20건, held 867ms/약 34KB/17건, auto_failure 854ms/약 15KB/7건. 출처 필터 scheduled review 843ms/7건. 기준 API 2.2초/약 400KB 대비 개선됐으나 권장 p95 500ms 목표는 미달이며 측정은 단발성이다.
 - 격리 DB 집중 테스트 74건 통과. Dashboard typecheck, 변경 파일 ESLint, production build 통과. 기존 광범위 발행 테스트는 87건 중 80건 통과, 7건 실패(이전 정책 fixture 기대값 및 TestClient/DB 상태 불일치). 이 7건을 성공으로 처리하지 않는다. 테스트 과정에서 운영 Blogger에 쓰기 요청을 보내지 않았다.
 - 운영 API·Dashboard·Publication Worker 교체와 1440px/390px 브라우저 확인, 운영 전후 기록 및 최종 Git 결과는 다음 체크포인트에서 기록한다.
+
+## 사용량 제한 중단 후 재개
+
+- 중단 지점: 기능 커밋 `7fabe2a`와 운영 Migration 080 완료. API·Dashboard·Publication Worker는 보호 스크립트로 정상 종료·기동했으나, Dashboard는 `.runtime/validated-source.json`에 지정된 이전 격리 빌드를 제공해 새 상위 탭이 보이지 않았다. 읽기 전용 Playwright 1440px·390px 첫 실행 2건 실패는 이 빌드 불일치가 원인이다.
+- `scripts/apply-verified-changes.ps1`의 검증·격리 빌드·서비스 반영 절차를 확인했다. 사전 ruff에서 신규 코드 스타일 2건을 발견해 수정했다. 기존 운영 DB 설정 revision 12는 그대로이며 오래된 queued Trends Job 1건은 Auto grant가 없다. 실제 사용자의 원고에 폐기·복원을 실행하지 않았다.
+- 다음 단계: 변경 코드 커밋 후 검증된 격리 빌드를 반영하고, Playwright 및 운영 정합성을 다시 측정한다.

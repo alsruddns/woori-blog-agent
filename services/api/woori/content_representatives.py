@@ -62,9 +62,9 @@ class PublicationDuplicateIndex:
         key = (*scope, title_key)
         if normalized and title_key:
             for prior in self.by_title.get(key, []):
-                if min(len(normalized), len(prior)) / max(len(normalized), len(prior)) >= 0.70:
-                    if SequenceMatcher(None, normalized, prior, autojunk=False).ratio() >= 0.88:
-                        return False
+                if (min(len(normalized), len(prior)) / max(len(normalized), len(prior)) >= 0.70
+                        and SequenceMatcher(None, normalized, prior, autojunk=False).ratio() >= 0.88):
+                    return False
         if digest:
             self.exact.add(exact_key)
             if title_key:
