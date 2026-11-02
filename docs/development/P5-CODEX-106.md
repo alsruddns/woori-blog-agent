@@ -30,7 +30,7 @@
 
 ## 변경 파일
 
-`AGENTS.md`; `services/api/woori/automation_auto.py`, `automation_controls.py`, `publication_worker.py`; `services/api/tests/test_automation_controls.py`; `apps/dashboard/app/operations/automation/controls.tsx`, `controls.module.css`; `apps/dashboard/e2e/P5-CODEX-106-controls.spec.ts`; Dashboard 1440px/390px 증거 이미지 2개; 본 기록.
+`AGENTS.md`; `services/api/woori/automation_auto.py`, `automation_controls.py`, `publication_worker.py`; `services/api/tests/test_automation_controls.py`; `apps/dashboard/app/operations/automation/controls.tsx`, `controls.module.css`; `apps/dashboard/e2e/P5-CODEX-106-controls.spec.ts`, `P5-CODEX-106-operational.spec.ts`; Mock·운영 Dashboard 1440px/390px 증거 이미지 각 2개; 본 기록.
 
 ## 검증 체크포인트
 
@@ -41,8 +41,23 @@
 
 ## 운영 반영 체크포인트
 
-아래 항목은 코드 반영과 실제 설정 활성화 후에만 기입한다. 활성화 전에는 기존 전체/예약 자동 발행 OFF를 유지한다.
+### 안전한 코드 반영과 설정 활성화
+
+- API와 Dashboard는 프로젝트 소유 PID를 확인한 뒤 기존 종료 채널로 정상 종료·교체했다. Publication Worker도 기존 PID 32104, 이후 24296을 각각 정상 종료해 최신 코드로 교체했다. 강제 종료 없음. Research Worker PID 18928은 계속 실행했다. PostgreSQL 16과 별도 Crypto 클러스터는 재시작하지 않았다.
+- 실제 반영 소스: API·Dashboard `071c30e`, Publication Worker `3d1ee9e`, Research Worker 기존 `db8bcfe`(공통 설정 엔진 `automation-controls/2`). API 포트 8100 PID 24556, Dashboard 포트 3100 PID 17368, Publication Worker PID 32492, Research Worker PID 18928. API·Dashboard HTTP 200과 두 Worker revision ACK를 확인했다.
+- 설정 적용 직전 운영 DB를 `backups/20261102T083532Z.dump`에 추가 백업했고 `pg_restore --list`로 읽기 확인했다(복원 리허설 없음). 네 개의 실제 등록 Blogger ID는 별도 읽기 전용 Google GET에서 모두 일치했다. 이는 쓰기 성공 검증이 아니다.
+- P058 기존 예약 범위 이벤트는 4개 등록 Blogger에 한정해 이벤트 3으로 활성화했다. 일일 한도 1건/블로그를 유지했다. 이전 disabled 이벤트와 기존 게시·Job 기록은 보존했다.
+- 순서대로 revision 10에서 LIVE 방식과 정확한 Blogger 범위를 저장(전체 OFF), revision 11에서 예약 경로 ON·Trends 경로 OFF를 저장(전체 OFF), revision 12에서 전체 자동 발행을 마지막으로 ON 했다. 최종 활성화 시각은 **2026-11-02 17:36:58.959723 KST**다. revision 10/11/12 감사 이벤트는 각각 292504/292506/292524다. 설정은 PostgreSQL에 저장됐고 Research·Publication Worker 모두 revision **12**, `automation-controls/2`, 최신 heartbeat로 확인했다.
+- 최종값: Trends 수집 ON, Codex 자동 작성 ON, 전체 자동 발행 ON, Trends 경로 OFF, 예약 경로 ON, LIVE 방식, 수동 발행 ON, 긴급 정지 OFF, Blogger API 제한 로컬 플래그 OFF. 전체 ON은 예약 경로만 허용한다. 수동 키워드·unknown 원고 및 과거 원고는 신규 자동 승인 대상이 아니다.
+- 변경 전 스냅샷의 Publishing Job 38건, 게시 기록 18건, Blogger 쓰기 원장 58건을 재조회해 기존 행 변경 **0건**, 건수 증가 **0건**을 확인했다. 기존 15개 예약 TOML SHA-256은 변경 전후 동일했다. 운영 검증에서 Blogger POST/PATCH/PUT/DELETE 요청을 실행하지 않았다. 새로운 정상 예약 Import가 아직 발행 적격으로 완료되지 않아 **실제 LIVE 성공은 미검증**이다.
+- 실제 Dashboard `/operations/automation`을 읽기 전용으로 1440px·390px 각각 확인했다. 7개 스위치의 최종값, LIVE 저장 방식, Blogger 4개 범위, 두 Worker revision 12 ACK, 가로 넘침 0, 브라우저 오류 0. 운영 이미지 `assets/P5-CODEX-106-live-{desktop,mobile}.png`. Playwright 운영 2건 통과; Mock 4건과 분리했다.
+
+### 수집 주기 발견 및 복원 예약
+
+- P105 작업 중 2026-11-02 12:05 KST 감사 이벤트 288808에서 Trends 수집을 10분에서 60분으로 변경했다. DB에는 기본 `interval_minutes=10`이 남았지만 12:10부터 `pending_interval_minutes=60`이 실제 적용됐다. 따라서 12:10~17:10 수집이 매시 11개 지역씩 성공했으며, 이 구간을 10분 정상 수집이라고 보고하지 않는다. 정체나 제공자 429가 아니라 **운영 주기 설정**이 원인이다.
+- 사용자 지시의 10분 주기를 인증된 관리자 API로 다시 저장했다(감사 이벤트 **292543**). 기존 안전한 경계 규칙에 따라 18:10 KST부터 10분 주기로 복원 예약되며, 중간 누락 회차는 일괄 재실행하지 않는다. 감사 payload의 `before.interval_minutes`는 DB 기본 열 10을 나타내고, 실제 변경 직전 유효 주기는 `pending_interval_minutes=60`이었다. 이후 실제 두 회차는 최종 운영 검증에 따로 기록한다.
 
 ## 남은 문제
 
-- 인증된 읽기 전용 Blogger ID 확인, 별도 예약 정책 이벤트의 정확한 4개 Blogger 범위 활성화, 운영 프로세스의 안전한 코드 반영, 설정 revision/Worker ACK/과거 Job 불변 검증, LIVE 성공 여부 확인, 최종 Git commit/push.
+- 실제 신규 예약 원고의 LIVE 성공은 향후 정상 예약 실행까지 미검증이다. 읽기 성공은 Blogger 쓰기 권한을 입증하지 않는다. 10분 주기의 18:10 이후 실제 회차와 새 예약 Import/발행은 별도 관찰이 필요하다.
+- 기존 레거시 fixture 선택 테스트 3건은 실패 상태로 남아 있다. Mock 신규 경로 및 운영 화면 검증과 구분한다. 최종 Git commit/push 및 원격 HEAD 확인이 남아 있다.
