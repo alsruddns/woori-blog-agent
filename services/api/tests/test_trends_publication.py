@@ -6,7 +6,7 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
-from woori import external_policy
+from woori import automation_controls, external_policy, publication_operation
 from woori.publications import TrendsAutoPolicyInput
 from woori.trends_publication import (
     claims_are_publish_verified,
@@ -179,6 +179,13 @@ def test_unverified_trends_import_is_held_without_creating_job(monkeypatch) -> N
         yield fake
 
     monkeypatch.setattr("woori.trends_publication.connection", transaction)
+    monkeypatch.setattr(automation_controls, "read", lambda *_args, **_kwargs: {
+        "auto_publishing_enabled": True, "trends_auto_publishing_enabled": True,
+        "emergency_stop": False, "blogger_api_restricted": False,
+        "auto_enabled_at": "active", "trends_auto_enabled_at": "active",
+        "auto_mode": "publish", "auto_epoch": uuid4(), "trends_auto_epoch": uuid4(),
+    })
+    monkeypatch.setattr(publication_operation, "blogger_writes_allowed", lambda: False)
     result = enqueue_trends_auto_jobs()
     assert result == {"created": 0, "held": 1}
     assert any("publication.auto_failure.recorded" in query for query in fake.statements)

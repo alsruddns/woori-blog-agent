@@ -402,6 +402,17 @@ def test_mock_auto_dispatch_modes_and_off_invalidate_grants(center, monkeypatch,
                 "http_status": 200,
             }
 
+        def create_live(self, *args, **kw):
+            assert automation_auto.context_allowed("blogger_public_publish")
+            calls.append("LIVE")
+            return {
+                "post_id": "12345",
+                "status": "LIVE",
+                "readback_verified": True,
+                "published_at": datetime.now(UTC),
+                "url": "https://control.blogspot.com/test",
+            }
+
         def publish_draft(self, *args, **kw):
             assert automation_auto.context_allowed("blogger_public_publish")
             calls.append("LIVE")
@@ -414,13 +425,8 @@ def test_mock_auto_dispatch_modes_and_off_invalidate_grants(center, monkeypatch,
             }
 
     first = automation_auto.tick(publisher=Publisher())
-    assert first["status"] == ("draft_saved" if mode == "draft" else "draft_created"), first
-    assert calls == ["DRAFT"]
-    if mode == "publish":
-        conn.execute("UPDATE publishing_jobs SET available_at=now() WHERE id=%s", (job,))
-        second = automation_auto.tick(publisher=Publisher())
-        assert second["status"] == "published", second
-        assert calls == ["DRAFT", "LIVE"]
+    assert first["status"] == ("draft_saved" if mode == "draft" else "published"), first
+    assert calls == (["DRAFT"] if mode == "draft" else ["LIVE"])
     assert update(center, auto_publishing_enabled=False).status_code == 200
     assert controls.job_permitted(conn, job) is False
 

@@ -9,8 +9,10 @@ from test_content_imports import valid_item
 from test_pipeline import lab as shared_lab
 from test_trends_publication import _Result, _TrendsEnqueueConnection
 from woori import (
+    automation_controls,
     content_imports,
     external_policy,
+    publication_operation,
     publication_worker,
     publications,
     scheduled_duplicates,
@@ -93,6 +95,13 @@ def test_unverified_trends_job_enqueue_and_duplicate_reuse(monkeypatch):
     def shared():
         yield fake
     monkeypatch.setattr("woori.trends_publication.connection", shared)
+    monkeypatch.setattr(automation_controls, "read", lambda *_args, **_kwargs: {
+        "auto_publishing_enabled": True, "trends_auto_publishing_enabled": True,
+        "emergency_stop": False, "blogger_api_restricted": False,
+        "auto_enabled_at": "active", "trends_auto_enabled_at": "active",
+        "auto_mode": "publish", "auto_epoch": uuid4(), "trends_auto_epoch": uuid4(),
+    })
+    monkeypatch.setattr(publication_operation, "blogger_writes_allowed", lambda: False)
     monkeypatch.setattr(external_policy, "_blogger_policy_approval", lambda: {"approved": True})
     monkeypatch.setattr(external_policy, "_blogger_operation_is_approved", lambda _: True)
     monkeypatch.setattr(scheduled_duplicates, "find_remote_duplicate", lambda *_, **__: {"status": "clear"})
@@ -111,6 +120,7 @@ def test_isolated_import_enqueue_worker_and_live_receipt(lab, monkeypatch, mode,
             yield conn
     for module in (content_imports, publications, publication_worker, trends_publication):
         monkeypatch.setattr(module, "connection", shared)
+    monkeypatch.setattr(publication_operation, "blogger_writes_allowed", lambda: False)
     monkeypatch.setattr(external_policy, "_blogger_policy_approval", lambda: {"approved": True})
     monkeypatch.setattr(external_policy, "_blogger_operation_is_approved", lambda op: mode != "draft" or op != "blogger_public_publish")
     monkeypatch.setattr(scheduled_duplicates, "find_remote_duplicate", lambda *_, **__: {"status": "clear"})
@@ -156,11 +166,16 @@ def test_isolated_import_enqueue_worker_and_live_receipt(lab, monkeypatch, mode,
     slot=conn.execute('SELECT now() stamp').fetchone()['stamp'].isoformat()
     contract={'target_blog_id':str(blog),'target_language':language,'target_country':geo,'source_country':geo,'collection_slot':slot}
     conn.execute("INSERT INTO trend_generation_requests(topic_id,duplicate_key,contract,state,authoring_job_id) VALUES (%s,%s,%s,'imported',%s)",(topic,uuid4().hex,Jsonb(contract),job))
-    conn.execute("UPDATE publication_mode_settings SET emergency_stopped=false WHERE scope_type='global' AND scope_key=''")
+    conn.execute("UPDATE publication_mode_settings SET emergency_stopped=false,blogger_api_restricted=false WHERE scope_type='global' AND scope_key=''")
+    conn.execute("""UPDATE automation_controls SET auto_publishing_enabled=true,
+        trends_auto_publishing_enabled=true,auto_mode=%s,auto_enabled_at=now(),
+        trends_auto_enabled_at=now() WHERE id=1""", (mode,))
     assert enqueue_trends_auto_jobs()['created']==1
     assert enqueue_trends_auto_jobs()['created']==0
     bound=conn.execute("SELECT id,publication_mode,trends_policy_event_id FROM publishing_jobs WHERE blog_id=%s",(blog,)).fetchone()
     assert bound['publication_mode']==mode and bound['trends_policy_event_id']
+    grant=conn.execute("SELECT lane,manuscript_origin,publication_mode FROM automation_publication_grants WHERE job_id=%s",(bound['id'],)).fetchone()
+    assert grant == {"lane":"auto","manuscript_origin":"google_trends","publication_mode":mode}
     with pytest.raises(psycopg.errors.RaiseException, match='snapshot_immutable'), conn.transaction():
         conn.execute("UPDATE publishing_jobs SET publication_mode=%s WHERE id=%s",('publish' if mode=='draft' else 'draft',bound['id']))
     if not recover:
@@ -186,6 +201,10 @@ def test_isolated_import_enqueue_worker_and_live_receipt(lab, monkeypatch, mode,
         def create_draft(self,*args,**kwargs):
             assert not recover, 'recovery must never POST again'
             return {'post_id':'456','http_status':200,'post_verified':True,'status':'DRAFT'}
+        def create_live(self,*args,**kwargs):
+            assert mode == 'publish' and not recover
+            return {'post_id':'456','url':'https://isolated.blogspot.com/article.html','status':'LIVE',
+                    'readback_verified':True,'http_status':200,'published_at':slot}
         def publish_draft(self,*args,**kwargs):
             assert mode == 'publish', 'a later public policy must never publish an existing Draft Job'
             return {'post_id':'456','url':'https://isolated.blogspot.com/article.html','status':'LIVE',
@@ -229,9 +248,12 @@ def test_isolated_import_enqueue_worker_and_live_receipt(lab, monkeypatch, mode,
             assert conn.execute('SELECT body FROM content_versions WHERE id=%s',(version,)).fetchone()['body']==original_body
             assert conn.execute('SELECT remote_status FROM blogger_draft_receipts WHERE job_id=%s',(bound['id'],)).fetchone()['remote_status']=='DRAFT'
         return
-    assert result['status']=='draft_created', result
-    conn.execute("UPDATE publishing_jobs SET available_at=now() WHERE blog_id=%s",(blog,))
-    result=publication_worker.process_next_live_job(trends_auto_only=True)
+    if mode == 'publish':
+        assert result['status']=='published', result
+    else:
+        assert result['status']=='draft_created', result
+        conn.execute("UPDATE publishing_jobs SET available_at=now() WHERE blog_id=%s",(blog,))
+        result=publication_worker.process_next_live_job(trends_auto_only=True)
     assert result['status']=='published', result
     assert conn.execute("SELECT remote_status FROM publishing_records WHERE blog_id=%s",(blog,)).fetchone()['remote_status']=='LIVE'
     assert conn.execute("SELECT claims->0->>'verification_status' status FROM external_content_imports WHERE id=%s",(imported,)).fetchone()['status']=='unverified'

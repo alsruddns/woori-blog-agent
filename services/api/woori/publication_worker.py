@@ -66,6 +66,17 @@ def remote_duplicate_retry_plan(status: str, retry_count: int, max_retries: int)
             "retry_count": next_retry, "delay_seconds": remote_duplicate_retry_delay(next_retry) if retry else None}
 
 
+def check_job_remote_duplicate(lane: str, blog_id: UUID, title: str,
+                               owned_post_id: str | None) -> dict[str, Any]:
+    """Exclude only this job's already-linked Blogger post from duplicate hits."""
+    return find_remote_duplicate(
+        blog_id,
+        title,
+        include_drafts=lane == "trends_auto",
+        exclude_post_id=str(owned_post_id or ""),
+    )
+
+
 def execution_mode(*, private_drafts: bool = False, live: bool = False,
                    scheduled_auto: bool = False, manual_confirmed: bool = False,
                    trends_auto: bool = False) -> str:
@@ -852,6 +863,8 @@ def process_next_live_job(
         lane = str(job["publication_lane"])
         draft_mode = lane in {"trends_auto", "manual"} and job.get("publication_mode", "publish") == "draft"
         assessment = None
+        snapshot = None
+        manual_approval = None
         if lane == "scheduled_auto":
             link = conn.execute(
                 """SELECT i.*,v.id AS import_version_id,v.version_number,link.content_version_id,
@@ -941,6 +954,8 @@ def process_next_live_job(
                 })
         else:
             reasons = list(publications._assess(dict(candidate) if candidate else None)["reasons"])
+        if snapshot is None and candidate is not None:
+            snapshot = publications._manual_publication_snapshot(conn, dict(candidate))
         current = conn.execute(
             "SELECT oauth_connection_id,blog_id FROM blogger_blogs WHERE id=%s AND active",
             (blog_id,),
@@ -1083,11 +1098,12 @@ def process_next_live_job(
     publisher = BloggerLivePublisher()
     stage = str(claimed["live_stage"])
     if lane in {"scheduled_auto", "trends_auto", "manual"}:
-        if lane == "trends_auto":
-            remote_check = find_remote_duplicate(blog_id, str(candidate.get("editorial_title") or candidate["title"]),
-                include_drafts=True, exclude_post_id=str(claimed["remote_post_id"] or ""))
-        else:
-            remote_check = find_remote_duplicate(blog_id, str(candidate.get("editorial_title") or candidate["title"]))
+        remote_check = check_job_remote_duplicate(
+            lane,
+            blog_id,
+            str(candidate.get("editorial_title") or candidate["title"]),
+            str(claimed["remote_post_id"]) if claimed["remote_post_id"] else None,
+        )
         if remote_check["status"] != "clear":
             found = remote_check["status"] == "found"
             category = "remote_duplicate_found" if found else "remote_duplicate_check_unknown"
@@ -1146,10 +1162,17 @@ def process_next_live_job(
     write_key = "pubjob-" + str(job_id) + ("-draft" if operation == "create_draft" else "-publish")
     try:
         if operation == "create_draft":
-            with external_policy.manual_publication_context(
-                str(job_id), str(blog_id), str(version_id),
-                str(snapshot['title_sha256']), str(snapshot['body_sha256']), str(snapshot['html_sha256'])
-            ):
+            if lane == "trends_auto":
+                context = external_policy.trends_publication_context(str(blog_id))
+            elif lane == "scheduled_auto":
+                context = external_policy.scheduled_publication_context(str(blog_id))
+            else:
+                assert manual_approval is not None and snapshot is not None
+                context = external_policy.manual_publication_context(
+                    str(job_id), str(blog_id), str(version_id),
+                    str(snapshot['title_sha256']), str(snapshot['body_sha256']), str(snapshot['html_sha256'])
+                )
+            with context:
                 result = publisher.create_draft(
                     write_key, blog_id, str(candidate.get("editorial_title") or candidate["title"]),
                     str(candidate["html_body"]), list(candidate.get("blogger_labels") or []),

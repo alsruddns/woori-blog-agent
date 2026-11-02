@@ -52,6 +52,34 @@ def test_remote_duplicate_unknown_uses_bounded_retry_and_found_never_retries() -
     assert publication_worker.remote_duplicate_retry_delay(20) == 900
 
 
+@pytest.mark.parametrize(("lane", "include_drafts"), [
+    ("manual", False),
+    ("scheduled_auto", False),
+    ("trends_auto", True),
+])
+def test_job_duplicate_check_excludes_only_its_own_remote_post(
+    monkeypatch: pytest.MonkeyPatch, lane: str, include_drafts: bool,
+) -> None:
+    calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+
+    def capture(*args: Any, **kwargs: Any) -> dict[str, str]:
+        calls.append((args, kwargs))
+        return {"status": "clear"}
+
+    monkeypatch.setattr(publication_worker, "find_remote_duplicate", capture)
+    result = publication_worker.check_job_remote_duplicate(
+        lane, UUID(int=1), "Sample headline", "own-post-123"
+    )
+
+    assert result["status"] == "clear"
+    assert len(calls) == 1
+    assert calls[0][0] == (UUID(int=1), "Sample headline")
+    assert calls[0][1] == {
+        "include_drafts": include_drafts,
+        "exclude_post_id": "own-post-123",
+    }
+
+
 def test_manual_publish_reason_accepts_concise_korean_confirmation() -> None:
     payload = {
         "content_version_id": str(uuid4()),

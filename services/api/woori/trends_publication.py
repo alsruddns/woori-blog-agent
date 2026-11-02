@@ -143,9 +143,9 @@ def policy_state(conn: Any) -> dict[str, Any]:
 
 
 def record_policy(conn: Any, request: Any) -> dict[str, Any]:
-    from .publication_operation import blogger_writes_allowed
-    if request.enabled and not blogger_writes_allowed():
-        raise HTTPException(409, "authoring_only_blogger_writes_suspended")
+    # This endpoint records an authenticated operator policy event; it does not
+    # make a Blogger request. Keep live writer admission checks at the actual
+    # Blogger transport boundary, where they can inspect the scoped context.
     expected = "ENABLE TRENDS AUTO PUBLICATION" if request.enabled else "STOP TRENDS AUTO PUBLICATION"
     if request.publication_mode == "publish" and request.confirmation != expected:
         raise HTTPException(422, "Explicit Trends publication confirmation is required")
@@ -302,14 +302,17 @@ def validate_trends_job(conn: Any, blog_id: UUID, content_version_id: UUID) -> d
 
 def enqueue_trends_auto_jobs() -> dict[str, int]:
     """Enqueue current, explicitly scoped Trends imports under the post-edit policy."""
-    from . import external_policy
-    from .publication_operation import blogger_writes_allowed
+    from . import automation_controls, external_policy
     from .scheduled_duplicates import find_remote_duplicate
-    if not blogger_writes_allowed():
-        return {"created": 0, "held": 0}
     created = held = 0
     with connection() as conn:
         conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('trends-publication-enqueue',0))")
+        controls = automation_controls.read(conn, lock=True)
+        if (not controls["auto_publishing_enabled"]
+                or not controls["trends_auto_publishing_enabled"]
+                or controls["emergency_stop"] or controls["blogger_api_restricted"]
+                or not controls["auto_enabled_at"] or not controls["trends_auto_enabled_at"]):
+            return {"created": 0, "held": 0}
         emergency = conn.execute(
             "SELECT emergency_stopped FROM publication_mode_settings WHERE scope_type='global' AND scope_key=''"
         ).fetchone()
@@ -360,6 +363,10 @@ def enqueue_trends_auto_jobs() -> dict[str, int]:
                 if not collection_after_activation(item["contract"].get("collection_slot"), policy["created_at"]):
                     held += 1
                     _record_hold(conn, item, blog_id, ["collection_predates_policy_activation"])
+                    continue
+                if controls["auto_mode"] != policy["publication_mode"]:
+                    held += 1
+                    _record_hold(conn, item, blog_id, ["global_publication_mode_mismatch"])
                     continue
                 geo = str(item["contract"].get("source_country") or "")
                 if geo not in allowed_geos:
@@ -451,7 +458,20 @@ def enqueue_trends_auto_jobs() -> dict[str, int]:
                 ).fetchone()
                 if not job:
                     continue
+                conn.execute(
+                    """INSERT INTO automation_publication_grants(job_id,epoch,lane,publication_mode,
+                    manuscript_origin,source_epoch,origin_import_id,origin_content_version_id)
+                    VALUES(%s,%s,'auto',%s,'google_trends',%s,%s,%s)""",
+                    (job["id"], controls["auto_epoch"], policy["publication_mode"],
+                     controls["trends_auto_epoch"], item["id"], item["content_version_id"]),
+                )
                 created += 1
+                _append_audit(conn, "automation.auto_job.created", {
+                    "job_id": str(job["id"]), "version_id": str(item["content_version_id"]),
+                    "epoch": str(controls["auto_epoch"]), "mode": policy["publication_mode"],
+                    "quality_promoted": False, "manuscript_origin": "google_trends",
+                    "import_id": str(item["id"]), "source_epoch": str(controls["trends_auto_epoch"]),
+                })
                 _record_hold(conn, item, blog_id, [], job_id=job["id"])
                 _append_audit(conn, "publication.trends_auto_job.queued", {
                     "job_id": str(job["id"]), "import_id": str(item["id"]),
