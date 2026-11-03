@@ -23,7 +23,25 @@
 
 - Existing EN, KO, JA mappings were retained. The existing ZH-CN blog ID `1931836538202286191`, URL, OAuth mapping, and content history were retained while its language and blog `active` flags were turned off in one DB transaction. No queued or publishing Chinese job existed at the time of change.
 - Chinese historical records remain: 3 external imports, 3 import versions, 4 content versions, 2 completed publishing jobs, and 2 publication records. No records were deleted.
-- Local Codex automation registry at `C:\Users\achie\.codex\automations` contained exactly 15 definitions: 14 ACTIVE and `automation-10` PAUSED (the Chinese task). No DE/PT-BR/VI task definitions or the operator-reported six new task IDs were present in this checkout's Local registry. Their IDs, RRULEs, next runs, and executions therefore remain unverified. No Codex automation was created, deleted, or edited; the requested count of 21 and actual article generation/Import cannot be claimed complete.
+- Local Codex automation registry at `C:\Users\achie\.codex\automations` contained exactly 15 definitions: 14 ACTIVE and `automation-10` PAUSED (the Chinese task). No DE/PT-BR/VI task definitions or the operator-reported six new task IDs were present in this checkout's Local registry. Current `rrule` values are shown below; timezone and next-run data are not stored in these TOMLs and were not independently verified in the Scheduled UI. No Codex automation was created, deleted, or edited; the requested count of 21 and actual article generation/Import cannot be claimed complete.
+
+| Existing Local task ID | Status | Stored RRULE |
+|---|---|---|
+| `ai` | ACTIVE | `FREQ=WEEKLY;BYDAY=FR;BYHOUR=16;BYMINUTE=30` |
+| `automation` | ACTIVE | `FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=18;BYMINUTE=30` |
+| `automation-10` | PAUSED | `FREQ=WEEKLY;BYDAY=TU,WE,TH,FR,SA;BYHOUR=17;BYMINUTE=0` |
+| `automation-2` | ACTIVE | `FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=17;BYMINUTE=30` |
+| `automation-3` | ACTIVE | `FREQ=DAILY;BYHOUR=10;BYMINUTE=30` |
+| `automation-4` | ACTIVE | `FREQ=WEEKLY;BYDAY=MO,TH;BYHOUR=16;BYMINUTE=30` |
+| `automation-5` | ACTIVE | `FREQ=WEEKLY;BYDAY=SA;BYHOUR=12;BYMINUTE=0` |
+| `automation-6` | ACTIVE | `FREQ=WEEKLY;BYDAY=TU,WE,TH,FR,SA;BYHOUR=7;BYMINUTE=0` |
+| `automation-7` | ACTIVE | `FREQ=WEEKLY;BYDAY=TU,WE,TH,FR,SA;BYHOUR=9;BYMINUTE=0` |
+| `automation-8` | ACTIVE | `FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=20;BYMINUTE=0` |
+| `automation-9` | ACTIVE | `FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=16;BYMINUTE=0` |
+| `fed-sec` | ACTIVE | `FREQ=WEEKLY;BYDAY=TU,WE,TH,FR,SA;BYHOUR=11;BYMINUTE=0` |
+| `it-ai` | ACTIVE | `FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=12;BYMINUTE=0` |
+| `k-beauty` | ACTIVE | `FREQ=WEEKLY;BYDAY=TU,FR;BYHOUR=13;BYMINUTE=30` |
+| `k-pop` | ACTIVE | `FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=15;BYMINUTE=0` |
 - Existing active operational settings were preserved at revision 16: Trends collection and writing ON; overall, Trends, and scheduled auto-publication ON; manual publication ON; emergency stop OFF; global publish interval 15 minutes; global KST LIVE cap 100. Operator publication approval remains OFF. No operational publication setting was changed.
 - Backup verified before DB changes: `backups/20261103T031936Z.dump` (42,112,486 bytes). No schema migration was needed.
 - Blogger external calls: 7 read requests in total for this phase (one account blog listing already recorded during preflight, plus two reads per new blog mapping). Blogger POST/PATCH/DELETE/write requests: 0.
@@ -64,17 +82,26 @@
 - Focused API tests: 80 passed (`test_language_codes`, `test_content_imports`, `test_multilingual`, `test_editorial_intelligence`).
 - Ruff: passed for changed Python modules and tests.
 - Dashboard ESLint and TypeScript typecheck: passed.
-- UI/browser and full end-to-end schedule execution were not verified. The running Dashboard/API still report the previously applied commit until a safe committed-source reflection is performed.
-- At inspection: Dashboard PID 32344, API PID 35896, Research Worker PID 14128 (fresh heartbeat, applied commit `12aa235c4eccf7094414ee9eb4eb2d41f2ff43a1`), Publication Worker PID 20084 (fresh heartbeat, applied P112 commit). No active Research authoring job and no queued/live-due Publishing Job existed. These project-owned services were not force-stopped.
-- No API or Worker restart was performed before the documented safe-reflection procedure. Latest code is not yet active in existing processes; production runtime application remains incomplete until verified restart.
+- Full safe-reflection validation: API suite 64 passed, Ruff passed, mypy passed, wheel build passed, Dashboard ESLint/typecheck/production build passed. The script gracefully stopped only project-owned API, Dashboard, Research Worker, and Publication Worker; no force-kill was used. PostgreSQL and other projects remained untouched.
+- After reflection: API PID 27000, Dashboard PID 31636, Research Worker PID 31708, Publication Worker PID 8824. API `/health` and Dashboard `/research` returned HTTP 200; both Worker heartbeats are fresh and applied commit `18f32b8217918ff5abe12fa5942debe73c29528a`.
+- Chromium read-only UI verification visited `/config`, `/blogger`, and `/imports` at 1440×1000 and 390×844. Both sizes had no horizontal overflow or page errors; all new language codes and Blogger URLs were visible, and `/api/config/languages` returned 200. No Blogger write was sent.
+- Publication Worker remained in `automatic_publication_suspended` / manual mode with no live queued or due jobs; operator approval remains OFF. No active Research authoring job existed at restart.
 
 ## Remaining work / blockers
 
 1. The six operator-reported DE/PT-BR/VI Codex Desktop schedules were not in the actual Local automation registry. The owner must make those already-created tasks visible in the current Local project/account, after which their true IDs, schedules, timezone, enabled state, and next runs can be verified. No task was synthesized to fill the gap.
 2. No scheduled article was generated or imported for DE/PT-BR/VI. No content-generation provider was enabled by language registration.
 3. Blogger write permission was not tested; no publication approval or write gate was changed. New blogs remain non-publishable until the separate existing eligibility and approval gates pass.
-4. Safe service reflection, browser validation at 1440/390px, and the remote Git commit/push are pending final verification.
+4. The code commit is `18f32b8217918ff5abe12fa5942debe73c29528a`; the P113 final operations/documentation commit and origin push are pending.
 
 ## Commit
 
-- Commit hash: to be recorded from `git log` after commit; no self-referential hash is fabricated.
+- Implementation commit: `18f32b8217918ff5abe12fa5942debe73c29528a`.
+- Final documentation commit: recorded in the subsequent Git history entry for this file.
+
+## Follow-up UI state and final reflection
+
+- Follow-up UI commit: `fe840a83de6e397940ff84eba765fb625602ee0e`; the Blogger/language manager explicitly labels inactive ZH-CN as `운영 중단` while preserving historical records.
+- Before this follow-up is reflected, API PID 27000, Dashboard PID 31636, Research Worker PID 31708, and Publication Worker PID 8824 were still healthy. API and both worker heartbeats reported applied source `18f32b8217918ff5abe12fa5942debe73c29528a`; Dashboard also served the prior build. No active authoring or publication work was found, and no process was force-stopped.
+- The final Dashboard-only reflection and post-reflection browser check are pending. The verified-change script requires a clean tracked worktree; the documentation update is intentionally committed before invoking it. Existing unrelated untracked files/directories and stash are preserved.
+- Follow-up append-only runtime audit: event `agent.p5_codex_113.runtime_reflected`, ID 313859. A completion event and its ID will be recorded after final reflection and remote verification.
