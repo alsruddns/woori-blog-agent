@@ -60,19 +60,25 @@ Read-only inspection on the operations database `woori_blog_agent` found:
 - Dashboard ESLint: passed.
 - A pytest cache permission warning appeared; it did not affect test results.
 
-## Live operation status
+## Live operation result
 
-The following is intentionally left for the post-migration restart checkpoint and will be completed with observed results before finalization:
+- Operations backup remained available at `backups/20261103T011627Z.dump` (41,561,828 bytes; archive catalog verified before migration).
+- Migration 082 applied successfully while application services were down. Schema is 82; `automation_controls.revision=16`; global Blogger write interval is 15 minutes; global KST LIVE ceiling is 100; Trends is still ON at 30 minutes. Existing automation controls remain ON (auto manuscript, global auto, Trends auto, scheduled auto, manual publishing); emergency stop remains OFF.
+- Graceful stop completed for Publication Worker PID 33016, Research Worker PID 8848, Dashboard PID 24972, and API PID 25944. Both workers finished their current synchronous cycle. Dashboard/API process trees exited; ports 3100/8100 were verified free. PostgreSQL 16, the Crypto cluster, unrelated projects, and the enabled `WooriBlogAgent-Worker` task were not stopped or changed. The task stayed Ready with `LastTaskResult=0`.
+- The first two stop attempts safely aborted before any service stop because the orchestrator could not see helpers scoped inside `stop.ps1`. The functions were moved to `server-common.ps1`, and regression assertions were added. A later `-WhatIf` validation propagated ShouldProcess into the nested Pester run and caused 3 mock-only failures; validation was rerun without `-WhatIf`, after services were already stopped and with the intentional-stop marker still set. It did not request a second shutdown.
+- Latest committed source passed validation at `69f0e8061df174e1bcf6d9a1377fd7549ba78cce`. PowerShell shutdown tests passed 31/31; change-scope API tests passed 150/150 (one pytest cache permission warning); Ruff, Mypy (8 source files), Dashboard lint/typecheck, isolated production build and Python wheel verification passed. Playwright P110 settings/grid checks passed on both projects (4/4). Operational discard-default checks passed on desktop and mobile (2/2) with non-GET API requests blocked.
+- Services restarted from the validated develop checkout. New PIDs: API 1884, Dashboard 18464, Research Worker 36300, Publication Worker 29224. API `/health` and Dashboard `/` returned HTTP 200. Worker heartbeats are fresh. All four services report applied source commit `69f0e8061df174e1bcf6d9a1377fd7549ba78cce`; worker runtime acknowledgements both report policy revision 16 and fresh heartbeat. The task remains Ready and enabled.
+- An unauthenticated read of the admin settings endpoint returned 401 and the same-origin proxy returned 403; no authentication boundary was bypassed. Settings were verified from the operations DB and both Worker acknowledgements. Dashboard code is running the same validated commit; its authenticated live settings revision could not be independently read in this session.
+- Completion audit was appended as `agent.execution.completed`, audit event ID `311370`, linked to execution ID `3e8b8793-44eb-452c-bb10-27decc987041`; no prior audit event was modified.
+- Before/after operating counts are unchanged: Content Groups 275, Content Versions 505, Publishing Jobs 43, verified LIVE records 20, verified Draft records 0, discarded manuscripts 2. There are 0 running/uncertain LIVE jobs and 0 unresolved LIVE write operations. Today's observed KST LIVE count is 0/100 (100 remaining). The existing 15 scheduled automations remain unchanged. No Blogger write API request was made; no test post was created.
+- Publication Worker starts with the route priority implementation present in the applied commit, but remains fail-closed at `automatic_publication_suspended`: publication mode is `manual` and `operations_auto_approved=false`. This work did not grant external Blogger write approval or enable production writes. The 15-minute spacing and 100/day limits are persisted and tested; actual publication is not claimed.
 
-- Graceful stop outcome and stopped PIDs
-- Operations migration result and final revision
-- Startup source validation and full application restart outcome
-- New API/Dashboard/Research Worker/Publication Worker PIDs and health/heartbeat revisions
-- Final operation-data counts and KST LIVE usage
-- Browser check at 1440px and 390px
-- Final test summary and Git commit/push hashes
+## Commits and remaining checks
 
-No LIVE publication is being exercised as part of the restart. Actual Blogger write authorization remains separately gated; restarting services does not grant that authority.
+- `41a56e4` — interval/cap implementation.
+- `1952f51` and `5b83725` — graceful shutdown helper scope corrections.
+- `69f0e80` — remove redundant test-fixture return that blocked Ruff validation.
+- A final documentation-only commit and push will record the final Git state after the operational checkpoint. Browser operational UI checks were made against the local running Dashboard; the automated settings and grid E2E checks use mock API routes, not Blogger writes.
 
 ## Shutdown preflight correction checkpoint
 
