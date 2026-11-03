@@ -12,7 +12,7 @@ async function proxy(
   const route = path.join("/");
   const allowed =
     request.method === "GET"
-      ? /^(status|content|blogs\/[a-f0-9-]+\/posts(\/[0-9]+)?)$/.test(route)
+      ? /^(status|content|diagnostics\/(api-calls|audit-events|draft-results)|blogs\/[a-f0-9-]+\/posts(\/[0-9]+)?)$/.test(route)
       : request.method === "PUT"
         ? /^limits\/[a-zA-Z0-9-]+$/.test(route)
         : request.method === "POST" &&

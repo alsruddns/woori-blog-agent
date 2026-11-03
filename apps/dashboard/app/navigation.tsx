@@ -23,7 +23,7 @@ const links = [
   { href: "/manuscripts", label: "원고 관리", group: "콘텐츠", icon: "draft" },
   { href: "/keyword-authoring", label: "키워드 원고 작성", group: "콘텐츠", icon: "draft" },
   { href: "/publishing", label: "발행 관리", group: "게시", icon: "publish" },
-  { href: "/blogger", label: "Blogger 연결", group: "게시", icon: "blogger" },
+  { href: "/blogger", label: "Blogger 관리", group: "게시", icon: "blogger" },
   { href: "/operations/research", label: "자동화 관리", group: "게시", icon: "automation" },
   { href: "/operations/automation", label: "자동화 설정", group: "게시", icon: "automation" },
   { href: "/operations", label: "운영 진단", group: "시스템", icon: "settings" },
@@ -78,6 +78,8 @@ export default function DashboardNavigation({ children }: { children: ReactNode 
 
   const active = (href: string) => href === "/"
     ? pathname === "/"
+    : href === "/blogger"
+      ? pathname === "/blogger" || pathname.startsWith("/blogger/") || pathname === "/config" || pathname.startsWith("/config/")
     : href === "/operations"
       ? pathname === "/operations" || pathname === "/model-comparison"
       : pathname === href || pathname.startsWith(`${href}/`) || (href === "/manuscripts" && pathname === "/imports");

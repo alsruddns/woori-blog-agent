@@ -13,6 +13,7 @@ from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from psycopg.types.json import Jsonb
 from woori import blogger_drafts as drafts
+from woori import blogger_routes
 from woori import blogger_service as service
 from woori import google_oauth as oauth
 from woori.blogger_writes import BloggerWriter
@@ -621,7 +622,20 @@ def test_real_protocol_reads_and_dynamic_configuration(
         assert api.get(base + "/posts/2001", headers=headers).json()["title"] == "Mock post"
         assert api.post(base + "/test", headers=headers).json()["tested"]
         state = api.get("/admin/blogger/status", headers=headers).json()
-        assert any(x["blog_id"] == blog["id"] for x in state["calls"])
+        assert "calls" not in state and "events" not in state and "draft_results" not in state
+        assert state["google_account_identity_available"] is False
+        assert all("auth_attempt_count" in row and "active_auth_attempt" in row for row in state["connections"])
+        assert state["diagnostics"]["api_calls"]["total"] >= 1
+        call_page = api.get("/admin/blogger/diagnostics/api-calls?limit=5", headers=headers).json()
+        assert any(x["blog_name"] == "Test" for x in call_page["items"])
+        assert call_page["limit"] == 5 and call_page["offset"] == 0
+        assert "request_id" not in str(call_page["items"])
+        assert blogger_routes.audit_events(offset=0, limit=20, category="blogger")["total"] >= 1
+        audit_page = api.get("/admin/blogger/diagnostics/audit-events?category=blogger", headers=headers)
+        assert audit_page.status_code == 200
+        draft_page = api.get("/admin/blogger/diagnostics/draft-results", headers=headers)
+        assert draft_page.status_code == 200
+        assert "content" not in str(draft_page.json()["items"])
         assert "access_ciphertext" not in str(state["connections"])
         n = len(calls)
         assert (

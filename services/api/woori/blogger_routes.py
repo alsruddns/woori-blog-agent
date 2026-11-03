@@ -82,6 +82,7 @@ def status() -> dict[str, Any]:
         ).fetchone()
         return {
             "configured": oauth.configured(),
+            "google_account_identity_available": False,
             "operations": operations_health(),
             "writes_enabled": False,
             "common_connection": {
@@ -99,12 +100,20 @@ def status() -> dict[str, Any]:
             "connections": conn.execute(
                 """SELECT g.id,g.label,g.status,g.scopes,g.created_at,g.expires_at,g.error_category,
                 g.updated_at,(g.refresh_ciphertext IS NOT NULL) AS has_refresh_token,
+                auth.latest_auth_attempt_at,COALESCE(auth.auth_attempt_count,0)::int AS auth_attempt_count,
+                COALESCE(auth.active_auth_attempt,false) AS active_auth_attempt,
                 identity.payload->>'blogger_user_id' AS blogger_user_id,
                 identity.created_at AS identity_verified_at,
                 access.payload->'blogs' AS verified_blogs,
                 access.created_at AS access_verified_at,
                 COALESCE((access.payload->>'verified_blog_count')::int,0) AS verified_blog_count
                 FROM google_connections g
+                LEFT JOIN LATERAL (
+                  SELECT max(s.expires_at) AS latest_auth_attempt_at,
+                    count(*)::int AS auth_attempt_count,
+                    bool_or(NOT s.consumed AND s.expires_at>now()) AS active_auth_attempt
+                  FROM google_oauth_states s WHERE s.connection_id=g.id
+                ) auth ON true
                 LEFT JOIN LATERAL (
                   SELECT payload,created_at FROM audit_events
                   WHERE event_type='blogger.identity.verified'
@@ -124,14 +133,70 @@ def status() -> dict[str, Any]:
             "limits": conn.execute(
                 "SELECT * FROM language_execution_limits ORDER BY language_code"
             ).fetchall(),
-            "calls": conn.execute(
-                "SELECT * FROM blogger_api_calls ORDER BY id DESC LIMIT 50"
-            ).fetchall(),
-            "draft_results": drafts.recent_results(),
-            "events": conn.execute(
-                "SELECT id,event_type,blog_id,payload,created_at FROM audit_events WHERE event_type LIKE 'oauth.%' OR event_type LIKE 'blogger.%' ORDER BY id DESC LIMIT 50"
-            ).fetchall(),
+            "diagnostics": {
+                "api_calls": conn.execute("""SELECT count(*)::int AS total,
+                    count(*) FILTER (WHERE status IN ('failed','error') OR error_category IS NOT NULL)::int AS failures,
+                    max(created_at) AS last_event_at FROM blogger_api_calls""").fetchone(),
+                "audit_events": conn.execute("""SELECT count(*)::int AS total,
+                    count(*) FILTER (WHERE event_type LIKE '%failed%' OR event_type LIKE '%error%')::int AS failures,
+                    max(created_at) AS last_event_at FROM audit_events
+                    WHERE event_type LIKE 'oauth.%' OR event_type LIKE 'blogger.%'""").fetchone(),
+                "draft_results": drafts.results_summary(conn),
+            },
         }
+
+
+@router.get("/diagnostics/api-calls")
+def api_calls(
+    offset: int = Query(default=0, ge=0, le=100000),
+    limit: int = Query(default=20, ge=1, le=50),
+    status: str = Query(default="", max_length=30),
+) -> dict[str, Any]:
+    with connection() as conn:
+        where = "WHERE (%s='' OR c.status=%s)"
+        params: tuple[Any, ...] = (status, status)
+        total = conn.execute(f"SELECT count(*)::int AS n FROM blogger_api_calls c {where}", params).fetchone()["n"]
+        items = conn.execute(
+            f"""SELECT c.id,c.created_at,c.operation,c.status,c.http_status,c.error_category,
+                b.display_name AS blog_name,c.language_code
+                FROM blogger_api_calls c LEFT JOIN blogger_blogs b ON b.id=c.blog_id
+                {where} ORDER BY c.created_at DESC,c.id DESC OFFSET %s LIMIT %s""",
+            (*params, offset, limit),
+        ).fetchall()
+        return {"items": items, "offset": offset, "limit": limit, "total": total}
+
+
+@router.get("/diagnostics/audit-events")
+def audit_events(
+    offset: int = Query(default=0, ge=0, le=100000),
+    limit: int = Query(default=20, ge=1, le=50),
+    category: Literal["", "oauth", "blogger"] = Query(default=""),
+) -> dict[str, Any]:
+    category_clause = "" if not category else "AND event_type LIKE %s"
+    category_param = () if not category else (f"{category}.%",)
+    with connection() as conn:
+        base = "WHERE (event_type LIKE 'oauth.%%' OR event_type LIKE 'blogger.%%')"
+        total = conn.execute(
+            f"SELECT count(*)::int AS n FROM audit_events {base} {category_clause}", category_param
+        ).fetchone()["n"]
+        items = conn.execute(
+            f"""SELECT e.id,e.created_at,e.event_type,b.display_name AS blog_name
+                FROM audit_events e LEFT JOIN blogger_blogs b ON b.id=e.blog_id
+                {base} {category_clause.replace('event_type', 'e.event_type')}
+                ORDER BY e.created_at DESC,e.id DESC OFFSET %s LIMIT %s""",
+            (*category_param, offset, limit),
+        ).fetchall()
+        return {"items": items, "offset": offset, "limit": limit, "total": total}
+
+
+@router.get("/diagnostics/draft-results")
+def draft_results(
+    offset: int = Query(default=0, ge=0, le=100000),
+    limit: int = Query(default=20, ge=1, le=50),
+    status: str = Query(default="", max_length=30),
+) -> dict[str, Any]:
+    with connection() as conn:
+        return drafts.paginated_results(conn, offset=offset, limit=limit, status=status)
 
 
 @router.post("/oauth/start")

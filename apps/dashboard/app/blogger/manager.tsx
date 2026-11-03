@@ -29,6 +29,9 @@ type Connection = {
   verified_blog_count: number;
   verified_blogs: { language_code: string; url: string; blog_id: string }[] | null;
   access_verified_at: string | null;
+  latest_auth_attempt_at: string | null;
+  auth_attempt_count: number;
+  active_auth_attempt: boolean;
 };
 type Post = {
   id: string;
@@ -45,6 +48,7 @@ type Limit = {
 };
 type State = {
   configured: boolean;
+  google_account_identity_available: boolean;
   writes_enabled: false;
   common_connection: {
     cost_calls_allowed: boolean;
@@ -60,33 +64,7 @@ type State = {
   connections: Connection[];
   blogs: Blog[];
   limits: Limit[];
-  calls: {
-    id: number;
-    operation: string;
-    status: string;
-    error_category: string | null;
-    created_at: string;
-  }[];
-  events: { id: number; event_type: string; created_at: string }[];
-  draft_results: {
-    mode: string;
-    preview_id: string;
-    blog_record_id: string;
-    blog_id: string;
-    language_code: string;
-    title: string;
-    content: string;
-    is_draft: boolean;
-    final_status?: string;
-    external_post_id?: string | null;
-    http_status?: number | null;
-    verification?: {
-      checked: boolean;
-      is_draft: boolean | null;
-      title_matches: boolean | null;
-      content_matches: boolean | null;
-    };
-  }[];
+  diagnostics: Record<string, { total: number; failures: number; last_event_at: string | null }>;
 };
 type CommonVerification = {
   verification_id: string;
@@ -113,6 +91,61 @@ type DraftPreview = {
   is_draft: true;
   external_call_made: false;
 };
+type DiagnosticPage = { items: Record<string, unknown>[]; offset: number; limit: number; total: number };
+
+function LazyDiagnosticSection({
+  title,
+  summary,
+  endpoint,
+  filter,
+}: {
+  title: string;
+  summary: { total: number; failures: number; last_event_at: string | null };
+  endpoint: string;
+  filter?: { label: string; options: { value: string; label: string }[] };
+}) {
+  const [page, setPage] = useState<DiagnosticPage | null>(null);
+  const [offset, setOffset] = useState(0);
+  const [filterValue, setFilterValue] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  async function load(nextOffset: number, selectedFilter = filterValue) {
+    setLoading(true);
+    setError("");
+    try {
+      const params = new URLSearchParams({ offset: String(nextOffset), limit: "20" });
+      if (selectedFilter) params.set(filter?.label === "결과" ? "status" : "category", selectedFilter);
+      const response = await fetch(`/api/blogger/${endpoint}?${params}`, { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "기록을 불러오지 못했습니다.");
+      setPage(data);
+      setOffset(nextOffset);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "기록을 불러오지 못했습니다.");
+    } finally {
+      setLoading(false);
+    }
+  }
+  const columns = endpoint === "diagnostics/api-calls"
+    ? [["created_at", "시각"], ["operation", "API 동작"], ["status", "결과"], ["http_status", "HTTP"], ["blog_name", "대상 블로그"], ["error_category", "오류"]]
+    : endpoint === "diagnostics/audit-events"
+      ? [["created_at", "시각"], ["event_type", "이벤트"], ["blog_name", "대상 블로그"]]
+      : [["created_at", "시각"], ["mode", "유형"], ["language_code", "언어"], ["blog_id", "Blog ID"], ["external_post_id", "Post ID"], ["final_status", "결과"], ["http_status", "HTTP"], ["error_category", "오류"]];
+  return (
+    <details className="blogger-log-accordion" onToggle={(event) => {
+      if (event.currentTarget.open && page === null && !loading) void load(0);
+    }}>
+      <summary>
+        <span><strong>{title}</strong><small>{summary.total}건 · 오류 {summary.failures}건 · 최근 {summary.last_event_at ?? "기록 없음"}</small></span>
+      </summary>
+      {filter && <label className="blogger-log-filter">{filter.label}<select value={filterValue} onChange={(event) => { setFilterValue(event.target.value); void load(0, event.target.value); }}><option value="">전체</option>{filter.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>}
+      {loading && <p role="status">기록을 불러오는 중…</p>}
+      {error && <p className="error-state" role="alert">{error} <button type="button" onClick={() => void load(offset)}>다시 시도</button></p>}
+      {page && (page.items.length ? <div className="blogger-log-table-scroll"><table><thead><tr>{columns.map(([, label]) => <th key={label}>{label}</th>)}</tr></thead><tbody>{page.items.map((item, index) => <tr key={String(item.id ?? item.preview_id ?? `${offset}-${index}`)}>{columns.map(([key]) => <td key={key}>{key === "created_at" && item[key] ? new Date(String(item[key])).toLocaleString("ko-KR") : item[key] == null || item[key] === "" ? "—" : String(item[key])}</td>)}</tr>)}</tbody></table></div> : <p className="empty-state">해당 기록이 없습니다.</p>)}
+      {page && page.total > page.limit && <div className="blogger-log-pagination"><button type="button" disabled={loading || offset === 0} onClick={() => void load(Math.max(0, offset - page.limit))}>이전</button><span>{offset + 1}–{Math.min(offset + page.items.length, page.total)} / {page.total}</span><button type="button" disabled={loading || offset + page.limit >= page.total} onClick={() => void load(offset + page.limit)}>다음</button></div>}
+    </details>
+  );
+}
 
 const draftCopy: Record<string, { title: string; content: string }> = {
   ko: {
@@ -167,6 +200,7 @@ export default function Manager({ initial }: { initial: State }) {
       body: string;
     }[]
   >([]);
+  const [disconnectRequest, setDisconnectRequest] = useState<{ id: string; kind: "oauth" | "blog"; label: string } | null>(null);
   async function call(path: string, method = "GET", body?: unknown) {
     const response = await fetch(`/api/blogger/${path}`, {
       method,
@@ -416,30 +450,35 @@ export default function Manager({ initial }: { initial: State }) {
         Blogger 쓰기 권한 연결 (Google 동의 화면)
       </button>
       <p>
-        Blogger 전체 권한 scope 하나로 API 읽기와 쓰기 권한 범위를 모두 지원합니다. 연결된 Google 계정의
-        신원은 확인·추정하지 않습니다. 사용자가 매 요청을 확인한 비공개 초안 테스트 외의 게시·예약·수정·삭제와 자동 발행은 계속 차단됩니다.
+        이 목록은 Google 계정 수가 아니라 OAuth 연결 레코드입니다. {initial.google_account_identity_available ? "저장된 계정 식별 정보가 있습니다." : "저장된 이메일·Google 계정 ID가 없어 고유 계정 수는 확인할 수 없습니다."} OAuth 범위는 계정 식별 근거가 아닙니다. 실제 게시·수정·삭제는 별도 승인과 운영 정책으로 제어됩니다.
         {initial.common_connection.write_oauth_start_blocked && " 사용 가능한 쓰기 연결 또는 진행 중인 동의가 있어 새 연결 생성은 비활성화했습니다."}
       </p>
+      <section className="blogger-connection-summary" aria-label="OAuth 연결 요약">
+        <div><span>OAuth 연결 레코드</span><strong>{initial.connections.length}</strong></div>
+        <div><span>연결 완료</span><strong>{initial.connections.filter((c) => c.status === "connected").length}</strong></div>
+        <div><span>인증 미완료</span><strong>{initial.connections.filter((c) => c.status === "pending").length}</strong></div>
+        <div><span>읽기 전용 scope</span><strong>{initial.connections.filter((c) => c.status === "connected" && c.scopes?.includes("https://www.googleapis.com/auth/blogger.readonly")).length}</strong></div>
+        <div><span>전체 Blogger scope</span><strong>{initial.connections.filter((c) => c.status === "connected" && c.scopes?.includes("https://www.googleapis.com/auth/blogger")).length}</strong></div>
+        <div><span>등록 Blogger / 매핑 연결</span><strong>{initial.blogs.length} / {new Set(initial.blogs.map((blog) => blog.oauth_connection_id).filter(Boolean)).size}</strong></div>
+        <div><span>고유 Google 계정</span><strong>{initial.google_account_identity_available ? "확인 가능" : "확인 불가"}</strong></div>
+      </section>
       <ul className="blogger-connection-list">
         {initial.connections.map((c) => (
-          <li key={c.id}>
-            {c.label} · {c.status}
-            {` · 읽기 ${c.scopes?.some((scope) => scope === "https://www.googleapis.com/auth/blogger.readonly" || scope === "https://www.googleapis.com/auth/blogger") ? "허용" : "없음"}`}
-            {` · 쓰기 ${c.scopes?.includes("https://www.googleapis.com/auth/blogger") ? "OAuth 범위 있음" : "없음"}`}
-            {` · 연결 ${c.created_at}`}
-            {c.blogger_user_id && ` · Blogger profile ID ${c.blogger_user_id} (확인 ${c.identity_verified_at ?? "시각 미상"})`}
-            {` · 접근 검증 ${c.verified_blog_count}개 (${c.access_verified_at ?? "미검증"})`}
-            {` · 만료 ${c.expires_at ?? "미확인"}`}
-            {` · 갱신 토큰 ${c.has_refresh_token ? "암호화 저장됨" : "없음"}`}
-            {c.error_category && ` · ${c.error_category}`}{" "}
-            {c.status !== "disconnected" && (
-              <button
-                disabled={busy}
-                onClick={() => action(`oauth/${c.id}/disconnect`)}
-              >
-                Google 연결 해제
-              </button>
-            )}
+          <li className="blogger-connection-card" key={c.id}>
+            <div className="blogger-connection-card-body">
+              <div className="blogger-connection-card-heading"><div><h3>{c.label}</h3><small>OAuth 연결 레코드 · {c.id.slice(0, 8)}</small></div><span className={`blogger-state-pill ${c.status === "connected" ? "is-connected" : ""}`}>{c.status === "connected" ? "연결됨" : c.status === "pending" ? "인증 미완료" : c.status}</span></div>
+              <dl className="blogger-connection-facts">
+                <div><dt>권한 범위</dt><dd>읽기 {c.scopes?.some((scope) => scope === "https://www.googleapis.com/auth/blogger.readonly" || scope === "https://www.googleapis.com/auth/blogger") ? "허용" : "없음"} · 쓰기 {c.scopes?.includes("https://www.googleapis.com/auth/blogger") ? "범위 있음" : "없음"}</dd></div>
+                <div><dt>레코드 생성</dt><dd>{new Date(c.created_at).toLocaleString("ko-KR")}</dd></div>
+                <div><dt>인증 시도 이력</dt><dd>{c.auth_attempt_count}건 · {c.active_auth_attempt ? "진행 중" : c.latest_auth_attempt_at ? `마지막 요청 만료 ${new Date(c.latest_auth_attempt_at).toLocaleString("ko-KR")}` : "기록 없음"}</dd></div>
+                <div><dt>갱신·만료</dt><dd>{c.status === "connected" ? `만료 ${c.expires_at ? new Date(c.expires_at).toLocaleString("ko-KR") : "미확인"} · 갱신 정보 ${c.has_refresh_token ? "암호화 저장" : "없음"}` : "연결된 토큰 없음"}</dd></div>
+                <div><dt>계정 식별</dt><dd>{c.blogger_user_id ? `Blogger profile ID ${c.blogger_user_id} (Google 계정 이메일과 다름)` : "Google 계정 미확인"}</dd></div>
+                <div><dt>블로그 접근 검증</dt><dd>{c.verified_blog_count}개 · {c.access_verified_at ? new Date(c.access_verified_at).toLocaleString("ko-KR") : "검증 기록 없음"}</dd></div>
+                <div><dt>매핑된 블로그</dt><dd>{initial.blogs.filter((blog) => blog.oauth_connection_id === c.id).map((blog) => `${blog.display_name} (${blog.language_code})`).join(" · ") || "현재 매핑된 블로그 없음"}</dd></div>
+                {c.error_category && <div><dt>최근 오류</dt><dd>{c.error_category}</dd></div>}
+              </dl>
+            </div>
+            <div className="blogger-connection-card-actions">{c.status !== "disconnected" && <button disabled={busy} onClick={() => setDisconnectRequest({ id: c.id, kind: "oauth", label: c.label })}>Google 연결 해제</button>}</div>
           </li>
         ))}
       </ul>
@@ -561,7 +600,7 @@ export default function Manager({ initial }: { initial: State }) {
               </button>
               <button
                 disabled={busy || !b.oauth_connection_id}
-                onClick={() => action(`blogs/${b.id}/disconnect`)}
+                onClick={() => setDisconnectRequest({ id: b.id, kind: "blog", label: `${b.display_name} (${b.language_code})` })}
               >
                 블로그 연결 해제
               </button>
@@ -584,16 +623,6 @@ export default function Manager({ initial }: { initial: State }) {
           <button disabled={busy} onClick={() => setDraftPreview(null)}>취소</button>
         </section>
       )}
-      <h2>실제 Blogger 초안 테스트 결과</h2>
-      {initial.draft_results.length ? (
-        <ul>
-          {initial.draft_results.map((draft) => (
-            <li key={draft.preview_id}>
-              {draft.mode === "live_test_draft" ? "실제 Blogger" : "모의"} · {draft.language_code} · Blog ID {draft.blog_id} · Post ID {draft.external_post_id ?? "미생성"} · {draft.final_status ?? "승인 대기"} · HTTP {draft.http_status ?? "미요청"} · 초안 검증 {draft.verification?.checked ? (draft.verification.is_draft ? "비공개 확인" : "상태 불일치") : "미확인"}
-            </li>
-          ))}
-        </ul>
-      ) : <p>실제 초안 생성 결과가 없습니다.</p>}
       {loaded && (
         <section>
           <h2>
@@ -744,30 +773,22 @@ export default function Manager({ initial }: { initial: State }) {
           </li>
         ))}
       </ul>
-      <h2>최근 API 호출·오류</h2>
-      {initial.calls.length ? (
-        <ul>
-          {initial.calls.map((c) => (
-            <li key={c.id}>
-              {c.created_at} · {c.operation} · {c.status}{" "}
-              {c.error_category ?? ""}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p>아직 API 호출 기록이 없습니다.</p>
-      )}
-      <h2>최근 인증·Blogger 감사 이력</h2>
-      {initial.events.length ? (
-        <ul>
-          {initial.events.map((e) => (
-            <li key={e.id}>
-              {e.created_at} · {e.event_type}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p>아직 인증·Blogger 이벤트가 없습니다.</p>
+      <section className="blogger-diagnostics" aria-label="진단 및 감사 기록">
+        <h2>진단·감사 기록</h2>
+        <LazyDiagnosticSection title="최근 API 호출·오류" summary={initial.diagnostics.api_calls} endpoint="diagnostics/api-calls" filter={{ label: "결과", options: [{ value: "succeeded", label: "성공" }, { value: "failed", label: "실패" }, { value: "requested", label: "요청" }] }} />
+        <LazyDiagnosticSection title="Blogger 초안 테스트 결과" summary={initial.diagnostics.draft_results} endpoint="diagnostics/draft-results" filter={{ label: "결과", options: [{ value: "succeeded", label: "성공" }, { value: "failed", label: "실패" }, { value: "uncertain", label: "확인 필요" }] }} />
+        <LazyDiagnosticSection title="최근 인증·Blogger 감사 이력" summary={initial.diagnostics.audit_events} endpoint="diagnostics/audit-events" filter={{ label: "영역", options: [{ value: "oauth", label: "OAuth" }, { value: "blogger", label: "Blogger" }] }} />
+      </section>
+      {disconnectRequest && (
+        <div className="blogger-confirm-backdrop" role="presentation">
+          <section className="blogger-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="blogger-disconnect-title">
+            <h2 id="blogger-disconnect-title">Google 연결 해제 확인</h2>
+            <p>대상 연결: <strong>{disconnectRequest.label}</strong></p>
+            <p>{disconnectRequest.kind === "oauth" ? `이 인증을 사용하는 블로그: ${initial.blogs.filter((blog) => blog.oauth_connection_id === disconnectRequest.id).map((blog) => blog.display_name).join(" · ") || "현재 연결된 블로그 없음"}` : "해당 Blogger의 현재 OAuth 매핑을 해제합니다."}</p>
+            <p>연결 해제 후 이 인증을 사용하는 읽기 작업은 실패할 수 있습니다. 원고, 게시 이력, 자동 발행 설정은 변경되지 않지만 필요한 OAuth 연결이 사라지면 Worker는 정책에 따라 게시를 차단합니다. 실제 연결 해제 전 대상과 영향을 확인하세요.</p>
+            <div className="blogger-confirm-actions"><button type="button" className="secondary-button" disabled={busy} onClick={() => setDisconnectRequest(null)}>취소</button><button type="button" disabled={busy} onClick={() => { const path = disconnectRequest.kind === "oauth" ? `oauth/${disconnectRequest.id}/disconnect` : `blogs/${disconnectRequest.id}/disconnect`; setDisconnectRequest(null); void action(path); }}>연결 해제 진행</button></div>
+          </section>
+        </div>
       )}
     </>
   );

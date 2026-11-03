@@ -368,18 +368,49 @@ def process_next_queued_draft() -> dict[str, Any] | None:
     return {"preview_id": result["preview_id"], "status": status, "post_id": final.get("external_post_id"), "verification": final.get("verification"), "error_category": error_category}
 
 
-def recent_results() -> list[dict[str, Any]]:
-    with connection() as conn:
-        rows = conn.execute(
-            """SELECT idempotency_key,status,result FROM blogger_write_operations
-            WHERE operation='create_draft'
-            ORDER BY created_at DESC LIMIT 20"""
-        ).fetchall()
+def results_summary(conn: Any) -> dict[str, Any]:
+    return conn.execute(
+        """SELECT count(*)::int AS total,
+        count(*) FILTER (WHERE status IN ('failed','uncertain'))::int AS failures,
+        max(created_at) AS last_event_at FROM blogger_write_operations
+        WHERE operation='create_draft'"""
+    ).fetchone()
+
+
+def paginated_results(conn: Any, *, offset: int, limit: int, status: str = "") -> dict[str, Any]:
+    total = conn.execute(
+        """SELECT count(*)::int AS total FROM blogger_write_operations
+        WHERE operation='create_draft' AND (%s='' OR status=%s)""",
+        (status, status),
+    ).fetchone()["total"]
+    rows = conn.execute(
+        """SELECT idempotency_key,status,result,created_at FROM blogger_write_operations
+        WHERE operation='create_draft' AND (%s='' OR status=%s)
+        ORDER BY created_at DESC,idempotency_key DESC OFFSET %s LIMIT %s""",
+        (status, status, offset, limit),
+    ).fetchall()
     results: list[dict[str, Any]] = []
     for row in rows:
         result = row["result"] or {}
         if row["idempotency_key"].startswith(LIVE_DRAFT_KEY_PREFIX):
-            results.append(result)
+            verification = result.get("verification") or {}
+            results.append(
+                {
+                    "mode": result.get("mode"),
+                    "preview_id": result.get("preview_id"),
+                    "language_code": result.get("language_code"),
+                    "blog_id": result.get("blog_id"),
+                    "external_post_id": result.get("external_post_id"),
+                    "final_status": result.get("final_status", row["status"]),
+                    "http_status": result.get("http_status"),
+                    "error_category": result.get("error_category"),
+                    "verification": {
+                        "checked": bool(verification.get("checked")),
+                        "is_draft": verification.get("is_draft"),
+                    },
+                    "created_at": row["created_at"],
+                }
+            )
         else:
             results.append(
                 {
@@ -391,6 +422,7 @@ def recent_results() -> list[dict[str, Any]]:
                     "final_status": row["status"],
                     "http_status": None,
                     "verification": None,
+                    "created_at": row["created_at"],
                 }
             )
-    return results
+    return {"items": results, "offset": offset, "limit": limit, "total": total}

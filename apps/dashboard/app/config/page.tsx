@@ -1,7 +1,7 @@
 import { API_BASE } from "../../lib/server";
-import Link from "next/link";
 import Manager from "./manager";
 import type { Config } from "./types";
+import BloggerManagementTabs from "../blogger-management-tabs";
 export const dynamic = "force-dynamic";
 export default async function Configuration() {
   let config: Config | null = null;
@@ -16,16 +16,10 @@ export default async function Configuration() {
     }
   } catch {}
   return (
-    <main>
-      <header>
-        <Link href="/">WOORI / OPERATIONS</Link>
-        <span>언어 및 블로그 설정</span>
-      </header>
-      <h1>다국어 운영 설정</h1>
-      <aside>
-        등록은 자동 발행을 활성화하지 않습니다. 운영 블로그 요청과 AI 호출은
-        차단되어 있습니다.
-      </aside>
+    <main className="workspace-main blogger-page">
+      <div className="page-heading"><div><p className="eyebrow">Blogger 관리</p><h1>언어·정책 설정</h1><p>언어, 블로그 매핑 및 국가별 콘텐츠 정책을 관리합니다.</p></div></div>
+      <BloggerManagementTabs active="language-policy" />
+      <aside className="blogger-policy-note">언어·블로그 등록은 자동 발행 승인이 아닙니다. 기존 운영 제한과 콘텐츠 기록은 별도로 유지됩니다.</aside>
       {config ? (
         <Manager config={config} />
       ) : (
