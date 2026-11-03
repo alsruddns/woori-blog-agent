@@ -20,7 +20,6 @@ from .blogger_writes import BloggerLivePublisher, WriteIntervalWait, interval_de
 from .db import connection
 from .google_http import GoogleFailure
 from .publication_daily import (
-    GLOBAL_DAILY_PUBLISH_LIMIT,
     LANGUAGE_DAILY_LIMITS,
     LANGUAGE_HOURLY_LIMITS,
     kst_day_bounds,
@@ -1034,41 +1033,64 @@ def process_next_live_job(
         language = str(blog["language_code"])
         # All publication lanes share the same daily/hourly ceilings as well
         # as the global write spacing and eligibility gates.
-        if publication_count_limits_apply(lane):
+        if publication_count_limits_apply(lane) and job.get("publication_mode") == "publish":
             today = __import__("datetime").datetime.now(ZoneInfo("Asia/Seoul")).date()
             day_start, day_end = kst_day_bounds(today)
             daily = conn.execute(
             """WITH actual AS (
-              SELECT b.language_code,count(*)::int AS n FROM publishing_records r
-              JOIN blogger_blogs b ON b.id=r.blog_id WHERE r.published_at>=%s AND r.published_at<%s
+              SELECT b.language_code,count(DISTINCT (b.blog_id,r.remote_post_id))::int AS n
+              FROM publishing_records r JOIN blogger_blogs b ON b.id=r.blog_id
+              WHERE b.active AND r.remote_status='LIVE' AND r.remote_verified_at IS NOT NULL
+                AND r.published_at>=%s AND r.published_at<%s
               GROUP BY b.language_code
             ), reserved AS (
               SELECT b.language_code,count(*)::int AS n FROM publishing_jobs j
               JOIN blogger_blogs b ON b.id=j.blog_id
               WHERE NOT j.simulation_only AND j.adapter_type='blogger_live'
+                AND j.publication_mode='publish'
                 AND j.status IN ('queued','running','uncertain') AND j.scheduled_at>=%s AND j.scheduled_at<%s
               GROUP BY b.language_code
             ) SELECT COALESCE((SELECT sum(n) FROM actual),0)::int AS actual_total,
               COALESCE((SELECT sum(n) FROM reserved),0)::int AS reserved_total,
               COALESCE((SELECT n FROM actual WHERE language_code=%s),0)::int AS lang_actual,
-              COALESCE((SELECT n FROM reserved WHERE language_code=%s),0)::int AS lang_reserved""",
+              COALESCE((SELECT n FROM reserved WHERE language_code=%s),0)::int AS lang_reserved,
+              (SELECT global_daily_live_publish_limit FROM automation_controls WHERE id=1)::int AS global_limit""",
             (day_start, day_end, day_start, day_end, language, language),
             ).fetchone()
             if daily is None:
                 return {"job_id": str(job_id), "status": "blocked", "reason": "daily_publication_count_unavailable",
                         "live_write_performed": False}
             language_cap = LANGUAGE_DAILY_LIMITS.get(language)
-            if (int(daily["actual_total"])+int(daily["reserved_total"])>GLOBAL_DAILY_PUBLISH_LIMIT
-                    or (language_cap is not None and int(daily["lang_actual"])+int(daily["lang_reserved"])>language_cap)):
+            cap_reason = None
+            if int(daily["actual_total"]) >= int(daily["global_limit"]):
+                cap_reason = "global_daily_live_publish_limit"
+            elif language_cap is not None and int(daily["lang_actual"]) >= language_cap:
+                cap_reason = "language_daily_live_publish_limit"
+            if cap_reason:
+                next_kst_day = datetime.combine(today + timedelta(days=1), datetime.min.time(), ZoneInfo("Asia/Seoul"))
+                conn.execute(
+                    """UPDATE publishing_jobs SET available_at=%s,last_error_category=%s,updated_at=now()
+                    WHERE id=%s AND status='queued'""",
+                    (next_kst_day.astimezone(UTC), cap_reason, job_id),
+                )
+                _append_audit(conn, "publication.live_job.daily_limit_deferred", {
+                    "job_id": str(job_id), "reason": cap_reason,
+                    "available_at": next_kst_day.astimezone(UTC).isoformat(),
+                    "global_live_count": int(daily["actual_total"]),
+                    "global_live_limit": int(daily["global_limit"]),
+                    "language": language,
+                })
                 return {"job_id": str(job_id), "status": "deferred", "reason": "daily_publication_limit",
-                        "live_write_performed": False}
+                        "available_at": next_kst_day.astimezone(UTC), "live_write_performed": False}
             hourly_row = conn.execute(
-            """SELECT count(*)::int AS actual FROM publishing_records
-            WHERE blog_id=%s AND published_at>=now()-interval '1 hour'""", (blog_id,)
+            """SELECT count(DISTINCT remote_post_id)::int AS actual FROM publishing_records
+            WHERE blog_id=%s AND remote_status='LIVE' AND remote_verified_at IS NOT NULL
+              AND published_at>=now()-interval '1 hour'""", (blog_id,)
             ).fetchone()
             hourly_reserved_row = conn.execute(
             """SELECT count(*)::int AS reserved FROM publishing_jobs
             WHERE blog_id=%s AND NOT simulation_only AND adapter_type='blogger_live'
+              AND publication_mode='publish'
               AND status IN ('queued','running','uncertain') AND scheduled_at>=now()-interval '1 hour'""",
             (blog_id,),
             ).fetchone()
@@ -1362,6 +1384,26 @@ def process_next_live_job(
     except GoogleFailure as exc:
         if isinstance(exc, WriteIntervalWait):
             return defer_interval_job(job_id, exc)
+        if exc.category in {
+            "global_daily_live_publish_limit_reached",
+            "language_daily_live_publish_limit_reached",
+        }:
+            defer_day = datetime.now(ZoneInfo("Asia/Seoul")).date() + timedelta(days=1)
+            available_at = datetime.combine(defer_day, datetime.min.time(), ZoneInfo("Asia/Seoul")).astimezone(UTC)
+            with connection() as conn:
+                conn.execute(
+                    """UPDATE publishing_jobs SET status='queued',publication_state='publication_queued',
+                    available_at=%s,last_error_category=%s,lease_until=NULL,updated_at=now()
+                    WHERE id=%s AND status='running'""",
+                    (available_at, exc.category, job_id),
+                )
+                _append_audit(conn, "publication.live_job.daily_limit_deferred", {
+                    "job_id": str(job_id), "reason": exc.category,
+                    "available_at": available_at.isoformat(), "live_write_performed": False,
+                })
+            return {"job_id": str(job_id), "status": "deferred",
+                    "reason": exc.category, "available_at": available_at,
+                    "live_write_performed": False}
         status = "uncertain" if exc.category in {"uncertain_write", "previous_write_pending_or_uncertain", "idempotency_ledger_unavailable", "published_readback_mismatch", "published_record_conflict"} else "failed"
         with connection() as conn:
             conn.execute(

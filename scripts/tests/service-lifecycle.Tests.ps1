@@ -151,8 +151,9 @@ Describe 'Windows service lifecycle ownership and startup policy' {
     $bootstrap | Should Match 'suppressed_after_intentional_stop'
     $bootstrap | Should Match 'ExplicitUserStart'
     $stopper | Should Match 'Write-IntentionalStopMarker'
-    $stopper | Should Match '\$wholeStopTimeoutSeconds = \$TimeoutSeconds'
-    $stopper | Should Match '\$TimeoutSeconds = \$wholeStopTimeoutSeconds'
+    $stopper.IndexOf("Assert-HttpTreeOwned 'dashboard'") | Should BeLessThan $stopper.IndexOf('Write-IntentionalStopMarker $requestId')
+    $stopper.IndexOf("Assert-HttpTreeOwned 'api'") | Should BeLessThan $stopper.IndexOf('Write-IntentionalStopMarker $requestId')
+    $stopper | Should Not Match 'stop\.ps1.*-Service api'
     $reflection=Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\apply-verified-changes.ps1') -Raw
     $reflection | Should Match 'restart_suppressed_after_intentional_stop'
   }

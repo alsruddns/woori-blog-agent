@@ -229,7 +229,7 @@ class Change(BaseModel):
     manual_publishing_enabled: bool | None = None
     trends_auto_publishing_enabled: bool | None = None
     scheduled_auto_publishing_enabled: bool | None = None
-    global_publish_min_interval_minutes: int | None = Field(default=None, ge=30, le=1440)
+    global_publish_min_interval_minutes: int | None = Field(default=None, ge=15, le=1440)
     emergency_stop: bool | None = None
     auto_mode: Literal["draft", "publish"] | None = None
     auto_blog_ids: list[str] | None = None

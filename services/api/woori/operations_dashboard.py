@@ -5,11 +5,11 @@ from zoneinfo import ZoneInfo
 
 from .operations import health as operations_health
 from .publication_daily import (
-    GLOBAL_DAILY_PUBLISH_LIMIT,
     LANGUAGE_DAILY_LIMITS,
     LANGUAGE_HOURLY_LIMITS,
     kst_day_bounds,
     summarize_daily_usage,
+    verified_live_by_language,
 )
 
 
@@ -65,24 +65,22 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
     # Use an explicit KST date; never rely on the host or PostgreSQL session timezone.
     today_kst = datetime.now(UTC).astimezone(ZoneInfo("Asia/Seoul")).date()
     day_start, day_end = kst_day_bounds(today_kst)
-    daily_rows = conn.execute(
-        """SELECT b.language_code,count(*)::int AS count FROM publishing_records r
-        JOIN blogger_blogs b ON b.id=r.blog_id
-        WHERE r.remote_status='LIVE' AND r.remote_verified_at IS NOT NULL
-          AND r.published_at >= %s AND r.published_at < %s GROUP BY b.language_code""",
-        (day_start, day_end),
-    ).fetchall()
-    daily_published = {str(row["language_code"]): int(row["count"]) for row in daily_rows}
+    daily_published = verified_live_by_language(conn, day_start, day_end)
     reservation_rows = conn.execute(
         """SELECT b.language_code,count(*)::int AS count FROM publishing_jobs j
         JOIN blogger_blogs b ON b.id=j.blog_id
-        WHERE j.status IN ('queued','running') AND j.scheduled_at >= %s AND j.scheduled_at < %s
-          AND NOT EXISTS (SELECT 1 FROM publishing_records r WHERE r.job_id=j.id)
+        WHERE NOT j.simulation_only AND j.adapter_type='blogger_live'
+          AND j.publication_mode='publish' AND j.status IN ('queued','running','uncertain')
+          AND j.scheduled_at >= %s AND j.scheduled_at < %s
+          AND NOT EXISTS (SELECT 1 FROM publishing_records r WHERE r.job_id=j.id
+            AND r.remote_status='LIVE' AND r.remote_verified_at IS NOT NULL)
         GROUP BY b.language_code""",
         (day_start, day_end),
     ).fetchall()
     daily_reserved = {str(row["language_code"]): int(row["count"]) for row in reservation_rows}
-    daily_publication = summarize_daily_usage(daily_published, daily_reserved)
+    daily_publication = summarize_daily_usage(
+        daily_published, daily_reserved, int(automation["global_daily_live_publish_limit"])
+    )
     daily_publication["date_kst"] = today_kst.isoformat()
     daily_publication["items"] = [dict(row) for row in conn.execute(
         """SELECT r.published_at,b.language_code,b.display_name AS blog_name,b.url AS blog_url,
@@ -444,7 +442,7 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
         "checks": checks,
         "limits": {
             "timezone": "Asia/Seoul",
-            "global_daily": GLOBAL_DAILY_PUBLISH_LIMIT,
+            "global_daily": int(automation["global_daily_live_publish_limit"]),
             "language_daily": {**LANGUAGE_DAILY_LIMITS, "en": None},
             "language_hourly": LANGUAGE_HOURLY_LIMITS,
             "english_daily_policy": "remaining_global_capacity",
@@ -513,7 +511,7 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
             {"key":"gpt_scheduled_import","name":"Codex 예약 원고 파일 수신","status":"partial" if scheduled_import["local_file_probe_runs"] else "external_status_unknown",
              "detail":f"로컬 파일 probe {scheduled_import['local_file_probe_runs']}회; 예약 원고 Import {scheduled_import['scheduled_article_imports']}건. task 설정·다음 실행 상태는 Scheduled UI에서 확인합니다."}],
         "publication_policy":{"configured_global_mode":global_config.get("configured_mode","manual"),"live_auto_enabled":False,"live_writes_enabled":False,
-            "hourly_limit":LANGUAGE_HOURLY_LIMITS,"hourly_limit_status":"configured_internal_cap","daily_limit":GLOBAL_DAILY_PUBLISH_LIMIT,
+            "hourly_limit":LANGUAGE_HOURLY_LIMITS,"hourly_limit_status":"configured_internal_cap","daily_limit":int(automation["global_daily_live_publish_limit"]),
             "emergency_stopped":bool(global_config.get("emergency_stopped",False))},
         "recent_public_url":None,"search_console_connected":False,"search_performance":"미연결: 검색 실적을 표시하지 않습니다.",
         "limitations":["실제 Blogger 게시와 Auto 게시는 비활성화되어 있습니다.","설정 값만으로 실제 Worker 실행을 증명하지 않습니다.",

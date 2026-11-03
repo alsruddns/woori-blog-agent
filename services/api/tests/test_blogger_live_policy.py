@@ -301,7 +301,7 @@ def test_live_draft_is_read_back_before_success_is_recorded(
     monkeypatch.setattr(blogger_writes.external_policy, "_audit", lambda *args, **kwargs: None)
     monkeypatch.setattr(blogger_writes.external_policy, "_blogger_operation_is_approved", lambda _op: True)
     monkeypatch.setattr(blogger_writes.BloggerLivePublisher, "_account_write_guard",
-                        staticmethod(lambda _target: nullcontext()))
+                        staticmethod(lambda _target, **_kwargs: nullcontext()))
 
     def handler(request: httpx.Request) -> httpx.Response:
         calls.append((request.method, request.url.path))
@@ -372,7 +372,7 @@ def test_live_publish_requires_remote_live_readback_and_uses_same_post(monkeypat
     monkeypatch.setattr(blogger_writes.external_policy, "_audit", lambda *args, **kwargs: None)
     monkeypatch.setattr(blogger_writes.external_policy, "_blogger_operation_is_approved", lambda _op: True)
     monkeypatch.setattr(blogger_writes.BloggerLivePublisher, "_account_write_guard",
-                        staticmethod(lambda _target: nullcontext()))
+                        staticmethod(lambda _target, **_kwargs: nullcontext()))
 
     def handler(request: httpx.Request) -> httpx.Response:
         calls.append((request.method, request.url.path))
@@ -494,6 +494,57 @@ def test_trends_can_bypass_volume_cap_but_normal_lane_keeps_it(monkeypatch: pyte
         blogger_writes.BloggerLivePublisher._account_write_guard(target),
     ):
         pass
+
+
+def test_global_daily_live_cap_blocks_before_blogger_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    from woori import blogger_writes
+
+    class Result:
+        def __init__(self, row: dict[str, object]) -> None:
+            self.row = row
+
+        def fetchone(self) -> dict[str, object]:
+            return self.row
+
+    queries: list[str] = []
+
+    class FakeConnection:
+
+        def execute(self, query: str, _params: object = None) -> Result:
+            queries.append(query)
+            if "pg_try_advisory_lock" in query:
+                return Result({"acquired": True})
+            if "SELECT max(a.created_at)" in query:
+                return Result({"last_write": None, "blog_hourly": 0})
+            if "global_publish_min_interval_minutes" in query:
+                return Result({"global_publish_min_interval_minutes": 15,
+                               "global_daily_live_publish_limit": 100})
+            if "WITH observed AS" in query:
+                return Result({"total": 100})
+            if "blogger_write_operations" in query:
+                return Result({"n": 0})
+            return Result({"unlocked": True})
+
+    @contextmanager
+    def fake_connection():
+        yield FakeConnection()
+
+    monkeypatch.setattr(blogger_writes, "connection", fake_connection)
+    with (
+        pytest.raises(GoogleFailure, match="global_daily_live_publish_limit_reached"),
+        blogger_writes.BloggerLivePublisher._account_write_guard(
+            {"blog_id": "123", "language_code": "en"},
+            operation="create_live", enforce_volume_caps=False,
+        ),
+    ):
+        pytest.fail("LIVE request must be blocked before reaching Blogger")
+    with blogger_writes.BloggerLivePublisher._account_write_guard(
+        {"blog_id": "123", "language_code": "en"},
+        operation="create_draft", enforce_volume_caps=False,
+    ):
+        pass
+    draft_queries = queries[queries.index(next(q for q in queries if "WITH observed AS" in q)) + 1:]
+    assert not any("WITH observed AS" in query for query in draft_queries)
 
 
 def test_policy_approval_requires_exact_scoped_append_only_record(

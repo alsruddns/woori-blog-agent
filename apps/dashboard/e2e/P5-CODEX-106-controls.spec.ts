@@ -7,7 +7,7 @@ test("all controls persist through the confirmation flow", async ({ page }, info
     auto_publishing_enabled: false, trends_auto_publishing_enabled: false,
     scheduled_auto_publishing_enabled: false, manual_publishing_enabled: true,
     emergency_stop: false, blogger_api_restricted: false,
-    interval_minutes: 30, global_publish_min_interval_minutes: 30, auto_mode: "draft", auto_blog_ids: [] as string[],
+    interval_minutes: 30, global_publish_min_interval_minutes: 15, global_daily_live_publish_limit: 100, auto_mode: "draft", auto_blog_ids: [] as string[],
     google_account_report: "user_reported_available", read_check_result: {},
   };
   const requests: Record<string, unknown>[] = [];
@@ -117,7 +117,8 @@ test("failed save keeps the previous switch value and offers a retry", async ({ 
         auto_publishing_enabled: false, trends_auto_publishing_enabled: false,
         scheduled_auto_publishing_enabled: false, manual_publishing_enabled: true,
         emergency_stop: false, blogger_api_restricted: false, interval_minutes: 30,
-        global_publish_min_interval_minutes: 30,
+        global_publish_min_interval_minutes: 15,
+        global_daily_live_publish_limit: 100,
         auto_mode: "draft", auto_blog_ids: [], google_account_report: "unverified", read_check_result: {} },
       effective: {}, workers: [], history: [], blogs: [],
       recent: { region_count: 11, last_collection: null, last_import: null,

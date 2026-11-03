@@ -230,8 +230,17 @@ def test_model_comparison_read_model_uses_isolated_evaluation_reader(monkeypatch
     assert any("current_database()" in query for query in evaluation.statements)
 
 
-def test_operations_snapshot_reads_migration_marker_without_schema_table_privilege() -> None:
+def test_operations_snapshot_reads_migration_marker_without_schema_table_privilege(monkeypatch: Any) -> None:
+    from woori import automation_controls
     from woori.operations_dashboard import dashboard_snapshot
+
+    monkeypatch.setattr(automation_controls, "read", lambda _conn: {
+        "trends_collection_enabled": True, "auto_manuscript_enabled": True,
+        "auto_publishing_enabled": False, "manual_publishing_enabled": True,
+        "trends_auto_publishing_enabled": False, "scheduled_auto_publishing_enabled": False,
+        "global_publish_min_interval_minutes": 15, "global_daily_live_publish_limit": 100,
+        "emergency_stop": False, "blogger_api_restricted": False,
+    })
 
     class SnapshotConnection:
         def execute(self, query: str, _params: Any = None) -> _Cursor:
@@ -253,9 +262,14 @@ def test_operations_snapshot_reads_migration_marker_without_schema_table_privile
                 return _Cursor([{"count": 0}])
             if "max(published_at)" in query:
                 return _Cursor([{"at": None}])
+            if "SELECT blogger_write_mode,blogger_api_restricted,emergency_stopped" in query:
+                return _Cursor([{"blogger_write_mode": "manual_only",
+                                 "blogger_api_restricted": False,"emergency_stopped": False}])
             if "scope_type='global'" in query:
                 return _Cursor([{"scope_type": "global", "scope_key": "", "configured_mode": "manual",
-                                 "emergency_stopped": False, "daily_auto_limit": 1}])
+                                 "emergency_stopped": False, "daily_auto_limit": 1,
+                                 "global_publish_min_interval_minutes": 15,
+                                 "global_daily_live_publish_limit": 100}])
             return _Cursor([])
 
     result = dashboard_snapshot(SnapshotConnection())
@@ -267,7 +281,7 @@ def test_operations_snapshot_reads_migration_marker_without_schema_table_privile
     assert "사람 검토와 별도 게시 승인" not in checks["publish_eligibility"]["detail"]
     assert "실제 Blogger 쓰기와 공개 게시는 현재 비활성화" not in checks["blogger_live_publisher"]["detail"]
     assert result["publishing"]["manual_publication_available"] is False
-    assert result["readiness"]["limits"]["global_daily"] == 50
+    assert result["readiness"]["limits"]["global_daily"] == 100
     assert result["readiness"]["modes"][-1]["status"] == "blocked"
     assert result["monitoring"]["alert_delivery_configured"] is False
 

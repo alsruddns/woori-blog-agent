@@ -14,6 +14,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlsplit
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 import httpx
 from psycopg.types.json import Jsonb
@@ -22,7 +23,7 @@ from . import external_policy, google_oauth
 from .db import connection
 from .external_policy import ExternalCallBlocked, FreeQuotaExceeded
 from .google_http import BASE, WRITE_SCOPE, GoogleFailure, classify, numeric_id, safe_error_reason
-from .publication_daily import LANGUAGE_HOURLY_LIMITS
+from .publication_daily import LANGUAGE_DAILY_LIMITS, LANGUAGE_HOURLY_LIMITS, kst_day_bounds
 
 
 def _live_response(
@@ -121,9 +122,9 @@ class WriteIntervalWait(GoogleFailure):
         self.available_at = available_at
 
 
-def interval_deadline(last_write: datetime | None, now: datetime, minimum_minutes: int = 30) -> datetime:
-    if minimum_minutes < 30:
-        raise ValueError("global_publish_interval_must_be_at_least_30_minutes")
+def interval_deadline(last_write: datetime | None, now: datetime, minimum_minutes: int = 15) -> datetime:
+    if minimum_minutes < 15:
+        raise ValueError("global_publish_interval_must_be_at_least_15_minutes")
     return max(now, last_write + timedelta(minutes=minimum_minutes) if last_write else now)
 
 
@@ -225,7 +226,9 @@ class BloggerLivePublisher:
 
     @staticmethod
     @contextmanager
-    def _account_write_guard(target: dict[str, Any], *, enforce_volume_caps: bool = True) -> Iterator[None]:
+    def _account_write_guard(
+        target: dict[str, Any], *, operation: str = "create_draft", enforce_volume_caps: bool = True,
+    ) -> Iterator[None]:
         """Serialize all Blogger writes globally and enforce durable spacing."""
         blog_id = str(target["blog_id"])
         language = str(target["language_code"])
@@ -250,7 +253,7 @@ class BloggerLivePublisher:
                     (blog_id,),
                 ).fetchone()
                 controls = conn.execute(
-                    "SELECT global_publish_min_interval_minutes FROM automation_controls WHERE id=1"
+                    "SELECT global_publish_min_interval_minutes,global_daily_live_publish_limit FROM automation_controls WHERE id=1"
                 ).fetchone()
                 if limits is None or controls is None:
                     raise GoogleFailure('account_limits_unavailable')
@@ -261,6 +264,66 @@ class BloggerLivePublisher:
                 )
                 if deadline > now:
                     raise WriteIntervalWait("global_minimum_interval_not_elapsed", deadline)
+                if operation in {"create_live", "publish_draft"}:
+                    # The ceiling applies to successful LIVE posts across all four
+                    # blogs and all request lanes. A pending/uncertain LIVE write
+                    # reserves the remaining decision until it can be reconciled.
+                    day_start, day_end = kst_day_bounds(now.astimezone(ZoneInfo("Asia/Seoul")).date())
+                    live_count = conn.execute(
+                        """WITH observed AS (
+                          SELECT b.blog_id AS remote_blog_id,r.remote_post_id
+                          FROM publishing_records r JOIN blogger_blogs b ON b.id=r.blog_id
+                          WHERE b.active AND r.remote_status='LIVE' AND r.remote_verified_at IS NOT NULL
+                            AND r.remote_post_id IS NOT NULL AND r.published_at >= %s AND r.published_at < %s
+                          UNION
+                          SELECT b.blog_id,a.payload->>'post_id'
+                          FROM audit_events a JOIN blogger_blogs b ON b.blog_id=a.payload->>'blog_id'
+                          WHERE a.event_type='blogger.write.succeeded' AND a.payload->>'mode'='live'
+                            AND b.active
+                            AND a.payload->>'operation' IN ('create_live','publish_draft')
+                            AND a.payload->>'post_id' IS NOT NULL AND a.created_at >= %s AND a.created_at < %s
+                            AND NOT EXISTS (SELECT 1 FROM publishing_records r JOIN blogger_blogs b ON b.id=r.blog_id
+                              WHERE b.blog_id=a.payload->>'blog_id' AND r.remote_post_id=a.payload->>'post_id'
+                                AND r.remote_status='LIVE' AND r.remote_verified_at IS NOT NULL)
+                        ) SELECT count(*)::int AS total FROM observed""",
+                        (day_start, day_end, day_start, day_end),
+                    ).fetchone()
+                    uncertain = conn.execute(
+                        """SELECT count(*)::int AS n FROM blogger_write_operations
+                        WHERE operation IN ('create_live','publish_draft') AND status IN ('pending','uncertain')"""
+                    ).fetchone()
+                    if live_count is None or uncertain is None:
+                        raise GoogleFailure("global_daily_live_count_unavailable")
+                    if int(uncertain["n"] or 0) > 0:
+                        raise GoogleFailure("unresolved_live_write_requires_reconciliation")
+                    if int(live_count["total"] or 0) >= int(controls["global_daily_live_publish_limit"]):
+                        raise GoogleFailure("global_daily_live_publish_limit_reached")
+                    language_cap = LANGUAGE_DAILY_LIMITS.get(language)
+                    if language_cap is not None:
+                        language_count = conn.execute(
+                            """WITH posts AS (
+                              SELECT r.remote_post_id
+                              FROM publishing_records r JOIN blogger_blogs b ON b.id=r.blog_id
+                              WHERE b.active AND b.language_code=%s AND r.remote_status='LIVE'
+                                AND r.remote_verified_at IS NOT NULL AND r.remote_post_id IS NOT NULL
+                                AND r.published_at >= %s AND r.published_at < %s
+                              UNION
+                              SELECT a.payload->>'post_id' FROM audit_events a
+                              JOIN blogger_blogs b ON b.blog_id=a.payload->>'blog_id'
+                              WHERE b.active AND b.language_code=%s AND a.event_type='blogger.write.succeeded'
+                                AND a.payload->>'mode'='live'
+                                AND a.payload->>'operation' IN ('create_live','publish_draft')
+                                AND a.payload->>'post_id' IS NOT NULL AND a.created_at >= %s AND a.created_at < %s
+                                AND NOT EXISTS (SELECT 1 FROM publishing_records r JOIN blogger_blogs rb ON rb.id=r.blog_id
+                                  WHERE rb.blog_id=a.payload->>'blog_id' AND r.remote_post_id=a.payload->>'post_id'
+                                    AND r.remote_status='LIVE' AND r.remote_verified_at IS NOT NULL)
+                            ) SELECT count(*)::int AS total FROM posts""",
+                            (language, day_start, day_end, language, day_start, day_end),
+                        ).fetchone()
+                        if language_count is None:
+                            raise GoogleFailure("language_daily_live_count_unavailable")
+                        if int(language_count["total"] or 0) >= language_cap:
+                            raise GoogleFailure("language_daily_live_publish_limit_reached")
                 if enforce_volume_caps:
                     hourly_limit = LANGUAGE_HOURLY_LIMITS.get(language, 0)
                     if not hourly_limit or int(limits["blog_hourly"] or 0) >= hourly_limit:
@@ -321,8 +384,8 @@ class BloggerLivePublisher:
         previous = self._existing(key, "create_draft", fingerprint)
         if previous is not None:
             return previous
-        guard = (self._account_write_guard(target) if enforce_volume_caps else
-                 self._account_write_guard(target, enforce_volume_caps=False))
+        guard = (self._account_write_guard(target, operation="create_draft") if enforce_volume_caps else
+                 self._account_write_guard(target, operation="create_draft", enforce_volume_caps=False))
         with guard:
             previous = self._claim(
                 key, "create_draft", fingerprint, blog_id=target["blog_id"],
@@ -397,7 +460,7 @@ class BloggerLivePublisher:
         previous = self._existing(key, "create_live", fingerprint)
         if previous is not None:
             return previous
-        with self._account_write_guard(target, enforce_volume_caps=enforce_volume_caps):
+        with self._account_write_guard(target, operation="create_live", enforce_volume_caps=enforce_volume_caps):
             previous = self._claim(
                 key, "create_live", fingerprint, blog_id=target["blog_id"],
                 connection_id=target["oauth_connection_id"],
@@ -475,8 +538,8 @@ class BloggerLivePublisher:
         previous = self._existing(key, "publish_draft", fingerprint)
         if previous is not None:
             return previous
-        guard = (self._account_write_guard(target) if enforce_volume_caps else
-                 self._account_write_guard(target, enforce_volume_caps=False))
+        guard = (self._account_write_guard(target, operation="publish_draft") if enforce_volume_caps else
+                 self._account_write_guard(target, operation="publish_draft", enforce_volume_caps=False))
         with guard:
             previous = self._claim(
                 key, "publish_draft", fingerprint, blog_id=target["blog_id"],

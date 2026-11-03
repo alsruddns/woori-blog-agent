@@ -6,7 +6,7 @@ test("automation reason defaults and global interval use the same audited confir
     trends_collection_enabled: true, auto_manuscript_enabled: true, auto_publishing_enabled: false,
     trends_auto_publishing_enabled: false, scheduled_auto_publishing_enabled: false,
     manual_publishing_enabled: true, emergency_stop: false, blogger_api_restricted: false,
-    interval_minutes: 30, global_publish_min_interval_minutes: 30, auto_mode: "draft", auto_blog_ids: [],
+    interval_minutes: 30, global_publish_min_interval_minutes: 15, global_daily_live_publish_limit: 100, auto_mode: "draft", auto_blog_ids: [],
     google_account_report: "unverified", read_check_result: {},
   };
   const writes: Record<string, unknown>[] = [];

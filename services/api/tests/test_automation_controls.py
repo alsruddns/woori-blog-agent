@@ -170,6 +170,10 @@ def test_revision_conflict_and_strict_boolean(center):
 def test_global_publish_interval_change_is_persisted_and_audited(center):
     conn, api, h = center
     before = api.get(BASE, headers=h).json()["settings"]
+    assert update(center, global_publish_min_interval_minutes=14).status_code == 422
+    minimum = update(center, global_publish_min_interval_minutes=15)
+    assert minimum.status_code == 200, minimum.text
+    before = api.get(BASE, headers=h).json()["settings"]
     response = update(center, global_publish_min_interval_minutes=60)
     assert response.status_code == 200, response.text
     after = api.get(BASE, headers=h).json()["settings"]
@@ -181,7 +185,7 @@ def test_global_publish_interval_change_is_persisted_and_audited(center):
     change = next(item for item in event["changes"] if item["key"] == "global_publish_min_interval_minutes")
     assert (change["before"], change["after"]) == (before["global_publish_min_interval_minutes"], 60)
     assert event["reason"] == "Isolated explicit operator control change"
-    assert update(center, global_publish_min_interval_minutes=29).status_code == 422
+    assert update(center, global_publish_min_interval_minutes=14).status_code == 422
 
 
 def test_live_mode_and_scope_save_while_master_is_off(center):

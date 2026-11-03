@@ -19,7 +19,6 @@ from .content_representatives import PublicationDuplicateIndex
 from .db import connection
 from .google_http import GoogleFailure
 from .publication_daily import (
-    GLOBAL_DAILY_PUBLISH_LIMIT,
     LANGUAGE_DAILY_LIMITS,
     LANGUAGE_HOURLY_LIMITS,
 )
@@ -1525,7 +1524,7 @@ def list_publications(
     with connection() as conn:
         mode_data = _mode_settings(conn)
         global_publish_interval = conn.execute(
-            "SELECT global_publish_min_interval_minutes FROM automation_controls WHERE id=1"
+            "SELECT global_publish_min_interval_minutes,global_daily_live_publish_limit FROM automation_controls WHERE id=1"
         ).fetchone()
         from .publication_operation import manual_requests_allowed
         from .publication_read_state import failure_resolved_clause, pending_state
@@ -1980,7 +1979,10 @@ def list_publications(
             "mode_policy": mode_data,
             "operational_limits": {
                 "timezone": "Asia/Seoul",
-                "global_daily": GLOBAL_DAILY_PUBLISH_LIMIT,
+                "global_daily": (
+                    int(global_publish_interval["global_daily_live_publish_limit"])
+                    if global_publish_interval else None
+                ),
                 "language_daily": {**LANGUAGE_DAILY_LIMITS, "en": None},
                 "language_hourly": LANGUAGE_HOURLY_LIMITS,
                 "english_daily_policy": "remaining_global_capacity",
