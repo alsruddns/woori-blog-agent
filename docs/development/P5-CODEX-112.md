@@ -57,7 +57,7 @@ DB Migration은 추가하지 않았다. 운영 콘텐츠·OAuth 연결·Blogger 
 - `git diff --check`: 통과.
 - 실제 Blogger API 쓰기/연결 해제: 0건. DB 설정/연결 변경: 0건.
 - append-only PostgreSQL 실행 감사: `agent.p5_codex_112.completed`, event ID `312788`, 2026-11-03 11:37:18 KST. 작업 ID·브랜치·검증 요약만 기록했다.
-- 최초 서비스 반영 사전 검증은 SQL 집계 `fetchone()`의 Optional 타입을 좁히지 않은 mypy 오류 3건으로 중단됐다. 서비스는 중지되지 않았고, 결과 행의 존재를 명시 검증하도록 수정했다. 이후 재검증 결과를 아래 완료 커밋과 서비스 반영 로그에 연결한다.
+- 최초 서비스 반영 사전 검증은 SQL 집계 `fetchone()` 결과의 Optional 타입을 좁히지 않은 mypy 오류 3건으로 중단됐다. 첫 수정 후 두 경로는 통과했고, `blogger_drafts.results_summary`의 동적 row 반환 타입 1건이 남아 명시적 타입 확인과 안전한 `cast`를 추가했다. 두 번 모두 서비스는 중지되지 않았다. 최종 재검증 및 반영 결과는 후속 커밋/Git 이력과 서비스 로그에 연결한다.
 
 ## 운영 반영 및 남은 항목
 

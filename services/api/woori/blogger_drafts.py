@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 from psycopg.types.json import Jsonb
@@ -376,7 +376,7 @@ def results_summary(conn: Any) -> dict[str, Any]:
         WHERE operation='create_draft'"""
     ).fetchone()
     assert row is not None
-    return row
+    return cast(dict[str, Any], row)
 
 
 def paginated_results(conn: Any, *, offset: int, limit: int, status: str = "") -> dict[str, Any]:
