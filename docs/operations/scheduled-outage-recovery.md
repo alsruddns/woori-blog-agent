@@ -7,10 +7,18 @@ language, research standards, taxonomy, run-mode resolver, or occurrence identit
 
 1. Resolve the actual invocation with `scripts/resolve-codex-automation-run.py`.
    Preserve its actual scheduled/manual classification and confirmed KST slot.
-   A project-derived occurrence is not a scheduler-issued ID. Never guess one.
-2. Use `scripts/scheduled-progress.py --automation-id <actual-id> --status
-   duplicate_check_running` and the existing `scheduled_duplicate_check.py
-   --stage generation` with the task's exact identifiers. This command tries the
+   For a scheduled invocation up to five minutes early, the resolver records
+   `waiting_for_slot` and performs one bounded wait until that exact slot. The
+   configured slot remains the occurrence basis. More than five minutes early,
+   an interrupted wait, or execution more than five minutes late ends as
+   `deferred`; retry only on the same verified registered slot. A project-derived
+   occurrence is not a scheduler-issued ID. Never guess one.
+2. Use the existing `scheduled_duplicate_check.py --stage generation` with the
+   task's exact identifiers. It validates the current Desktop session and
+   configured Automation ID, records `duplicate_check_running`, then records a
+   terminal `duplicate_check_completed` result (or `deferred` if slot handling
+   or the progress store fails). Do not separately leave a
+   `duplicate_check_running` event before invoking this command. This command tries the
    Dashboard proxy first, then a fixed trusted service broker: authenticated
    loopback API, the identical repository preflight, then preserved presence
    indexes. Scheduled model code must not read .env, tokens, database credentials

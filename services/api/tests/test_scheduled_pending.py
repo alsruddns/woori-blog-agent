@@ -469,3 +469,21 @@ def test_usage_limit_progress_sync_and_saved_manuscript_failure_is_pending(setup
         ).json()["duplicate"]
         is True
     )
+
+
+def test_deferred_progress_closes_early_run_without_mutating_prior_event(setup, tmp_path):
+    _, api, headers = setup
+    data = envelope()
+    invocation = {**data["scheduled_origin"], "execution_mode": "scheduled"}
+    running = pending.record_progress(tmp_path, invocation, "duplicate_check_running")
+    deferred = pending.record_progress(
+        tmp_path, invocation, "deferred", "scheduled_slot_not_yet_reached_and_run_ended"
+    )
+
+    assert running["id"] != deferred["id"]
+    assert running["status"] == "duplicate_check_running"
+    assert deferred["status"] == "deferred"
+    assert deferred["scheduled_slot"] == invocation["scheduled_slot"]
+    assert api.post(
+        "/admin/research/scheduled-manuscripts/progress", headers=headers, json=deferred
+    ).status_code == 200

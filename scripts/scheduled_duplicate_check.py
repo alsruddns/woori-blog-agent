@@ -175,6 +175,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--topic", required=True)
     parser.add_argument("--content-id", help="Optional existing content UUID to check")
     parser.add_argument(
+        "--automation-id",
+        help="Exact ID from the current verified Codex Desktop Automation session",
+    )
+    parser.add_argument(
         "--stage",
         choices=("generation", "publication"),
         help="generation checks local history only; publication includes the complete Blogger read",
@@ -206,7 +210,82 @@ def main(argv: list[str] | None = None) -> int:
     }
     if args.stage:
         payload["stage"] = args.stage
-    result = check_duplicate(payload)
+    invocation = None
+    if args.stage == "generation":
+        try:
+            from woori.automation_invocation import (
+                current_automation_id,
+                resolve_current_invocation,
+            )
+            from woori.scheduled_pending import record_progress
+            from woori.scheduled_slot_gate import wait_for_scheduled_slot
+
+            project_root = Path(__file__).resolve().parents[1]
+            automation_id = args.automation_id or current_automation_id(
+                project_root=project_root
+            )
+            invocation = resolve_current_invocation(
+                automation_id,
+                project_root=project_root,
+            )
+        except (OSError, TypeError, ValueError):
+            result = {
+                "status": "unknown",
+                "local_status": "unknown",
+                "draft_import_allowed": False,
+                "reason": "scheduled_invocation_unverified",
+            }
+            print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+            return 3
+        if invocation and invocation.get("execution_mode") == "scheduled":
+            slot_gate = wait_for_scheduled_slot(
+                invocation,
+                project_root / ".local/gpt-scheduled-import",
+            )
+            if slot_gate["state"] != "ready":
+                result = {"status": "unknown", "local_status": "unknown",
+                          "draft_import_allowed": False, "reason": slot_gate["reason"]}
+                print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+                return 3
+        if invocation:
+            try:
+                record_progress(
+                    project_root / ".local/gpt-scheduled-import",
+                    invocation,
+                    "duplicate_check_running",
+                )
+            except (OSError, TypeError, ValueError):
+                result = {"status": "unknown", "local_status": "unknown",
+                          "draft_import_allowed": False,
+                          "reason": "duplicate_check_progress_unavailable"}
+                print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+                return 3
+    try:
+        result = check_duplicate(payload)
+    except Exception:  # noqa: BLE001 - preflight failures must remain fail-closed and sanitized
+        result = {"status": "unknown", "local_status": "unknown",
+                  "draft_import_allowed": False,
+                  "reason": "duplicate_preflight_internal_error"}
+    if invocation:
+        local_status = str(result.get("local_status", result.get("status", "unknown")))[:40]
+        remote_status = str(result.get("remote_status", "not_checked"))[:40]
+        draft_allowed = result.get("draft_import_allowed") is True
+        progress_reason = (
+            f"local={local_status};remote={remote_status};"
+            f"draft_import_allowed={str(draft_allowed).lower()}"
+        )
+        try:
+            from woori.scheduled_pending import record_progress
+
+            record_progress(
+                project_root / ".local/gpt-scheduled-import",
+                invocation,
+                "duplicate_check_completed",
+                progress_reason,
+            )
+        except (OSError, TypeError, ValueError):
+            result = {**result, "status": "unknown", "draft_import_allowed": False,
+                      "reason": "duplicate_check_completion_not_recorded"}
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     if args.stage == "generation" and result.get("draft_import_allowed") is True:
         return 0

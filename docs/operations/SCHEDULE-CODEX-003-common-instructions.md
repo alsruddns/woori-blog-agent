@@ -22,6 +22,15 @@ posts.
 Before drafting, run the local-only generation preflight, substituting
 the real values from this task and the current occurrence:
 
+Resolve the current Automation trigger first with
+`scripts/resolve-codex-automation-run.py --automation-id <actual-id>`. If the
+Desktop task begins up to five minutes before its configured slot, the resolver
+records `waiting_for_slot` and waits once, bounded, for that exact KST slot. It
+does not shift the slot or occurrence ID. An interrupted wait, invocation more
+than five minutes early, or invocation more than five minutes late ends as
+`deferred` and creates no article. Runs within the existing five-minute late
+window may proceed after the duplicate preflight.
+
 .\.venv\Scripts\python.exe .\scripts\scheduled_duplicate_check.py --stage generation --language-code <ko|en|ja|zh-CN> --target-country <ISO-3166-1-country-code> --target-blog-id <registered-blog-id> [--trade-date YYYY-MM-DD] --event-group-id "<stable-event-id>" --topic "<concise-real-topic>"
 
 Use --trade-date only for a market-close task. This command calls only the

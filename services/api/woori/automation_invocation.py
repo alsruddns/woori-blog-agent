@@ -13,7 +13,7 @@ import re
 import tomllib
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 from zoneinfo import ZoneInfo
 
@@ -75,6 +75,39 @@ def _automation_config(automation_id: str, automations_root: Path, project_root:
     if len(matches) != 1:
         raise ValueError("automation_config_missing_or_ambiguous")
     return matches[0]
+
+
+def current_automation_id(
+    *,
+    project_root: Path,
+    sessions_root: Path | None = None,
+    environ: dict[str, str] | None = None,
+) -> str:
+    """Read the exact Automation ID from this verified Desktop session prompt."""
+    env = os.environ if environ is None else environ
+    thread_id = env.get("CODEX_THREAD_ID", "")
+    if not re.fullmatch(r"[0-9a-fA-F-]{36}", thread_id):
+        raise ValueError("current_codex_thread_id_unavailable")
+    codex_root = Path(env.get("CODEX_HOME") or Path.home() / ".codex")
+    sessions_root = sessions_root or codex_root / "sessions"
+    matches = list(sessions_root.rglob(f"*{thread_id}.jsonl"))
+    if len(matches) != 1:
+        raise ValueError("current_codex_session_record_missing_or_ambiguous")
+    records = _read_events(matches[0])
+    meta = next((r.get("payload") for r in records if r.get("type") == "session_meta"), None)
+    if not isinstance(meta, dict) or (
+        meta.get("session_id") != thread_id
+        or meta.get("originator") != "Codex Desktop"
+        or meta.get("thread_source") != "automation"
+    ):
+        raise ValueError("current_session_is_not_codex_desktop_automation")
+    if Path(str(meta.get("cwd", ""))).resolve(strict=True) != project_root.resolve(strict=True):
+        raise ValueError("current_automation_checkout_mismatch")
+    messages = "\n".join(_text_from_user_message(record) for record in records)
+    ids = _AUTOMATION_LINE.findall(messages)
+    if len(ids) != 1:
+        raise ValueError("current_session_automation_id_missing_or_ambiguous")
+    return cast(str, ids[0])
 
 
 def _configured_slot_near(timestamp: datetime, automation_id: str, config: dict[str, Any],

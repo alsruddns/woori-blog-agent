@@ -7,7 +7,7 @@ from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
-from woori.automation_invocation import resolve_current_invocation
+from woori.automation_invocation import current_automation_id, resolve_current_invocation
 from woori.scheduled_import_inbox import validate_envelope
 
 
@@ -90,6 +90,52 @@ def test_scheduled_trigger_keeps_existing_deterministic_occurrence(tmp_path: Pat
     assert result["scheduled_slot"] == "2026-10-30T20:00:00+09:00"
     assert result["occurrence_id"] == "codex-slot:automation-8:20261030T2000KST"
     assert result["scheduler_occurrence_id"] is None
+
+
+def test_current_automation_id_comes_from_exact_desktop_session_prompt(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    sessions = tmp_path / ".codex" / "sessions"
+    sessions.mkdir(parents=True)
+    session_id = str(uuid4())
+    _session(
+        sessions / f"rollout-{session_id}.jsonl",
+        session_id=session_id,
+        project=project,
+        started_at=datetime(2026, 10, 30, 10, 58, 25, tzinfo=UTC),
+        trigger="automation_cron_scheduled",
+    )
+    assert current_automation_id(
+        project_root=project,
+        environ={"CODEX_THREAD_ID": session_id, "CODEX_HOME": str(tmp_path / ".codex")},
+    ) == "automation-8"
+
+
+def test_current_automation_id_fails_when_session_has_multiple_ids(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    sessions = tmp_path / ".codex" / "sessions"
+    sessions.mkdir(parents=True)
+    session_id = str(uuid4())
+    session = sessions / f"rollout-{session_id}.jsonl"
+    _session(
+        session,
+        session_id=session_id,
+        project=project,
+        started_at=datetime(2026, 10, 30, 10, 58, 25, tzinfo=UTC),
+        trigger="automation_cron_scheduled",
+    )
+    with session.open("a", encoding="utf-8") as output:
+        output.write(json.dumps({"type": "response_item", "payload": {
+            "type": "message", "role": "user", "content": [{
+                "type": "input_text", "text": "Automation ID: automation-9",
+            }],
+        }}) + "\n")
+    with pytest.raises(ValueError, match="current_session_automation_id_missing_or_ambiguous"):
+        current_automation_id(
+            project_root=project,
+            environ={"CODEX_THREAD_ID": session_id, "CODEX_HOME": str(tmp_path / ".codex")},
+        )
 
 
 @pytest.mark.parametrize("trigger", ["automation_cron_retry", "", "automation_cron_scheduled_typo"])

@@ -23,6 +23,26 @@ def main(argv: list[str] | None = None) -> int:
     try:
         result = resolve_current_invocation(args.automation_id, project_root=ROOT)
         if result["execution_mode"] == "scheduled":
+            from woori.scheduled_slot_gate import wait_for_scheduled_slot
+
+            slot_gate = wait_for_scheduled_slot(
+                result, ROOT / ".local/gpt-scheduled-import"
+            )
+            result["slot_gate"] = slot_gate
+            if slot_gate["state"] != "ready":
+                print(
+                    json.dumps(
+                        {
+                            "resolved": False,
+                            "status": "deferred",
+                            "reason": slot_gate["reason"],
+                            "invocation": result,
+                        },
+                        ensure_ascii=True,
+                        sort_keys=True,
+                    )
+                )
+                return 3
             check = subprocess.run(
                 [sys.executable, str(ROOT / "scripts/automation-policy-check.py")],
                 cwd=ROOT,
