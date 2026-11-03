@@ -48,11 +48,13 @@
 - 집중 테스트: 42 passed. Mock clock/sleep 및 mocked duplicate preflight만 사용했고 Blogger 호출은 없다.
 - Ruff: 통과. 변경 API 모듈 3개 mypy: 통과.
 - 첫 pytest 실행은 테스트 자체는 통과했으나 공용 Windows pytest temp 경로 정리에서 권한 오류가 발생했다. 격리된 `--basetemp`와 cache plugin 비활성화로 재실행해 42건 정상 종료를 확인했다.
-- API·Research Worker 서비스 반영 전 버전은 API PID 20260, Research Worker PID 31708 (heartbeat fresh), Publication Worker PID 34796 (heartbeat fresh), Dashboard PID 28792였다. P117 변경을 커밋한 뒤 해당 프로젝트의 정상 종료 절차로 필요한 서비스만 반영하고 결과를 아래에 기록한다.
-- 작업 시작 append-only 감사 이벤트: `agent.p5_codex_117.started`, ID `315991`. 과거 실행의 deferred progress는 local append-only progress spool에 추가했으며 API가 새 상태 스키마를 적용한 뒤 Research Worker sync 여부를 확인한다.
+- 반영 전 PID: Dashboard 28792, API 20260, Research Worker 31708, Publication Worker 34796. 저장소 검증 후 서비스 반영 스크립트가 API와 Dashboard를 정상 종료·재기동했고, Research/Publication Worker도 graceful stop 후 새 코드로 시작했다. 강제 종료는 없었다.
+- 반영 후: Dashboard PID 8212 / HTTP 200, API PID 5704 / HTTP 200, Research Worker PID 37424 / heartbeat fresh, Publication Worker PID 26404 / heartbeat fresh. 네 서비스 모두 적용 커밋 `b478091dc105b5ce151938ef31ce4c9a1b7c6a40`을 사용한다. 다른 프로젝트와 PostgreSQL 서비스는 건드리지 않았다.
+- 작업 시작 append-only 감사 이벤트: `agent.p5_codex_117.started`, ID `315991`. 기존 08:56 실행의 `deferred` progress는 API에 동기화됐고 audit ID는 `316041`이다. 기존 `duplicate_check_running` 행은 보존됐다.
+- 안전 반영 검증은 API 변경 테스트 77 passed, API 전체 Ruff, 변경 모듈 mypy 7개 통과, 격리 Python wheel 생성, Dashboard lint/typecheck/build를 완료한 뒤에만 서비스를 재기동했다. 별도 집중 테스트 42건도 통과했다.
 
 ## 남은 문제 / 완료 기록
 
 - 과거 09:00 실행은 실제 세션에서 종료되어 원고와 Import가 없다. 복구를 위해 해당 슬롯을 재실행하지 않았다. 다음 정상 등록 슬롯부터 새 gate가 적용된다.
-- 서비스 반영/heartbeat, deferred 감사 이벤트의 DB sync, 최종 Git 커밋과 원격 HEAD 일치는 구현 commit 이후 검증 결과를 추가한다.
-- 구현 및 개발 기록의 정확한 commit은 `git log -- docs/development/P5-CODEX-117.md`로 확인한다.
+- 구현 커밋: `b478091dc105b5ce151938ef31ce4c9a1b7c6a40`. 최종 개발 기록 커밋은 `git log -- docs/development/P5-CODEX-117.md`로 확인한다.
+- 개발 기록 자체의 커밋·원격 반영과 작업 완료 감사 이벤트는 최종 `git log`, `origin/develop` HEAD, PostgreSQL `agent.p5_codex_117.completed` 이벤트로 확인한다.
