@@ -71,3 +71,16 @@
 
 - 커밋 해시: 후속 Git 기록으로 연결한다.
 - 결과: 구현과 격리 테스트 완료. 운영 반영은 safe reflection 완료 후 갱신한다.
+
+## 최종 반영 체크포인트 (2026-11-03 18:05 KST)
+
+앞서 기록한 “아직 운영 런타임에 반영되지 않았다”는 문장은 커밋 직후의 중간 상태였다. safe reflection 성공 후 최신 상태는 다음과 같다.
+
+- 코드 커밋: `5aed507408a4f87b0e4e99fde2077d42d509f7d0`
+- safe reflection: 성공. 최초 시도에서 pytest 전역 temp 정리 권한 오류가 나 검증 절차가 서비스를 멈추기 전에 중단되었다. 프로젝트 서비스를 변경하지 않았다. 별도 `--basetemp` 지정 재실행에서 검증 완료.
+- 반영 검증: API 128 passed, pytest cache 경고 1건(권한상 cache 디렉터리 미생성; 테스트 실패 아님), Python wheel 빌드 성공, Dashboard lint/typecheck/production build 성공.
+- 정상 종료: 기존 API PID 37580, Dashboard PID 27356, Publication Worker PID 11796, Research Worker PID 22224. 프로젝트 graceful stop 절차로 현재 작업 주기를 끝낸 뒤 종료했고 강제 종료는 없었다.
+- 재기동 확인: API listener PID 35136, Dashboard listener PID 30564, Publication Worker PID 36612, Research Worker PID 364. API `/health` HTTP 200, Dashboard `/research` HTTP 200, 두 Worker heartbeat fresh, API/Dashboard/Publication Worker 적용 커밋 `5aed507408a4f87b0e4e99fde2077d42d509f7d0`.
+- 기존 자동 발행 운영 모드 `manual`, 긴급 정지 OFF, 활성 Blogger 6개는 유지됐다. 기존 Job을 생성·재실행하지 않았다. DB 확인 기준 작업 시작 이후 Blogger write-operation 및 LIVE attempt 0건.
+- DB 백업 및 Migration: 기존 백업 `backups/20261103T084929Z.dump` 유지, 신규 Migration 없음.
+- 기록 커밋: 구현 커밋 해시는 위와 같다. 이 체크포인트는 후속 문서 커밋 및 `git log`에 연결된다.
