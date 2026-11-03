@@ -167,6 +167,23 @@ def test_revision_conflict_and_strict_boolean(center):
     assert api.put(BASE, headers=h, json=payload).status_code == 409
 
 
+def test_global_publish_interval_change_is_persisted_and_audited(center):
+    conn, api, h = center
+    before = api.get(BASE, headers=h).json()["settings"]
+    response = update(center, global_publish_min_interval_minutes=60)
+    assert response.status_code == 200, response.text
+    after = api.get(BASE, headers=h).json()["settings"]
+    assert after["global_publish_min_interval_minutes"] == 60
+    assert after["revision"] == before["revision"] + 1
+    event = conn.execute(
+        "SELECT payload FROM audit_events WHERE event_type='automation.controls.changed' ORDER BY id DESC LIMIT 1"
+    ).fetchone()["payload"]
+    change = next(item for item in event["changes"] if item["key"] == "global_publish_min_interval_minutes")
+    assert (change["before"], change["after"]) == (before["global_publish_min_interval_minutes"], 60)
+    assert event["reason"] == "Isolated explicit operator control change"
+    assert update(center, global_publish_min_interval_minutes=29).status_code == 422
+
+
 def test_live_mode_and_scope_save_while_master_is_off(center):
     conn, api, h = center
     blog = conn.execute(
@@ -385,7 +402,7 @@ def test_mock_auto_dispatch_modes_and_off_invalidate_grants(center, monkeypatch,
         "blockers": [],
     }
     monkeypatch.setattr(automation_auto, "readiness", lambda *args: ({}, snapshot, []))
-    monkeypatch.setattr(automation_auto, "enqueue", lambda *args: 0)
+    monkeypatch.setattr(automation_auto, "enqueue", lambda *args, **kwargs: 0)
     monkeypatch.setattr(
         "woori.scheduled_duplicates.find_remote_duplicate", lambda *args, **kw: {"status": "clear"}
     )
@@ -451,7 +468,7 @@ def test_unknown_remote_duplicate_never_writes_and_never_retries(center, monkeyp
     link_trends(conn, version, blog)
     origin_grant(conn, job, version, state, blog, "draft")
     conn.execute("UPDATE publishing_jobs SET status='queued' WHERE id=%s", (job,))
-    monkeypatch.setattr(automation_auto, "enqueue", lambda *a: 0)
+    monkeypatch.setattr(automation_auto, "enqueue", lambda *a, **kw: 0)
     monkeypatch.setattr(automation_auto, "readiness", lambda *a: ({}, {"title": "Test"}, []))
     monkeypatch.setattr(
         "woori.scheduled_duplicates.find_remote_duplicate", lambda *a, **kw: {"status": "unknown"}

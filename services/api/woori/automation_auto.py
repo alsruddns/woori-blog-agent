@@ -125,7 +125,7 @@ def scheduled_daily_available(conn: Any, blog_id: UUID) -> bool:
                 and int(daily["n"]) < int(policy["daily_limit"]))
 
 
-def enqueue(conn: Any, state: dict[str, Any]) -> int:
+def enqueue(conn: Any, state: dict[str, Any], *, origin_filter: str | None = None) -> int:
     if (
         not state["auto_publishing_enabled"]
         or state["emergency_stop"]
@@ -153,6 +153,8 @@ def enqueue(conn: Any, state: dict[str, Any]) -> int:
         if created >= 10:
             break
         origin = publication_origin.classify(conn, item["id"], item["blog_id"])
+        if origin_filter is not None and origin["kind"] != origin_filter:
+            continue
         route = publication_origin.ROUTES.get(origin["kind"])
         grant = {
             "epoch": state["auto_epoch"],
@@ -231,18 +233,20 @@ def enqueue(conn: Any, state: dict[str, Any]) -> int:
     return created
 
 
-def tick(*, publisher: Any = None) -> dict[str, Any] | None:
+def tick(*, publisher: Any = None, origin_filter: str | None = None) -> dict[str, Any] | None:
     from .blogger_writes import BloggerLivePublisher, WriteIntervalWait
     from .google_http import GoogleFailure
     from .publication_worker import save_verified_draft
     from .scheduled_duplicates import find_remote_duplicate
 
+    if origin_filter not in {None, "scheduled", "google_trends"}:
+        raise ValueError("invalid_publication_origin_filter")
     with connection() as conn:
         lock = conn.execute("SELECT pg_try_advisory_xact_lock(20261102,10301) acquired").fetchone()
         if not lock or not lock["acquired"]:
             return None
         state = controls.read(conn)
-        enqueue(conn, state)
+        enqueue(conn, state, origin_filter=origin_filter)
         if (
             not state["auto_publishing_enabled"]
             or state["emergency_stop"]
@@ -255,13 +259,18 @@ def tick(*, publisher: Any = None) -> dict[str, Any] | None:
               AND NOT EXISTS(SELECT 1 FROM content_versions v JOIN manuscript_discards d
                 ON d.group_id=v.group_id AND d.blog_id=j.blog_id AND d.status='discarded'
                 WHERE v.id=j.content_version_id)
+              AND (%s::text IS NULL OR g.manuscript_origin=%s)
               AND ((g.manuscript_origin='google_trends' AND %s AND g.source_epoch=%s)
                    OR (g.manuscript_origin='scheduled' AND %s AND g.source_epoch=%s))
-              AND j.scheduled_at<=now() ORDER BY CASE (SELECT language_code FROM blogger_blogs b WHERE b.id=j.blog_id)
-                WHEN 'en' THEN 0 WHEN 'ko' THEN 1 WHEN 'ja' THEN 2 WHEN 'zh-CN' THEN 3 ELSE 4 END,
+              AND j.scheduled_at<=now() ORDER BY CASE g.manuscript_origin WHEN 'scheduled' THEN 0 ELSE 1 END,
+                CASE WHEN g.manuscript_origin='google_trends' THEN CASE
+                  (SELECT language_code FROM blogger_blogs b WHERE b.id=j.blog_id)
+                  WHEN 'en' THEN 0 WHEN 'ko' THEN 1 WHEN 'ja' THEN 2 WHEN 'zh-CN' THEN 3 ELSE 4 END ELSE 0 END,
                 j.scheduled_at,j.id FOR UPDATE OF j SKIP LOCKED LIMIT 1""",
             (
                 state["auto_epoch"],
+                origin_filter,
+                origin_filter,
                 state["trends_auto_publishing_enabled"],
                 state["trends_auto_epoch"],
                 state["scheduled_auto_publishing_enabled"],

@@ -848,9 +848,10 @@ def process_next_live_job(
                   )
               )
               AND j.status='queued' AND j.scheduled_at<=now() AND j.available_at<=now()
-            ORDER BY CASE WHEN j.publication_lane='manual' THEN j.scheduled_at END NULLS LAST,
-              CASE (SELECT language_code FROM blogger_blogs bb WHERE bb.id=j.blog_id)
-              WHEN 'en' THEN 0 WHEN 'ko' THEN 1 WHEN 'ja' THEN 2 WHEN 'zh-CN' THEN 3 ELSE 4 END,
+            ORDER BY CASE j.publication_lane WHEN 'scheduled_auto' THEN 0 WHEN 'manual' THEN 1 WHEN 'trends_auto' THEN 2 ELSE 3 END,
+              CASE WHEN j.publication_lane='trends_auto' THEN CASE
+                (SELECT language_code FROM blogger_blogs bb WHERE bb.id=j.blog_id)
+                WHEN 'en' THEN 0 WHEN 'ko' THEN 1 WHEN 'ja' THEN 2 WHEN 'zh-CN' THEN 3 ELSE 4 END ELSE 0 END,
               j.scheduled_at,j.id FOR UPDATE OF j SKIP LOCKED LIMIT 1""",
             (scheduled_auto_only, manual_confirmed_only, trends_auto_only),
         ).fetchone()
@@ -1395,27 +1396,31 @@ def tick(
     from .publication_operation import manual_requests_allowed
     if not 0 <= backoff_seconds <= 3600:
         raise ValueError("invalid_backoff")
-    # Explicit user requests are FIFO and outrank automatic candidates, while
-    # all lanes remain subject to the shared BloggerLivePublisher rate gate.
+    # Re-evaluate queued jobs by lane on each tick: scheduled > explicit manual > Trends.
+    # Claimed work is not reordered, and every lane still shares the writer rate gate.
+    if allow_scheduled_auto_publications:
+        from .automation_auto import tick as controlled_auto_tick
+        automatic = controlled_auto_tick(origin_filter="scheduled")
+        if automatic is not None:
+            return {"job_type": "controlled_auto", **automatic}
+        live = process_next_live_job(scheduled_auto_only=True)
+        if live is not None:
+            return {"job_type": "scheduled_auto_blogger_live", **live,
+                    "simulation_only": False, "auto_enabled": True}
+    # Explicit manual requests are FIFO and outrank Google Trends candidates.
     if allow_manual_confirmed_publications and manual_requests_allowed():
         live = process_next_live_job(manual_confirmed_only=True)
         if live is not None:
             return {"job_type": "manual_confirmed_blogger_live", **live,
                     "simulation_only": False, "auto_enabled": False}
-    if allow_live_publications or allow_scheduled_auto_publications or allow_trends_auto_publications:
+    if allow_trends_auto_publications:
         from .automation_auto import tick as controlled_auto_tick
-        automatic = controlled_auto_tick()
+        automatic = controlled_auto_tick(origin_filter="google_trends")
         if automatic is not None:
             return {"job_type": "controlled_auto", **automatic}
-    if allow_trends_auto_publications:
         live = process_next_live_job(trends_auto_only=True)
         if live is not None and live.get('status') != 'external_backoff':
             return {"job_type": "trends_auto_blogger_live", **live,
-                    "simulation_only": False, "auto_enabled": True}
-    if allow_scheduled_auto_publications:
-        live = process_next_live_job(scheduled_auto_only=True)
-        if live is not None:
-            return {"job_type": "scheduled_auto_blogger_live", **live,
                     "simulation_only": False, "auto_enabled": True}
     # No real lane was eligible; continue to the existing explicit private/mock
     # dispatch below without bypassing the shared Blogger writer gate.

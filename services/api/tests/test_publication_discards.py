@@ -44,6 +44,11 @@ def test_discard_restore_preserves_versions_jobs_and_audit(owner, monkeypatch):
     ))
     assert (result["success_count"], result["failure_count"]) == (1, 0)
     assert publication_discards.discarded(owner, version, blog)
+    saved_reason = owner.execute(
+        "SELECT reason,actor FROM manuscript_discards WHERE content_version_id=%s AND blog_id=%s AND status='discarded'",
+        (version, blog),
+    ).fetchone()
+    assert saved_reason == {"reason": "Isolated discard reason", "actor": "Test operator"}
     assert owner.execute("SELECT status FROM publishing_jobs WHERE id=%s", (job,)).fetchone()["status"] == "blocked"
     assert owner.execute("SELECT 1 FROM content_versions WHERE id=%s", (version,)).fetchone()
     assert owner.execute("SELECT count(*) n FROM audit_events").fetchone()["n"] == before + 1
