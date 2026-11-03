@@ -80,6 +80,7 @@ Read-only service status showed Dashboard PID 4200, API PID 27000, Research Work
 
 - Implementation, API and Dashboard operational reflection: complete.
 - Existing 96-failure records remain safely archived/discarded; current manual publication preflight still requires an administrator to restore the manuscript using the existing workflow and explicitly request the exact version. Recheck by itself creates no Job and makes no Blogger call.
-- Implementation commit: `e39972fa2406c6252c9b1cfebe881dc7f5d46e40`; final documentation/UI-check record commit will be linked by the follow-up Git record.
+- Implementation commit: `e39972fa2406c6252c9b1cfebe881dc7f5d46e40`.
+- UI check and operational record commit: `1706665af9dee4ab43a83292bf85554acde0d089`; `origin/develop` matched this commit after push. The final close-out record commit is the next commit in `git log`.
 - Completion audit event: `315487` (start event `314978`).
-- Push and remote HEAD verification: pending final documentation commit.
+- Final close-out record push and remote HEAD verification: see final Git verification in `git log` and the task report.
