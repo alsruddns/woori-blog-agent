@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
+import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,19 +17,77 @@ sys.path.insert(0, str(ROOT / "services" / "api"))
 from woori.automation_invocation import resolve_current_invocation
 
 
+def _diagnostic(event: str, started: float, **details: object) -> None:
+    """Flush safe progress to stderr so a long slot wait is not mistaken for a hang."""
+    payload = {
+        "event": event,
+        "pid": os.getpid(),
+        "elapsed_ms": max(0, round((time.monotonic() - started) * 1000)),
+        **details,
+    }
+    print(json.dumps(payload, ensure_ascii=True, sort_keys=True), file=sys.stderr, flush=True)
+
+
+def _safe_reason(exc: BaseException) -> str:
+    if isinstance(exc, ValueError):
+        return str(exc)[:200]
+    return type(exc).__name__
+
+
 def main(argv: list[str] | None = None) -> int:
+    started = time.monotonic()
     parser = argparse.ArgumentParser(
         description="Classify the current Codex Desktop Local Automation run from its exact local session trigger"
     )
     parser.add_argument("--automation-id", required=True)
     args = parser.parse_args(argv)
+    _diagnostic(
+        "resolver_started",
+        started,
+        automation_id=args.automation_id,
+        cwd=str(Path.cwd()),
+        command=[
+            sys.executable,
+            str(Path(__file__).resolve()),
+            "--automation-id",
+            args.automation_id,
+        ],
+    )
     try:
+        _diagnostic("invocation_resolution_started", started)
         result = resolve_current_invocation(args.automation_id, project_root=ROOT)
+        _diagnostic(
+            "invocation_resolved",
+            started,
+            execution_mode=result.get("execution_mode"),
+            session_id=result.get("session_id"),
+            scheduled_slot=result.get("scheduled_slot"),
+        )
         if result["execution_mode"] == "scheduled":
             from woori.scheduled_slot_gate import wait_for_scheduled_slot
 
+            slot_text = result.get("scheduled_slot")
+            expected_wait_seconds = None
+            if isinstance(slot_text, str):
+                slot = datetime.fromisoformat(slot_text)
+                expected_wait_seconds = max(
+                    0, round((slot.astimezone(UTC) - datetime.now(UTC)).total_seconds())
+                )
+            _diagnostic(
+                "scheduled_slot_gate_started",
+                started,
+                scheduled_slot=slot_text,
+                expected_wait_seconds=expected_wait_seconds,
+            )
             slot_gate = wait_for_scheduled_slot(
                 result, ROOT / ".local/gpt-scheduled-import"
+            )
+            _diagnostic(
+                "scheduled_slot_gate_finished",
+                started,
+                state=slot_gate.get("state"),
+                reason=slot_gate.get("reason"),
+                wait_seconds=slot_gate.get("wait_seconds"),
             )
             result["slot_gate"] = slot_gate
             if slot_gate["state"] != "ready":
@@ -37,6 +98,10 @@ def main(argv: list[str] | None = None) -> int:
                             "status": "deferred",
                             "reason": slot_gate["reason"],
                             "invocation": result,
+                            "diagnostics": {
+                                "pid": os.getpid(),
+                                "elapsed_ms": max(0, round((time.monotonic() - started) * 1000)),
+                            },
                         },
                         ensure_ascii=True,
                         sort_keys=True,
@@ -69,6 +134,10 @@ def main(argv: list[str] | None = None) -> int:
                             "reason": policy.get("reason", "automatic_authoring_disabled"),
                             "invocation": result,
                             "policy": policy,
+                            "diagnostics": {
+                                "pid": os.getpid(),
+                                "elapsed_ms": max(0, round((time.monotonic() - started) * 1000)),
+                            },
                         },
                         ensure_ascii=True,
                     )
@@ -79,9 +148,30 @@ def main(argv: list[str] | None = None) -> int:
             record(result)
             result["automation_policy"] = policy
     except (OSError, TypeError, ValueError, json.JSONDecodeError, subprocess.TimeoutExpired) as exc:
-        print(json.dumps({"resolved": False, "reason": str(exc)[:200]}, ensure_ascii=True))
+        reason = _safe_reason(exc)
+        _diagnostic("resolver_failed", started, reason=reason)
+        print(
+            json.dumps(
+                {
+                    "resolved": False,
+                    "status": "blocked",
+                    "reason": reason,
+                    "diagnostics": {
+                        "pid": os.getpid(),
+                        "elapsed_ms": max(0, round((time.monotonic() - started) * 1000)),
+                    },
+                },
+                ensure_ascii=True,
+                sort_keys=True,
+            )
+        )
         return 2
-    print(json.dumps({"resolved": True, **result}, ensure_ascii=True, sort_keys=True))
+    diagnostics = {
+        "pid": os.getpid(),
+        "elapsed_ms": max(0, round((time.monotonic() - started) * 1000)),
+    }
+    _diagnostic("resolver_completed", started, execution_mode=result.get("execution_mode"))
+    print(json.dumps({"resolved": True, **result, "diagnostics": diagnostics}, ensure_ascii=True, sort_keys=True))
     return 0
 
 

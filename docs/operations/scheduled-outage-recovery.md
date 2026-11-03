@@ -70,6 +70,35 @@ language, research standards, taxonomy, run-mode resolver, or occurrence identit
    no Publishing Job, Blogger Draft, Publish, Update, approval or Auto activation
    follows from this workflow.
 
+10. Automation-local memory is optional on a task's first run. Resolve
+    `CODEX_HOME` using the Desktop environment; when it is unset, use that
+    account's standard `~/.codex` location. The memory path is exactly
+    `automations/<verified-automation-id>/memory.md`. If it is absent, create
+    only that file as a fresh, task-specific baseline using a same-directory
+    temporary file and an exclusive atomic rename. Never copy another
+    automation's memory, replace an existing file, or treat missing memory as
+    evidence that execution mode is invalid.
+11. Keep the resolver invocation separate from memory and long-document reads.
+    The resolver's scheduled slot gate may intentionally wait for as long as
+    five minutes when Desktop starts early. It emits flushed phase diagnostics
+    to stderr and the final JSON only after the wait. If the command tool returns
+    a process/session ID while still running, retain that ID and continue polling
+    the same process until its final result. Do not discard the ID, start a
+    second resolver, or interpret an intermediate `waiting_for_slot` record as
+    a terminal failure. If the process owner or final result cannot be
+    established, record `BLOCKED` with the exact command, working directory,
+    PID/session ID when available, elapsed time, exit status, and sanitized
+    stdout/stderr; do not research or write an article.
+12. Before retrying a slot, inspect its actual session, progress, receipt,
+    incoming, ready, processing, processed, and pending artifacts. A live
+    matching process or unresolved process/session ID blocks another attempt.
+    Never remove a lock or progress artifact without confirming its owner is no
+    longer running and checking the exact occurrence for duplicates. A later
+    slot has a different occurrence and must not inherit the earlier slot's
+    failure state. The exclusive execution receipt is keyed by the exact
+    occurrence: an existing receipt from another session blocks a second run;
+    preserve it as the idempotency record.
+
 Historical failed slots are not current scheduled invocations. A development
 session must not impersonate a Desktop cron or Run now trigger. Preserve failure
 records; investigate/reconcile old artifacts first and record a distinct manual
