@@ -55,9 +55,21 @@
 - Dashboard ESLint: 통과.
 - Dashboard TypeScript typecheck: 통과.
 - Playwright 대상 테스트(데스크톱 1440px + 모바일 390px): 12 통과, 0 실패.
+- 운영 Dashboard 재기동 후 실제 production route에 대한 Playwright 데스크톱 검증: 6 통과, 0 실패.
+- 격리 Production Build: 성공.
 - 테스트 중 Blogger API 쓰기: 0건 (mock된 요청만 사용).
 - 초기 Playwright 4개 실패는 변경된 소스가 아닌 기존 3100 운영 서버를 대상으로 실행해 이전 모달이 렌더된 결과였다. 별도 격리 개발 서버 `127.0.0.1:13100`에서 재실행해 위 12개 테스트를 통과했다.
+- 초기 서비스 반영 검증은 관련 API 테스트 23개가 통과한 뒤 Windows 공용 pytest 임시폴더 정리 권한 오류로 끝났다. 프로젝트 전용 임시 경로로 재실행해 검증을 통과했다. pytest 캐시 경로 권한 경고 1건은 남았으며 기능 테스트 실패는 아니었다.
 - 운영 DB/설정 변경, OAuth 조작, 실제 Blogger 쓰기: 없음.
+
+## 운영 반영
+
+- 최신 검증된 격리 빌드 기준: `58d7729a1b8921fdf8a1dec0a652e0c6d1108e41`.
+- `scripts/apply-verified-changes.ps1 -Apply -Confirm:$false` 절차에서 API, Dashboard, Research Worker, Publication Worker를 각각 정상 종료 후 재기동했다. 진행 중 발행 요청은 없었고 Publication Worker의 큐도 비어 있었다.
+- API `8100/health` HTTP 200, Dashboard `3100/research` HTTP 200.
+- API, Dashboard, Research Worker, Publication Worker의 적용 revision은 모두 `58d7729a1b8921fdf8a1dec0a652e0c6d1108e41`; 두 Worker heartbeat가 정상 확인됐다.
+- 재기동 후 Publication Worker 상태는 `AutoMode=manual`, `AutoPolicyActive=False`; 이번 작업은 이 설정을 변경하지 않았다. 실제 게시 상태는 여전히 OAuth 연결·대상 블로그 매핑·발행 정책·원고 검토 조건이 충족되지 않아 차단된다.
+- 실제 Blogger API 쓰기: 0건.
 
 ## 관련 문서
 
@@ -71,4 +83,4 @@
 - 현재 앱의 쓰기 OAuth 연결 및 Blogger 매핑이 운영 상태 조회에서 확인되지 않아 어떤 실제 발행도 검증되지 않았다.
 - 자동·예약 발행의 기존 승인/품질/출처 차단은 그대로 남아 있다.
 - 실제 게시 결과와 OAuth 재연결은 사용자의 앱 OAuth 동의·연결 검증/할당 완료 후 확인 가능하다. 이 작업에서는 OAuth나 게시 권한을 우회하지 않았다.
-- 이 작업의 소스는 커밋 후 기존 `scripts/apply-verified-changes.ps1` 절차로 검증·안전 반영한다. 최종 커밋 해시는 저장소 `git log`에서 확인한다.
+- 구현 커밋은 `58d7729a1b8921fdf8a1dec0a652e0c6d1108e41`이며, 이 개발 기록의 최종 갱신 커밋은 후속 `git log`에서 확인한다.
