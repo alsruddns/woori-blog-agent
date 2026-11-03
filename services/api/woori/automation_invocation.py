@@ -10,11 +10,12 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 import tomllib
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid5
 from zoneinfo import ZoneInfo
 
@@ -49,6 +50,42 @@ def _read_events(path: Path) -> list[dict[str, Any]]:
     return events
 
 
+def _read_invocation_events(path: Path) -> list[dict[str, Any]]:
+    """Stream only the transcript records needed to identify the current turn."""
+    events: list[dict[str, Any]] = []
+    max_line_bytes = 16 * 1024 * 1024
+    with path.open("r", encoding="utf-8") as source:
+        for line in source:
+            if len(line.encode("utf-8")) > max_line_bytes:
+                raise ValueError("codex_session_event_too_large")
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError as exc:
+                if not line.endswith("\n"):
+                    raise ValueError("codex_session_transcript_incomplete") from exc
+                raise
+            if not isinstance(record, dict):
+                continue
+            payload = record.get("payload")
+            if (record.get("type") == "session_meta"
+                    or (record.get("type") == "event_msg" and isinstance(payload, dict)
+                        and payload.get("type") in {"task_started", "task_complete"})):
+                events.append(record)
+            elif (record.get("type") == "response_item" and isinstance(payload, dict)
+                  and payload.get("type") == "message" and payload.get("role") == "user"):
+                ids = _automation_id_from_message(record)
+                if ids:
+                    events.append({
+                        "type": "response_item",
+                        "payload": {
+                            "type": "message",
+                            "role": "user",
+                            "content": [{"text": f"Automation ID: {value}"} for value in ids],
+                        },
+                    })
+    return events
+
+
 def _text_from_user_message(record: dict[str, Any]) -> str:
     payload = record.get("payload")
     if not isinstance(payload, dict) or payload.get("type") != "message" or payload.get("role") != "user":
@@ -60,6 +97,147 @@ def _text_from_user_message(record: dict[str, Any]) -> str:
         str(item.get("text", "")) for item in content
         if isinstance(item, dict) and isinstance(item.get("text"), str)
     )
+
+
+def _automation_id_from_message(record: dict[str, Any]) -> list[str]:
+    return _AUTOMATION_LINE.findall(_text_from_user_message(record))
+
+
+def _current_automation_start(
+    records: list[dict[str, Any]],
+    *,
+    automation_id: str | None = None,
+    current_turn_id: str | None = None,
+) -> tuple[str, dict[str, Any]]:
+    """Select the current unfinished turn, not every turn in a reused thread.
+
+    Codex Desktop appends later turns to a Local Automation session transcript.
+    A completed scheduled turn therefore remains beside a later Run now or
+    composer turn. The last unfinished task_started event is the only candidate
+    for the resolver currently running inside that turn. Its own Automation ID
+    prompt and turn identity must match before the trigger is trusted.
+    """
+    starts = [
+        (index, record.get("payload", {}))
+        for index, record in enumerate(records)
+        if record.get("type") == "event_msg"
+        and isinstance(record.get("payload"), dict)
+        and record["payload"].get("type") == "task_started"
+    ]
+    if not starts:
+        raise ValueError("current_automation_start_event_not_found")
+
+    completions = [
+        (index, record.get("payload", {}))
+        for index, record in enumerate(records)
+        if record.get("type") == "event_msg"
+        and isinstance(record.get("payload"), dict)
+        and record["payload"].get("type") == "task_complete"
+    ]
+    completed_turn_ids = {
+        payload.get("turn_id") for _, payload in completions
+        if isinstance(payload.get("turn_id"), str)
+    }
+
+    def start_turn_id(payload: dict[str, Any]) -> str | None:
+        attribution = payload.get("turn_attribution")
+        attributed = attribution.get("turn_id") if isinstance(attribution, dict) else None
+        top_level = payload.get("turn_id")
+        if isinstance(top_level, str) and isinstance(attributed, str) and top_level != attributed:
+            raise ValueError("current_automation_start_event_ambiguous")
+        value = top_level if isinstance(top_level, str) else attributed
+        return value if isinstance(value, str) else None
+
+    active = [
+        (index, payload) for index, payload in starts
+        if start_turn_id(payload) is not None
+        and start_turn_id(payload) not in completed_turn_ids
+    ]
+    if len(active) > 1:
+        raise ValueError("current_automation_start_event_ambiguous")
+    # Older transcript formats may not expose a top-level turn ID. In that
+    # case only the final event can be considered, and attribution must still
+    # provide a stable turn ID below.
+    candidate = active[-1] if active else starts[-1]
+    index, payload = candidate
+    attribution = payload.get("turn_attribution")
+    attributed_turn_id = attribution.get("turn_id") if isinstance(attribution, dict) else None
+    trigger = attribution.get("turn_trigger") if isinstance(attribution, dict) else None
+    if trigger not in {"automation_cron_scheduled", "automation_cron_run_now"}:
+        raise ValueError("current_automation_trigger_unrecognized")
+    event_turn_id = payload.get("turn_id")
+    if (isinstance(event_turn_id, str) and isinstance(attributed_turn_id, str)
+            and event_turn_id != attributed_turn_id):
+        raise ValueError("current_automation_start_event_ambiguous")
+    turn_id = event_turn_id if isinstance(event_turn_id, str) else attributed_turn_id
+    if not isinstance(turn_id, str) or not re.fullmatch(r"[0-9a-fA-F-]{36}", turn_id):
+        raise ValueError("current_automation_start_event_ambiguous")
+    if current_turn_id and current_turn_id != turn_id:
+        raise ValueError("current_codex_turn_id_mismatch")
+    if sum(1 for _, started in starts if start_turn_id(started) == turn_id) != 1:
+        raise ValueError("current_automation_start_event_ambiguous")
+    if turn_id in completed_turn_ids:
+        raise ValueError("current_automation_run_not_active")
+
+    next_turn_index = min(
+        (other_index for other_index, _ in starts if other_index > index),
+        default=len(records),
+    )
+    next_completion_index = min(
+        (complete_index for complete_index, complete in completions
+         if complete_index > index and complete.get("turn_id") == turn_id),
+        default=len(records),
+    )
+    segment_end = min(next_turn_index, next_completion_index)
+    prompt_ids = [
+        automation for message_index, record in enumerate(records)
+        if index < message_index < segment_end
+        for automation in _automation_id_from_message(record)
+    ]
+    if not prompt_ids:
+        raise ValueError("current_automation_start_event_pending")
+    if len(prompt_ids) != 1:
+        raise ValueError("current_session_automation_id_missing_or_ambiguous")
+    resolved_id = prompt_ids[0]
+    if automation_id is not None and resolved_id != automation_id:
+        raise ValueError("current_session_automation_id_mismatch")
+    return resolved_id, payload
+
+
+def _read_current_automation_start(
+    session_path: Path,
+    *,
+    automation_id: str | None = None,
+    current_turn_id: str | None = None,
+) -> tuple[str, dict[str, Any]]:
+    """Re-read a just-started transcript briefly; never spawn another process."""
+    last_error: ValueError | None = None
+    for attempt in range(4):
+        try:
+            records = _read_invocation_events(session_path)
+        except ValueError as exc:
+            if str(exc) != "codex_session_transcript_incomplete" or attempt == 3:
+                raise
+            last_error = exc
+            time.sleep(0.15)
+            continue
+        try:
+            return _current_automation_start(
+                records,
+                automation_id=automation_id,
+                current_turn_id=current_turn_id,
+            )
+        except ValueError as exc:
+            last_error = exc
+            if str(exc) not in {
+                "current_automation_start_event_not_found",
+                "current_automation_start_event_pending",
+            } or attempt == 3:
+                raise
+            time.sleep(0.15)
+    if last_error is not None:
+        raise last_error
+    raise ValueError("current_automation_start_event_not_found")
 
 
 def _automation_config(automation_id: str, automations_root: Path, project_root: Path) -> dict[str, Any]:
@@ -105,7 +283,7 @@ def current_automation_id(
     matches = list(sessions_root.rglob(f"*{thread_id}.jsonl"))
     if len(matches) != 1:
         raise ValueError("current_codex_session_record_missing_or_ambiguous")
-    records = _read_events(matches[0])
+    records = _read_invocation_events(matches[0])
     meta = next((r.get("payload") for r in records if r.get("type") == "session_meta"), None)
     if not isinstance(meta, dict) or (
         meta.get("session_id") != thread_id
@@ -115,11 +293,11 @@ def current_automation_id(
         raise ValueError("current_session_is_not_codex_desktop_automation")
     if Path(str(meta.get("cwd", ""))).resolve(strict=True) != project_root.resolve(strict=True):
         raise ValueError("current_automation_checkout_mismatch")
-    messages = "\n".join(_text_from_user_message(record) for record in records)
-    ids = _AUTOMATION_LINE.findall(messages)
-    if len(ids) != 1:
-        raise ValueError("current_session_automation_id_missing_or_ambiguous")
-    return cast(str, ids[0])
+    turn_id = env.get("CODEX_TURN_ID") or env.get("CODEX_CURRENT_TURN_ID")
+    resolved_id, _ = _read_current_automation_start(
+        matches[0], current_turn_id=turn_id or None,
+    )
+    return resolved_id
 
 
 def _configured_slot_near(timestamp: datetime, automation_id: str, config: dict[str, Any],
@@ -231,7 +409,7 @@ def resolve_current_invocation(
     matches = list(sessions_root.rglob(f"*{thread_id}.jsonl"))
     if len(matches) != 1:
         raise ValueError("current_codex_session_record_missing_or_ambiguous")
-    records = _read_events(matches[0])
+    records = _read_invocation_events(matches[0])
     session_meta = next((r.get("payload") for r in records if r.get("type") == "session_meta"), None)
     if not isinstance(session_meta, dict):
         raise TypeError("codex_session_metadata_missing")
@@ -241,17 +419,13 @@ def resolve_current_invocation(
         raise ValueError("current_session_is_not_codex_desktop_automation")
     if Path(str(session_meta.get("cwd", ""))).resolve(strict=True) != project_root.resolve(strict=True):
         raise ValueError("current_automation_checkout_mismatch")
-    text = "\n".join(_text_from_user_message(r) for r in records)
-    ids = _AUTOMATION_LINE.findall(text)
-    if ids != [automation_id]:
-        raise ValueError("current_session_automation_id_mismatch")
-    starts = [r.get("payload", {}) for r in records
-              if r.get("type") == "event_msg" and r.get("payload", {}).get("type") == "task_started"]
-    if len(starts) != 1:
-        raise ValueError("current_automation_start_event_missing_or_ambiguous")
-    attribution = starts[0].get("turn_attribution")
+    turn_id = env.get("CODEX_TURN_ID") or env.get("CODEX_CURRENT_TURN_ID")
+    _resolved_id, start_event = _read_current_automation_start(
+        matches[0], automation_id=automation_id, current_turn_id=turn_id or None,
+    )
+    attribution = start_event.get("turn_attribution")
     trigger = attribution.get("turn_trigger") if isinstance(attribution, dict) else None
-    started = starts[0].get("started_at")
+    started = start_event.get("started_at")
     if not isinstance(started, (int, float)) or trigger not in {
         "automation_cron_scheduled", "automation_cron_run_now",
     }:

@@ -55,6 +55,14 @@ language, research standards, taxonomy, run-mode resolver, or occurrence identit
    or manual run. A configured RRULE alone is insufficient. Missing context is
    review-held; a historical session cannot relabel a newly written draft as its
    scheduled execution (execution time must remain within 6 hours of that start).
+   Desktop may append multiple turns to one session transcript. Resolve the
+   latest unfinished `task_started` turn by its matching turn ID, accepted
+   scheduler trigger (`automation_cron_scheduled` or the existing explicit
+   `automation_cron_run_now`), and the Automation ID prompt belonging to that
+   turn. Do not require the entire transcript to contain exactly one historical
+   start event, and never fall back to a completed or older turn. Multiple live
+   starts, mismatched turn IDs, a composer/user trigger, or a prompt that cannot
+   be associated with the selected start remains blocked.
 8. The Research Worker checks pending files on its normal 60-second intake poll.
    Recovery authenticates to the existing API and rechecks configured occurrence,
    prior occurrence Import, event/title/content duplicates, format, safe HTML and
@@ -89,6 +97,11 @@ language, research standards, taxonomy, run-mode resolver, or occurrence identit
     established, record `BLOCKED` with the exact command, working directory,
     PID/session ID when available, elapsed time, exit status, and sanitized
     stdout/stderr; do not research or write an article.
+    If the current session record has not appended its start event or matching
+    Automation ID prompt yet, the resolver may reread that same transcript a
+    bounded number of times (currently four reads with 150 ms spacing). It does
+    not start another resolver or wait indefinitely. Exhaustion returns a
+    specific blocked reason; it does not infer scheduled/manual mode.
 12. Before retrying a slot, inspect its actual session, progress, receipt,
     incoming, ready, processing, processed, and pending artifacts. A live
     matching process or unresolved process/session ID blocks another attempt.

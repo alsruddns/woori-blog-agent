@@ -7,7 +7,12 @@ from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
-from woori.automation_invocation import current_automation_id, resolve_current_invocation
+from woori.automation_invocation import (
+    _read_current_automation_start,
+    _read_invocation_events,
+    current_automation_id,
+    resolve_current_invocation,
+)
 from woori.scheduled_import_inbox import validate_envelope
 
 
@@ -27,18 +32,36 @@ def _session(
     path: Path, *, session_id: str, project: Path, started_at: datetime,
     trigger: str, quota_failure: bool = False,
 ) -> None:
+    turn_id = str(uuid4())
     records = [
         {"type": "session_meta", "payload": {"session_id": session_id, "id": session_id,
          "originator": "Codex Desktop", "thread_source": "automation", "cwd": str(project)}},
+        {"type": "event_msg", "payload": {"type": "task_started", "turn_id": turn_id,
+         "started_at": started_at.timestamp(),
+         "turn_attribution": {"turn_id": turn_id, "turn_trigger": trigger}}},
         {"type": "response_item", "payload": {"type": "message", "role": "user",
          "content": [{"type": "input_text", "text": "Automation: Test\nAutomation ID: automation-8\nTask code: politics-kr."}]}},
-        {"type": "event_msg", "payload": {"type": "task_started", "started_at": started_at.timestamp(),
-         "turn_attribution": {"turn_id": str(uuid4()), "turn_trigger": trigger}}},
     ]
     if quota_failure:
         records.append({"type": "event_msg", "payload": {"type": "task_complete",
+            "turn_id": turn_id,
             "error": {"codex_error_info": "usage_limit_exceeded"}}})
     path.write_text("".join(json.dumps(row) + "\n" for row in records), encoding="utf-8")
+
+
+def _append_turn(
+    path: Path, *, turn_id: str, started_at: datetime, trigger: str,
+    automation_id: str = "automation-8", include_prompt: bool = True,
+) -> None:
+    records = [{"type": "event_msg", "payload": {
+        "type": "task_started", "turn_id": turn_id, "started_at": started_at.timestamp(),
+        "turn_attribution": {"turn_id": turn_id, "turn_trigger": trigger},
+    }}]
+    if include_prompt:
+        records.append({"type": "response_item", "payload": {"type": "message", "role": "user",
+            "content": [{"type": "input_text", "text": f"Automation ID: {automation_id}"}]}})
+    with path.open("a", encoding="utf-8") as output:
+        output.write("".join(json.dumps(row) + "\n" for row in records))
 
 
 def test_explicit_manual_trigger_gets_stable_manual_id_and_known_quota_recovery(tmp_path: Path) -> None:
@@ -90,6 +113,226 @@ def test_scheduled_trigger_keeps_existing_deterministic_occurrence(tmp_path: Pat
     assert result["scheduled_slot"] == "2026-10-30T20:00:00+09:00"
     assert result["occurrence_id"] == "codex-slot:automation-8:20261030T2000KST"
     assert result["scheduler_occurrence_id"] is None
+
+
+def test_reused_desktop_thread_resolves_latest_official_run_now_turn(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    codex = tmp_path / ".codex"
+    automations = codex / "automations"
+    _write_automation(automations, project)
+    sessions = codex / "sessions"
+    sessions.mkdir(parents=True)
+    session_id = str(uuid4())
+    session = sessions / f"rollout-{session_id}.jsonl"
+    _session(session, session_id=session_id, project=project,
+             started_at=datetime(2026, 10, 30, 10, 58, 25, tzinfo=UTC),
+             trigger="automation_cron_scheduled", quota_failure=True)
+    current_turn_id = str(uuid4())
+    _append_turn(session, turn_id=current_turn_id,
+                 started_at=datetime(2026, 10, 30, 14, 17, 22, tzinfo=UTC),
+                 trigger="automation_cron_run_now")
+
+    result = resolve_current_invocation(
+        "automation-8", project_root=project,
+        environ={"CODEX_THREAD_ID": session_id, "CODEX_HOME": str(codex),
+                 "CODEX_TURN_ID": current_turn_id},
+    )
+
+    assert result["execution_mode"] == "manual"
+    assert result["trigger"] == "automation_cron_run_now"
+    assert result["session_id"] == session_id
+
+
+def test_latest_completed_event_cannot_be_reused_as_current_invocation(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    codex = tmp_path / ".codex"
+    _write_automation(codex / "automations", project)
+    sessions = codex / "sessions"
+    sessions.mkdir(parents=True)
+    session_id = str(uuid4())
+    session = sessions / f"rollout-{session_id}.jsonl"
+    _session(session, session_id=session_id, project=project,
+             started_at=datetime(2026, 10, 30, 10, 58, 25, tzinfo=UTC),
+             trigger="automation_cron_scheduled", quota_failure=True)
+    with pytest.raises(ValueError, match="current_automation_run_not_active"):
+        resolve_current_invocation(
+            "automation-8", project_root=project,
+            environ={"CODEX_THREAD_ID": session_id, "CODEX_HOME": str(codex)},
+        )
+
+
+def test_multiple_unfinished_start_events_are_ambiguous_and_fail_closed(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    codex = tmp_path / ".codex"
+    _write_automation(codex / "automations", project)
+    sessions = codex / "sessions"
+    sessions.mkdir(parents=True)
+    session_id = str(uuid4())
+    session = sessions / f"rollout-{session_id}.jsonl"
+    _session(session, session_id=session_id, project=project,
+             started_at=datetime(2026, 10, 30, 10, 58, 25, tzinfo=UTC),
+             trigger="automation_cron_scheduled")
+    _append_turn(session, turn_id=str(uuid4()),
+                 started_at=datetime(2026, 10, 30, 11, 58, 25, tzinfo=UTC),
+                 trigger="automation_cron_run_now")
+    with pytest.raises(ValueError, match="current_automation_start_event_ambiguous"):
+        resolve_current_invocation(
+            "automation-8", project_root=project,
+            environ={"CODEX_THREAD_ID": session_id, "CODEX_HOME": str(codex)},
+        )
+
+
+def test_duplicate_start_event_for_same_turn_is_ambiguous(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    codex = tmp_path / ".codex"
+    _write_automation(codex / "automations", project)
+    sessions = codex / "sessions"
+    sessions.mkdir(parents=True)
+    session_id = str(uuid4())
+    session = sessions / f"rollout-{session_id}.jsonl"
+    _session(session, session_id=session_id, project=project,
+             started_at=datetime(2026, 10, 30, 10, 58, 25, tzinfo=UTC),
+             trigger="automation_cron_scheduled")
+    records = [json.loads(line) for line in session.read_text(encoding="utf-8").splitlines()]
+    start = next(record for record in records if record.get("payload", {}).get("type") == "task_started")
+    with session.open("a", encoding="utf-8") as output:
+        output.write(json.dumps(start) + "\n")
+    with pytest.raises(ValueError, match="current_automation_start_event_ambiguous"):
+        resolve_current_invocation(
+            "automation-8", project_root=project,
+            environ={"CODEX_THREAD_ID": session_id, "CODEX_HOME": str(codex)},
+        )
+
+
+def test_composer_turn_with_automation_text_is_not_an_official_run(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    codex = tmp_path / ".codex"
+    _write_automation(codex / "automations", project)
+    sessions = codex / "sessions"
+    sessions.mkdir(parents=True)
+    session_id = str(uuid4())
+    session = sessions / f"rollout-{session_id}.jsonl"
+    _session(session, session_id=session_id, project=project,
+             started_at=datetime(2026, 10, 30, 10, 58, 25, tzinfo=UTC),
+             trigger="automation_cron_scheduled", quota_failure=True)
+    _append_turn(session, turn_id=str(uuid4()),
+                 started_at=datetime(2026, 10, 30, 14, 17, 22, tzinfo=UTC),
+                 trigger="composer")
+    with pytest.raises(ValueError, match="current_automation_trigger_unrecognized"):
+        resolve_current_invocation(
+            "automation-8", project_root=project,
+            environ={"CODEX_THREAD_ID": session_id, "CODEX_HOME": str(codex)},
+        )
+
+
+def test_start_event_delay_gets_only_bounded_rereads(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from woori import automation_invocation
+
+    session = tmp_path / "session.jsonl"
+    delayed = [True]
+    reads = 0
+    original_read = automation_invocation._read_invocation_events
+
+    def read(path: Path) -> list[dict[str, object]]:
+        nonlocal reads
+        reads += 1
+        records = original_read(path)
+        if delayed[0]:
+            delayed[0] = False
+            return [record for record in records if not (
+                record.get("type") == "event_msg"
+                and record.get("payload", {}).get("type") == "task_started"
+            )]
+        return records
+
+    project = tmp_path / "project"
+    project.mkdir()
+    session_id = str(uuid4())
+    _session(session, session_id=session_id, project=project,
+             started_at=datetime(2026, 10, 30, 10, 58, 25, tzinfo=UTC),
+             trigger="automation_cron_scheduled")
+    sleeps: list[float] = []
+    monkeypatch.setattr(automation_invocation, "_read_invocation_events", read)
+    monkeypatch.setattr(automation_invocation.time, "sleep", sleeps.append)
+
+    automation_id, start = _read_current_automation_start(session)
+
+    assert automation_id == "automation-8"
+    assert start["type"] == "task_started"
+    assert reads == 2
+    assert sleeps == [0.15]
+
+
+def test_invocation_reader_streams_only_session_identity_events(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    session_id = str(uuid4())
+    session = tmp_path / f"rollout-{session_id}.jsonl"
+    _session(session, session_id=session_id, project=project,
+             started_at=datetime(2026, 10, 30, 10, 58, 25, tzinfo=UTC),
+             trigger="automation_cron_scheduled")
+    with session.open("a", encoding="utf-8") as output:
+        output.write(json.dumps({"type": "response_item", "payload": {
+            "type": "message", "role": "assistant", "content": [{"text": "old context"}],
+        }}) + "\n")
+
+    records = _read_invocation_events(session)
+
+    assert [record["type"] for record in records] == [
+        "session_meta", "event_msg", "response_item",
+    ]
+    prompt = records[-1]["payload"]["content"]
+    assert prompt == [{"text": "Automation ID: automation-8"}]
+
+
+def test_missing_start_event_uses_bounded_rereads_then_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from woori import automation_invocation
+
+    project = tmp_path / "project"
+    project.mkdir()
+    session_id = str(uuid4())
+    session = tmp_path / f"rollout-{session_id}.jsonl"
+    _session(session, session_id=session_id, project=project,
+             started_at=datetime(2026, 10, 30, 10, 58, 25, tzinfo=UTC),
+             trigger="automation_cron_scheduled")
+    records = [json.loads(line) for line in session.read_text(encoding="utf-8").splitlines()]
+    session.write_text(
+        "".join(json.dumps(record) + "\n" for record in records
+               if record.get("payload", {}).get("type") != "task_started"),
+        encoding="utf-8",
+    )
+    sleeps: list[float] = []
+    monkeypatch.setattr(automation_invocation.time, "sleep", sleeps.append)
+
+    with pytest.raises(ValueError, match="current_automation_start_event_not_found"):
+        _read_current_automation_start(session)
+    assert sleeps == [0.15, 0.15, 0.15]
+
+
+def test_current_turn_id_must_match_transcript_event(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    codex = tmp_path / ".codex"
+    _write_automation(codex / "automations", project)
+    sessions = codex / "sessions"
+    sessions.mkdir(parents=True)
+    session_id = str(uuid4())
+    _session(sessions / f"rollout-{session_id}.jsonl", session_id=session_id,
+             project=project, started_at=datetime(2026, 10, 30, 10, 58, 25, tzinfo=UTC),
+             trigger="automation_cron_scheduled")
+    with pytest.raises(ValueError, match="current_codex_turn_id_mismatch"):
+        resolve_current_invocation(
+            "automation-8", project_root=project,
+            environ={"CODEX_THREAD_ID": session_id, "CODEX_HOME": str(codex),
+                     "CODEX_TURN_ID": str(uuid4())},
+        )
 
 
 def test_current_automation_id_comes_from_exact_desktop_session_prompt(tmp_path: Path) -> None:
