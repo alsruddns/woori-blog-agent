@@ -57,14 +57,17 @@ DB Migration은 추가하지 않았다. 운영 콘텐츠·OAuth 연결·Blogger 
 - `git diff --check`: 통과.
 - 실제 Blogger API 쓰기/연결 해제: 0건. DB 설정/연결 변경: 0건.
 - append-only PostgreSQL 실행 감사: `agent.p5_codex_112.completed`, event ID `312788`, 2026-11-03 11:37:18 KST. 작업 ID·브랜치·검증 요약만 기록했다.
-- 최초 서비스 반영 사전 검증은 SQL 집계 `fetchone()` 결과의 Optional 타입을 좁히지 않은 mypy 오류 3건으로 중단됐다. 첫 수정 후 두 경로는 통과했고, `blogger_drafts.results_summary`의 동적 row 반환 타입 1건이 남아 명시적 타입 확인과 안전한 `cast`를 추가했다. 두 번 모두 서비스는 중지되지 않았다. 최종 재검증 및 반영 결과는 후속 커밋/Git 이력과 서비스 로그에 연결한다.
+- 운영 반영 보호 차단 감사: `agent.p5_codex_112.reflection_blocked`, event ID `312805`, 2026-11-03 11:41:38 KST. 연결된 Dashboard를 강제 종료하지 않았고 API는 기존 stopped 상태, Worker는 기존 heartbeat 상태로 보존했다.
+- 최초 서비스 반영 사전 검증에서 발견된 mypy 오류 3건과 후속 동적 row 타입 경고 1건을 모두 수정했다. 마지막 검증은 Ruff·mypy·격리 wheel build·API tests 30건·ESLint·TypeScript·격리 Next Production Build까지 통과했다.
 
 ## 운영 반영 및 남은 항목
 
-- 개발 검증 중 production API/Dashboard/Worker를 종료하거나 재시작하지 않았다. 변경을 커밋한 뒤 `scripts/apply-verified-changes.ps1`의 안전 반영 절차를 실행해 영향 서비스(API, Dashboard, Publication Worker)를 검증·반영한다. Research Worker 및 PostgreSQL은 변경 범위에 없어 재시작하지 않는다.
+- `scripts/apply-verified-changes.ps1 -Apply`로 운영 반영을 두 차례 시도했다. 첫 시도는 앞서 띄운 임시 API 검증 프로세스(PID 27668/30496, loopback 18100)를 감지해 거부했다. 해당 프로세스와 임시 Next 검증 서버는 세션 Ctrl+C로 정상 종료했고 포트 13100은 닫혔다. 두 번째 시도는 build와 전체 변경 범위 검증을 통과했지만 운영 Dashboard PID 29788에 established 연결이 있어 안전 스크립트가 종료를 거부하고 후속 재시작을 취소했다. 강제 종료는 없었다.
+- 최종 운영 적용은 미완료다. 확인 시 Dashboard 3100은 HTTP 200으로 기존 적용 커밋 `12aa235c4eccf7094414ee9eb4eb2d41f2ff43a1`로 계속 실행 중이고, API 8100은 기존 상태와 같이 stopped/HTTP 미응답이다. Research Worker PID 14128 및 Publication Worker PID 26632는 fresh heartbeat로 기존 코드에서 계속 실행 중이다. 이 UI/API 변경을 운영 Dashboard에 반영하려면 안전 스크립트의 연결 보호 조건이 해제된 뒤 재시도해야 한다. Research Worker 및 PostgreSQL은 재시작하지 않았다.
 - 현재 확인 불가: 고유 Google 계정 수 및 과거 화면 캡처 시점에 8로 보였던 구체적인 DB 행 구성. 계정 식별자가 저장되지 않아 추론하지 않는다.
 - 남은 UI 한계: 최초 테마 값은 클라이언트가 적용하므로 첫 로드에서 잠깐 깜빡일 수 있다.
-- 커밋 해시와 원격 반영 결과는 작업 완료 후 Git 이력에 확인한다.
+- 안전 반영 스크립트가 요구하는 established Dashboard 연결이 지속되면 운영 반영은 계속 보류한다. 현재 운영 프로세스를 사용자가 요청한 graceful lifecycle로만 교체할 수 있을 때 재시도한다.
+- 커밋: 최초 구현 `493de3bb6371690ee86a6a41758c12401a2dfdb7`; 타입 안정성 수정 `1d20d89d5e388a06bea25455b1b081c868aede0d`; 최종 타입 보정 커밋은 Git 이력에서 확인한다.
 
 ## 관련 문서
 
