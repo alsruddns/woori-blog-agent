@@ -155,7 +155,11 @@ def api_calls(
     with connection() as conn:
         where = "WHERE (%s='' OR c.status=%s)"
         params: tuple[Any, ...] = (status, status)
-        total = conn.execute(f"SELECT count(*)::int AS n FROM blogger_api_calls c {where}", params).fetchone()["n"]
+        total_row = conn.execute(
+            f"SELECT count(*)::int AS n FROM blogger_api_calls c {where}", params
+        ).fetchone()
+        assert total_row is not None
+        total = total_row["n"]
         items = conn.execute(
             f"""SELECT c.id,c.created_at,c.operation,c.status,c.http_status,c.error_category,
                 b.display_name AS blog_name,c.language_code
@@ -176,9 +180,11 @@ def audit_events(
     category_param = () if not category else (f"{category}.%",)
     with connection() as conn:
         base = "WHERE (event_type LIKE 'oauth.%%' OR event_type LIKE 'blogger.%%')"
-        total = conn.execute(
+        total_row = conn.execute(
             f"SELECT count(*)::int AS n FROM audit_events {base} {category_clause}", category_param
-        ).fetchone()["n"]
+        ).fetchone()
+        assert total_row is not None
+        total = total_row["n"]
         items = conn.execute(
             f"""SELECT e.id,e.created_at,e.event_type,b.display_name AS blog_name
                 FROM audit_events e LEFT JOIN blogger_blogs b ON b.id=e.blog_id

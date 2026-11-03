@@ -369,12 +369,14 @@ def process_next_queued_draft() -> dict[str, Any] | None:
 
 
 def results_summary(conn: Any) -> dict[str, Any]:
-    return conn.execute(
+    row = conn.execute(
         """SELECT count(*)::int AS total,
         count(*) FILTER (WHERE status IN ('failed','uncertain'))::int AS failures,
         max(created_at) AS last_event_at FROM blogger_write_operations
         WHERE operation='create_draft'"""
     ).fetchone()
+    assert row is not None
+    return row
 
 
 def paginated_results(conn: Any, *, offset: int, limit: int, status: str = "") -> dict[str, Any]:
