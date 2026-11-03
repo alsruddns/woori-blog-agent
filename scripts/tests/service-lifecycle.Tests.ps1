@@ -134,11 +134,14 @@ Describe 'Windows service lifecycle ownership and startup policy' {
 
   It 'stops workers before HTTP services and only starts after verified full shutdown' {
     $stopper = Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\stop-services.ps1') -Raw
+    $common = Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\server-common.ps1') -Raw
     $restarter = Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\restart-services.ps1') -Raw
     $stopper.IndexOf("'publication_worker'") | Should BeLessThan $stopper.IndexOf("'dashboard'")
     $stopper | Should Match 'shutdown_aborted_for_active_worker'
     $stopper.IndexOf('Assert-HttpTreeOwned') | Should BeLessThan $stopper.IndexOf('foreach ($name in $targets)')
     $stopper | Should Match 'legacy_process_verified_for_graceful_then_bounded_stop'
+    $common | Should Match 'function Get-ManagedRunner'
+    $common | Should Match 'function Get-ManagedTree'
     $restarter.IndexOf('stop-services.ps1') | Should BeLessThan $restarter.IndexOf('start-services.ps1')
   }
 

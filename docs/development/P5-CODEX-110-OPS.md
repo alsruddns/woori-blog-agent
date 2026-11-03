@@ -73,3 +73,10 @@ The following is intentionally left for the post-migration restart checkpoint an
 - Final test summary and Git commit/push hashes
 
 No LIVE publication is being exercised as part of the restart. Actual Blogger write authorization remains separately gated; restarting services does not grant that authority.
+
+## Shutdown preflight correction checkpoint
+
+- The first shutdown attempt exited before writing the intentional-stop marker or stopping any service. `stop-services.ps1` called `Get-ManagedRunner` and `Get-ManagedTree`, but those functions were scoped only inside `stop.ps1` and were not available to the orchestration script.
+- Moved the existing process-tree verification helpers into shared `server-common.ps1`; both scripts dot-source that file. Added a lifecycle regression assertion. No service PID, task scheduler setting, or database state changed during the failed attempt.
+- Verification: `Invoke-Pester -Script scripts/tests/service-lifecycle.Tests.ps1` passed 17/17 after the correction.
+- Next checkpoint: retry graceful preflight and shutdown, then apply Migration 082 and start from the validated committed checkout.

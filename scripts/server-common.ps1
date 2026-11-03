@@ -326,3 +326,71 @@ function Test-SameProcessSnapshot($Original, $Current, [double]$StartTimeToleran
     return [Math]::Abs(($a - $b).TotalSeconds) -le $StartTimeToleranceSeconds
   } catch { return $false }
 }
+
+function Get-ManagedRunner([string]$Name, $ProcessTable, $Manifest) {
+  if ($Name -notin @('api','dashboard')) { return $null }
+  $record = $Manifest.services[$Name]
+  if (-not $record) { return $null }
+  $runner = $ProcessTable | Where-Object Id -eq ([int]$record.pid) | Select-Object -First 1
+  if (-not (Test-RecordedRunner $runner $record $Name)) { return $null }
+  $started = Get-ProcessStarted ([int]$runner.Id)
+  if (-not $started) { return $null }
+  return [pscustomobject]@{
+    Id=[int]$runner.Id; ParentId=[int]$runner.ParentId; Path=[string]$runner.Path
+    CommandLine=[string]$runner.CommandLine; StartedUtc=$started; Kind='runner'; ProcessInfo=$runner
+  }
+}
+function Get-ManagedTree([string]$Name, $Runner, $ProcessTable) {
+  if (-not $Runner) { return @{ items=@(); safe=$false; reason='no_verified_managed_runner' } }
+  $tree = @(Get-ProcessDescendants $ProcessTable $Runner.Id -IncludeAncestor)
+  $allowed = @([pscustomobject]@{ ProcessInfo=$Runner.ProcessInfo; Kind='runner' })
+  $serviceKind = if ($Name -eq 'api') { 'api' } else { 'dashboard' }
+  foreach ($item in $tree | Where-Object { [int]$_.Id -ne $Runner.Id }) {
+    if ([IO.Path]::GetFileName([string]$item.Path) -ieq 'conhost.exe') { continue }
+    if (Test-ExactCheckoutServiceProcess $item $serviceKind) {
+      $allowed += [pscustomobject]@{ ProcessInfo=$item; Kind=$serviceKind }; continue
+    }
+    if ($Name -eq 'api' -and [IO.Path]::GetFileName([string]$item.Path) -ieq 'python.exe' -and
+        [string]$item.CommandLine -and
+        $item.CommandLine.IndexOf([IO.Path]::GetFullPath((Join-Path $script:ProjectRoot '.venv\Scripts\python.exe')),[StringComparison]::OrdinalIgnoreCase) -ge 0 -and
+        ($item.CommandLine -match '(?i)scripts[\\/]api-service\.py(?:\s|$)' -or
+         $item.CommandLine -match '(?i)-m\s+uvicorn\s+woori\.main:app(?:\s|$)')) {
+      $allowed += [pscustomobject]@{ ProcessInfo=$item; Kind='api' }; continue
+    }
+    if ($Name -eq 'dashboard' -and [IO.Path]::GetFileName([string]$item.Path) -ieq 'node.exe' -and
+        [string]$item.CommandLine -match '(?i)scripts[\\/]dashboard-service\.js(?:\s|$)') {
+      $allowed += [pscustomobject]@{ ProcessInfo=$item; Kind='dashboard' }; continue
+    }
+    if ($Name -eq 'dashboard' -and [IO.Path]::GetFileName([string]$item.Path) -ieq 'cmd.exe') {
+      $nextPaths = @(
+        [IO.Path]::GetFullPath((Join-Path $script:ProjectRoot 'apps\dashboard\node_modules\next\dist\bin\next')),
+        [IO.Path]::GetFullPath((Join-Path $script:ProjectRoot 'apps\dashboard\node_modules\next\dist\server\lib\start-server.js'))
+      )
+      $matchedNext = @($nextPaths | Where-Object { [string]$item.CommandLine -and $item.CommandLine.IndexOf($_,[StringComparison]::OrdinalIgnoreCase) -ge 0 }).Count -gt 0
+      $matchedNext = $matchedNext -or ([string]$item.CommandLine -match '(?i)apps[\\/]dashboard[\\/]node_modules[\\/]\.bin.*next[\\/]dist[\\/]bin[\\/]next')
+      $matchedNpm = [string]$item.CommandLine -match '(?i)npm\.cmd.*--prefix\s+apps[\\/]dashboard\s+run\s+start|--prefix\s+apps[\\/]dashboard\s+run\s+start'
+      $matchedNextWrapper = [string]$item.CommandLine -match '(?i)cmd.*\/c\s+next\s+start\s+--hostname\s+\S+\s+--port\s+\d+'
+      if ($matchedNext -or $matchedNpm -or $matchedNextWrapper) {
+        $allowed += [pscustomobject]@{ ProcessInfo=$item; Kind='dashboard_wrapper' }; continue
+      }
+    }
+    if ($Name -eq 'dashboard' -and [IO.Path]::GetFileName([string]$item.Path) -ieq 'node.exe' -and
+        [string]$item.CommandLine -match '(?i)npm-cli\.js.*--prefix\s+apps[\\/]dashboard\s+run\s+start') {
+      $allowed += [pscustomobject]@{ ProcessInfo=$item; Kind='dashboard_npm' }; continue
+    }
+    return @{ items=@(); safe=$false; reason="unrecognized_descendant_pid_$($item.Id)" }
+  }
+  $snapshots = foreach ($entry in $allowed) {
+    $item = $entry.ProcessInfo
+    [pscustomobject]@{
+      Id=[int]$item.Id; ParentId=[int]$item.ParentId; Path=[string]$item.Path
+      CommandLine=[string]$item.CommandLine; StartedUtc=(Get-ProcessStarted ([int]$item.Id))
+      Owner=(Get-ProcessOwner ([int]$item.Id)); Kind=[string]$entry.Kind
+      ProcessInfo=$item
+    }
+  }
+  if (-not @($snapshots | Where-Object { -not $_.StartedUtc }).Count) {
+    return @{ items=@($snapshots); safe=$true; reason=$null }
+  }
+  return @{ items=@(); safe=$false; reason='process_start_time_unavailable' }
+}
