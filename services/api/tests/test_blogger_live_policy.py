@@ -109,6 +109,23 @@ def test_publish_route_allows_only_exact_blogger_draft_publish_path(
         "google_blogger_read", "blogger_public_publish",
         _request("POST", "/blogs/123/posts/456/publish"),
     )
+    # Blogger Posts.insert is also used for new public posts. Keep its exact
+    # LIVE-only query shape separate from the private draft-create operation.
+    external_policy._authorize(
+        "google_blogger_read", "blogger_public_publish",
+        _request("POST", "/blogs/123/posts", {"isDraft": "false"}),
+    )
+    for path, params in (
+        ("/blogs/123/posts", {"isDraft": "true"}),
+        ("/blogs/123/posts", {"isDraft": "false", "foo": "bar"}),
+        ("/blogs/not-numeric/posts", {"isDraft": "false"}),
+        ("/blogs/123/posts/456", {"isDraft": "false"}),
+    ):
+        with pytest.raises(external_policy.ExternalCallBlocked):
+            external_policy._authorize(
+                "google_blogger_read", "blogger_public_publish",
+                _request("POST", path, params),
+            )
     with pytest.raises(external_policy.ExternalCallBlocked):
         external_policy._authorize(
             "google_blogger_read", "blogger_public_publish",
@@ -119,6 +136,30 @@ def test_publish_route_allows_only_exact_blogger_draft_publish_path(
             "google_blogger_read", "blogger_public_publish",
             _request("DELETE", "/blogs/123/posts/456"),
         )
+
+
+def test_public_insert_allowlist_rejects_unregistered_shapes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from woori import publication_operation
+
+    monkeypatch.setattr(publication_operation, "blogger_writes_allowed", lambda: True)
+    monkeypatch.setattr(external_policy, "billing_credential_names", list)
+    monkeypatch.setattr(external_policy, "_audit", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        external_policy, "_blogger_operation_is_approved", lambda op: op == "blogger_public_publish"
+    )
+    cases = (
+        httpx.Request("POST", "https://attacker.example/blogger/v3/blogs/123/posts?isDraft=false"),
+        _request("PATCH", "/blogs/123/posts", {"isDraft": "false"}),
+        _request("POST", "/blogs/not-a-blog-id/posts", {"isDraft": "false"}),
+        _request("POST", "/blogs/123/posts/456/extra", {"isDraft": "false"}),
+        _request("POST", "/blogs/123/posts", {"isDraft": "false", "publishDate": "now"}),
+        _request("POST", "/blogs/123/posts", {"isDraft": "true"}),
+    )
+    for request in cases:
+        with pytest.raises(external_policy.ExternalCallBlocked):
+            external_policy._authorize("google_blogger_read", "blogger_public_publish", request)
 
 
 @pytest.mark.parametrize(
@@ -431,7 +472,6 @@ def test_live_creation_uses_is_draft_false_and_requires_verified_live_readback(m
     monkeypatch.setattr(blogger_writes.external_policy, "billing_credential_names", list)
     monkeypatch.setattr(blogger_writes.external_policy, "_audit", lambda *args, **kwargs: None)
     monkeypatch.setattr(blogger_writes.external_policy, "_blogger_operation_is_approved", lambda _op: True)
-    monkeypatch.setattr(blogger_writes.external_policy, "guarded_transport", lambda _provider, _operation, transport: transport)
     monkeypatch.setattr(automation_controls, "write_guard", lambda **_kwargs: nullcontext())
     monkeypatch.setattr(publication_operation, "blogger_writes_allowed", lambda: True)
     monkeypatch.setattr(blogger_writes.BloggerLivePublisher, "_account_write_guard",

@@ -703,12 +703,19 @@ def _authorize(provider: str, operation: str, request: httpx.Request) -> None:
                 and not request.url.query
             )
         elif operation == "blogger_public_publish":
+            params = list(request.url.params.multi_items())
             method_allowed = request.method == "POST"
             operation_path_allowed = bool(
-                re.fullmatch(
-                    rf"/blogger/v3/blogs/{blog_id}/posts/{post_id}/publish", path
+                (
+                    re.fullmatch(rf"/blogger/v3/blogs/{blog_id}/posts", path)
+                    and params == [("isDraft", "false")]
                 )
-                and not request.url.query
+                or (
+                    re.fullmatch(
+                        rf"/blogger/v3/blogs/{blog_id}/posts/{post_id}/publish", path
+                    )
+                    and not request.url.query
+                )
             )
         else:
             method_allowed = False
