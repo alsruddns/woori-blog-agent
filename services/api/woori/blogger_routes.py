@@ -59,6 +59,12 @@ class Limits(Input):
     publishing_enabled: Literal[False] = False
 
 
+class PublicationPolicyChange(Input):
+    active: bool
+    actor_label: str = Field(min_length=2, max_length=120)
+    reason: str = Field(min_length=10, max_length=2000)
+
+
 @router.get("/status")
 def status() -> dict[str, Any]:
     cost_provider = next(
@@ -130,6 +136,10 @@ def status() -> dict[str, Any]:
                     g.scopes AS oauth_scopes,g.expires_at AS oauth_expires_at
                     FROM blogger_blogs b JOIN languages l ON l.code=b.language_code
                     LEFT JOIN google_connections g ON g.id=b.oauth_connection_id ORDER BY b.language_code,b.url""").fetchall(),
+            "publication_policies": conn.execute("""SELECT p.id,p.blog_id,p.active,p.timezone,p.schedule_cron,
+                    lp.target_country FROM publishing_policies p
+                    JOIN language_profiles lp ON lp.id=p.profile_id
+                    ORDER BY p.blog_id,lp.target_country,p.id""").fetchall(),
             "limits": conn.execute(
                 "SELECT * FROM language_execution_limits ORDER BY language_code"
             ).fetchall(),
@@ -144,6 +154,30 @@ def status() -> dict[str, Any]:
                 "draft_results": drafts.results_summary(conn),
             },
         }
+
+
+@router.post("/publication-policies/{policy_id}/active")
+def change_publication_policy(policy_id: UUID, request: PublicationPolicyChange) -> dict[str, Any]:
+    """Change the existing blog/profile policy without altering its schedule or other gates."""
+    with connection() as conn:
+        row = conn.execute("""SELECT p.id,p.blog_id,p.active,b.active AS blog_active
+            FROM publishing_policies p JOIN blogger_blogs b ON b.id=p.blog_id
+            WHERE p.id=%s FOR UPDATE OF p""", (policy_id,)).fetchone()
+        if row is None:
+            from fastapi import HTTPException
+            raise HTTPException(404, "Publication policy not found")
+        if request.active and not row["blog_active"]:
+            from fastapi import HTTPException
+            raise HTTPException(409, "Inactive Blogger cannot have an active publication policy")
+        if bool(row["active"]) == request.active:
+            return {"id": str(policy_id), "active": request.active, "changed": False}
+        conn.execute("UPDATE publishing_policies SET active=%s WHERE id=%s", (request.active, policy_id))
+        conn.execute("""INSERT INTO audit_events(event_type,blog_id,payload)
+            VALUES ('blogger.publication_policy.changed',%s,%s)""", (
+            row["blog_id"], Jsonb({"policy_id": str(policy_id), "previous_active": bool(row["active"]),
+                "active": request.active, "actor_label": request.actor_label, "reason": request.reason}),
+        ))
+        return {"id": str(policy_id), "active": request.active, "changed": True}
 
 
 @router.get("/diagnostics/api-calls")

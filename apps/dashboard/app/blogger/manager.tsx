@@ -46,6 +46,7 @@ type Limit = {
   requests_per_minute: number;
   max_page_size: number;
 };
+type PublicationPolicy = { id: string; blog_id: string; active: boolean; target_country: string; timezone: string; schedule_cron: string };
 type State = {
   configured: boolean;
   google_account_identity_available: boolean;
@@ -63,6 +64,7 @@ type State = {
   publishing_enabled: false;
   connections: Connection[];
   blogs: Blog[];
+  publication_policies?: PublicationPolicy[];
   limits: Limit[];
   diagnostics: Record<string, { total: number; failures: number; last_event_at: string | null }>;
 };
@@ -179,6 +181,10 @@ export default function Manager({ initial }: { initial: State }) {
       c.scopes?.length === 1 &&
       c.scopes.includes("https://www.googleapis.com/auth/blogger"),
   );
+  const visibleConnections = initial.connections.filter(c =>
+    (c.status === "connected" && c.has_refresh_token) || c.active_auth_attempt ||
+    initial.blogs.some(blog => blog.oauth_connection_id === c.id));
+  const [policyReason, setPolicyReason] = useState("운영 목적을 위해 설정을 변경함");
   const [account, setAccount] = useState(writeConnections[0]?.id ?? "");
   const [commonVerification, setCommonVerification] =
     useState<CommonVerification | null>(null);
@@ -210,6 +216,21 @@ export default function Manager({ initial }: { initial: State }) {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "요청 실패");
     return data;
+  }
+  async function changePolicy(policy: PublicationPolicy) {
+    if (busy || policyReason.trim().length < 10) { setMessage("변경 사유를 10자 이상 입력하세요."); return; }
+    const next = !policy.active;
+    const blogName = initial.blogs.find(blog => blog.id === policy.blog_id)?.display_name ?? policy.blog_id;
+    if (!window.confirm(`${blogName} · ${policy.target_country || "공통"} 발행 정책을 ${next ? "ON" : "OFF"}으로 변경합니다.\n기존 대기 Job은 다시 생성되지 않으며, OAuth·품질·승인 검사는 계속 적용됩니다.`)) return;
+    setBusy(true); setMessage("");
+    try {
+      await call(`publication-policies/${policy.id}/active`, "POST", {
+        active: next, actor_label: "Dashboard 관리자", reason: policyReason.trim(),
+      });
+      setMessage(`발행 정책을 ${next ? "ON" : "OFF"}으로 저장했습니다. 실제 게시 가능 여부는 다른 안전 조건도 확인하세요.`);
+      router.refresh();
+    } catch (error) { setMessage(error instanceof Error ? error.message : "발행 정책 저장 실패"); }
+    finally { setBusy(false); }
   }
   async function action(path: string, body: unknown = {}) {
     setBusy(true);
@@ -454,16 +475,16 @@ export default function Manager({ initial }: { initial: State }) {
         {initial.common_connection.write_oauth_start_blocked && " 사용 가능한 쓰기 연결 또는 진행 중인 동의가 있어 새 연결 생성은 비활성화했습니다."}
       </p>
       <section className="blogger-connection-summary" aria-label="OAuth 연결 요약">
-        <div><span>OAuth 연결 레코드</span><strong>{initial.connections.length}</strong></div>
+        <div><span>현재 사용 중인 OAuth</span><strong>{visibleConnections.length}</strong></div>
         <div><span>연결 완료</span><strong>{initial.connections.filter((c) => c.status === "connected").length}</strong></div>
-        <div><span>인증 미완료</span><strong>{initial.connections.filter((c) => c.status === "pending").length}</strong></div>
+        <div><span>진행 중 인증</span><strong>{initial.connections.filter((c) => c.active_auth_attempt).length}</strong></div>
         <div><span>읽기 전용 scope</span><strong>{initial.connections.filter((c) => c.status === "connected" && c.scopes?.includes("https://www.googleapis.com/auth/blogger.readonly")).length}</strong></div>
         <div><span>전체 Blogger scope</span><strong>{initial.connections.filter((c) => c.status === "connected" && c.scopes?.includes("https://www.googleapis.com/auth/blogger")).length}</strong></div>
         <div><span>등록 Blogger / 매핑 연결</span><strong>{initial.blogs.length} / {new Set(initial.blogs.map((blog) => blog.oauth_connection_id).filter(Boolean)).size}</strong></div>
         <div><span>고유 Google 계정</span><strong>{initial.google_account_identity_available ? "확인 가능" : "확인 불가"}</strong></div>
       </section>
       <ul className="blogger-connection-list">
-        {initial.connections.map((c) => (
+        {visibleConnections.map((c) => (
           <li className="blogger-connection-card" key={c.id}>
             <div className="blogger-connection-card-body">
               <div className="blogger-connection-card-heading"><div><h3>{c.label}</h3><small>OAuth 연결 레코드 · {c.id.slice(0, 8)}</small></div><span className={`blogger-state-pill ${c.status === "connected" ? "is-connected" : ""}`}>{c.status === "connected" ? "연결됨" : c.status === "pending" ? "인증 미완료" : c.status}</span></div>
@@ -482,6 +503,7 @@ export default function Manager({ initial }: { initial: State }) {
           </li>
         ))}
       </ul>
+      {!visibleConnections.length && <p>현재 사용 중인 Google OAuth 연결이 없습니다. 이전 인증 기록은 아래 감사 이력에서 확인할 수 있습니다.</p>}
       <label>
         공통으로 지정할 기존 쓰기 OAuth 연결
         <select value={account} onChange={(e) => setAccount(e.target.value)}>
@@ -525,6 +547,8 @@ export default function Manager({ initial }: { initial: State }) {
         실제 비공개 초안 테스트는 공통 연결의 최근 전체 블로그 접근 검증 후에만 준비할 수 있습니다. 초안 미리보기 저장은 Blogger를 호출하지 않으며, 별도 확인 버튼을 눌러야 해당 블로그에 posts.insert(isDraft=true) 1회가 전송됩니다. 공개 게시와 자동 발행은 비활성입니다.
       </p>
       <h2>등록 블로그</h2>
+      <label>발행 정책 변경 사유 <input value={policyReason} minLength={10} maxLength={2000} onChange={event => setPolicyReason(event.target.value)} /></label>
+      <p>발행 정책 ON은 해당 블로그·언어 정책의 사용을 허용합니다. 실제 LIVE 게시에는 OAuth 연결, 원고 품질·출처 검토, 승인 및 발행 제한이 계속 적용됩니다.</p>
       <label>
         게시글 조회 상태
         <select
@@ -563,6 +587,17 @@ export default function Manager({ initial }: { initial: State }) {
               {" · 토큰 만료 "}{b.oauth_expires_at ?? "미확인"}
             </p>
             {b.connection_error && <p role="alert">{b.connection_error}</p>}
+            <div aria-label={`${b.display_name} 발행 정책`}>
+              <strong>발행 정책</strong>
+              {(initial.publication_policies ?? []).filter(policy => policy.blog_id === b.id).map(policy =>
+                <div key={policy.id}>
+                  <span>{policy.target_country || "공통"} · {policy.active ? "ON" : "OFF"} </span>
+                  <button type="button" className="secondary-button" disabled={busy || (b.active === false && !policy.active)} onClick={() => void changePolicy(policy)}>
+                    {policy.active ? "정책 OFF" : "정책 ON"}
+                  </button>
+                </div>)}
+              {!(initial.publication_policies ?? []).some(policy => policy.blog_id === b.id) && <p>등록된 발행 정책이 없습니다. 언어·정책 설정에서 먼저 등록하세요.</p>}
+            </div>
             <div className="actions">
               <button
                 disabled={busy || !account || !b.active}
