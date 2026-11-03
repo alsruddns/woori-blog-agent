@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from woori import scheduled_execution_receipts as receipts
 
 
