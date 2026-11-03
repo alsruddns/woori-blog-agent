@@ -625,6 +625,7 @@ def scheduled_first_post_status(import_id: Annotated[UUID, Query()]) -> dict[str
                 )
                 manual_publication = {
                     "status": "eligible" if not manual_blockers else "blocked",
+                    "request_available": True,
                     "eligible": not manual_blockers,
                     "blockers": manual_blockers,
                     "title": manual_snapshot.get("title"),
@@ -635,6 +636,8 @@ def scheduled_first_post_status(import_id: Annotated[UUID, Query()]) -> dict[str
                     "generation_method": manual_snapshot.get("generation_method"),
                     "content_version_id": str(content_version_id),
                     "followups": manual_snapshot.get("followups", []),
+                    "seo": manual_snapshot.get("seo", {}),
+                    "publish_ready": bool(manual_row and manual_row.get("publish_ready")),
                     "oauth_write_scope": list(blog["scopes"] or []) == [WRITE_SCOPE],
                     # Manual public-write scope is created only by the user's
                     # exact-version confirmation; no global Auto setting is implied.
@@ -1246,7 +1249,7 @@ def _manual_publication_snapshot(conn: Any, row: dict[str, Any] | None) -> dict[
     imported = conn.execute(
         """SELECT i.id AS import_id,i.external_content_id,i.generation_method,i.language_code,
             v.id AS import_version_id,v.version_number,v.title AS import_title,
-            v.body_markdown,v.blogger_labels,v.content_sha256,
+            v.body_markdown,v.seo_metadata,v.blogger_labels,v.content_sha256,
             (SELECT id FROM external_content_import_versions newest
               WHERE newest.import_id=i.id ORDER BY newest.version_number DESC LIMIT 1) AS latest_import_version_id
         FROM external_content_import_content_links link
@@ -1295,20 +1298,24 @@ def _manual_publication_snapshot(conn: Any, row: dict[str, Any] | None) -> dict[
         followups.append({"issue_type": issue_type, "severity": severity, "description": description})
 
     if not row.get("machine_passed"):
-        followup("other", "medium", "기계 품질 검사 미통과 항목을 게시 후 확인하세요.")
+        followup("other", "medium", "기계 품질 검사 미통과 항목을 보완한 뒤 다시 평가하세요.")
     if not row.get("sources_reviewed"):
-        followup("source", "medium", "출처 원문과 이용 조건을 추가 확인하세요.")
+        followup("source", "medium", "출처 원문과 이용 조건을 확인하세요.")
     if not row.get("evidence_facts_reviewed"):
-        followup("number", "medium", "주요 주장과 수치의 근거를 보강하세요.")
+        followup("number", "medium", "주요 주장과 수치에 원문 근거를 연결하세요.")
     if not row.get("rights_reviewed"):
-        followup("copyright", "medium", "출처의 이용 조건과 인용 범위를 확인하세요.")
+        followup("copyright", "medium", "출처 이용 조건과 인용 범위를 검토하세요.")
     if not row.get("seo_passed"):
         followup("other", "low", "SEO 제목·설명과 검색 의도를 보완하세요.")
     if row.get("human_review_required") or not row.get("human_review_approved"):
-        followup("other", "low", "편집 검토 기록이 완료되지 않았습니다.")
+        followup("other", "low", "사람의 편집 검토를 완료하세요.")
     if not row.get("publish_ready"):
-        followup("other", "low", "일반 publish_ready 평가 미통과 상태를 게시 후 검토하세요.")
+        followup("other", "low", "필수 공개 적격성 검사를 통과한 뒤 다시 요청하세요.")
 
+    imported_seo = (imported.get("seo_metadata") or {}) if imported else {}
+    search_description = str(
+        row.get("seo_description") or imported_seo.get("search_description") or ""
+    ).strip()
     return {
         "blockers": list(dict.fromkeys(blockers)), "followups": followups,
         "title": title, "body": body, "safe_html": safe_html, "blogger_labels": labels,
@@ -1318,6 +1325,16 @@ def _manual_publication_snapshot(conn: Any, row: dict[str, Any] | None) -> dict[
         "import_version_id": str(imported["import_version_id"]) if imported else None,
         "external_content_id": imported.get("external_content_id") if imported else None,
         "generation_method": imported.get("generation_method") if imported else None,
+        "seo": {
+            "search_description": search_description or None,
+            "search_description_stored": bool(search_description),
+            "blogger_api_supported": False,
+            "manual_entry_required": bool(search_description),
+            "blogger_delivery_status": "manual_entry_required" if search_description else "missing",
+            "html_meta_description_verified": False,
+            "robots_indexing_status": "unverified",
+            "canonical_status": "unverified",
+        },
     }
 
 
@@ -1325,7 +1342,7 @@ def _manual_publication_blockers(
     conn: Any, row: dict[str, Any] | None, snapshot: dict[str, Any], blog_id: UUID,
     *, ignore_job_id: UUID | None = None,
 ) -> list[str]:
-    """Hard safety and operational checks; quality gaps remain follow-ups."""
+    """Recompute operational and editorial gates before creating any manual Job."""
     if row is None:
         return ["content_or_blog_not_found"]
     if publication_discards.discarded(conn, row["content_version_id"], blog_id):
@@ -1347,6 +1364,8 @@ def _manual_publication_blockers(
         reasons.append("blogger_write_oauth_not_verified")
     if not row.get("policy_id"):
         reasons.append("publication_policy_missing")
+    elif not row.get("policy_active"):
+        reasons.append("publication_policy_inactive")
     modes = _mode_settings(conn)
     if modes.get("migration_required"):
         reasons.append("publication_modes_unavailable")
@@ -1360,6 +1379,30 @@ def _manual_publication_blockers(
                 reasons.append("target_uses_auto_mode")
         if modes["emergency_stopped"]:
             reasons.append("publication_emergency_stop_active")
+    # A user confirmation authorizes a request, but cannot replace evidence,
+    # editorial review, rights review, or the current version's quality gate.
+    # Keep the manual action available as a way to inspect/recheck eligibility;
+    # never enqueue a public or draft write while these required checks are held.
+    if not row.get("machine_passed"):
+        reasons.append("machine_quality_not_passed")
+    if not row.get("sources_reviewed"):
+        reasons.append("reviewed_source_missing")
+    if not row.get("evidence_facts_reviewed"):
+        reasons.append("evidence_fact_verification_missing")
+    if not row.get("research_package_reviewed"):
+        reasons.append("research_package_not_reviewed")
+    if not row.get("rights_reviewed"):
+        reasons.append("source_rights_review_missing")
+    if not row.get("seo_passed"):
+        reasons.append("seo_check_not_passed")
+    if not row.get("html_ready"):
+        reasons.append("sanitized_blogger_html_missing")
+    if row.get("human_review_required") or not row.get("human_review_approved"):
+        reasons.append("human_review_pending")
+    if not row.get("publication_approval_approved"):
+        reasons.append("publication_approval_missing_or_stale")
+    if not row.get("publish_ready"):
+        reasons.append("publish_ready_disabled")
     if external_policy._blogger_policy_approval() is None:
         reasons.append("blogger_zero_cost_policy_required")
     try:

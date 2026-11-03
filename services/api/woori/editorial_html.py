@@ -70,7 +70,7 @@ class _Sanitizer(HTMLParser):
         if tag == "a":
             href = next((value for name, value in attrs if name.lower() == "href"), None)
             if href and _safe_href(href):
-                self.output.append(f'<a href="{escape(href.strip(), quote=True)}" rel="nofollow noopener noreferrer">')
+                self.output.append(f'<a href="{escape(href.strip(), quote=True)}" rel="noopener noreferrer">')
             else:
                 self.output.append("<a>")
         elif tag == "img":
@@ -189,7 +189,7 @@ def _inline_markdown(value: str) -> str:
         elif token.startswith("["):
             link = re.fullmatch(r'\[([^\]]+)\]\(([^\s)]+)(?:\s+"([^"]*)")?\)', token)
             if link and _safe_href(link.group(2)):
-                output.append(f'<a href="{escape(link.group(2), quote=True)}" rel="nofollow noopener noreferrer">{escape(link.group(1), quote=False)}</a>')
+                output.append(f'<a href="{escape(link.group(2), quote=True)}" rel="noopener noreferrer">{escape(link.group(1), quote=False)}</a>')
             else:
                 output.append(escape(token, quote=False))
         elif token.startswith("`"):

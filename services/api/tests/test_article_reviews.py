@@ -285,7 +285,7 @@ def test_editorial_html_allowlist_preserves_formatting_and_drops_active_content(
     assert "<strong>Verified</strong>" in safe
     assert "onclick" not in safe and "onmouseover" not in safe
     assert "javascript:" not in safe and "<script" not in safe and "alert(1)" not in safe
-    assert 'href="https://example.gov/source" rel="nofollow noopener noreferrer"' in safe
+    assert 'href="https://example.gov/source" rel="noopener noreferrer"' in safe
     assert "[source:123]" in plain and "official source" in plain
 
 
@@ -501,6 +501,10 @@ def test_publication_package_is_deterministic_non_submitting_and_fails_closed() 
     assert first["request"]["query"] == {"isDraft": True}
     assert set(first["request"]["body"]) == {"title", "content", "labels"}
     assert first["seo"]["search_description_api_supported"] is False
+    assert first["seo"]["search_description_storage_status"] == "content_version_stored"
+    assert first["seo"]["search_description_blogger_status"] == "manual_entry_required"
+    assert first["seo"]["html_meta_description_verified"] is False
+    assert first["seo"]["robots_indexing_status"] == "unverified"
     assert first["seo"]["title_candidates"] == ["정책 변화와 핵심 쟁점"]
     assert first["sources"][0]["official_status"] == "unverified"
     assert first["publish_ready"] is False and first["submission_performed"] is False

@@ -857,6 +857,17 @@ def test_manual_live_request_commits_approval_job_and_followups_atomically_in_is
     assert 'blog_language_mismatch' in publications._manual_publication_blockers(
         conn, wrong, publications._manual_publication_snapshot(conn, wrong), other_blog,
     )
+    # The transaction-path fixture intentionally omits a reviewed source ledger,
+    # approved evidence, human review, SEO audit, and publish-ready evaluation.
+    # Verify the real gate blocks it, then isolate the SQL/transaction assertions
+    # below from editorial gate setup complexity.
+    held = publications._manual_publication_blockers(conn, candidate, snapshot, blog_record_id)
+    assert {
+        "machine_quality_not_passed", "reviewed_source_missing",
+        "evidence_fact_verification_missing", "source_rights_review_missing",
+        "human_review_pending", "publish_ready_disabled",
+    }.issubset(set(held))
+    monkeypatch.setattr(publications, "_manual_publication_blockers", lambda *_args, **_kwargs: [])
     payload = {
         "content_version_id": str(version_id), "blog_id": str(blog_record_id),
         "expected_title_sha256": snapshot["title_sha256"],
