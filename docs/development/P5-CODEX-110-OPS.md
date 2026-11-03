@@ -79,4 +79,5 @@ No LIVE publication is being exercised as part of the restart. Actual Blogger wr
 - The first shutdown attempt exited before writing the intentional-stop marker or stopping any service. `stop-services.ps1` called `Get-ManagedRunner` and `Get-ManagedTree`, but those functions were scoped only inside `stop.ps1` and were not available to the orchestration script.
 - Moved the existing process-tree verification helpers into shared `server-common.ps1`; both scripts dot-source that file. Added a lifecycle regression assertion. No service PID, task scheduler setting, or database state changed during the failed attempt.
 - Verification: `Invoke-Pester -Script scripts/tests/service-lifecycle.Tests.ps1` passed 17/17 after the correction.
+- The next preflight attempt exposed one more helper (`Get-EstablishedConnectionCount`) that was also local to `stop.ps1`. It exited before stop marker/service mutation for the same scope reason. That helper is now shared as well; the regression assertion covers all three shared preflight functions.
 - Next checkpoint: retry graceful preflight and shutdown, then apply Migration 082 and start from the validated committed checkout.

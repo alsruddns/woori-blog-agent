@@ -142,6 +142,7 @@ Describe 'Windows service lifecycle ownership and startup policy' {
     $stopper | Should Match 'legacy_process_verified_for_graceful_then_bounded_stop'
     $common | Should Match 'function Get-ManagedRunner'
     $common | Should Match 'function Get-ManagedTree'
+    $common | Should Match 'function Get-EstablishedConnectionCount'
     $restarter.IndexOf('stop-services.ps1') | Should BeLessThan $restarter.IndexOf('start-services.ps1')
   }
 

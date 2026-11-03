@@ -394,3 +394,25 @@ function Get-ManagedTree([string]$Name, $Runner, $ProcessTable) {
   }
   return @{ items=@(); safe=$false; reason='process_start_time_unavailable' }
 }
+
+function Get-EstablishedConnectionCount($ProcessIds) {
+  $ids = @($ProcessIds | ForEach-Object { [int]$_ })
+  try { $all = @(Get-NetTCPConnection -State Established -ErrorAction Stop) }
+  catch {
+    if ($_.FullyQualifiedErrorId -like 'CmdletizationQuery_NotFound,*') { return 0 }
+    throw 'Could not verify established connections; refusing shutdown.'
+  }
+  $managed = @($all | Where-Object { $ids -contains [int]$_.OwningProcess })
+  $managedLocalEndpoints = @{}
+  foreach ($connection in $managed) {
+    $key = "{0}|{1}" -f ([string]$connection.LocalAddress).ToLowerInvariant(),[int]$connection.LocalPort
+    $managedLocalEndpoints[$key] = [int]$connection.OwningProcess
+  }
+  $externalCount = 0
+  foreach ($connection in $managed) {
+    $remoteKey = "{0}|{1}" -f ([string]$connection.RemoteAddress).ToLowerInvariant(),[int]$connection.RemotePort
+    if ($managedLocalEndpoints.ContainsKey($remoteKey)) { continue }
+    $externalCount++
+  }
+  return $externalCount
+}
