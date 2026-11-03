@@ -287,6 +287,7 @@ class Change(BaseModel):
     scheduled_auto_publishing_enabled: bool | None = None
     automatic_publication_operator_approved: bool | None = None
     global_publish_min_interval_minutes: int | None = Field(default=None, ge=15, le=1440)
+    trends_authoring_min_volume: int | None = Field(default=None, ge=1, le=1_000_000_000)
     emergency_stop: bool | None = None
     auto_mode: Literal["draft", "publish"] | None = None
     auto_blog_ids: list[str] | None = None
@@ -421,7 +422,7 @@ def change(request: Change) -> dict[str, Any]:
             automatic_publication_approval_reason=CASE WHEN %s THEN %s ELSE automatic_publication_approval_reason END,
             automatic_publication_approval_changed_at=CASE WHEN %s THEN clock_timestamp() ELSE automatic_publication_approval_changed_at END,
             automatic_publication_approval_scope=CASE WHEN %s THEN %s::jsonb ELSE automatic_publication_approval_scope END,
-            global_publish_min_interval_minutes=%s,
+            global_publish_min_interval_minutes=%s,trends_authoring_min_volume=%s,
             trends_auto_epoch=CASE WHEN %s THEN gen_random_uuid() ELSE trends_auto_epoch END,
             trends_auto_enabled_at=CASE WHEN %s THEN clock_timestamp() ELSE trends_auto_enabled_at END,
             scheduled_auto_epoch=CASE WHEN %s THEN gen_random_uuid() ELSE scheduled_auto_epoch END,
@@ -449,6 +450,7 @@ def change(request: Change) -> dict[str, Any]:
                 operator_approval_changed,
                 Jsonb(approval_scope),
                 after["global_publish_min_interval_minutes"],
+                after["trends_authoring_min_volume"],
                 route_changes["trends"],
                 route_changes["trends"],
                 route_changes["scheduled"],

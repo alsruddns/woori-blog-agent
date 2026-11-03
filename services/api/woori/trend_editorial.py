@@ -282,7 +282,8 @@ class Decision(BaseModel):
 
 
 def queue_topic(conn:Any,topic_id:UUID,blog_id:UUID,*,selection_rank:int|None=None,
-                processing_order:int|None=None,new_event_key:UUID|None=None) -> dict[str,Any]:
+                processing_order:int|None=None,new_event_key:UUID|None=None,
+                selected_observation_id:UUID|None=None) -> dict[str,Any]:
     from .keyword_jobs import targets
     current=latest(conn,topic_id)
     if not current or current['state'] not in {'selected','generation_queued'}:raise HTTPException(409,'topic_not_selected')
@@ -298,7 +299,13 @@ def queue_topic(conn:Any,topic_id:UUID,blog_id:UUID,*,selection_rank:int|None=No
     if category not in {c['slug'] for c in EDITORIAL_CATEGORIES}:raise HTTPException(409,'editorial_category_required')
     observations=current_observations(conn,topic_id)
     if not observations:raise HTTPException(409,'expired_collection_slot')
-    newest=observations[0]
+    newest=next((item for item in observations if item['id']==selected_observation_id),None) if selected_observation_id else observations[0]
+    if newest is None:raise HTTPException(409,'selected_observation_not_in_current_slot')
+    minimum_volume=conn.execute(
+        'SELECT trends_authoring_min_volume FROM automation_controls WHERE id=1'
+    ).fetchone()['trends_authoring_min_volume']
+    if newest['source_volume_lower_bound'] is None or newest['source_volume_lower_bound']<minimum_volume:
+        raise HTTPException(409,'trend_authoring_volume_below_minimum')
     # Missing event date is deliberately a review boundary, not an invented event ID.
     event_stamp=newest['trend_started_at'] or newest['collected_at'].astimezone(trends.SCHEDULE_TIMEZONE).date()
     duplicate=hashlib.sha256(f"trend:{topic_id}:{event_stamp}:{blog_id}".encode()).hexdigest()
@@ -408,6 +415,14 @@ def queue_selected() -> dict[str,int]:
     assess_current(slot)
     with connection() as conn:
         conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('trend-selected-queue',0))")
+        # Read the latest operator setting for each queue pass. Unknown RSS volume
+        # is not evidence that the threshold was met.
+        volume_setting = conn.execute(
+            "SELECT trends_authoring_min_volume FROM automation_controls WHERE id=1"
+        ).fetchone()
+        if volume_setting is None:
+            raise RuntimeError('trends_authoring_volume_setting_missing')
+        minimum_volume = int(volume_setting["trends_authoring_min_volume"])
         from .keyword_jobs import authoring_backoff
         pause=authoring_backoff(conn)
         if pause and pause['active']:return {'created':0,'codex_backoff':1}
@@ -449,10 +464,10 @@ def queue_selected() -> dict[str,int]:
                 JOIN trend_collection_slots s ON s.run_id=o.run_id AND s.geo=o.geo AND s.slot_at=%s
                 LEFT JOIN LATERAL(SELECT state,category,reason_code FROM trend_editorial_events
                     WHERE topic_id=t.id ORDER BY id DESC LIMIT 1)e ON true
-                WHERE o.source_volume_lower_bound IS NOT NULL AND o.source_volume_lower_bound>0
+                WHERE o.source_volume_lower_bound >= %s
                   AND o.trend_started_at IS NOT NULL
                 ORDER BY o.source_volume_lower_bound DESC,o.trend_started_at DESC,o.collected_at DESC,t.id LIMIT 100''',
-                (mapping['geo'],slot)).fetchall()
+                (mapping['geo'],slot,minimum_volume)).fetchall()
             from .editorial_intelligence import rank_candidates
             rows=rank_candidates(conn,[dict(r) for r in rows],mapping['blog_id'],slot)
             for rank,row in enumerate(rows,1):
@@ -470,9 +485,12 @@ def queue_selected() -> dict[str,int]:
                         '현재 수집 회차의 검색량·최신성·주제 적합성으로 Codex 독립 조사를 선정했습니다. 근거나 사실 승인으로 간주하지 않습니다.',
                         'system:trend-country-rank',category=category,evidence={'geo':mapping['geo'],
                         'volume_lower_bound':row['source_volume_lower_bound'],'trend_started_at':row['trend_started_at'].isoformat(),
-                        'collection_slot':slot.isoformat(),'selection':row['selection'],'rank_basis':'weighted_within_geo_editorial_priority'})
+                        'collection_slot':slot.isoformat(),'selection':row['selection'],
+                        'minimum_authoring_volume':minimum_volume,
+                        'rank_basis':'weighted_within_geo_editorial_priority'})
                 queued=queue_topic(conn,row['id'],mapping['blog_id'],selection_rank=rank,
-                                   processing_order=mapping['processing_order'])
+                                    processing_order=mapping['processing_order'],
+                                    selected_observation_id=row['observation_id'])
                 transition(conn,row['id'],'generation_queued','automatic_country_rank_queue',
                     '국가별 편집 우선순위 후보를 공통 Codex Runner의 웹 조사 큐로 전달했습니다.',
                     'system:trend-slot',category=category,evidence={'generation_request_id':str(queued['id']),

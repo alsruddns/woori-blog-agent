@@ -91,6 +91,24 @@ def test_independent_switches_persist_and_audit(center):
     assert controls.allowed("trends_collection_enabled") is True
 
 
+def test_trends_authoring_volume_is_independent_and_audited(center):
+    conn, api, h = center
+    initial = api.get(BASE, headers=h).json()["settings"]
+    assert initial["trends_authoring_min_volume"] == 5000
+    interval = initial["interval_minutes"]
+    publish_interval = initial["global_publish_min_interval_minutes"]
+    assert update(center, trends_authoring_min_volume=4999).status_code == 200
+    saved = api.get(BASE, headers=h).json()["settings"]
+    assert saved["trends_authoring_min_volume"] == 4999
+    assert saved["interval_minutes"] == interval
+    assert saved["global_publish_min_interval_minutes"] == publish_interval
+    assert update(center, trends_authoring_min_volume=0).status_code == 422
+    event = conn.execute(
+        "SELECT payload FROM audit_events WHERE event_type='automation.controls.changed' ORDER BY id DESC LIMIT 1"
+    ).fetchone()["payload"]
+    assert {"key": "trends_authoring_min_volume", "before": 5000, "after": 4999} in event["changes"]
+
+
 def test_operator_auto_approval_is_separate_confirmed_audited_and_fail_closed(center):
     conn, api, h = center
     initial = api.get(BASE, headers=h).json()

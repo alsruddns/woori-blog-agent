@@ -22,7 +22,7 @@ def bind(lab,monkeypatch):
     return conn,api,headers
 
 
-def observation(conn,query,geo='KR',payload=None,volume=1000):
+def observation(conn,query,geo='KR',payload=None,volume=5000):
     slot=conn.execute('SELECT run_id FROM trend_collection_slots WHERE geo=%s AND slot_at=%s',(geo,editorial.current_slot())).fetchone()
     if slot:run=slot['run_id']
     else:
@@ -102,7 +102,7 @@ def test_same_slot_never_fetches_success_again(lab,monkeypatch):
 def test_old_slot_candidate_expires_without_deleting_observation(lab,monkeypatch):
     conn,api,h=bind(lab,monkeypatch)
     name='software launch '+uuid4().hex
-    observed=observation(conn,name,payload={'news_items':[{'title':name,'url':'https://example.gov/news'}]},volume=1000)
+    observed=observation(conn,name,payload={'news_items':[{'title':name,'url':'https://example.gov/news'}]},volume=5000)
     editorial.reconcile()
     detail=api.get('/admin/research/trend-editorial/'+str(observed),headers=h).json()
     assert detail['history'][0]['state']=='selected'
@@ -123,8 +123,8 @@ def test_selected_current_slot_queues_once_for_unambiguous_blog(lab,monkeypatch)
     monkeypatch.setattr(editorial,'current_slot',lambda:fixed_slot)
     name='software launch '+uuid4().hex
     low='software launch '+uuid4().hex
-    observation(conn,low,payload={'news_items':[]},volume=100)
-    observed=observation(conn,name,payload={'news_items':[{'title':name,'url':'https://example.gov/news'}]},volume=1000)
+    low_observation=observation(conn,low,payload={'news_items':[]},volume=4999)
+    observed=observation(conn,name,payload={'news_items':[{'title':name,'url':'https://example.gov/news'}]},volume=5000)
     editorial.reconcile()
     topic=api.get('/admin/research/trend-editorial/'+str(observed),headers=h).json()['topic_id']
     profile=conn.execute("INSERT INTO language_profiles(language_code,target_country) VALUES('ko','KR') ON CONFLICT(language_code,target_country) DO UPDATE SET search_intent=language_profiles.search_intent RETURNING id").fetchone()['id']
@@ -134,6 +134,11 @@ def test_selected_current_slot_queues_once_for_unambiguous_blog(lab,monkeypatch)
     monkeypatch.setattr(keyword_jobs,'targets',lambda _:[{'id':blog,'target_country':'KR','language_code':'ko'}])
     assert editorial.queue_selected()['created']==1
     assert editorial.queue_selected()['created']==0
+    assert conn.execute("SELECT count(*) n FROM trend_generation_requests q JOIN trend_topic_memberships m ON m.topic_id=q.topic_id WHERE m.observation_id=%s",(low_observation,)).fetchone()['n']==0
+    low_topic=api.get('/admin/research/trend-editorial/'+str(low_observation),headers=h).json()['topic_id']
+    rejected=api.post('/admin/research/trend-editorial/topics/'+low_topic+'/decision',headers=h,
+        json={'request_key':str(uuid4()),'action':'queue','reason':'Isolated minimum volume check','blog_id':str(blog)})
+    assert rejected.status_code==409 and rejected.json()['detail']=='trend_authoring_volume_below_minimum'
     row=conn.execute('SELECT * FROM trend_generation_requests WHERE topic_id=%s',(topic,)).fetchone()
     assert row['contract']['selection_rank']==1 and row['contract']['source_country']=='KR'
     assert editorial.slot_is_current(row['contract']['collection_slot'])
@@ -189,7 +194,7 @@ def test_country_rank_queue_creates_distinct_jobs_for_one_multicountry_blog(lab,
     conn.execute("INSERT INTO publishing_policies(language_code,blog_id,profile_id,active) VALUES('en',%s,%s,false)",(blog,profile))
     conn.execute("INSERT INTO trend_blog_geo_authoring(blog_id,geo,enabled,processing_order) VALUES(%s,'US',true,1),(%s,'GB',true,2)",(blog,blog))
     us=observation(conn,'technology launch united states','US',payload={},volume=9000)
-    gb=observation(conn,'technology launch united kingdom','GB',payload={},volume=1200)
+    gb=observation(conn,'technology launch united kingdom','GB',payload={},volume=5000)
     editorial.reconcile()
     monkeypatch.setattr(keyword_jobs,'targets',lambda _:[{'id':blog,'target_country':'US','language_code':'en'}])
     queued=editorial.queue_selected()
@@ -206,7 +211,7 @@ def test_country_rank_queue_falls_through_after_insufficient_evidence(lab,monkey
     conn.execute("INSERT INTO publishing_policies(language_code,blog_id,profile_id,active) VALUES('ko',%s,%s,false)",(blog,profile))
     conn.execute("INSERT INTO trend_blog_geo_authoring(blog_id,geo,enabled,processing_order) VALUES(%s,'KR',true,1)",(blog,))
     observation(conn,'technology launch highest rank','KR',payload={},volume=9000)
-    observation(conn,'software platform product update','KR',payload={},volume=1200)
+    observation(conn,'software platform product update','KR',payload={},volume=5000)
     editorial.reconcile()
     monkeypatch.setattr(keyword_jobs,'targets',lambda _:[{'id':blog,'target_country':'KR','language_code':'ko'}])
     assert editorial.queue_selected()['created']==1
