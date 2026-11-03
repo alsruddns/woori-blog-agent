@@ -119,6 +119,8 @@ def test_old_slot_candidate_expires_without_deleting_observation(lab,monkeypatch
 
 def test_selected_current_slot_queues_once_for_unambiguous_blog(lab,monkeypatch):
     conn,api,h=bind(lab,monkeypatch)
+    fixed_slot=datetime(2026,10,30,0,0,tzinfo=UTC)
+    monkeypatch.setattr(editorial,'current_slot',lambda:fixed_slot)
     name='software launch '+uuid4().hex
     low='software launch '+uuid4().hex
     observation(conn,low,payload={'news_items':[]},volume=100)
@@ -155,6 +157,29 @@ def test_blog_geo_mapping_supports_multiple_countries_with_audit(lab,monkeypatch
         {'blog_id':str(blog),'geo':'US','enabled':True,'processing_order':1},
         {'blog_id':str(blog),'geo':'GB','enabled':True,'processing_order':1}]})
     assert duplicate.status_code==422
+
+
+def test_de_br_vn_authoring_targets_do_not_require_publication_policy(lab,monkeypatch):
+    conn,_,_=bind(lab,monkeypatch)
+    targets=(('de','DE','5857406989226346280','trend-journal-de'),
+             ('pt-BR','BR','2780805325207451782','trend-journal-br'),
+             ('vi','VN','2392412558893856604','trend-journal-vn'))
+    created=[]
+    for language,country,blogger_id,host in targets:
+        conn.execute("INSERT INTO languages(code,display_name,active) VALUES(%s,%s,true) ON CONFLICT(code) DO UPDATE SET active=true",
+                     (language,f'{country} authoring language'))
+        conn.execute(
+            "INSERT INTO language_profiles(language_code,target_country) VALUES(%s,%s) ON CONFLICT(language_code,target_country) DO UPDATE SET search_intent=language_profiles.search_intent",
+            (language,country))
+        blog=conn.execute(
+            "INSERT INTO blogger_blogs(language_code,url,display_name,blog_id,active) VALUES(%s,%s,%s,%s,true) RETURNING id",
+            (language,f'https://{host}.blogspot.com',f'{country} authoring fixture',blogger_id)).fetchone()['id']
+        assert conn.execute("SELECT count(*) n FROM publishing_policies WHERE blog_id=%s",(blog,)).fetchone()['n']==0
+        created.append((blog,country,language))
+    resolved={str(row['id']):row for row in keyword_jobs.targets(conn)}
+    for blog,country,language in created:
+        assert resolved[str(blog)]['target_country']==country
+        assert resolved[str(blog)]['language_code']==language
 
 
 def test_country_rank_queue_creates_distinct_jobs_for_one_multicountry_blog(lab,monkeypatch):

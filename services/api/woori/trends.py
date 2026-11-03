@@ -24,7 +24,10 @@ from .external_policy import client as external_client
 
 PROVIDER = "google_trends_rss"
 ENDPOINT = "https://trends.google.com/trending/rss"
-ALLOWED_GEOS = {"KR", "US", "JP", "TW", "HK", "SG", "GB", "CA", "AU", "IN", "PH"}
+ALLOWED_GEOS = {
+    "KR", "US", "JP", "TW", "HK", "SG", "GB", "CA", "AU", "IN", "PH",
+    "DE", "BR", "VN",
+}
 GOOGLE_TRENDS_HELP = "https://support.google.com/trends/answer/3076011?hl=en"
 MAX_RESPONSE_BYTES = 1024 * 1024
 MAX_ITEMS = 20
@@ -655,7 +658,7 @@ def legacy_schedule_tick(now: datetime | None = None) -> dict[str, Any]:
 
 def schedule_tick(now: datetime | None = None, *, on_progress:Callable[[int],None]|None=None,
                   should_stop:Callable[[],bool]|None=None) -> dict[str, Any]:
-    """Collect all eleven geographies once per configured KST slot, serially."""
+    """Collect every supported geography once per configured KST slot, serially."""
     current=now or datetime.now(UTC)
     if current.tzinfo is None:raise ValueError('scheduler_time_must_be_timezone_aware')
     config=collection_settings()

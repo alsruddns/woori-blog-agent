@@ -13,7 +13,7 @@ from woori.trends import ALLOWED_GEOS, parse_feed
 lab = shared_lab
 
 
-def test_ten_minute_sweep_collects_all_regions_once_and_keeps_partial_failure(lab,monkeypatch):
+def test_configured_sweep_collects_all_regions_once_and_keeps_partial_failure(lab,monkeypatch):
     conn,_,_=lab
     @contextmanager
     def shared():
@@ -29,9 +29,9 @@ def test_ten_minute_sweep_collects_all_regions_once_and_keeps_partial_failure(la
         return {'run_id':str(run),'geo':geo,'status':status,'http_status':500 if geo=='JP' else 200,'item_count':0}
     monkeypatch.setattr(trends,'_collect_geo',collect)
     first=trends.schedule_tick()
-    assert first['status']=='partial' and first['successes']==10 and first['failures']==1
-    assert set(seen)==trends.ALLOWED_GEOS and len(seen)==11
-    assert trends.schedule_tick()['status']=='slot_complete' and len(seen)==11
+    assert first['status']=='partial' and first['successes']==13 and first['failures']==1
+    assert set(seen)==trends.ALLOWED_GEOS and len(seen)==14
+    assert trends.schedule_tick()['status']=='slot_complete' and len(seen)==14
 
 
 def test_collection_settings_save_for_next_slot_with_audit(lab,monkeypatch):
@@ -135,7 +135,7 @@ def test_hourly_scheduler_spreads_regions_and_respects_global_spacing() -> None:
     assert trends.choose_due_geo(attempts, now, now + timedelta(minutes=4)) is None
     assert trends.choose_due_geo(attempts, now, now + timedelta(minutes=5)) == "AU"
     spread = {"AU": now, "CA": now + timedelta(minutes=5)}
-    assert trends.choose_due_geo(spread, now + timedelta(minutes=5), now + timedelta(hours=1)) == "GB"
+    assert trends.choose_due_geo(spread, now + timedelta(minutes=5), now + timedelta(hours=1)) == "BR"
     full = {geo: now - timedelta(minutes=5) for geo in trends.ALLOWED_GEOS}
     assert trends.choose_due_geo(full, now - timedelta(minutes=5), now) is None
 
@@ -146,21 +146,21 @@ def test_google_trends_rejects_unconfigured_geographies(geo: str) -> None:
         parse_feed(b"<rss><channel/></rss>", geo)
 
 
-def test_google_trends_allowlist_has_eleven_regions_and_supports_full_cycle_under_quota() -> None:
+def test_google_trends_allowlist_has_fourteen_regions_and_supports_full_cycle_under_quota() -> None:
     from datetime import timedelta
 
-    assert trends.ALLOWED_GEOS == {"KR", "US", "JP", "TW", "HK", "SG", "GB", "CA", "AU", "IN", "PH"}
+    assert trends.ALLOWED_GEOS == {"KR", "US", "JP", "TW", "HK", "SG", "GB", "CA", "AU", "IN", "PH", "DE", "BR", "VN"}
     now = datetime(2026, 10, 29, 0, 0, tzinfo=UTC)
     attempts: dict[str, datetime] = {}
     seen: list[str] = []
-    for offset in range(0, 55, 5):
+    for offset in range(0, 70, 5):
         current = now + timedelta(minutes=offset)
         geo = trends.choose_due_geo(attempts, current - timedelta(minutes=5) if attempts else None, current)
         assert geo is not None
         seen.append(geo)
         attempts[geo] = current
     assert set(seen) == trends.ALLOWED_GEOS
-    assert len(seen) == 11
+    assert len(seen) == 14
 
 
 def test_google_trends_feed_rejects_entities_and_oversize() -> None:
@@ -247,7 +247,7 @@ def test_hourly_scheduler_starts_on_top_of_hour_and_resumes_without_repeating_sl
     attempts["AU"] = start
     current_hour = {"AU": [{"attempted_at": start, "status": "succeeded", "failure_category": None}]}
     assert trends.choose_hourly_geo(attempts, current_hour, start, start + timedelta(minutes=5)) == (
-        "CA", "selected"
+        "BR", "selected"
     )
     completed = {
         geo: [{"attempted_at": start + timedelta(minutes=index * 5),
@@ -259,7 +259,7 @@ def test_hourly_scheduler_starts_on_top_of_hour_and_resumes_without_repeating_sl
     )
 
 
-def test_hourly_scheduler_runs_all_eleven_regions_in_sequential_five_minute_slots() -> None:
+def test_legacy_hourly_selector_runs_all_fourteen_regions_in_sequential_five_minute_slots() -> None:
     from datetime import timedelta
 
     start = datetime(2026, 10, 29, 0, 0, tzinfo=UTC)
@@ -271,7 +271,7 @@ def test_hourly_scheduler_runs_all_eleven_regions_in_sequential_five_minute_slot
     hour_attempts: dict[str, list[dict[str, Any]]] = {}
     last_global = start - timedelta(minutes=5)
     actual: list[str] = []
-    for index in range(11):
+    for index in range(14):
         current = start + timedelta(minutes=index * 5)
         selected, decision = trends.choose_hourly_geo(attempts, hour_attempts, last_global, current)
         assert selected == ordered_geos[index]
@@ -280,8 +280,8 @@ def test_hourly_scheduler_runs_all_eleven_regions_in_sequential_five_minute_slot
         attempts[selected] = current
         hour_attempts[selected] = [{"attempted_at": current, "status": "succeeded", "failure_category": None}]
         last_global = current
-    assert len(set(actual)) == 11
-    assert trends.choose_hourly_geo(attempts, hour_attempts, last_global, start + timedelta(minutes=55)) == (
+    assert len(set(actual)) == 14
+    assert trends.choose_hourly_geo(attempts, hour_attempts, last_global, start + timedelta(minutes=70)) == (
         None, "hour_sweep_complete"
     )
 

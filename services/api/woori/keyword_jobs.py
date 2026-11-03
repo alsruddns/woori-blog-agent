@@ -139,10 +139,15 @@ def trend_output_schema() -> dict[str,Any]:
 
 
 def targets(conn:Any) -> list[dict[str,Any]]:
+    # Research destinations are distinct from publication policies. Require an
+    # active blog and one explicit target-country profile, but do not require an
+    # active (or even pre-created) Blogger publication policy to author/import.
     return [dict(r) for r in conn.execute("""SELECT b.id,b.blog_id,b.url,b.display_name,b.language_code,l.target_country
-        FROM blogger_blogs b JOIN LATERAL (
-          SELECT min(lp.target_country) target_country FROM publishing_policies p JOIN language_profiles lp ON lp.id=p.profile_id
-          WHERE p.blog_id=b.id AND lp.language_code=b.language_code AND lp.target_country<>'' HAVING count(DISTINCT lp.target_country)=1
+        FROM blogger_blogs b JOIN languages lang ON lang.code=b.language_code AND lang.active
+        JOIN LATERAL (
+          SELECT min(lp.target_country) target_country FROM language_profiles lp
+          WHERE lp.language_code=b.language_code AND lp.target_country<>''
+          HAVING count(DISTINCT lp.target_country)=1
         ) l ON true WHERE b.active AND b.blog_id IS NOT NULL ORDER BY b.display_name""").fetchall()]
 
 

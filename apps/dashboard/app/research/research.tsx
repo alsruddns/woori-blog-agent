@@ -136,7 +136,7 @@ export default function Research({ initial }: { initial: State }) {
         <p>`hours=1`은 공식 RSS 규격으로 확인되지 않아 정기 수집에 사용하지 않습니다.</p>
         {!data.trend_collection_configured && <p role="status">추세 저장 스키마가 아직 운영 DB에 적용되지 않아 수집은 비활성화되어 있습니다.</p>}
         {data.trend_sources?.map(source => <p key={str(source, "endpoint")}>{str(source, "policy")} · 시간당 앱 제한 {str(source, "hourly_limit")}</p>)}
-        {(["KR", "US", "JP", "TW", "HK", "SG", "GB", "CA", "AU", "IN", "PH"] as const).map(geo => <button key={geo} disabled={busy || !data.trend_collection_configured} onClick={() => void act("trends/collect", { geo })}>{geo} 트렌드 1회 수집</button>)}
+        {(["KR", "US", "JP", "TW", "HK", "SG", "GB", "CA", "AU", "IN", "PH", "DE", "BR", "VN"] as const).map(geo => <button key={geo} disabled={busy || !data.trend_collection_configured} onClick={() => void act("trends/collect", { geo })}>{geo} 트렌드 1회 수집</button>)}
         <details><summary>최근 수집 실행 원본 데이터</summary><pre>{JSON.stringify(data.trend_collection_runs ?? [], null, 2)}</pre></details>
         <h4>최근 고유 검색어 관측</h4>
         <div style={{ overflowX: "auto" }}><table><thead><tr><th>검색어</th><th>국가</th><th>Google 추정 검색량</th><th>첫 관측</th><th>최근 관측</th><th>관측 상태</th><th>검색량 변화</th><th>자료 조사</th></tr></thead>

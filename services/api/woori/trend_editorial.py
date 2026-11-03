@@ -97,7 +97,7 @@ class BlogGeoMapping(BaseModel):
     blog_id: UUID
     geo: str = Field(pattern=r'^[A-Z]{2}$')
     enabled: bool
-    processing_order: int = Field(ge=1,le=11)
+    processing_order: int = Field(ge=1,le=14)
 
 
 class BlogGeoMappings(BaseModel):

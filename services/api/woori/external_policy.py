@@ -725,7 +725,10 @@ def _authorize(provider: str, operation: str, request: httpx.Request) -> None:
         trend_params = list(request.url.params.multi_items())
         operation_path_allowed = bool(
             parsed.path == "/trending/rss"
-            and trend_params in [[("geo", code)] for code in ("KR", "US", "JP", "TW", "HK", "SG", "GB", "CA", "AU", "IN", "PH")]
+            and trend_params in [[("geo", code)] for code in (
+                "KR", "US", "JP", "TW", "HK", "SG", "GB", "CA", "AU", "IN", "PH",
+                "DE", "BR", "VN",
+            )]
         )
     if (
         parsed.scheme != "https"

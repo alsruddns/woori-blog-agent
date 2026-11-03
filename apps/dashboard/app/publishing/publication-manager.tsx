@@ -100,11 +100,40 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
   const [quickPublishBusy,setQuickPublishBusy]=useState(false);
   const [quickPublishError,setQuickPublishError]=useState("");
   const [quickPublishMode,setQuickPublishMode]=useState<"publish"|"draft">("publish");
+  const [pendingManualJobId,setPendingManualJobId]=useState<string|null>(null);
   const [quickPublishActor,setQuickPublishActor]=useState("관리자");
   const [quickPublishReason,setQuickPublishReason]=useState("원고 확인 완료");
   const [quickPublishChecks,setQuickPublishChecks]=useState({content:false,facts:false,rights:false,confirmation:false});
   const searchTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
   const refreshRequest=useRef(0);
+  useEffect(()=>{
+    if(!pendingManualJobId)return;
+    let disposed=false,attempts=0,timer:ReturnType<typeof setTimeout>|undefined;
+    const check=async()=>{
+      if(disposed)return;
+      if(document.visibilityState==="hidden"){timer=setTimeout(check,15000);return;}
+      attempts+=1;
+      try{
+        const response=await fetch("/api/publications/worker-jobs?view=all&page=1&page_size=100",{cache:"no-store"});
+        if(response.ok){
+          const monitor=await response.json() as {items?:Array<{job_id?:string|null;state?:string;remote_status?:string|null;remote_post_id?:string|null;remote_url?:string|null;failure_reason?:string|null}>};
+          const job=monitor.items?.find(item=>item.job_id===pendingManualJobId);
+          if(job){
+            if(job.state==="published"&&job.remote_status==="LIVE"&&job.remote_post_id&&job.remote_url){setNotice(`Blogger에 공개 게시가 완료되었습니다. postId ${job.remote_post_id} · ${job.remote_url}`);setPendingManualJobId(null);setMonitorRefresh(value=>value+1);return;}
+            if(job.state==="draft_saved"&&job.remote_status==="DRAFT"&&job.remote_post_id){setNotice(`Blogger 비공개 초안으로 저장되었습니다. postId ${job.remote_post_id}`);setPendingManualJobId(null);setMonitorRefresh(value=>value+1);return;}
+            if(["failed","auto_paused","manual_action_required","uncertain"].includes(job.state??"")){
+              const why=job.failure_reason?reasonLabel(job.failure_reason):"Job 관리에서 상세 상태를 확인하세요.";
+              setNotice(`${job.state==="failed"?"Blogger 게시에 실패했습니다.":"발행 요청이 보류되었습니다."} ${why} (Job ${pendingManualJobId})`);setPendingManualJobId(null);setMonitorRefresh(value=>value+1);return;
+            }
+          }
+        }
+      }catch{/* Keep the queued Job visible; the next bounded poll can recover. */}
+      if(attempts>=120){setNotice(`발행 요청이 아직 처리 중입니다. Job ${pendingManualJobId}의 최종 결과를 Job 관리에서 확인하세요.`);setPendingManualJobId(null);return;}
+      timer=setTimeout(check,15000);
+    };
+    void check();
+    return()=>{disposed=true;if(timer)clearTimeout(timer);};
+  },[pendingManualJobId]);
   const [detailRequest,setDetailRequest]=useState<{id:string;version:string;target:string;publish:boolean;nonce:number}>();
   const openManuscript=(item:Item,publish=false)=>{if(item.import_id)setDetailRequest(previous=>({id:item.import_id!,version:item.content_version_id,target:item.blog_id,publish,nonce:(previous?.nonce??0)+1}));};
   const [scheduledBlogs,setScheduledBlogs]=useState<string[]>([]);
@@ -149,7 +178,7 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
   const itemKey=(item:Item)=>`${item.content_version_id}:${item.blog_id}`;
   function openDiscard(targets:Item[]){setDiscardTargets(targets);setDiscardReason("폐기처리 하기로 결정함");setError("");}
   async function openQuickPublish(item:Item){
-    if(quickPublishLoading||quickPublishBusy||!item.import_id||!item.manual_publication_available)return;
+    if(quickPublishLoading||quickPublishBusy||!item.import_id)return;
     setQuickPublishLoading(true);setQuickPublishError("");
     try{
       const response=await fetch(`/api/research/content-imports/${encodeURIComponent(item.import_id)}`,{cache:"no-store"});
@@ -186,6 +215,7 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
       if(!response.ok)throw new Error(result.detail??`발행 요청 실패 (HTTP ${response.status})`);
       if(result.recorded===false)throw new Error(`발행이 차단됐습니다. ${(result.reasons??[]).map(reasonLabel).join(" · ")||"필수 조건을 충족하지 못했습니다."}`);
       setNotice(result.duplicate?`기존 발행 요청을 확인했습니다. Job ${result.id??""} · 새 게시 요청은 만들지 않았습니다.`:`발행 큐에 등록했습니다. Job ${result.id??""} · 실제 게시 완료는 Job 관리에서 확인하세요.`);
+      if(result.id)setPendingManualJobId(result.id);
       setQuickPublish(null);setSelection([]);setMonitorRefresh(value=>value+1);await refresh(1,view);
     }catch(cause){setQuickPublishError(cause instanceof Error?cause.message:"발행 큐 등록에 실패했습니다.");}
     finally{setQuickPublishBusy(false);}
@@ -280,6 +310,7 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
     </nav>
     {topTab==="jobs" ? <PublicationWorkerPanel refreshKey={monitorRefresh} onOpenImport={job=>{if(job.import_id){chooseTop("publication");setDetailRequest(previous=>({id:job.import_id!,version:job.content_version_id??"",target:job.blog_id??"",publish:false,nonce:(previous?.nonce??0)+1}));}}} onRequestPublication={job=>{if(job.import_id&&job.content_version_id&&job.blog_id){chooseTop("publication");setView("auto_failure");setActiveTab("auto_failure");void refresh(1,"auto_failure");setDetailRequest(previous=>({id:job.import_id!,version:job.content_version_id!,target:job.blog_id!,publish:true,nonce:(previous?.nonce??0)+1}));}}} /> : <>
     {notice&&<p role="status" className="publication-notice">{notice}</p>}
+    {quickPublishError&&!quickPublish&&<p role="alert" className="quality-held">{quickPublishError}</p>}
     <ExternalImportWorkspace embedded detailRequest={detailRequest} onPublicationRequested={jobId=>{setNotice(`발행 Job ${jobId} 등록 완료 · 실제 게시 결과는 Worker 모니터에서 확인하세요.`);setMonitorRefresh(x=>x+1);void refresh();}} />
     <section className="publishing-summary" aria-label="원고 목록 요약">
       <article><span>실제 공개 게시</span><strong>{data.actual_published_count ?? counts.published ?? 0}건</strong></article>
@@ -378,7 +409,7 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
           <td>{statusLabel(item.status)}{item.failure_reason_code && <small>실패 단계 {item.failure_stage ?? "미확인"} · {reasonLabel(item.failure_reason_code)}</small>}{item.retry_count !== undefined && <small>재시도 {item.retry_count}회</small>}{item.eligibility_reasons?.length ? <small>{item.eligibility_reasons.slice(0,2).map(reasonLabel).join(" · ")}</small> : null}{item.simulation_only && <small>모의 작업</small>}</td>
           <td>{kst(item.next_publish_at || item.created_at)}</td>
           {view==="published"&&<td>{item.remote_url&&item.remote_status==="LIVE"&&item.remote_verified_at?<a href={item.remote_url} target="_blank" rel="noreferrer">게시물 열기</a>:"원격 게시 확인 없음"}{item.remote_post_id&&<small>postId {item.remote_post_id}</small>}</td>}
-           <td>{view==="published"?"이력 보존":<div className="publication-row-actions">{view!=="discarded"&&item.import_id&&(item.manual_publication_available||view==="auto_failure")&&<button type="button" className="secondary-button" disabled={quickPublishLoading||quickPublishBusy} onClick={()=>void openQuickPublish(item)}>{quickPublishLoading?"확인 정보 불러오는 중…":"수동 발행"}</button>}<button type="button" className="secondary-button" onClick={()=>openDiscard([item])}>{view==="discarded"?"복원":"폐기"}</button></div>}</td>
+           <td>{view==="published"?"이력 보존":<div className="publication-row-actions">{view!=="discarded"&&item.import_id&&(item.manual_publication_available||view==="auto_failure"||view==="review"||view==="held")&&<button type="button" className="secondary-button" disabled={quickPublishLoading||quickPublishBusy} onClick={()=>void openQuickPublish(item)}>{quickPublishLoading?"확인 정보 불러오는 중…":"수동 발행"}</button>}<button type="button" className="secondary-button" onClick={()=>openDiscard([item])}>{view==="discarded"?"복원":"폐기"}</button></div>}</td>
         </tr>)}
       </tbody></table></div> : <p className="empty-state">이 상태의 원고가 없습니다.</p>}
       <div className="publication-pagination"><button disabled={page<=1||loading} onClick={()=>void refresh(page-1,view)}>이전</button><span>{page} / {Math.max(data.page_count ?? 0,1)}</span><button disabled={page>=(data.page_count??0)||loading} onClick={()=>void refresh(page+1,view)}>다음</button></div>
