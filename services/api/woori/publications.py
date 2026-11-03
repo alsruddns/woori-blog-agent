@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, HTTPException, Query
 from psycopg.types.json import Jsonb
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PositiveInt, field_validator, model_validator
 
 from . import blogger_service, external_policy, publication_discards
 from .blogger_writes import BloggerLivePublisher
@@ -1394,11 +1394,84 @@ def _manual_publication_blockers(
 
 @router.get('/worker-jobs')
 def worker_job_monitor(
-    view: Literal['all','queued','running','published','draft_saved','failed','pre_job_failure','auto_paused','manual_action_required','resolved'] = 'all',
+    view: Literal['all','queued','running','published','draft_saved','failed','pre_job_failure','archived_failure','auto_paused','manual_action_required','resolved'] = 'all',
     page: int = Query(1, ge=1), page_size: int = Query(25, ge=1, le=100),
 ) -> dict[str, Any]:
     from .publication_monitor import snapshot
     return snapshot(view,page,page_size)
+
+
+class PreJobFailureRecheckTarget(BaseModel):
+    event_id: PositiveInt
+    import_id: UUID
+    content_version_id: UUID
+    blog_id: UUID
+
+
+class PreJobFailureRecheckRequest(BaseModel):
+    targets: list[PreJobFailureRecheckTarget] = Field(min_length=1, max_length=100)
+    actor: str = Field(default='관리자', min_length=2, max_length=120)
+    reason: str = Field(default='발행 가능 여부 다시 검사함', min_length=10, max_length=1000)
+
+    @field_validator('actor')
+    @classmethod
+    def trim_actor(cls, value: str) -> str:
+        trimmed = value.strip()
+        if len(trimmed) < 2:
+            raise ValueError('A meaningful actor is required')
+        return trimmed
+
+    @field_validator('reason')
+    @classmethod
+    def trim_reason(cls, value: str) -> str:
+        trimmed = value.strip()
+        if len(trimmed) < 10:
+            raise ValueError('A reason of at least ten characters is required')
+        return trimmed
+
+
+class PreJobFailureHistoryRequest(BaseModel):
+    action: Literal["archive", "restore"]
+    targets: list[PreJobFailureRecheckTarget] = Field(min_length=1, max_length=100)
+    actor: str = Field(default="관리자", min_length=2, max_length=120)
+    reason: str = Field(default="실패 이력 상태를 관리함", min_length=10, max_length=1000)
+
+    @field_validator("actor")
+    @classmethod
+    def trim_history_actor(cls, value: str) -> str:
+        trimmed = value.strip()
+        if len(trimmed) < 2:
+            raise ValueError("A meaningful actor is required")
+        return trimmed
+
+    @field_validator("reason")
+    @classmethod
+    def trim_history_reason(cls, value: str) -> str:
+        trimmed = value.strip()
+        if len(trimmed) < 10:
+            raise ValueError("A reason of at least ten characters is required")
+        return trimmed
+
+
+@router.post('/worker-jobs/recheck')
+def recheck_pre_job_failures(request: PreJobFailureRecheckRequest) -> dict[str, Any]:
+    from .publication_failure_review import recheck
+
+    return recheck(
+        [target.model_dump() for target in request.targets],
+        actor=request.actor,
+        reason=request.reason,
+    )
+
+
+@router.post('/worker-jobs/history')
+def manage_pre_job_failure_history(request: PreJobFailureHistoryRequest) -> dict[str, Any]:
+    from .publication_failure_review import history_action
+
+    return history_action(
+        [target.model_dump() for target in request.targets], actor=request.actor,
+        reason=request.reason, action=request.action,
+    )
 
 
 def publication_list_flow(row: dict[str, Any]) -> str:

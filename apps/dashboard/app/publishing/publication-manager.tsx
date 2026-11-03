@@ -278,7 +278,7 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
       <button type="button" role="tab" aria-selected={topTab==="publication"} onClick={()=>chooseTop("publication")}>발행 관리</button>
       <button type="button" role="tab" aria-selected={topTab==="jobs"} onClick={()=>chooseTop("jobs")}>Job 관리</button>
     </nav>
-    {topTab==="jobs" ? <PublicationWorkerPanel refreshKey={monitorRefresh} onOpenImport={job=>{if(job.import_id){chooseTop("publication");setDetailRequest(previous=>({id:job.import_id!,version:job.content_version_id??"",target:job.blog_id??"",publish:false,nonce:(previous?.nonce??0)+1}));}}} /> : <>
+    {topTab==="jobs" ? <PublicationWorkerPanel refreshKey={monitorRefresh} onOpenImport={job=>{if(job.import_id){chooseTop("publication");setDetailRequest(previous=>({id:job.import_id!,version:job.content_version_id??"",target:job.blog_id??"",publish:false,nonce:(previous?.nonce??0)+1}));}}} onRequestPublication={job=>{if(job.import_id&&job.content_version_id&&job.blog_id){chooseTop("publication");setView("auto_failure");setActiveTab("auto_failure");void refresh(1,"auto_failure");setDetailRequest(previous=>({id:job.import_id!,version:job.content_version_id!,target:job.blog_id!,publish:true,nonce:(previous?.nonce??0)+1}));}}} /> : <>
     {notice&&<p role="status" className="publication-notice">{notice}</p>}
     <ExternalImportWorkspace embedded detailRequest={detailRequest} onPublicationRequested={jobId=>{setNotice(`발행 Job ${jobId} 등록 완료 · 실제 게시 결과는 Worker 모니터에서 확인하세요.`);setMonitorRefresh(x=>x+1);void refresh();}} />
     <section className="publishing-summary" aria-label="원고 목록 요약">
