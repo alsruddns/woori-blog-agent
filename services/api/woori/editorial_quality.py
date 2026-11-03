@@ -6,7 +6,9 @@ import re
 from collections import Counter
 from typing import Any
 
-VERSION = "trendjournal-quality/3.1"
+from .article_quality import inspect_trend_article
+
+VERSION = "trendjournal-quality/3.2"
 WEIGHTS = {
     "caution": 20,
     "substance": 20,
@@ -70,6 +72,10 @@ def evaluate(version: dict[str, Any], imported: dict[str, Any]) -> dict[str, Any
         "safe_html": not unsafe,
         "labels": len(version.get("blogger_labels") or []) <= 8,
     }
+    trend_quality = None
+    if imported.get("google_trends_based") is True or imported.get("generation_method") == "codex_trends_export":
+        trend_quality = inspect_trend_article(title, body, str(imported.get("language_code") or ""))
+        checks.update({f"trend_{name}": passed for name, passed in trend_quality["checks"].items()})
     terms = seo.get("primary_terms") or []
     stuffing = [
         term
@@ -160,6 +166,13 @@ def evaluate(version: dict[str, Any], imported: dict[str, Any]) -> dict[str, Any
         )
     for note in internal[:20]:
         add("structure", "body_markdown", note, "독자에게 노출된 내부 메모를 검토하고 제거하세요.")
+    if trend_quality and trend_quality["issues"]:
+        add(
+            "substance",
+            "body_markdown",
+            body[:500],
+            "Google Trends 원고에서 내부 조사 과정, 검색어 중심 서술 또는 반복·일반론을 수정한 뒤 다시 평가하세요. 사실 검증을 대신하지 않습니다.",
+        )
     if unsafe:
         add(
             "structure",
@@ -199,6 +212,12 @@ def evaluate(version: dict[str, Any], imported: dict[str, Any]) -> dict[str, Any
         ),
         "measured_weight": sum(WEIGHTS[k] for k in scores if scores[k] is not None),
         "checks": checks,
+        "trend_article_quality": trend_quality,
+        "quality_recommendation": (
+            "REVISE" if trend_quality and trend_quality["issues"]
+            else "HOLD_FOR_HUMAN_REVIEW" if trend_quality
+            else None
+        ),
         "suggestions": suggestions,
         "risky_expressions": risky,
         "evidence": {

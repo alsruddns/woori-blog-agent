@@ -753,7 +753,8 @@ def topic_scores(
 
 def evaluate_version(conn: Any, import_id: UUID, version_id: UUID | None = None) -> dict[str, Any]:
     row = conn.execute(
-        """SELECT v.*,l.content_version_id,i.language_code,i.sources,i.claims
+        """SELECT v.*,l.content_version_id,i.language_code,i.sources,i.claims,
+        i.generation_method
         FROM external_content_import_versions v JOIN external_content_imports i ON i.id=v.import_id
         JOIN external_content_import_content_links l ON l.import_version_id=v.id
         WHERE v.import_id=%s AND (%s::uuid IS NULL OR v.id=%s) ORDER BY v.version_number DESC LIMIT 1""",

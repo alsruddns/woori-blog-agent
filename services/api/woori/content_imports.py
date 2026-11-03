@@ -1447,7 +1447,11 @@ def assess_import(import_id: UUID, request: ImportAssessmentRequest) -> dict[str
             source_ids=[str(source["source_id"]) for source in source_rows],
         )
         machine = evaluate(draft, quality_sources, str(imported["language_code"]),
-                           datetime.now(UTC).date().isoformat(), len(claims))
+                           datetime.now(UTC).date().isoformat(), len(claims),
+                           google_trends_based=(
+                               bool(imported.get("google_trends_based"))
+                               or imported.get("generation_method") == "codex_trends_export"
+                           ))
         try:
             safe_html = markdown_to_blogger_html(draft.body, post_title=draft.title, summary=seo_input.search_description)
             safe_html, plain_text = sanitize_editorial_html(safe_html, post_title=draft.title)

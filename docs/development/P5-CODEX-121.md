@@ -72,3 +72,35 @@ No database schema or operational setting was changed. No Migration was added. N
 - Final documentation commit: recorded by `git log` after this checkpoint commit.
 - Remote: push and `origin/develop` HEAD comparison pending.
 - Remaining limits: no live Trends article-generation run was triggered; source truth and semantic claim support still require independent review. No real Blogger publication was tested or claimed.
+
+## Quality-pipeline follow-up (2026-11-03)
+
+- Starting branch/HEAD: `develop` / `4818c8a96b5804cd790a79f1a00ebc66ec4b37da`.
+- Reason: the user reported internal research narration, weak event focus, repetitive filler, and poor source-to-claim traceability in Trends-originated drafts. The existing event-focused schema and opened-source checks from the initial P121 implementation were retained.
+- Changes: the Codex Trends prompt now separates editorial instructions, untrusted research evidence/procedure, locale guidance, and the strict article output contract. It prohibits internal process narration, treats source text as untrusted data, distinguishes source attribution from internal workflow, and preserves the existing source-open and traceability requirements.
+- Added deterministic reader-facing checks for internal-process leakage, generic keyword-report framing, and exact repeated/filler paragraphs for EN, KO, JA, DE, pt-BR, and VI. A Google Trends product/report story can mention the service when the service itself is the reported subject. These checks are heuristics; they do not establish event truth, claim entailment, naturalness, rights clearance, or editorial approval.
+- Trends output evidence now records those checks and a `REVISE` or `HOLD_FOR_HUMAN_REVIEW` recommendation. The Import static assessment and deterministic article assessment also include the checks. Existing human-review, evidence, operational-approval, queue, and publication gates remain controlling; no check sets `publish_ready=true`.
+- Existing topic selection still treats Trends as discovery context and does not itself confirm an event. The initial P121 `event_focus`/source-open contract remains the event-led selection boundary. This follow-up did not add event-grouping tables or alter historical observations.
+- Compatibility finding: `external_content_imports` stores `generation_method` but does not have a `google_trends_based` column in the registered schema. The quality-report query therefore uses the existing provenance field rather than adding a schema dependency. No Migration was added.
+
+### Follow-up files
+
+- `services/api/woori/keyword_jobs.py` — clearer four-part Trends writing contract and append-only check metadata.
+- `services/api/woori/article_quality.py` — deterministic multilingual reader-facing checks, explicitly separate from semantic verification.
+- `services/api/woori/editorial_quality.py` — Trends checks attached to the existing static report; recommendation remains revise or human review.
+- `services/api/woori/editorial_intelligence.py` — existing provenance field selected for the report.
+- `services/api/woori/content_imports.py` — Trends assessment detection falls back to the stored `codex_trends_export` provenance.
+- `services/api/tests/test_trend_article_quality.py` — six-locale leakage/title fixtures, Trends-service exception, repetition, unsupported-locale fail-closed, and deterministic assessment checks.
+- `services/api/tests/test_keyword_authoring.py`, `services/api/tests/test_trend_editorial.py` — updated assertions for the stricter prompt and opened-source requirement.
+
+### Follow-up validation and limits
+
+- Focused suite: 80 passed (`test_trend_article_quality.py`, `test_keyword_authoring.py`, `test_trend_editorial.py`, `test_trend_topics.py`, `test_content_imports.py`).
+- Ruff: passed on all changed source/test files. Mypy: passed on the five changed API modules. `git diff --check`: passed.
+- The first focused run exposed a missing DB column reference and stale prompt/source-open test expectations. The code now uses existing `generation_method`; the isolated test DB schema was not modified. The final focused run passed.
+- Synthetic before/after fixtures detected internal narration in 6/6 active locales, accepted clean event-led sentences in 6/6, flagged generic keyword-report titles in 6/6, and kept the explicit Google Trends product-news exception. This is deterministic fixture coverage, not an evaluation of newly generated articles.
+- No live Codex generation, web research, external HTTP request, Blogger API write, actual Blogger publication, schema migration, or runtime service restart was performed. Runtime reflection is therefore not claimed. The local status helper was invoked without its required selector and returned usage only; no service state was changed.
+- Operations preserved: 14 Trends regions / 30-minute collection, six active Blogger mappings, zh-CN new-authoring pause, 15-minute global publication interval, KST 100 LIVE/day limit, scheduled → manual → Trends priority, approval gates, OAuth, and existing records. No settings were edited.
+- Append-only continuation audit: event `320021`; completion audit to be recorded after final commit/push verification.
+- Follow-up commit and remote HEAD: to be recorded in the next checkpoint after commit/push.
+- Remaining limitations: event resolution and semantic claim verification remain unperformed by deterministic rules; localization naturalness and actual Codex-generated before/after quality remain unverified. This work does not claim live operational reflection or publication success.

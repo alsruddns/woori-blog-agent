@@ -237,9 +237,9 @@ def test_trends_insufficient_evidence_is_failed_without_ready_import_or_publicat
     monkeypatch.setattr(keyword_jobs,'ROOT',tmp_path/'project')
     monkeypatch.setattr(keyword_jobs,'INBOX',tmp_path/'project'/'inbox')
     def decline(work,prompt,schema,callback,cancelled,*,require_opened_sources=True):
-        assert require_opened_sources is False
+        assert require_opened_sources is True
         assert schema['required']==['status','article','reason']
-        assert 'source country KR' in prompt
+        assert 'discovery geography: KR' in prompt
         assert 'insufficient_evidence' in prompt
         callback('researching',{'execution_id':'isolated-refusal'})
         return {'status':'insufficient_evidence','article':None,'reason':'No current event was supported by opened sources.'}, {'opened_urls':{},'web_search_count':1,'execution_id':'isolated-refusal'}
