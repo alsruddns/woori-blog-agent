@@ -74,6 +74,7 @@ const reasonLabel = (reason: string) => ({
   research_package_not_reviewed:"조사 자료 검토가 완료되지 않았습니다.",
   source_rights_review_missing:"출처 이용 권리 검토가 완료되지 않았습니다.",
   seo_check_not_passed:"SEO 검사가 통과되지 않았습니다.",
+  sanitized_blogger_html_missing:"안전하게 정제된 Blogger 본문이 없습니다.",
   human_review_pending:"사람의 편집 검토가 완료되지 않았습니다.",
   publication_approval_missing_or_stale:"현재 원고 버전에 대한 발행 승인이 없습니다.",
   publish_ready_disabled:"현재 원고 버전이 공개 발행 적격 상태가 아닙니다.",
@@ -83,7 +84,11 @@ const reasonLabel = (reason: string) => ({
   publication_emergency_stop_active:"긴급 정지가 켜져 있어 발행할 수 없습니다.",
   blogger_zero_cost_policy_required:"Blogger 쓰기 비용·정책 승인이 확인되지 않았습니다.",
   blogger_write_oauth_not_verified:"Blogger 쓰기 OAuth 권한을 확인할 수 없습니다.",
+  write_oauth_not_mapped_to_blog:"연결된 Blogger 쓰기 OAuth가 이 블로그에 매핑되지 않았습니다.",
   blog_connection_unverified:"대상 Blogger 연결 검증이 필요합니다.",
+  target_uses_auto_mode:"대상 블로그가 수동 발행 모드가 아닙니다.",
+  registered_blog_unavailable:"등록된 대상 Blogger를 찾을 수 없습니다.",
+  content_or_blog_not_found:"원고 버전 또는 대상 Blogger를 찾을 수 없습니다.",
   language_inactive:"원고 언어가 비활성 상태입니다.",
   blog_inactive:"대상 Blogger가 비활성 상태입니다.",
   blog_language_mismatch:"원고 언어와 Blogger 언어 매핑이 다릅니다.",
@@ -124,15 +129,9 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
   const [discardReason,setDiscardReason]=useState("폐기처리 하기로 결정함");
   const [discardActor,setDiscardActor]=useState("관리자");
   const [discardBusy,setDiscardBusy]=useState(false);
-  const [quickPublish,setQuickPublish]=useState<{item:Item;manual:ManualPreview|null}|null>(null);
   const [quickPublishLoading,setQuickPublishLoading]=useState(false);
   const [quickPublishBusy,setQuickPublishBusy]=useState(false);
-  const [quickPublishError,setQuickPublishError]=useState("");
-  const [quickPublishMode,setQuickPublishMode]=useState<"publish"|"draft">("publish");
   const [pendingManualJobId,setPendingManualJobId]=useState<string|null>(null);
-  const [quickPublishActor,setQuickPublishActor]=useState("관리자");
-  const [quickPublishReason,setQuickPublishReason]=useState("원고 확인 완료");
-  const [quickPublishChecks,setQuickPublishChecks]=useState({content:false,facts:false,rights:false,confirmation:false});
   const searchTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
   const refreshRequest=useRef(0);
   useEffect(()=>{
@@ -208,55 +207,43 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
   function openDiscard(targets:Item[]){setDiscardTargets(targets);setDiscardReason("폐기처리 하기로 결정함");setError("");}
   async function openQuickPublish(item:Item){
     if(quickPublishLoading||quickPublishBusy)return;
-    setQuickPublish({item,manual:null});setQuickPublishMode("publish");
-    setQuickPublishChecks({content:false,facts:false,rights:false,confirmation:false});
-    setQuickPublishLoading(true);setQuickPublishError("");
-    setNotice("수동 발행 가능 여부를 최신 상태로 다시 확인합니다. 아직 발행 요청이나 Blogger 쓰기는 발생하지 않았습니다.");
+    setQuickPublishLoading(true);setQuickPublishBusy(true);setError("");
+    setNotice("수동 발행 요청을 처리하고 있습니다. 최신 원고와 발행 조건을 확인합니다.");
     try{
-      if(!item.import_id)throw new Error("Research Import 연결이 없어 최신 발행 적격성을 확인할 수 없습니다.");
-      const response=await fetch(`/api/research/content-imports/${encodeURIComponent(item.import_id)}`,{cache:"no-store"});
-      const detail=await response.json().catch(()=>({})) as {publication?:{targets?:Array<{id?:string;manual_publication?:ManualPreview}>};detail?:string;error?:string;code?:string};
-      if(!response.ok)throw new Error(detail.detail??detail.error??`최신 발행 적격성을 확인하지 못했습니다 (HTTP ${response.status}${detail.code?`, ${detail.code}`:""}).`);
-      const target=detail.publication?.targets?.find(candidate=>candidate.id===item.blog_id);
+      if(!item.import_id)throw new Error("Research Import 연결이 없어 수동 발행 요청을 확인할 수 없습니다.");
+      const previewUrl=`/api/publications/scheduled-auto-first-post?import_id=${encodeURIComponent(item.import_id)}`;
+      const previewResponse=await fetch(previewUrl,{cache:"no-store"});
+      const preview=await previewResponse.json().catch(()=>({})) as {targets?:Array<{id?:string;manual_publication?:ManualPreview}>;detail?:string;error?:string;code?:string};
+      if(!previewResponse.ok)throw new Error(preview.detail??preview.error??`최신 발행 조건을 확인하지 못했습니다 (HTTP ${previewResponse.status}${preview.code?`, ${preview.code}`:""}).`);
+      const target=preview.targets?.find(candidate=>candidate.id===item.blog_id);
       const manual=target?.manual_publication;
-      if(!manual)throw new Error("대상 Blogger에 대한 발행 검사 결과가 없습니다. Blogger 매핑을 확인하세요.");
-      if(manual.content_version_id!==item.content_version_id)throw new Error("목록과 최신 원고 버전이 다릅니다. 목록을 새로고침한 뒤 다시 확인하세요.");
-      setQuickPublish(current=>current?.item===item?{item,manual}:current);
-      setNotice(manual.eligible===true?"최신 적격성 검사를 통과했습니다. 확인 후 공통 발행 큐에 등록할 수 있습니다.":"최신 적격성 검사에서 차단 항목을 찾았습니다. 세부 사유를 확인하세요. Blogger 쓰기는 발생하지 않았습니다.");
-    }catch(cause){setQuickPublishError(cause instanceof Error?cause.message:"발행 확인 정보를 불러오지 못했습니다.");}
-    finally{setQuickPublishLoading(false);}
-  }
-  function closeQuickPublish(){
-    setQuickPublish(null);setQuickPublishError("");setNotice("발행 확인을 취소했습니다. 발행 큐 등록과 Blogger 쓰기는 발생하지 않았습니다.");
-  }
-  async function submitQuickPublish(){
-    if(!quickPublish||quickPublishBusy)return;
-    const {item,manual}=quickPublish;
-    if(!manual){setQuickPublishError("최신 발행 적격성 검사가 끝나기 전에는 요청할 수 없습니다.");return;}
-    if(manual.eligible!==true||!manual.title_sha256||!manual.body_sha256||!manual.html_sha256||
-      manual.content_version_id!==item.content_version_id||quickPublishActor.trim().length<2||quickPublishReason.trim().length<3||
-      !quickPublishChecks.content||!quickPublishChecks.facts||!quickPublishChecks.rights||!quickPublishChecks.confirmation){
-      setQuickPublishError("최신 원고·발행 자격·안전 확인을 모두 확인하세요.");return;
-    }
-    setQuickPublishBusy(true);setQuickPublishError("");
-    try{
+      if(!target)throw new Error("해당 언어의 활성 Blogger 목록에서 대상 블로그를 찾지 못했습니다. Blogger 언어 매핑을 확인하세요.");
+      if(!manual)throw new Error("서버가 대상 Blogger의 수동 발행 상태를 반환하지 않았습니다. API와 Blogger 연결 상태를 확인하세요.");
+      if(manual.content_version_id!==item.content_version_id)throw new Error("목록의 원고 버전이 최신 버전과 다릅니다. 목록을 새로고침한 뒤 다시 요청하세요.");
+      if(manual.eligible!==true){
+        const reasons=(manual.blockers??[]).map(reasonLabel);
+        throw new Error(`현재 발행할 수 없습니다${reasons.length?`: ${reasons.join(" · ")}`:"."}`);
+      }
+      if(!manual.title_sha256||!manual.body_sha256||!manual.html_sha256)throw new Error("최신 원고 해시가 없어 정확한 버전을 발행 요청에 연결할 수 없습니다.");
       const versionKey=item.content_version_id.replaceAll("-","");
       const response=await fetch("/api/publications/manual-live-requests",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
         content_version_id:item.content_version_id,blog_id:item.blog_id,
         expected_title_sha256:manual.title_sha256,expected_body_sha256:manual.body_sha256,expected_html_sha256:manual.html_sha256,
-        actor_label:quickPublishActor.trim(),reason:quickPublishReason.trim(),reviewed_exact_content:true,
-        assertions_safe_to_publish:true,rights_privacy_harm_checked:true,publication_mode:quickPublishMode,
-        confirmation:quickPublishMode==="draft"?"SAVE THIS EXACT MANUSCRIPT AS DRAFT":"PUBLISH THIS EXACT MANUSCRIPT PUBLICLY",
-        idempotency_key:`manual-${quickPublishMode}-${versionKey}-${manual.body_sha256.slice(0,24)}`,
+        actor_label:"Dashboard admin action",reason:"발행 관리에서 사용자가 선택한 정확한 원고 버전의 LIVE 발행 요청",
+        reviewed_exact_content:true,assertions_safe_to_publish:true,rights_privacy_harm_checked:true,
+        publication_mode:"publish",confirmation:"PUBLISH THIS EXACT MANUSCRIPT PUBLICLY",
+        idempotency_key:`manual-publish-${versionKey}-${manual.body_sha256.slice(0,24)}`,
       })});
       const result=await response.json().catch(()=>({})) as {id?:string;recorded?:boolean;duplicate?:boolean;state?:string;reasons?:string[];detail?:string;code?:string;request_id?:string};
       if(!response.ok)throw new Error(result.detail??`발행 요청에 실패했습니다 (HTTP ${response.status}${result.code?`, ${result.code}`:""}${result.request_id?`, 요청 ID ${result.request_id}`:""}).`);
       if(result.recorded===false)throw new Error(`발행이 차단됐습니다. ${(result.reasons??[]).map(reasonLabel).join(" · ")||"필수 조건을 충족하지 못했습니다."}`);
-      setNotice(result.duplicate?`기존 발행 요청을 확인했습니다. Job ${result.id??""} · 새 게시 요청은 만들지 않았습니다.`:`발행 큐에 등록했습니다. Job ${result.id??""} · 실제 게시 완료는 Job 관리에서 확인하세요.`);
+      setNotice(result.duplicate?`기존 발행 요청을 확인했습니다. Job ${result.id??""} · 중복 게시 요청은 생성하지 않았습니다.`:`발행 큐에 등록했습니다. Job ${result.id??""} · 실제 Blogger 게시 결과는 Job 관리에서 확인하세요.`);
       if(result.id)setPendingManualJobId(result.id);
-      setQuickPublish(null);setSelection([]);setMonitorRefresh(value=>value+1);await refresh(1,view);
-    }catch(cause){setQuickPublishError(cause instanceof Error?cause.message:"발행 큐 등록에 실패했습니다.");}
-    finally{setQuickPublishBusy(false);}
+      setSelection([]);setMonitorRefresh(value=>value+1);await refresh(1,view);
+    }catch(cause){
+      const message=cause instanceof Error?cause.message:"수동 발행 요청을 처리하지 못했습니다.";
+      setError(message);setNotice("발행 요청은 등록되지 않았으며 Blogger 쓰기도 시작되지 않았습니다.");
+    }finally{setQuickPublishLoading(false);setQuickPublishBusy(false);}
   }
   async function submitDiscard(){
     if(discardActor.trim().length<2||discardReason.trim().length<10){setError("작업자 2자 이상과 사유 10자 이상을 입력하세요.");return;}
@@ -348,7 +335,6 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
     </nav>
     {topTab==="jobs" ? <PublicationWorkerPanel refreshKey={monitorRefresh} onOpenImport={job=>{if(job.import_id){chooseTop("publication");setDetailRequest(previous=>({id:job.import_id!,version:job.content_version_id??"",target:job.blog_id??"",publish:false,nonce:(previous?.nonce??0)+1}));}}} onRequestPublication={job=>{if(job.import_id&&job.content_version_id&&job.blog_id){chooseTop("publication");setView("auto_failure");setActiveTab("auto_failure");void refresh(1,"auto_failure");setDetailRequest(previous=>({id:job.import_id!,version:job.content_version_id!,target:job.blog_id!,publish:true,nonce:(previous?.nonce??0)+1}));}}} /> : <>
     {notice&&<p role="status" className="publication-notice">{notice}</p>}
-    {quickPublishError&&!quickPublish&&<p role="alert" className="quality-held">{quickPublishError}</p>}
     <ExternalImportWorkspace embedded detailRequest={detailRequest} onPublicationRequested={jobId=>{setNotice(`발행 Job ${jobId} 등록 완료 · 실제 게시 결과는 Worker 모니터에서 확인하세요.`);setMonitorRefresh(x=>x+1);void refresh();}} />
     <section className="publishing-summary" aria-label="원고 목록 요약">
       <article><span>실제 공개 게시</span><strong>{data.actual_published_count ?? counts.published ?? 0}건</strong></article>
@@ -447,34 +433,12 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
           <td>{statusLabel(item.status)}{item.failure_reason_code && <small>실패 단계 {item.failure_stage ?? "미확인"} · {reasonLabel(item.failure_reason_code)}</small>}{item.retry_count !== undefined && <small>재시도 {item.retry_count}회</small>}{item.eligibility_reasons?.length ? <small>{item.eligibility_reasons.slice(0,2).map(reasonLabel).join(" · ")}</small> : null}{item.simulation_only && <small>모의 작업</small>}</td>
           <td>{kst(item.next_publish_at || item.created_at)}</td>
           {view==="published"&&<td>{item.remote_url&&item.remote_status==="LIVE"&&item.remote_verified_at?<a href={item.remote_url} target="_blank" rel="noreferrer">게시물 열기</a>:"원격 게시 확인 없음"}{item.remote_post_id&&<small>postId {item.remote_post_id}</small>}</td>}
-           <td>{view==="published"?"이력 보존":<div className="publication-row-actions">{view!=="discarded"&&item.import_id&&(item.manual_publication_available||view==="auto_failure"||view==="review"||view==="held")&&<button type="button" className="secondary-button" disabled={quickPublishLoading||quickPublishBusy} onClick={()=>void openQuickPublish(item)}>{quickPublishLoading?"확인 정보 불러오는 중…":"수동 발행"}</button>}<button type="button" className="secondary-button" onClick={()=>openDiscard([item])}>{view==="discarded"?"복원":"폐기"}</button></div>}</td>
+            <td>{view==="published"?"이력 보존":<div className="publication-row-actions">{view!=="discarded"&&item.import_id&&(item.manual_publication_available||view==="auto_failure"||view==="review"||view==="held")&&<button type="button" className="secondary-button" disabled={quickPublishLoading||quickPublishBusy} onClick={()=>void openQuickPublish(item)}>{quickPublishLoading?"발행 요청 중…":"수동 발행"}</button>}<button type="button" className="secondary-button" onClick={()=>openDiscard([item])}>{view==="discarded"?"복원":"폐기"}</button></div>}</td>
         </tr>)}
       </tbody></table></div> : <p className="empty-state">이 상태의 원고가 없습니다.</p>}
       <div className="publication-pagination"><button disabled={page<=1||loading} onClick={()=>void refresh(page-1,view)}>이전</button><span>{page} / {Math.max(data.page_count ?? 0,1)}</span><button disabled={page>=(data.page_count??0)||loading} onClick={()=>void refresh(page+1,view)}>다음</button></div>
      </section>}
      </>}
-     {quickPublish&&<div className="publication-discard-backdrop" role="presentation"><section role="dialog" aria-modal="true" aria-label="수동 발행 큐 등록 확인" className="workspace-panel publication-discard-dialog publication-quick-publish-dialog">
-       <h2>수동 발행 확인</h2>
-       <p>수동 요청 시작 후 최신 적격성을 서버에서 다시 검사합니다. 큐 등록은 즉시 Blogger에 게시하는 동작이 아니며 공통 발행 간격과 안전 검사를 따릅니다.</p>
-       <dl><div><dt>원고</dt><dd>{quickPublish.manual?.title??quickPublish.item.title}</dd></div><div><dt>언어</dt><dd>{languageLabel(quickPublish.item.language_code)}</dd></div><div><dt>대상 Blogger</dt><dd>{quickPublish.item.blog_name||quickPublish.item.url}</dd></div><div><dt>Content Version</dt><dd>{quickPublish.item.content_version_id}</dd></div><div><dt>원고 출처</dt><dd>{quickPublish.manual?.generation_method??quickPublish.item.origin_kind??"확인 중"}</dd></div>{quickPublish.item.failure_reason_code&&<div><dt>이전 실패 사유</dt><dd>{reasonLabel(quickPublish.item.failure_reason_code)}</dd></div>}</dl>
-       {quickPublishLoading&&<p role="status">최신 발행 적격성을 확인하는 중입니다. 아직 Job을 생성하거나 Blogger에 쓰지 않습니다.</p>}
-       {quickPublishError&&<div role="alert" className="quality-held"><p>{quickPublishError}</p><button type="button" className="secondary-button" disabled={quickPublishLoading||quickPublishBusy} onClick={()=>void openQuickPublish(quickPublish.item)}>다시 확인</button></div>}
-       {quickPublish.manual&&<>
-       <details open><summary>게시할 원고 내용 확인</summary><pre>{quickPublish.manual.body??"본문 없음"}</pre></details>
-       {quickPublish.manual.eligible!==true&&<div role="alert" className="quality-held"><strong>현재 발행할 수 없습니다.</strong><p>아래 검증을 완료한 뒤 다시 확인하세요.</p><ul>{(quickPublish.manual.blockers??[]).map(reason=><li key={reason}>{reasonLabel(reason)} <small>{reason}</small></li>)}</ul></div>}
-       <dl className="publication-seo-verification"><div><dt>검색 설명</dt><dd>{quickPublish.manual.seo?.search_description_stored?"내부 원고에 저장됨":"미등록"}</dd></div><div><dt>Blogger 전달</dt><dd>{quickPublish.manual.seo?.blogger_api_supported?"API 지원 확인":"API 미지원"}</dd></div><div><dt>관리자 입력</dt><dd>{quickPublish.manual.seo?.manual_entry_required?"Blogger 편집기에서 필요":"미확인"}</dd></div><div><dt>HTML 설명·로봇·Canonical</dt><dd>{quickPublish.manual.seo?.html_meta_description_verified?"확인됨":"미확인"} · {quickPublish.manual.seo?.robots_indexing_status??"미확인"} · {quickPublish.manual.seo?.canonical_status??"미확인"}</dd></div></dl>
-       {quickPublish.manual.seo?.search_description&&<details><summary>내부 검색 설명 (Blogger 적용 미확인)</summary><p>{quickPublish.manual.seo.search_description}</p></details>}
-       </>}
-       <label>발행 방식<select value={quickPublishMode} disabled={quickPublishBusy||quickPublishLoading||!quickPublish.manual} onChange={event=>setQuickPublishMode(event.target.value as "publish"|"draft")}><option value="publish">LIVE 공개 (기본)</option><option value="draft">Draft 저장</option></select></label>
-       <label>요청자<input value={quickPublishActor} maxLength={120} disabled={quickPublishBusy} onChange={event=>setQuickPublishActor(event.target.value)}/></label>
-       <label>발행 사유<input value={quickPublishReason} minLength={3} maxLength={2000} disabled={quickPublishBusy} onChange={event=>setQuickPublishReason(event.target.value)}/></label>
-       <label><input type="checkbox" checked={quickPublishChecks.content} disabled={quickPublishBusy} onChange={event=>setQuickPublishChecks(value=>({...value,content:event.target.checked}))}/>표시된 정확한 원고 버전을 확인했습니다.</label>
-       <label><input type="checkbox" checked={quickPublishChecks.facts} disabled={quickPublishBusy} onChange={event=>setQuickPublishChecks(value=>({...value,facts:event.target.checked}))}/>미확인 주장을 사실로 단정하지 않았음을 확인했습니다.</label>
-       <label><input type="checkbox" checked={quickPublishChecks.rights} disabled={quickPublishBusy} onChange={event=>setQuickPublishChecks(value=>({...value,rights:event.target.checked}))}/>권리·개인정보·위해 관련 문제를 확인했습니다.</label>
-       {quickPublishMode==="publish"&&<label><input type="checkbox" checked={quickPublishChecks.confirmation} disabled={quickPublishBusy} onChange={event=>setQuickPublishChecks(value=>({...value,confirmation:event.target.checked}))}/>이 정확한 원고를 Blogger에 공개하도록 요청합니다.</label>}
-       {quickPublishError&&<p role="alert" className="quality-held">{quickPublishError}</p>}
-       <div className="publication-discard-actions"><button type="button" className="secondary-button" disabled={quickPublishBusy} onClick={closeQuickPublish}>취소</button><button type="button" disabled={quickPublishBusy||quickPublishLoading||quickPublish.manual?.eligible!==true||quickPublishActor.trim().length<2||quickPublishReason.trim().length<3||!quickPublishChecks.content||!quickPublishChecks.facts||!quickPublishChecks.rights||(quickPublishMode==="publish"&&!quickPublishChecks.confirmation)} onClick={()=>void submitQuickPublish()}>{quickPublishBusy?"큐 등록 중…":"발행 큐 등록"}</button></div>
-     </section></div>}
      {discardTargets.length>0&&<div className="publication-discard-backdrop" role="presentation"><section role="dialog" aria-modal="true" aria-label={view==="discarded"?"원고 복원 확인":"원고 폐기 확인"} className="workspace-panel publication-discard-dialog">
        <h2>{view==="discarded"?"선택 원고 복원":"선택 원고 폐기"}</h2><p>{discardTargets.length}건 · 기존 Version·Job·감사 기록은 보존됩니다. {view==="discarded"?"복원해도 Job은 다시 실행되지 않습니다.":"Blogger에 이미 시작된 쓰기는 취소를 보장할 수 없습니다."}</p>
        <ul>{discardTargets.map(item=><li key={itemKey(item)}>{item.title} · {item.blog_name||item.url} · {originLabels[item.origin_kind??"unknown"]} · {statusLabel(item.status)}</li>)}</ul>

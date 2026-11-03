@@ -1,12 +1,12 @@
 import { expect, test } from "playwright/test";
 
-test("grid manual publish opens an exact-version queue confirmation without opening the detail sheet", async ({ page }) => {
+test("grid manual publish sends one direct exact-version request without a detail modal", async ({ page }) => {
   const version = "11111111-1111-4111-8111-111111111111";
   const blog = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa";
   let submitted: Record<string, unknown> | null = null;
   const requests: Array<{url:string;method:string;status?:number}> = [];
   page.on("request",request=>{
-    if(request.url().includes("content-imports/22222222-2222-4222-8222-222222222222")||request.url().includes("manual-live-requests"))
+    if(request.url().includes("scheduled-auto-first-post")||request.url().includes("manual-live-requests"))
       requests.push({url:new URL(request.url()).pathname,method:request.method()});
   });
   page.on("response",response=>{
@@ -24,10 +24,10 @@ test("grid manual publish opens an exact-version queue confirmation without open
     }, worker: null, queued_mock_jobs: 0, real_writes_enabled: false, publish_ready_enabled: false, adapter_available: "mock",
     auto_candidate_count: 0, auto_runtime_status: "idle",
   } }));
-  await page.route("**/api/research/content-imports/22222222-2222-4222-8222-222222222222", route => route.fulfill({ json: {
-    publication: { targets: [{ id: blog, manual_publication: { eligible: true, blockers: [], title: "Grid manuscript",
+  await page.route("**/api/publications/scheduled-auto-first-post?*", route => route.fulfill({ json: {
+    targets: [{ id: blog, manual_publication: { eligible: true, blockers: [], title: "Grid manuscript",
       body: "Reviewed body for this exact version.", content_version_id: version,
-      title_sha256: "a".repeat(64), body_sha256: "b".repeat(64), html_sha256: "c".repeat(64) } }] },
+      title_sha256: "a".repeat(64), body_sha256: "b".repeat(64), html_sha256: "c".repeat(64) } }],
   } }));
   await page.route("**/api/publications/manual-live-requests", async route => {
     submitted = route.request().postDataJSON() as Record<string, unknown>;
@@ -38,21 +38,12 @@ test("grid manual publish opens an exact-version queue confirmation without open
   await page.getByRole("tab", { name: "발행 대기" }).click();
   await expect(page.getByRole("button", { name: "수동 발행" })).toBeVisible();
   await page.getByRole("button", { name: "수동 발행" }).click();
-  const dialog = page.getByRole("dialog", { name: "수동 발행 큐 등록 확인" });
-  await expect(dialog).toBeVisible();
-  await expect(dialog).toContainText(version);
-  await expect(dialog).toContainText("LIVE 공개 (기본)");
+  await expect(page.getByRole("dialog", { name: "수동 발행 큐 등록 확인" })).toHaveCount(0);
   await expect(page.locator(".embedded-import-detail")).not.toContainText("Grid manuscript");
-  const checks = dialog.locator("input[type=checkbox]");
-  await checks.nth(0).check();
-  await checks.nth(1).check();
-  await checks.nth(2).check();
-  await checks.nth(3).check();
-  await dialog.getByRole("button", { name: "발행 큐 등록" }).click();
   await expect(page.getByRole("status").filter({ hasText: "발행 큐에 등록했습니다." })).toBeVisible();
   expect(submitted).toMatchObject({ content_version_id: version, blog_id: blog, publication_mode: "publish", reviewed_exact_content: true });
   expect(requests).toEqual([
-    {url:"/api/research/content-imports/22222222-2222-4222-8222-222222222222",method:"GET",status:200},
+    {url:"/api/publications/scheduled-auto-first-post",method:"GET",status:200},
     {url:"/api/publications/manual-live-requests",method:"POST",status:201},
   ]);
 });
@@ -72,10 +63,10 @@ test("review-needed row can request manual publication even when summary preflig
     }, worker: null, queued_mock_jobs: 0, real_writes_enabled: false, publish_ready_enabled: false, adapter_available: "mock",
     auto_candidate_count: 0, auto_runtime_status: "idle",
   } }));
-  await page.route("**/api/research/content-imports/55555555-5555-4555-8555-555555555555", route => route.fulfill({ json: {
-    publication: { targets: [{ id: blog, manual_publication: { eligible: true, blockers: [], title: "Review manuscript",
+  await page.route("**/api/publications/scheduled-auto-first-post?*", route => route.fulfill({ json: {
+    targets: [{ id: blog, manual_publication: { eligible: true, blockers: [], title: "Review manuscript",
       body: "Reviewed exact-version content.", content_version_id: version,
-      title_sha256: "d".repeat(64), body_sha256: "e".repeat(64), html_sha256: "f".repeat(64) } }] },
+      title_sha256: "d".repeat(64), body_sha256: "e".repeat(64), html_sha256: "f".repeat(64) } }],
   } }));
   await page.route("**/api/publications/manual-live-requests", async route => {
     writes += 1;
@@ -90,14 +81,10 @@ test("review-needed row can request manual publication even when summary preflig
   const button = page.getByRole("button", { name: "수동 발행" });
   await expect(button).toBeVisible();
   await button.click();
-  const dialog = page.getByRole("dialog", { name: "수동 발행 큐 등록 확인" });
-  await expect(dialog).toBeVisible();
-  await expect(dialog).toContainText(version);
-  await expect(dialog).toContainText("LIVE 공개 (기본)");
+  await expect(page.getByRole("dialog", { name: "수동 발행 큐 등록 확인" })).toHaveCount(0);
   await expect(page.locator(".embedded-import-detail")).not.toContainText("Review manuscript");
-  await dialog.getByRole("button", { name: "취소" }).click();
-  await expect(dialog).not.toBeVisible();
-  expect(writes).toBe(0);
+  await expect(page.getByRole("status").filter({ hasText: "발행 큐에 등록했습니다." })).toBeVisible();
+  expect(writes).toBe(1);
 });
 
 test("manual preflight errors remain visible and held manuscripts cannot create a Job", async ({ page }) => {
@@ -116,13 +103,13 @@ test("manual preflight errors remain visible and held manuscripts cannot create 
     }, worker: null, queued_mock_jobs: 0, real_writes_enabled: false, publish_ready_enabled: false,
     adapter_available: "mock", auto_candidate_count: 0, auto_runtime_status: "idle",
   } }));
-  await page.route("**/api/research/content-imports/88888888-8888-4888-8888-888888888888", route => route.fulfill({ status: 200, json: {
-    publication: { targets: [{ id: blog, manual_publication: {
+  await page.route("**/api/publications/scheduled-auto-first-post?*", route => route.fulfill({ status: 200, json: {
+    targets: [{ id: blog, manual_publication: {
       eligible: false, request_available: true, content_version_id: version, title: "Unreviewed manuscript",
       body: "Claims awaiting source review.", blockers: ["evidence_fact_verification_missing", "human_review_pending", "publish_ready_disabled"],
       seo: { search_description_stored: true, blogger_api_supported: false, manual_entry_required: true,
         html_meta_description_verified: false, robots_indexing_status: "unverified", canonical_status: "unverified" },
-    } }] },
+    } }],
   } }));
   await page.route("**/api/publications/manual-live-requests", async route => {
     manualPosts += 1;
@@ -131,17 +118,15 @@ test("manual preflight errors remain visible and held manuscripts cannot create 
   await page.goto("/publishing?view=auto_failure");
   await page.getByRole("tab", { name: "자동발행실패" }).click();
   await page.getByRole("button", { name: "수동 발행" }).click();
-  const dialog = page.getByRole("dialog", { name: "수동 발행 큐 등록 확인" });
-  await expect(dialog).toBeVisible();
-  await expect(dialog).toContainText("주장과 연결된 검증 근거가 부족합니다.");
-  await expect(dialog).toContainText("사람의 편집 검토가 완료되지 않았습니다.");
-  await expect(dialog).toContainText("공개 발행 적격 상태가 아닙니다.");
-  await expect(dialog).toContainText("API 미지원");
-  await expect(dialog.getByRole("button", { name: "발행 큐 등록" })).toBeDisabled();
+  await expect(page.getByRole("dialog", { name: "수동 발행 큐 등록 확인" })).toHaveCount(0);
+  const blockerAlert=page.locator("p[role=alert].quality-held");
+  await expect(blockerAlert).toContainText("주장과 연결된 검증 근거가 부족합니다.");
+  await expect(blockerAlert).toContainText("사람의 편집 검토가 완료되지 않았습니다.");
+  await expect(blockerAlert).toContainText("공개 발행 적격 상태가 아닙니다.");
   expect(manualPosts).toBe(0);
 });
 
-test("manual preflight HTTP errors are shown inside the open confirmation dialog", async ({ page }) => {
+test("manual preflight HTTP errors are shown without opening a confirmation dialog", async ({ page }) => {
   const blog = "dddddddd-dddd-4ddd-addd-dddddddddddd";
   await page.route("**/api/publications?*", route => route.fulfill({ json: {
     view: "review", items: [{ id: "review-error", content_version_id: "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",
@@ -153,16 +138,42 @@ test("manual preflight HTTP errors are shown inside the open confirmation dialog
     real_writes_enabled: false, publish_ready_enabled: false, adapter_available: "mock", auto_candidate_count: 0,
     auto_runtime_status: "idle",
   } }));
-  await page.route("**/api/research/content-imports/bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb", route => route.fulfill({
+  await page.route("**/api/publications/scheduled-auto-first-post?*", route => route.fulfill({
     status: 503, json: { detail: "최신 발행 검사 서비스를 사용할 수 없습니다.", code: "publication_check_unavailable" },
   }));
   await page.goto("/publishing?view=review");
   await page.getByRole("tab", { name: "검토 필요" }).click();
   await page.getByRole("button", { name: "수동 발행" }).click();
-  const dialog = page.getByRole("dialog", { name: "수동 발행 큐 등록 확인" });
-  await expect(dialog).toBeVisible();
-  await expect(dialog).toContainText("최신 발행 검사 서비스를 사용할 수 없습니다.");
-  await expect(dialog.getByRole("button", { name: "발행 큐 등록" })).toBeDisabled();
+  await expect(page.getByRole("dialog", { name: "수동 발행 큐 등록 확인" })).toHaveCount(0);
+  await expect(page.locator("p[role=alert].quality-held")).toContainText("최신 발행 검사 서비스를 사용할 수 없습니다.");
+});
+
+test("missing target mapping reports a mapping issue instead of a missing eligibility result", async ({ page }) => {
+  const blog = "eeeeeeee-eeee-4eee-aeee-eeeeeeeeeeee";
+  let posts = 0;
+  await page.route("**/api/publications?*", route => route.fulfill({ json: {
+    view: "review", items: [{ id: "unmapped-row", content_version_id: "ffffffff-ffff-4fff-afff-ffffffffffff",
+      import_id: "abababab-abab-4bab-abab-abababababab", title: "Unmapped manuscript", language_code: "en",
+      blog_id: blog, url: "https://example.blogspot.com", status: "review_needed" }], candidates: [], jobs: [],
+    page: 1, page_count: 1, total_count: 1, summary: {}, mode_policy: { migration_required: false,
+      default_mode: "manual", settings: [], languages: [], blogs: [], emergency_stopped: false,
+      operations_auto_approved: false, live_auto_enabled: false, real_writes_enabled: false },
+    worker: null, queued_mock_jobs: 0, real_writes_enabled: false, publish_ready_enabled: false,
+    adapter_available: "mock", auto_candidate_count: 0, auto_runtime_status: "idle",
+  } }));
+  await page.route("**/api/publications/scheduled-auto-first-post?*", route => route.fulfill({ json: {
+    targets: [{ id: "another-blog", manual_publication: { eligible: false, blockers: ["blog_connection_unverified"] } }],
+  } }));
+  await page.route("**/api/publications/manual-live-requests", async route => {
+    posts += 1;
+    await route.fulfill({ status: 201, json: { id: "should-not-exist" } });
+  });
+  await page.goto("/publishing?view=review");
+  await page.getByRole("tab", { name: "검토 필요" }).click();
+  await page.getByRole("button", { name: "수동 발행" }).click();
+  await expect(page.locator("p[role=alert].quality-held")).toContainText("활성 Blogger 목록에서 대상 블로그를 찾지 못했습니다.");
+  await expect(page.locator("p[role=alert].quality-held")).not.toContainText("발행 검사 결과가 없습니다");
+  expect(posts).toBe(0);
 });
 
 test("job monitor renders Korean count units instead of literal Unicode escapes", async ({ page }) => {
