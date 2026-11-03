@@ -128,6 +128,7 @@ def scheduled_daily_available(conn: Any, blog_id: UUID) -> bool:
 def enqueue(conn: Any, state: dict[str, Any], *, origin_filter: str | None = None) -> int:
     if (
         not state["auto_publishing_enabled"]
+        or not state["automatic_publication_operator_approved"]
         or state["emergency_stop"]
         or state["blogger_api_restricted"]
         or not state["auto_enabled_at"]

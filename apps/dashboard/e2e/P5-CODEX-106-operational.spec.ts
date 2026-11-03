@@ -12,7 +12,7 @@ test("P106 live settings and Worker revisions", async ({ page }, info) => {
     ["Google Trends 수집", "true"],
     ["Codex 자동 원고 작성", "true"],
     ["Blogger 자동 발행", "true"],
-    ["Google Trends 원고 자동 발행", "false"],
+    ["Google Trends 원고 자동 발행", "true"],
     ["일일 예약 원고 자동 발행", "true"],
     ["Blogger 수동 발행", "true"],
     ["Blogger 긴급 정지", "false"],
@@ -35,7 +35,7 @@ test("P106 live settings and Worker revisions", async ({ page }, info) => {
   expect(snapshot.settings.auto_blog_ids).toHaveLength(4);
   for (const service of ["research_worker", "publication_worker"]) {
     expect(snapshot.workers.find((worker: { service_name: string }) => worker.service_name === service)).toMatchObject({
-      applied_revision: snapshot.settings.revision, policy_applied: true, engine_version: "automation-controls/2",
+      applied_revision: snapshot.settings.revision, policy_applied: true, engine_version: "automation-controls/3",
     });
   }
   await expect(page.getByText("저장된 방식: LIVE", { exact: false })).toBeVisible();

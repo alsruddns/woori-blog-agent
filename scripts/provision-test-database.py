@@ -75,6 +75,7 @@ MIGRATIONS = [ROOT / "scripts" / f"{i:03d}_{name}.sql" for i, name in [
     (80, "publication_discards"),
     (81, "trends_and_global_publish_intervals"),
     (82, "global_daily_live_limit_and_15m_interval"),
+    (83, "automatic_publication_operator_approval"),
 ]]
 
 

@@ -93,9 +93,10 @@ def _live_write_capability(
     manual = manual and manual_requests_allowed()
     from .automation_controls import read as control_state
     control=control_state(conn)
-    applied=conn.execute("SELECT 1 AS ready FROM automation_runtime_ack WHERE service_name='publication_worker' AND revision=%s AND process_id=%s AND engine_version='automation-controls/2' AND last_seen_at>now()-interval '45 seconds'",
+    applied=conn.execute("SELECT 1 AS ready FROM automation_runtime_ack WHERE service_name='publication_worker' AND revision=%s AND process_id=%s AND engine_version='automation-controls/3' AND last_seen_at>now()-interval '45 seconds'",
         (control.get('revision'),heartbeat.get('process_id') if heartbeat else None)).fetchone()
-    scheduled=bool(control.get('auto_publishing_enabled') and fresh and applied and owner_policy
+    scheduled=bool(control.get('automatic_publication_operator_approved')
+        and control.get('auto_publishing_enabled') and fresh and applied and owner_policy
         and not control.get('emergency_stop',True) and not control.get('blogger_api_restricted',True) and no_billable_credentials)
     return {"scheduled_auto": scheduled and bool(control.get("scheduled_auto_publishing_enabled")), "manual_confirmed": manual, "trends_auto": scheduled and bool(control.get("trends_auto_publishing_enabled")),
             "live_dispatch": bool(scheduled_worker or manual_worker),

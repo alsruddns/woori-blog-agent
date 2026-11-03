@@ -91,6 +91,64 @@ def test_independent_switches_persist_and_audit(center):
     assert controls.allowed("trends_collection_enabled") is True
 
 
+def test_operator_auto_approval_is_separate_confirmed_audited_and_fail_closed(center):
+    conn, api, h = center
+    initial = api.get(BASE, headers=h).json()
+    assert initial["settings"]["automatic_publication_operator_approved"] is False
+    assert initial["effective"]["automatic_publication_operator_approved"] == "자동 발행 운영 승인 OFF — 자동 발행 중지"
+    assert initial["settings"]["operations_auto_approved"] is False
+    revision = initial["settings"]["revision"]
+    assert update(center, automatic_publication_operator_approved=True).status_code == 422
+    assert update(
+        center,
+        automatic_publication_operator_approved=True,
+        confirm_operator_auto_approval=True,
+        reason="          ",
+    ).status_code == 422
+    enabled = update(
+        center,
+        automatic_publication_operator_approved=True,
+        confirm_operator_auto_approval=True,
+    )
+    assert enabled.status_code == 200, enabled.text
+    current = api.get(BASE, headers=h).json()
+    assert current["settings"]["automatic_publication_operator_approved"] is True
+    assert current["settings"]["operations_auto_approved"] is False
+    assert current["settings"]["configured_mode"] == "manual"
+    assert current["automatic_publication_approval"]["effective"] is False
+    assert current["automatic_publication_approval"]["scope"]["global_auto_publication_enabled"] is False
+    assert current["settings"]["automatic_publication_approval_actor"] == "isolated admin"
+    assert current["settings"]["automatic_publication_approval_reason"] == "Isolated explicit operator control change"
+    assert current["settings"]["revision"] == revision + 1
+    assert controls.allowed("automatic_publication_operator_approved") is True
+    event = conn.execute(
+        "SELECT payload FROM audit_events WHERE event_type='automation.operator_publication_approval.changed' ORDER BY id DESC LIMIT 1"
+    ).fetchone()["payload"]
+    assert event["previous_approval"] is False and event["new_approval"] is True
+    assert event["policy_checks"]["external_write_authorized_by_this_change"] is False
+    assert event["policy_checks"]["historical_jobs_reauthorized"] is False
+    assert update(
+        center,
+        automatic_publication_operator_approved=False,
+        confirm_operator_auto_approval=True,
+    ).status_code == 200
+    assert api.get(BASE, headers=h).json()["settings"]["automatic_publication_operator_approved"] is False
+
+
+def test_operator_approval_off_blocks_automatic_admission_but_not_manual_lane(center):
+    conn, _, _ = center
+    before = conn.execute("SELECT count(*) n FROM publishing_jobs").fetchone()["n"]
+    assert automation_auto.enqueue(conn, controls.read(conn)) == 0
+    assert conn.execute("SELECT count(*) n FROM publishing_jobs").fetchone()["n"] == before
+    auto_job, blog, version = make_job(center, "scheduled_auto", "publish")
+    state = controls.read(conn)
+    link_trends(conn, version, blog)
+    origin_grant(conn, auto_job, version, state, blog, "publish")
+    assert controls.job_permitted(conn, auto_job) is False
+    update(center, google_account_available=True, emergency_stop=False, confirm_emergency_release=True)
+    assert publication_operation.manual_requests_allowed() is True
+
+
 def test_off_blocks_real_collection_and_topic_scoring_without_remote_call(center, monkeypatch):
     update(center, trends_collection_enabled=False, auto_manuscript_enabled=False)
     monkeypatch.setattr(trends, "_collect_geo", lambda *a: pytest.fail("collection must not start"))
@@ -383,9 +441,11 @@ def test_mock_auto_dispatch_modes_and_off_invalidate_grants(center, monkeypatch,
             center,
             auto_publishing_enabled=True,
             trends_auto_publishing_enabled=True,
+            automatic_publication_operator_approved=True,
             auto_blog_ids=[str(blog)],
             auto_mode=mode,
             confirm_auto=True,
+            confirm_operator_auto_approval=True,
             confirm_live=mode == "publish",
             google_account_available=True,
             emergency_stop=False,
@@ -459,8 +519,10 @@ def test_unknown_remote_duplicate_never_writes_and_never_retries(center, monkeyp
         center,
         auto_publishing_enabled=True,
         trends_auto_publishing_enabled=True,
+        automatic_publication_operator_approved=True,
         auto_blog_ids=[str(blog)],
         confirm_auto=True,
+        confirm_operator_auto_approval=True,
         google_account_available=True,
         emergency_stop=False,
         confirm_emergency_release=True,
@@ -508,8 +570,10 @@ def test_auto_enqueue_only_new_versions_and_never_reauthorize_backlog(center, mo
         center,
         auto_publishing_enabled=True,
         trends_auto_publishing_enabled=True,
+        automatic_publication_operator_approved=True,
         auto_blog_ids=[str(blog)],
         confirm_auto=True,
+        confirm_operator_auto_approval=True,
         google_account_available=True,
         emergency_stop=False,
         confirm_emergency_release=True,

@@ -123,10 +123,12 @@ def test_safety_conditions(mutation, reason):
 def enable(center, blog):
     response = update(
         center,
+        automatic_publication_operator_approved=True,
         auto_publishing_enabled=True,
         trends_auto_publishing_enabled=True,
         scheduled_auto_publishing_enabled=True,
         auto_blog_ids=[str(blog)],
+        confirm_operator_auto_approval=True,
         confirm_auto=True,
         emergency_stop=False,
         confirm_emergency_release=True,

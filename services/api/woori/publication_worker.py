@@ -835,11 +835,13 @@ def process_next_live_job(
                           SELECT max(created_at) FROM audit_events
                           WHERE event_type='publication.manual_only.activated')))
                     OR (j.publication_lane='scheduled_auto' AND control_grant.lane='auto'
+                      AND control.automatic_publication_operator_approved
                       AND control_grant.manuscript_origin='scheduled'
                       AND control.scheduled_auto_publishing_enabled
                       AND control_grant.epoch=control.auto_epoch
                       AND control_grant.source_epoch=control.scheduled_auto_epoch)
                     OR (j.publication_lane='trends_auto' AND control_grant.lane='auto'
+                      AND control.automatic_publication_operator_approved
                       AND control_grant.manuscript_origin='google_trends'
                       AND control.trends_auto_publishing_enabled
                       AND control_grant.epoch=control.auto_epoch

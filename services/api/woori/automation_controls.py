@@ -12,7 +12,7 @@ import httpx
 import psycopg
 from fastapi import APIRouter, HTTPException
 from psycopg.types.json import Jsonb
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .db import connection
 
@@ -70,14 +70,15 @@ def authoring_permission(*, transport: httpx.BaseTransport | None = None) -> dic
             }
 
 
-VERSION = "automation-controls/2"
+VERSION = "automation-controls/3"
 router = APIRouter(prefix="/admin/automation-controls")
 
 
 def read(conn: Any, *, lock: bool = False) -> dict[str, Any]:
     row = conn.execute(
         """SELECT c.*,t.enabled AS trends_collection_enabled,t.interval_minutes,
-        p.emergency_stopped AS emergency_stop,p.blogger_api_restricted
+        p.emergency_stopped AS emergency_stop,p.blogger_api_restricted,
+        p.configured_mode,p.operations_auto_approved,p.blogger_write_mode
         FROM automation_controls c CROSS JOIN trend_collection_settings t
         CROSS JOIN publication_mode_settings p
         WHERE c.id=1 AND t.id=1 AND p.scope_type='global' AND p.scope_key=''
@@ -97,6 +98,7 @@ def allowed(key: str) -> bool:
         "manual_publishing_enabled",
         "trends_auto_publishing_enabled",
         "scheduled_auto_publishing_enabled",
+        "automatic_publication_operator_approved",
     }:
         return False
     try:
@@ -166,6 +168,33 @@ def snapshot() -> dict[str, Any]:
         scheduled_policy = conn.execute(
             "SELECT action,approved_blog_ids FROM scheduled_publication_policy_events ORDER BY id DESC LIMIT 1"
         ).fetchone()
+        pending_auto_jobs = conn.execute(
+            "SELECT count(*)::int AS n FROM publishing_jobs WHERE NOT simulation_only "
+            "AND publication_lane IN ('scheduled_auto','trends_auto') AND status='queued'"
+        ).fetchone()
+    from . import external_policy
+
+    owner_cost_approval = external_policy._blogger_policy_approval() is not None
+    owner_public_approval = external_policy._blogger_public_publish_approval() is not None
+    approval_blockers: list[str] = []
+    if not state["automatic_publication_operator_approved"]:
+        approval_blockers.append("operator_auto_publication_approval_off")
+    if not state["auto_publishing_enabled"]:
+        approval_blockers.append("global_auto_publication_off")
+    if not (state["trends_auto_publishing_enabled"] or state["scheduled_auto_publishing_enabled"]):
+        approval_blockers.append("no_automatic_publication_route_enabled")
+    if state["emergency_stop"]:
+        approval_blockers.append("emergency_stop_enabled")
+    if state["blogger_api_restricted"]:
+        approval_blockers.append("blogger_api_restricted")
+    if not owner_cost_approval:
+        approval_blockers.append("external_blogger_cost_policy_approval_missing")
+    if not owner_public_approval:
+        approval_blockers.append("external_blogger_public_write_approval_missing")
+    if state["blogger_write_mode"] != "public_write_approved":
+        approval_blockers.append("blogger_write_mode_not_public_write_approved")
+    if not state["operations_auto_approved"]:
+        approval_blockers.append("legacy_publication_operations_approval_unavailable")
     blocked = (
         "긴급 정지로 차단"
         if state["emergency_stop"]
@@ -182,6 +211,7 @@ def snapshot() -> dict[str, Any]:
         ("manual_publishing_enabled", "publication_worker"),
         ("trends_auto_publishing_enabled", "publication_worker"),
         ("scheduled_auto_publishing_enabled", "publication_worker"),
+        ("automatic_publication_operator_approved", "publication_worker"),
     ]:
         effective[key] = (
             "신규 실행 중지"
@@ -200,6 +230,14 @@ def snapshot() -> dict[str, Any]:
             if applied.get(worker)
             else "Worker 적용 대기 또는 연결 실패"
         )
+    if not state["automatic_publication_operator_approved"]:
+        effective["automatic_publication_operator_approved"] = "자동 발행 운영 승인 OFF — 자동 발행 중지"
+    elif approval_blockers:
+        effective["automatic_publication_operator_approved"] = "운영 승인 ON — 다른 정책 조건으로 발행 차단"
+    elif not applied.get("publication_worker"):
+        effective["automatic_publication_operator_approved"] = "운영 승인 저장 — Worker 적용 대기"
+    else:
+        effective["automatic_publication_operator_approved"] = "자동 발행 운영 허용 — 적격 원고 대기"
     return {
         "settings": state,
         "effective": effective,
@@ -209,8 +247,26 @@ def snapshot() -> dict[str, Any]:
         "recent": recent,
         "eligible_jobs": job_count["n"]
         if job_count and not blocked and applied.get("publication_worker")
+        and state["automatic_publication_operator_approved"]
         else 0,
         "last_publication": last_publication,
+        "automatic_publication_approval": {
+            "approved": bool(state["automatic_publication_operator_approved"]),
+            "effective": bool(state["automatic_publication_operator_approved"] and not approval_blockers
+                               and applied.get("publication_worker")),
+            "worker_applied": bool(applied.get("publication_worker")),
+            "blockers": approval_blockers,
+            "pending_auto_jobs": int(pending_auto_jobs["n"] if pending_auto_jobs else 0),
+            "legacy_operations_auto_approved": bool(state["operations_auto_approved"]),
+            "configured_mode": state["configured_mode"],
+            "blogger_write_mode": state["blogger_write_mode"],
+            "external_cost_policy_approved": owner_cost_approval,
+            "external_public_write_approved": owner_public_approval,
+            "scope": state["automatic_publication_approval_scope"],
+            "actor": state["automatic_publication_approval_actor"],
+            "reason": state["automatic_publication_approval_reason"],
+            "changed_at": state["automatic_publication_approval_changed_at"],
+        },
         "api_engine_version": VERSION,
         "scheduled_policy_enabled": bool(scheduled_policy and scheduled_policy["action"] == "enabled"),
         "google_write_verified": False,
@@ -229,6 +285,7 @@ class Change(BaseModel):
     manual_publishing_enabled: bool | None = None
     trends_auto_publishing_enabled: bool | None = None
     scheduled_auto_publishing_enabled: bool | None = None
+    automatic_publication_operator_approved: bool | None = None
     global_publish_min_interval_minutes: int | None = Field(default=None, ge=15, le=1440)
     emergency_stop: bool | None = None
     auto_mode: Literal["draft", "publish"] | None = None
@@ -236,7 +293,24 @@ class Change(BaseModel):
     confirm_auto: bool = False
     confirm_live: bool = False
     confirm_emergency_release: bool = False
+    confirm_operator_auto_approval: bool = False
     google_account_available: bool | None = None
+
+    @field_validator("actor")
+    @classmethod
+    def normalize_actor(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 2:
+            raise ValueError("actor_must_contain_at_least_two_characters")
+        return value
+
+    @field_validator("reason")
+    @classmethod
+    def normalize_reason(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 10:
+            raise ValueError("reason_must_contain_at_least_ten_characters")
+        return value
 
 
 @router.put("")
@@ -257,6 +331,7 @@ def change(request: Change) -> dict[str, Any]:
                     "confirm_auto",
                     "confirm_live",
                     "confirm_emergency_release",
+                    "confirm_operator_auto_approval",
                     "google_account_available",
                 },
             ),
@@ -272,6 +347,12 @@ def change(request: Change) -> dict[str, Any]:
             != before[route + "_auto_publishing_enabled"]
             for route in ("trends", "scheduled")
         }
+        operator_approval_changed = (
+            after["automatic_publication_operator_approved"]
+            != before["automatic_publication_operator_approved"]
+        )
+        if operator_approval_changed and not request.confirm_operator_auto_approval:
+            raise HTTPException(422, "자동 발행 운영 승인 변경은 적용 범위 확인이 필요합니다.")
         if after["auto_mode"] == "publish" and before["auto_mode"] != "publish" and not request.confirm_live:
             raise HTTPException(422, "LIVE 자동 공개에 대한 별도 확인이 필요합니다.")
         if after["auto_blog_ids"] != before["auto_blog_ids"]:
@@ -313,10 +394,33 @@ def change(request: Change) -> dict[str, Any]:
             and not request.confirm_emergency_release
         ):
             raise HTTPException(422, "긴급 정지 해제를 명시적으로 확인해야 합니다.")
+        pending_auto_jobs = conn.execute(
+            "SELECT count(*)::int AS n FROM publishing_jobs WHERE NOT simulation_only "
+            "AND publication_lane IN ('scheduled_auto','trends_auto') AND status='queued'"
+        ).fetchone()
+        approval_scope = {
+            "global_auto_publication_enabled": bool(after["auto_publishing_enabled"]),
+            "trends_auto_publication_enabled": bool(after["trends_auto_publishing_enabled"]),
+            "scheduled_auto_publication_enabled": bool(after["scheduled_auto_publishing_enabled"]),
+            "publication_mode": after["auto_mode"],
+            "blog_ids": [str(value) for value in after["auto_blog_ids"]],
+            "minimum_interval_minutes": int(after["global_publish_min_interval_minutes"]),
+            "daily_live_limit": int(after["global_daily_live_publish_limit"]),
+            "emergency_stop": bool(after["emergency_stop"]),
+            "blogger_api_restricted": bool(after["blogger_api_restricted"]),
+            "legacy_operations_auto_approved": bool(after["operations_auto_approved"]),
+            "configured_mode": after["configured_mode"],
+            "blogger_write_mode": after["blogger_write_mode"],
+        }
         conn.execute(
             """UPDATE automation_controls SET auto_manuscript_enabled=%s,auto_publishing_enabled=%s,
             manual_publishing_enabled=%s,auto_mode=%s,auto_blog_ids=%s::uuid[],
             trends_auto_publishing_enabled=%s,scheduled_auto_publishing_enabled=%s,
+            automatic_publication_operator_approved=%s,
+            automatic_publication_approval_actor=CASE WHEN %s THEN %s ELSE automatic_publication_approval_actor END,
+            automatic_publication_approval_reason=CASE WHEN %s THEN %s ELSE automatic_publication_approval_reason END,
+            automatic_publication_approval_changed_at=CASE WHEN %s THEN clock_timestamp() ELSE automatic_publication_approval_changed_at END,
+            automatic_publication_approval_scope=CASE WHEN %s THEN %s::jsonb ELSE automatic_publication_approval_scope END,
             global_publish_min_interval_minutes=%s,
             trends_auto_epoch=CASE WHEN %s THEN gen_random_uuid() ELSE trends_auto_epoch END,
             trends_auto_enabled_at=CASE WHEN %s THEN clock_timestamp() ELSE trends_auto_enabled_at END,
@@ -336,6 +440,14 @@ def change(request: Change) -> dict[str, Any]:
                 [str(x) for x in after["auto_blog_ids"]],
                 after["trends_auto_publishing_enabled"],
                 after["scheduled_auto_publishing_enabled"],
+                after["automatic_publication_operator_approved"],
+                operator_approval_changed,
+                request.actor.strip(),
+                operator_approval_changed,
+                request.reason.strip(),
+                operator_approval_changed,
+                operator_approval_changed,
+                Jsonb(approval_scope),
                 after["global_publish_min_interval_minutes"],
                 route_changes["trends"],
                 route_changes["trends"],
@@ -378,11 +490,52 @@ def change(request: Change) -> dict[str, Any]:
                         "revision": saved["revision"],
                         "result": "persisted_worker_ack_pending",
                         "old_jobs_reauthorized": False,
+                        "automatic_publication_approval_scope": approval_scope if operator_approval_changed else None,
+                        "policy_checks_preserved": True,
                     },
                     dumps=lambda v: __import__("json").dumps(v, default=str),
                 ),
             ),
         )
+        if operator_approval_changed:
+            from . import external_policy
+
+            cost_policy_approved = external_policy._blogger_policy_approval() is not None
+            public_write_approved = external_policy._blogger_public_publish_approval() is not None
+            policy_checks = {
+                "global_auto_publication_enabled": bool(saved["auto_publishing_enabled"]),
+                "trends_route_enabled": bool(saved["trends_auto_publishing_enabled"]),
+                "scheduled_route_enabled": bool(saved["scheduled_auto_publishing_enabled"]),
+                "emergency_stop_clear": not bool(saved["emergency_stop"]),
+                "blogger_api_restriction_clear": not bool(saved["blogger_api_restricted"]),
+                "external_zero_cost_policy_approved": cost_policy_approved,
+                "external_public_write_approved": public_write_approved,
+                "legacy_operations_auto_approved": bool(saved["operations_auto_approved"]),
+                "configured_mode": saved["configured_mode"],
+                "blogger_write_mode": saved["blogger_write_mode"],
+                "pending_auto_jobs_preserved": int(pending_auto_jobs["n"] if pending_auto_jobs else 0),
+                "historical_jobs_reauthorized": False,
+                "external_write_authorized_by_this_change": False,
+            }
+            conn.execute(
+                "INSERT INTO audit_events(event_type,payload) VALUES('automation.operator_publication_approval.changed',%s)",
+                (
+                    Jsonb(
+                        {
+                            "previous_approval": before["automatic_publication_operator_approved"],
+                            "new_approval": saved["automatic_publication_operator_approved"],
+                            "actor": request.actor.strip(),
+                            "reason": request.reason.strip(),
+                            "changed_at": saved["automatic_publication_approval_changed_at"],
+                            "revision": saved["revision"],
+                            "approved_scope": approval_scope,
+                            "policy_checks": policy_checks,
+                            "result": "persisted_worker_ack_pending",
+                        },
+                        dumps=lambda v: __import__("json").dumps(v, default=str),
+                    ),
+                ),
+            )
     return {"saved": True, "revision": saved["revision"], "application": "pending_worker_ack"}
 
 
@@ -467,6 +620,8 @@ def job_permitted(conn: Any, job_id: Any, *, running: bool = False) -> bool:
             and not state["emergency_stop"]
             and not state["blogger_api_restricted"]
         )
+    if not state["automatic_publication_operator_approved"]:
+        return False
     from . import publication_origin
 
     origin = publication_origin.classify(conn, row["content_version_id"], row["blog_id"])

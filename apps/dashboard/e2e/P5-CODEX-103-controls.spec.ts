@@ -16,12 +16,12 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test("seven controls, independent OFF and responsive state", async ({ page }, info) => {
+test("eight controls, independent OFF and responsive state", async ({ page }, info) => {
   const errors: string[] = []; page.on("pageerror", e => errors.push(e.message));
   await page.goto("/operations/automation");
   await expect(page.getByText("공통 Blogger 발행 간격: 최소 30분", { exact: false })).toBeVisible();
   await expect(page.getByRole("heading", { name: "자동화 운영 제어센터" })).toBeVisible();
-  await expect(page.getByRole("switch")).toHaveCount(7);
+  await expect(page.getByRole("switch")).toHaveCount(8);
   await expect(page.getByText("30분 주기 · 11개 지역")).toBeVisible();
   await page.getByLabel("변경 사유", { exact: true }).fill("격리 화면에서 수집 중지 독립 설정 확인");
   await page.getByRole("switch", { name: "Google Trends 수집" }).click();
