@@ -29,7 +29,6 @@ def test_manual_queue_precedes_trends_after_scheduled_lane_is_empty(monkeypatch)
 
     def auto_tick(*, origin_filter=None):
         calls.append(("auto", origin_filter))
-        return None
 
     def process_next(**kwargs):
         calls.append(("process", kwargs))
