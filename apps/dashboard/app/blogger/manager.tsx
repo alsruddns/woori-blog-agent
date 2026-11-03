@@ -545,7 +545,7 @@ export default function Manager({ initial }: { initial: State }) {
           <article key={b.id}>
             <h3>{b.display_name}</h3>
             <p>
-              {b.language_code} · {b.active ? "활성" : "비활성"}
+              {b.language_code} · {b.language_code === "zh-CN" && !b.active ? "운영 중단" : b.active ? "활성" : "비활성"}
             </p>
             <a href={b.url} target="_blank" rel="noreferrer">
               {b.url}

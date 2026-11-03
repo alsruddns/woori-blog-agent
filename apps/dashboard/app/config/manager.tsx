@@ -71,7 +71,7 @@ export default function Manager({ config }: { config: Config }) {
             <h3>
               {l.code} · {l.display_name}
             </h3>
-            <p>{l.active ? "활성" : "비활성 · 기존 기록 보존"}</p>
+            <p>{l.code === "zh-CN" && !l.active ? "운영 중단 · 기존 기록 보존" : l.active ? "활성" : "비활성 · 기존 기록 보존"}</p>
           </article>
         ))}
       </div>
@@ -127,7 +127,7 @@ export default function Manager({ config }: { config: Config }) {
               {b.url}
             </a>
             <p>
-              {b.language_code} · {b.active ? "활성" : "비활성"}
+              {b.language_code} · {b.language_code === "zh-CN" && !b.active ? "운영 중단" : b.active ? "활성" : "비활성"}
             </p>
             <small>Blog ID: {b.blog_id ?? "API 조회 대기"}</small>
           </article>
