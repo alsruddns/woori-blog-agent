@@ -14,6 +14,7 @@ test("P106 live settings and Worker revisions", async ({ page }, info) => {
     ["Blogger 자동 발행", "true"],
     ["Google Trends 원고 자동 발행", "true"],
     ["일일 예약 원고 자동 발행", "true"],
+    ["자동 발행 운영 허용", "false"],
     ["Blogger 수동 발행", "true"],
     ["Blogger 긴급 정지", "false"],
   ];
@@ -29,10 +30,11 @@ test("P106 live settings and Worker revisions", async ({ page }, info) => {
   const snapshot = response.data;
   expect(snapshot.settings).toMatchObject({
     auto_mode: "publish", emergency_stop: false, blogger_api_restricted: false,
-    auto_publishing_enabled: true, trends_auto_publishing_enabled: false,
+    auto_publishing_enabled: true, trends_auto_publishing_enabled: true,
     scheduled_auto_publishing_enabled: true,
+    automatic_publication_operator_approved: false,
   });
-  expect(snapshot.settings.auto_blog_ids).toHaveLength(4);
+  expect(snapshot.settings.auto_blog_ids).toHaveLength(3);
   for (const service of ["research_worker", "publication_worker"]) {
     expect(snapshot.workers.find((worker: { service_name: string }) => worker.service_name === service)).toMatchObject({
       applied_revision: snapshot.settings.revision, policy_applied: true, engine_version: "automation-controls/3",
