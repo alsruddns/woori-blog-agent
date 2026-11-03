@@ -31,7 +31,12 @@ than five minutes early, or invocation more than five minutes late ends as
 `deferred` and creates no article. Runs within the existing five-minute late
 window may proceed after the duplicate preflight.
 
-.\.venv\Scripts\python.exe .\scripts\scheduled_duplicate_check.py --stage generation --language-code <ko|en|ja|zh-CN> --target-country <ISO-3166-1-country-code> --target-blog-id <registered-blog-id> [--trade-date YYYY-MM-DD] --event-group-id "<stable-event-id>" --topic "<concise-real-topic>"
+.\.venv\Scripts\python.exe .\scripts\scheduled_duplicate_check.py --stage generation --language-code <valid-BCP-47-tag> --target-country <ISO-3166-1-country-code> --target-blog-id <registered-blog-id> [--trade-date YYYY-MM-DD] --event-group-id "<stable-event-id>" --topic "<concise-real-topic>"
+
+The language argument is normalized as a BCP 47 tag (for example `ko`, `en`,
+`ja`, `zh-CN`, `de`, `pt-BR`, or `vi`). A valid tag does not establish an
+active language or Blogger mapping; the authenticated preflight and Import
+validation still enforce the registered target and current policy.
 
 Use --trade-date only for a market-close task. This command calls only the
 fixed same-origin Dashboard proxy and checks local DB, Import, publication, and

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from contextlib import contextmanager
+from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
@@ -146,6 +147,146 @@ def test_scheduled_envelope_requires_self_reported_task_and_consistent_target() 
     derived_occurrence["scheduled_origin"]["occurrence_id"] = "scheduler-run-claimed"
     with pytest.raises(ValidationError, match="derived_occurrence_id_does_not_match"):
         ScheduledImportEnvelope.model_validate(derived_occurrence)
+
+
+@pytest.mark.parametrize(
+    ("language", "region", "blog_id", "blog_url"),
+    [
+        ("de", "DE", "5857406989226346280", "https://trend-journal-de.blogspot.com/"),
+        ("pt-BR", "BR", "2780805325207451782", "https://trend-journal-br.blogspot.com/"),
+        ("vi", "VN", "2392412558893856604", "https://trend-journal-vn.blogspot.com/"),
+    ],
+)
+def test_scheduled_import_envelope_accepts_new_localized_destinations(
+    language: str, region: str, blog_id: str, blog_url: str,
+) -> None:
+    payload = scheduled_payload()
+    item = payload["item"]
+    origin = payload["scheduled_origin"]
+    assert isinstance(item, dict) and isinstance(origin, dict)
+    item["source_region"] = region
+    item["language_code"] = language
+    item["target_audiences"] = [{
+        "language_code": language, "target_region": region,
+        "reader_relevance_reason": "The verified local reporting is intended for readers in this country.",
+    }]
+    item["blogger_labels"] = []
+    origin.update({
+        "task_type": "scheduled_article", "task_id": f"task-{region.lower()}",
+        "occurrence_id": "codex-slot:automation-11:20261103T1000KST",
+        "occurrence_id_source": "project_derived_kst_slot", "scheduler_occurrence_id": None,
+        "automation_id": "automation-11", "scheduled_slot": "2026-11-03T10:00:00+09:00",
+        "market_date": None, "target_language_code": language, "target_blog_id": blog_id,
+        "target_blog_url": blog_url, "executed_at": "2026-11-03T10:00:30+09:00",
+        "source_as_of": "2026-11-03T09:59:00+09:00",
+    })
+
+    validated = ScheduledImportEnvelope.model_validate(payload)
+    assert validated.item.language_code == language
+    assert validated.scheduled_origin.target_language_code == language
+    assert validated.scheduled_origin.target_blog_id == blog_id
+
+
+@pytest.mark.parametrize(
+    ("language", "region", "blog_id", "blog_url", "automation_id", "slot"),
+    [
+        ("de", "DE", "5857406989226346280", "https://trend-journal-de.blogspot.com", "automation-11", "2026-11-03T10:00:00+09:00"),
+        ("pt-BR", "BR", "2780805325207451782", "https://trend-journal-br.blogspot.com", "automation-13", "2026-11-03T16:00:00+09:00"),
+        ("vi", "VN", "2392412558893856604", "https://trend-journal-vn.blogspot.com", "automation-15", "2026-11-03T20:00:00+09:00"),
+    ],
+)
+def test_new_language_scheduled_inbox_import_creates_content_version_without_blogger_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, language: str, region: str,
+    blog_id: str, blog_url: str, automation_id: str, slot: str,
+) -> None:
+    with connection() as conn, conn.transaction(force_rollback=True):
+        @contextmanager
+        def shared():
+            with conn.transaction():
+                yield conn
+
+        monkeypatch.setattr(content_imports, "connection", shared)
+        conn.execute(
+            "INSERT INTO languages(code,display_name,active) VALUES(%s,%s,true) "
+            "ON CONFLICT(code) DO UPDATE SET active=true",
+            (language, language),
+        )
+        existing_blog = conn.execute("SELECT language_code,url FROM blogger_blogs WHERE blog_id=%s", (blog_id,)).fetchone()
+        if existing_blog:
+            assert existing_blog["language_code"] == language
+            assert existing_blog["url"].rstrip("/") == blog_url
+        else:
+            conn.execute(
+                "INSERT INTO blogger_blogs(language_code,url,display_name,blog_id) VALUES(%s,%s,%s,%s)",
+                (language, blog_url, f"P119 {language} test blog", blog_id),
+            )
+        api_responses: list[tuple[int, bytes]] = []
+
+        def app_transport(request: httpx.Request) -> httpx.Response:
+            response = client.request(
+                request.method, request.url.path,
+                headers={key: request.headers[key] for key in ("authorization", "content-type") if key in request.headers},
+                content=request.content,
+            )
+            api_responses.append((response.status_code, response.content))
+            return httpx.Response(response.status_code, headers=response.headers, content=response.content)
+
+        with TestClient(app) as client:
+            root = tmp_path / ".local" / "gpt-scheduled-import"
+            payload = scheduled_payload()
+            item = payload["item"]
+            origin = payload["scheduled_origin"]
+            assert isinstance(item, dict) and isinstance(origin, dict)
+            item.update({
+                "content_id": f"p119-{language}-{uuid4().hex}",
+                "event_group_id": f"p119-{region.lower()}-{uuid4().hex[:12]}",
+                "source_region": region, "language_code": language,
+                "target_audiences": [{
+                    "language_code": language, "target_region": region,
+                    "reader_relevance_reason": "The verified local reporting is intended for readers in this country.",
+                }],
+                "blogger_labels": [],
+            })
+            slot_datetime = datetime.fromisoformat(slot)
+            occurrence = f"codex-slot:{automation_id}:{slot_datetime:%Y%m%dT%H%M}KST"
+            origin.update({
+                "task_type": "scheduled_article", "task_id": f"p119-{automation_id}",
+                "occurrence_id": occurrence, "occurrence_id_source": "project_derived_kst_slot",
+                "scheduler_occurrence_id": None, "automation_id": automation_id,
+                "scheduled_slot": slot, "executed_at": (slot_datetime + timedelta(seconds=30)).isoformat(),
+                "market_date": None, "target_language_code": language,
+                "target_blog_id": blog_id, "target_blog_url": blog_url,
+                "source_as_of": (slot_datetime - timedelta(minutes=1)).isoformat(),
+            })
+            staging = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+            assert validate_envelope(staging).item.language_code == language
+            incoming = root / "incoming" / f"p119-{language}.part"
+            incoming.parent.mkdir(parents=True, exist_ok=True)
+            incoming.write_bytes(staging)
+            ready = root / "ready" / f"p119-{language}.ready.json"
+            ready.parent.mkdir(parents=True, exist_ok=True)
+            incoming.replace(ready)
+
+            result = process_inbox_once(
+                root, "http://127.0.0.1:18100", settings().admin_token,
+                transport=httpx.MockTransport(app_transport),
+            )
+
+        outcome = result["results"][0]
+        assert outcome["status"] == "imported", outcome
+        import_result = json.loads(api_responses[0][1])
+        assert import_result["content_version_id"]
+        linked = conn.execute(
+            """SELECT cv.id FROM external_content_imports i
+            JOIN external_content_import_versions v ON v.import_id=i.id
+            JOIN external_content_import_content_links l ON l.import_id=i.id AND l.import_version_id=v.id
+            JOIN content_versions cv ON cv.id=l.content_version_id
+            WHERE i.external_content_id=%s""",
+            (item["content_id"],),
+        ).fetchone()
+        assert linked and str(linked["id"]) == import_result["content_version_id"]
+        assert outcome["publish_ready"] is False
+        assert result["blogger_writes"] == 0
 
 
 def test_scheduled_envelope_requires_taxonomy_labels_and_imported_parent_for_revision() -> None:

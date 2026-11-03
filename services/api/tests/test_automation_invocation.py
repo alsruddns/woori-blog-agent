@@ -111,6 +111,40 @@ def test_current_automation_id_comes_from_exact_desktop_session_prompt(tmp_path:
     ) == "automation-8"
 
 
+def test_desktop_user_profile_default_is_used_when_codex_home_is_unset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    codex = tmp_path / ".codex"
+    automations = codex / "automations"
+    _write_automation(automations, project)
+    sessions = codex / "sessions"
+    sessions.mkdir(parents=True)
+    session_id = str(uuid4())
+    _session(sessions / f"rollout-{session_id}.jsonl", session_id=session_id,
+             project=project, started_at=datetime(2026, 10, 30, 10, 58, 25, tzinfo=UTC),
+             trigger="automation_cron_scheduled")
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path))
+    environment = {"CODEX_THREAD_ID": session_id}
+
+    assert current_automation_id(project_root=project, environ=environment) == "automation-8"
+    result = resolve_current_invocation("automation-8", project_root=project, environ=environment)
+    assert result["execution_mode"] == "scheduled"
+    assert result["occurrence_id"] == "codex-slot:automation-8:20261030T2000KST"
+    assert result["provenance_self_reported"] is True
+
+
+def test_desktop_user_profile_default_still_fails_closed_without_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path))
+    with pytest.raises(ValueError, match="current_codex_session_record_missing_or_ambiguous"):
+        current_automation_id(project_root=project, environ={"CODEX_THREAD_ID": str(uuid4())})
+
+
 def test_current_automation_id_fails_when_session_has_multiple_ids(tmp_path: Path) -> None:
     project = tmp_path / "project"
     project.mkdir()

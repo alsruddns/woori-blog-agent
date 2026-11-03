@@ -13,6 +13,10 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT / "services" / "api"))
+from woori.language_codes import normalize_language_tag
+
 ORIGIN = "http://127.0.0.1:3100"
 ENDPOINT = f"{ORIGIN}/api/research/content-imports/duplicate-check"
 KNOWN_STATUSES = {"already_published", "already_imported", "failed_only", "not_found", "unknown"}
@@ -23,6 +27,14 @@ MAX_ATTEMPTS = 3
 class _NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, request, fp, code, message, headers, new_url):
         return None
+
+
+def _language_code(value: str) -> str:
+    """Canonicalize valid BCP 47 tags; registered blog policy is checked downstream."""
+    try:
+        return normalize_language_tag(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a valid BCP 47 language tag") from exc
 
 
 def _open_local_proxy(request: Request, *, timeout: int):
@@ -167,7 +179,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Read-only duplicate check for one Codex Scheduled occurrence"
     )
-    parser.add_argument("--language-code", required=True, choices=("ko", "en", "ja", "zh-CN"))
+    parser.add_argument("--language-code", required=True, type=_language_code)
     parser.add_argument("--target-country", required=True, help="Uppercase ISO country code")
     parser.add_argument("--target-blog-id", required=True)
     parser.add_argument("--trade-date", help="ISO date; omit for non-market-close work")
@@ -228,12 +240,22 @@ def main(argv: list[str] | None = None) -> int:
                 automation_id,
                 project_root=project_root,
             )
-        except (OSError, TypeError, ValueError):
+        except (OSError, TypeError, ValueError) as exc:
+            if isinstance(exc, ValueError):
+                # Resolver ValueErrors are bounded internal reason codes; retain
+                # them so operators can distinguish a missing session from an
+                # inactive schedule without treating self-report as authority.
+                failure_reason = str(exc)[:120]
+            elif isinstance(exc, TypeError):
+                failure_reason = "scheduled_invocation_metadata_invalid"
+            else:
+                # OS errors may contain user-specific filesystem paths.
+                failure_reason = "scheduled_invocation_storage_unavailable"
             result = {
                 "status": "unknown",
                 "local_status": "unknown",
                 "draft_import_allowed": False,
-                "reason": "scheduled_invocation_unverified",
+                "reason": failure_reason,
             }
             print(json.dumps(result, ensure_ascii=False, sort_keys=True))
             return 3

@@ -11,6 +11,7 @@ import json
 import os
 import re
 import tomllib
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
@@ -21,6 +22,17 @@ from .scheduled_occurrence import occurrence_metadata, verify_configured_slot
 
 _KST = ZoneInfo("Asia/Seoul")
 _AUTOMATION_LINE = re.compile(r"(?m)^Automation ID:\s*([A-Za-z0-9_.:-]+)\s*$")
+
+
+def _codex_home(environ: Mapping[str, str]) -> Path:
+    """Resolve Codex Desktop data without requiring CODEX_HOME to be exported.
+
+    An explicit environment value remains authoritative. When it is absent,
+    Codex Desktop's per-user default is used; callers still fail closed if the
+    expected session or automation record is missing below that directory.
+    """
+    configured = environ.get("CODEX_HOME", "").strip()
+    return Path(configured).expanduser() if configured else Path.home() / ".codex"
 
 
 def _read_events(path: Path) -> list[dict[str, Any]]:
@@ -88,7 +100,7 @@ def current_automation_id(
     thread_id = env.get("CODEX_THREAD_ID", "")
     if not re.fullmatch(r"[0-9a-fA-F-]{36}", thread_id):
         raise ValueError("current_codex_thread_id_unavailable")
-    codex_root = Path(env.get("CODEX_HOME") or Path.home() / ".codex")
+    codex_root = _codex_home(env)
     sessions_root = sessions_root or codex_root / "sessions"
     matches = list(sessions_root.rglob(f"*{thread_id}.jsonl"))
     if len(matches) != 1:
@@ -212,7 +224,7 @@ def resolve_current_invocation(
     thread_id = env.get("CODEX_THREAD_ID", "")
     if not re.fullmatch(r"[0-9a-fA-F-]{36}", thread_id):
         raise ValueError("current_codex_thread_id_unavailable")
-    codex_root = Path(env.get("CODEX_HOME") or Path.home() / ".codex")
+    codex_root = _codex_home(env)
     automations_root = automations_root or codex_root / "automations"
     sessions_root = sessions_root or codex_root / "sessions"
     config = _automation_config(automation_id, automations_root, project_root)

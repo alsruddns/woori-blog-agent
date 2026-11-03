@@ -5,7 +5,9 @@ from io import BytesIO
 from typing import Self
 from urllib.error import HTTPError, URLError
 
-from scripts.scheduled_duplicate_check import ENDPOINT, ORIGIN, check_duplicate
+import pytest
+
+from scripts.scheduled_duplicate_check import ENDPOINT, ORIGIN, check_duplicate, main
 
 
 class FakeResponse:
@@ -120,3 +122,67 @@ def test_duplicate_cli_preserves_sanitized_validation_location_for_422() -> None
 def test_duplicate_cli_does_not_treat_invalid_response_as_absence() -> None:
     result = check_duplicate({}, opener=lambda *_args, **_kwargs: FakeResponse({"status": "clear"}))
     assert result == {"status": "unknown", "reason": "duplicate_preflight_invalid_response"}
+
+
+@pytest.mark.parametrize("language", ["ko", "en", "ja", "zh-CN", "de", "pt-BR", "vi"])
+def test_duplicate_preflight_cli_accepts_registered_language_tags(
+    language: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    seen: dict[str, object] = {}
+
+    def fake_check(payload: dict[str, object]) -> dict[str, object]:
+        seen.update(payload)
+        return {"status": "not_found", "local_status": "not_found",
+                "draft_import_allowed": False, "remote_status": "not_checked"}
+
+    monkeypatch.setattr("scripts.scheduled_duplicate_check.check_duplicate", fake_check)
+    result = main([
+        "--language-code", language, "--target-country", "DE", "--target-blog-id", "5857406989226346280",
+        "--event-group-id", "event-de-20261103", "--topic", "A verified current policy issue",
+    ])
+
+    assert result == 0
+    assert seen["language_code"] == language
+    assert json.loads(capsys.readouterr().out)["status"] == "not_found"
+
+
+def test_duplicate_preflight_cli_normalizes_bcp47_tag_and_rejects_invalid_tag(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    seen: dict[str, object] = {}
+    monkeypatch.setattr(
+        "scripts.scheduled_duplicate_check.check_duplicate",
+        lambda payload: (seen.update(payload) or {"status": "not_found"}),
+    )
+    assert main([
+        "--language-code", "pt-br", "--target-country", "BR", "--target-blog-id", "2780805325207451782",
+        "--event-group-id", "event-br-20261103", "--topic", "A verified current policy issue",
+    ]) == 0
+    assert seen["language_code"] == "pt-BR"
+    capsys.readouterr()
+
+    with pytest.raises(SystemExit) as error:
+        main([
+            "--language-code", "bad_tag", "--target-country", "BR", "--target-blog-id", "2780805325207451782",
+            "--event-group-id", "event-br-20261103", "--topic", "A verified current policy issue",
+        ])
+    assert error.value.code == 2
+
+
+def test_duplicate_preflight_reports_exact_safe_invocation_reason(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    def unavailable(*_args: object, **_kwargs: object) -> dict[str, object]:
+        raise ValueError("current_codex_session_record_missing_or_ambiguous")
+
+    monkeypatch.setattr("woori.automation_invocation.resolve_current_invocation", unavailable)
+    result = main([
+        "--language-code", "de", "--target-country", "DE", "--target-blog-id", "5857406989226346280",
+        "--event-group-id", "event-de-20261103", "--topic", "A verified current policy issue",
+        "--automation-id", "automation-13", "--stage", "generation",
+    ])
+
+    assert result == 3
+    response = json.loads(capsys.readouterr().out)
+    assert response["reason"] == "current_codex_session_record_missing_or_ambiguous"
+    assert response["draft_import_allowed"] is False
