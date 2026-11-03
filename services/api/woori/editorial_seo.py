@@ -13,6 +13,8 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, field_validator
 
+from .language_codes import normalize_language_tag
+
 SeoCheckStatus = Literal["ready", "review", "not_measured"]
 
 
@@ -33,7 +35,7 @@ class SeoSource(BaseModel):
 class EditorialSeoMetadata(BaseModel):
     """Projection of existing editorial metadata; missing values stay unknown."""
 
-    language_code: Literal["ko", "en", "ja", "zh-CN"]
+    language_code: str = Field(min_length=2, max_length=35)
     target_region: str | None = Field(default=None, max_length=80)
     search_intent: Literal["informational", "navigational", "transactional", "commercial"] | None = None
     primary_keyword: str | None = Field(default=None, max_length=80)
@@ -50,6 +52,11 @@ class EditorialSeoMetadata(BaseModel):
     official_sources: list[SeoSource] = Field(default_factory=list, max_length=30)
     fact_verified_at: datetime | None = None
     editorial_status: str = Field(default="unknown", max_length=80)
+
+    @field_validator("language_code")
+    @classmethod
+    def canonical_language(cls, value: str) -> str:
+        return normalize_language_tag(value)
 
     @field_validator("related_terms", "blogger_labels", "seo_title_candidates")
     @classmethod

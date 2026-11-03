@@ -17,7 +17,7 @@ const stateNames: Record<string, string> = {
   awaiting_human_review: "사람 검토 대기", insufficient_evidence: "근거 자료 부족", evidence_ready_for_human_review: "근거 검토 대기",
 };
 const stateLabel = (raw: string) => stateNames[raw] ?? (raw ? "기록된 상태" : "미확인");
-const languageName = (raw: string) => ({ ko: "한국어", en: "영어", ja: "일본어", "zh-CN": "중국어 간체" } as Record<string, string>)[raw] ?? "언어 미확인";
+const languageName = (raw: string) => ({ ko: "한국어", en: "영어", ja: "일본어", "zh-CN": "중국어 간체", de: "독일어", "pt-BR": "브라질 포르투갈어", vi: "베트남어" } as Record<string, string>)[raw] ?? "언어 미확인";
 const rightsLabel = (raw: string) => stateNames[raw] ?? (raw ? "이용 조건 확인 필요" : "이용 권리 미확인");
 const topicReasonNames: Record<string, string> = {
   no_current_reviewed_fact_source_linked: "최신 검토를 마친 사실 근거가 연결되지 않았습니다.",

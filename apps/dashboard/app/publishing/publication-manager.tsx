@@ -47,7 +47,7 @@ export type PublicationData = {
 };
 const tabs = [["queue", "발행 대기"], ["review", "검토 필요"], ["published", "게시 완료"], ["held", "실패·보류"], ["auto_failure", "자동발행실패"], ["discarded", "폐기 보관함"]] as const;
 const originLabels = { google_trends: "Google Trends", scheduled: "Codex 예약", manual: "수동 작성", unknown: "출처 미확인" } as const;
-const languageLabel = (code: string) => ({ko:"한국어",en:"영어",ja:"일본어","zh-CN":"중국어 간체"}[code] ?? code);
+const languageLabel = (code: string) => ({ko:"한국어",en:"영어",ja:"일본어","zh-CN":"중국어 간체",de:"독일어","pt-BR":"브라질 포르투갈어",vi:"베트남어"}[code] ?? code);
 const statusLabel = (status: string) => ({review_needed:"검토 필요",queueable:"발행 자격 충족 · Job 없음",queued:"Worker 처리 대기",auto_paused:"자동 발행 중지로 보류",manual_action_required:"수동 요청 확인 필요 · 실행 차단",draft_saved:"Blogger 비공개 초안 저장 완료",publishing:"게시 중",published:"게시 완료",quality_held:"품질 보류",publication_blocked:"게시 차단",failed:"실패",uncertain:"결과 확인 필요",auto_publication_failed:"자동발행실패"}[status] ?? status);
 const reasonLabel = (reason: string) => ({
   quality_evaluation_missing:"품질 검사 기록 없음", quality_not_passed:"품질 검사 통과 필요",

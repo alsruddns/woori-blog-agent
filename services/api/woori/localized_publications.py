@@ -23,7 +23,7 @@ from .publications import _mode_settings
 
 router = APIRouter(prefix="/admin/research/localized-publications")
 
-REGION_LANGUAGE = {"KR": "ko", "US": "en", "JP": "ja", "CN": "zh-CN"}
+REGION_LANGUAGE = {"KR": "ko", "US": "en", "JP": "ja", "CN": "zh-CN", "DE": "de", "BR": "pt-BR", "VN": "vi"}
 
 
 class TargetSelection(BaseModel):

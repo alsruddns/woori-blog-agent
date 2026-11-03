@@ -17,11 +17,11 @@ async function proxy(
   const host = request.headers.get("host");
   if (
     !["127.0.0.1:3100", "localhost:3100"].includes(host ?? "") ||
-    origin !== `http://${host}`
+    (request.method === "GET" ? origin && origin !== `http://${host}` : origin !== `http://${host}`)
   ) {
     return NextResponse.json({ error: "Invalid origin" }, { status: 403 });
   }
-  if (!request.headers.get("content-type")?.startsWith("application/json"))
+  if (request.method !== "GET" && !request.headers.get("content-type")?.startsWith("application/json"))
     return NextResponse.json({ error: "JSON required" }, { status: 415 });
   const { path } = await context.params;
   if (
@@ -39,7 +39,7 @@ async function proxy(
       { status: 503 },
     );
   try {
-    const text = await request.text();
+    const text = request.method === "GET" ? "" : await request.text();
     if (Buffer.byteLength(text, "utf8") > 16384)
       return NextResponse.json({ error: "Request too large" }, { status: 413 });
     const response = await fetch(
@@ -50,20 +50,22 @@ async function proxy(
           Authorization: `Bearer ${process.env.ADMIN_TOKEN}`,
           "Content-Type": "application/json",
         },
-        body: text,
+        ...(request.method === "GET" ? {} : { body: text }),
         cache: "no-store",
         signal: AbortSignal.timeout(5000),
       },
     );
+    const payload = await response.json().catch(() => null);
     if (!response.ok)
       return NextResponse.json(
         { error: "Configuration rejected" },
         { status: response.status },
       );
-    return NextResponse.json({ saved: true }, { status: response.status });
+    return NextResponse.json(payload ?? {}, { status: response.status });
   } catch {
     return NextResponse.json({ error: "API unavailable" }, { status: 503 });
   }
 }
 export const POST = proxy;
 export const PATCH = proxy;
+export const GET = proxy;

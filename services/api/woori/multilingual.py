@@ -4,13 +4,13 @@ from typing import Any
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-import langcodes
 import psycopg
 from fastapi import APIRouter, HTTPException
 from psycopg import sql
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .db import connection
+from .language_codes import normalize_language_tag
 
 router = APIRouter(prefix="/admin/config")
 # Only verified adapters may enter these registries in a later approved implementation.
@@ -20,9 +20,7 @@ QUALITY_ADAPTERS: dict[str, set[str]] = {}
 
 
 def language_tag(value: str) -> str:
-    if "_" in value or not langcodes.tag_is_valid(value):
-        raise ValueError("Use a valid BCP 47 language tag")
-    return str(langcodes.standardize_tag(value))
+    return normalize_language_tag(value)
 
 
 class Input(BaseModel):
@@ -174,6 +172,15 @@ def add_language(request: LanguageInput) -> dict[str, Any]:
     return save("languages", request.model_dump(), ["code"], update=False)
 
 
+@router.get("/languages")
+def list_languages() -> dict[str, Any]:
+    with connection() as conn:
+        rows = conn.execute(
+            "SELECT code,display_name,active,created_at FROM languages ORDER BY lower(display_name),lower(code)"
+        ).fetchall()
+        return {"items": [dict(row) for row in rows]}
+
+
 @router.patch("/languages/{code}")
 def update_language(code: str, request: LanguageUpdate) -> dict[str, Any]:
     try:
@@ -197,6 +204,18 @@ def update_language(code: str, request: LanguageUpdate) -> dict[str, Any]:
 @router.post("/blogs", status_code=201)
 def add_blog(request: BlogInput) -> dict[str, Any]:
     return save("blogger_blogs", request.model_dump(), ["url"], update=False)
+
+
+@router.get("/blogs")
+def list_blogs() -> dict[str, Any]:
+    with connection() as conn:
+        rows = conn.execute(
+            """SELECT b.id,b.language_code,b.url,b.display_name,b.active,b.blog_id,
+            b.connection_verified_at,b.last_checked_at,l.active AS language_active
+            FROM blogger_blogs b JOIN languages l ON l.code=b.language_code
+            ORDER BY lower(b.display_name),lower(b.language_code),b.url"""
+        ).fetchall()
+        return {"items": [dict(row) for row in rows]}
 
 
 @router.patch("/blogs/{blog_id}")

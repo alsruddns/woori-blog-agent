@@ -78,6 +78,9 @@ def test_configuration_lifecycle(sandbox: psycopg.Connection[dict[str, Any]]) ->
             json={"code": code, "display_name": "Espa梨컊l"},
         )
         assert registered.status_code == 201, registered.text
+        language_index = client.get("/admin/config/languages", headers=headers)
+        assert language_index.status_code == 200
+        assert any(row["code"] == code for row in language_index.json()["items"])
         assert (
             client.post(
                 "/admin/config/languages",
@@ -108,6 +111,11 @@ def test_configuration_lifecycle(sandbox: psycopg.Connection[dict[str, Any]]) ->
             assert blog.status_code == 201, blog.text
             assert blog.json()["blog_id"] is None
             blogs.append(blog.json())
+        blog_index = client.get("/admin/config/blogs", headers=headers)
+        assert blog_index.status_code == 200
+        assert {row["id"] for row in blog_index.json()["items"]}.issuperset(
+            {row["id"] for row in blogs}
+        )
         assert (
             client.post(
                 "/admin/config/blogs",

@@ -37,12 +37,12 @@ from .editorial_taxonomy import (
     language_candidates,
     suggested_labels,
 )
+from .language_codes import normalize_language_tag
 from .scheduled_occurrence import validate_occurrence_metadata
 from .topics import OFFICIAL_SOURCE_HOSTS
 
 router = APIRouter(prefix="/admin/research/content-imports")
 CATEGORY_SLUGS = {item["slug"] for item in EDITORIAL_CATEGORIES}
-LANGUAGES = {"ko", "en", "ja", "zh-CN"}
 HTML_TAG = re.compile(r"</?[A-Za-z][^>]*>")
 INTERNAL_MARKER = re.compile(
     r"\b(?:FACT-F\d+|generation_ready|publish_ready|Research Package)\b", re.IGNORECASE
@@ -101,6 +101,11 @@ class TargetAudience(BaseModel):
     target_region: str | None = Field(default=None, pattern=r"^[A-Z]{2}$")
     reader_relevance_reason: str = Field(min_length=10, max_length=1000)
 
+    @field_validator("language_code")
+    @classmethod
+    def canonical_language(cls, value: str) -> str:
+        return normalize_language_tag(value)
+
 
 class SeoMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
@@ -139,6 +144,11 @@ class ContentImport(BaseModel):
     generated_at: datetime
     created_by: str = Field(min_length=2, max_length=100)
 
+    @field_validator("language_code")
+    @classmethod
+    def canonical_language(cls, value: str) -> str:
+        return normalize_language_tag(value)
+
     @field_validator("body_markdown")
     @classmethod
     def safe_markdown_only(cls, value: str) -> str:
@@ -173,8 +183,6 @@ class ContentImport(BaseModel):
             raise ValueError("trends_provenance_required")
         if self.category not in CATEGORY_SLUGS:
             raise ValueError("category_not_in_editorial_taxonomy")
-        if self.language_code not in LANGUAGES:
-            raise ValueError("unsupported_language")
         if self.relation == "original" and self.parent_content_id is not None:
             raise ValueError("original_content_cannot_have_parent")
         if self.relation != "original" and not self.parent_content_id:
@@ -191,6 +199,8 @@ class ContentImport(BaseModel):
         if self.language_code not in {target.language_code for target in self.target_audiences}:
             raise ValueError("manuscript_language_must_be_an_explicit_target_audience")
         labels = suggested_labels(self.category, self.language_code, google_trends_based=self.google_trends_based)
+        if self.google_trends_based and self.language_code not in ISSUE_LABELS:
+            raise ValueError("google_trends_issue_label_not_configured_for_language")
         if self.google_trends_based and ISSUE_LABELS[self.language_code] not in self.blogger_labels:
             raise ValueError("google_trends_locale_issue_label_required")
         if any(label not in labels for label in self.blogger_labels):
@@ -284,6 +294,11 @@ class ScheduledImportOrigin(BaseModel):
     source_as_of: datetime
     inbox_file_name: str | None = Field(default=None, min_length=1, max_length=180, pattern=r"^[A-Za-z0-9_.-]+$")
     inbox_file_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+    @field_validator("target_language_code")
+    @classmethod
+    def canonical_target_language(cls, value: str) -> str:
+        return normalize_language_tag(value)
 
     @field_validator("executed_at", "source_as_of")
     @classmethod
@@ -388,7 +403,7 @@ class ManualAutomationImportEnvelope(BaseModel):
 
 class DuplicateCheckRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-    language_code: Literal["ko", "en", "ja", "zh-CN"]
+    language_code: str = Field(min_length=2, max_length=35)
     target_country: str = Field(min_length=2, max_length=3, pattern=r"^(?:[A-Z]{2,3}|[0-9]{3})$")
     target_blog_id: str = Field(min_length=5, max_length=32, pattern=r"^[0-9]+$")
     trade_date: date | None = None
@@ -396,6 +411,11 @@ class DuplicateCheckRequest(BaseModel):
     topic: str = Field(min_length=3, max_length=300)
     content_id: str | None = Field(default=None, min_length=8, max_length=128)
     stage: Literal["generation", "publication"] = "publication"
+
+    @field_validator("language_code")
+    @classmethod
+    def canonical_language(cls, value: str) -> str:
+        return normalize_language_tag(value)
 
 
 @router.post("/duplicate-check")
@@ -638,9 +658,14 @@ class ImportReviewRequest(BaseModel):
 
 class LocalizationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-    target_language: Literal["ko", "en", "ja", "zh-CN"]
+    target_language: str = Field(min_length=2, max_length=35)
     requester_label: str = Field(min_length=2, max_length=120)
     reason: str = Field(min_length=5, max_length=1000)
+
+    @field_validator("target_language")
+    @classmethod
+    def canonical_language(cls, value: str) -> str:
+        return normalize_language_tag(value)
 
 
 class LocalizationCancelRequest(BaseModel):
@@ -1042,12 +1067,21 @@ def _submit_content_import(request: ImportSubmission, existing_conn: psycopg.Con
         request.item.source_region,
         {target.language_code: target.reader_relevance_reason for target in request.item.target_audiences},
     )
+    if request.item.google_trends_based and request.item.language_code not in ISSUE_LABELS:
+        raise HTTPException(422, "Google Trends issue label is not configured for this language")
     labels = suggested_labels(request.item.category, request.item.language_code,
                               google_trends_based=request.item.google_trends_based)
-    if request.item.google_trends_based and labels[0] not in request.item.blogger_labels:
+    if request.item.google_trends_based and ISSUE_LABELS[request.item.language_code] not in request.item.blogger_labels:
         raise HTTPException(422, "Google Trends manuscript requires the locale issue label")
     with (nullcontext(existing_conn) if existing_conn is not None else connection()) as conn:
         _require_import_review_schema(conn)
+        requested_languages = sorted({request.item.language_code, *(target.language_code for target in request.item.target_audiences)})
+        active_languages = conn.execute(
+            "SELECT code FROM languages WHERE code=ANY(%s) AND active",
+            (requested_languages,),
+        ).fetchall()
+        if {row["code"] for row in active_languages} != set(requested_languages):
+            raise HTTPException(409, "Import language is not registered and active")
         exists = conn.execute("SELECT to_regclass('public.external_content_imports') AS relation").fetchone()
         if not exists or not exists.get("relation"):
             raise HTTPException(409, "Content import migration 045 is required")
@@ -1272,8 +1306,9 @@ def _record_scheduled_import_origin(
         if imported["language_code"] != request.target_language_code:
             raise HTTPException(409, "Scheduled target language does not match the imported manuscript")
         blog = conn.execute(
-            """SELECT id,url,language_code FROM blogger_blogs
-            WHERE blog_id=%s AND language_code=%s AND active""",
+            """SELECT b.id,b.url,b.language_code FROM blogger_blogs b
+            JOIN languages l ON l.code=b.language_code AND l.active
+            WHERE b.blog_id=%s AND b.language_code=%s AND b.active""",
             (request.target_blog_id, request.target_language_code),
         ).fetchone()
         if not blog or str(blog["url"]).rstrip("/").lower() != target_url:
@@ -1704,6 +1739,11 @@ def request_import_localization(import_id: UUID, request: LocalizationRequest) -
     with connection() as conn:
         _require_import_review_schema(conn)
         imported = _require_import(conn, import_id)
+        target_active = conn.execute(
+            "SELECT active FROM languages WHERE code=%s", (request.target_language,)
+        ).fetchone()
+        if not target_active or not target_active["active"]:
+            raise HTTPException(409, "Localization target language is not active")
         if request.target_language == imported["language_code"]:
             raise HTTPException(422, "Localization target must differ from the source language")
         existing_language = conn.execute(
@@ -1734,8 +1774,10 @@ def request_import_localization(import_id: UUID, request: LocalizationRequest) -
 
 @router.post("/{import_id}/localizations/{target_language}/cancel", status_code=201)
 def cancel_import_localization(import_id: UUID, target_language: str, request: LocalizationCancelRequest) -> dict[str, Any]:
-    if target_language not in LANGUAGES:
-        raise HTTPException(422, "Unsupported localization language")
+    try:
+        target_language = normalize_language_tag(target_language)
+    except ValueError:
+        raise HTTPException(422, "Invalid localization language tag") from None
     with connection() as conn:
         _require_import_review_schema(conn)
         _require_import(conn, import_id)

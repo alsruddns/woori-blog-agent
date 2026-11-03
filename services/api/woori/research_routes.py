@@ -19,6 +19,7 @@ from .db import connection
 from .editorial_seo import EditorialSeoMetadata, SearchConsoleSnapshot, evaluate_seo_readiness
 from .editorial_taxonomy import category_registry
 from .grounding import inspect
+from .language_codes import normalize_language_tag
 from .multilingual import Input
 from .pipeline import required
 
@@ -405,7 +406,7 @@ class EditorialPreviewRequest(Input):
     body: str = Field(min_length=1, max_length=100_000)
     body_format: Literal["markdown", "html"] = "markdown"
     summary: str = Field(default="", max_length=500)
-    language_code: Literal["ko", "en", "ja", "zh-CN"]
+    language_code: str = Field(min_length=2, max_length=35)
     google_trends_based: bool = False
     labels: list[str] = Field(default_factory=list, max_length=20)
     seo_metadata: EditorialSeoMetadata | None = None
@@ -413,6 +414,11 @@ class EditorialPreviewRequest(Input):
     content_version_id: UUID | None = None
     editorial_revision_id: UUID | None = None
     revision_number: int | None = Field(default=None, ge=1)
+
+    @field_validator("language_code")
+    @classmethod
+    def canonical_language(cls, value: str) -> str:
+        return normalize_language_tag(value)
 
     @field_validator("labels")
     @classmethod

@@ -266,7 +266,8 @@ def tick(*, publisher: Any = None, origin_filter: str | None = None) -> dict[str
               AND j.scheduled_at<=now() ORDER BY CASE g.manuscript_origin WHEN 'scheduled' THEN 0 ELSE 1 END,
                 CASE WHEN g.manuscript_origin='google_trends' THEN CASE
                   (SELECT language_code FROM blogger_blogs b WHERE b.id=j.blog_id)
-                  WHEN 'en' THEN 0 WHEN 'ko' THEN 1 WHEN 'ja' THEN 2 WHEN 'zh-CN' THEN 3 ELSE 4 END ELSE 0 END,
+                  WHEN 'en' THEN 0 WHEN 'ko' THEN 1 WHEN 'ja' THEN 2 WHEN 'zh-CN' THEN 3
+                  WHEN 'de' THEN 4 WHEN 'pt-BR' THEN 5 WHEN 'vi' THEN 6 ELSE 7 END ELSE 0 END,
                 j.scheduled_at,j.id FOR UPDATE OF j SKIP LOCKED LIMIT 1""",
             (
                 state["auto_epoch"],

@@ -852,7 +852,8 @@ def process_next_live_job(
             ORDER BY CASE j.publication_lane WHEN 'scheduled_auto' THEN 0 WHEN 'manual' THEN 1 WHEN 'trends_auto' THEN 2 ELSE 3 END,
               CASE WHEN j.publication_lane='trends_auto' THEN CASE
                 (SELECT language_code FROM blogger_blogs bb WHERE bb.id=j.blog_id)
-                WHEN 'en' THEN 0 WHEN 'ko' THEN 1 WHEN 'ja' THEN 2 WHEN 'zh-CN' THEN 3 ELSE 4 END ELSE 0 END,
+                WHEN 'en' THEN 0 WHEN 'ko' THEN 1 WHEN 'ja' THEN 2 WHEN 'zh-CN' THEN 3
+                WHEN 'de' THEN 4 WHEN 'pt-BR' THEN 5 WHEN 'vi' THEN 6 ELSE 7 END ELSE 0 END,
               j.scheduled_at,j.id FOR UPDATE OF j SKIP LOCKED LIMIT 1""",
             (scheduled_auto_only, manual_confirmed_only, trends_auto_only),
         ).fetchone()

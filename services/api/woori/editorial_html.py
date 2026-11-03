@@ -274,7 +274,10 @@ def markdown_to_blogger_html(markdown: str, *, post_title: str, summary: str = "
     return sanitized
 
 
-TREND_LABELS = {"ko": "이슈", "en": "Issues", "ja": "話題", "zh-CN": "热点"}
+TREND_LABELS = {
+    "ko": "이슈", "en": "Issues", "ja": "話題", "zh-CN": "热点",
+    "de": "Aktuelles", "pt-BR": "Atualidades", "vi": "Tin tức",
+}
 
 
 def resolve_blogger_labels(language_code: str, google_trends_based: bool, labels: list[str]) -> list[str]:

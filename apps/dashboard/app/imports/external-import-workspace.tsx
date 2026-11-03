@@ -13,8 +13,8 @@ type Details = {
   claim_evidence?: { claim_count: number; source_span_confirmed_count: number; verified_count: number; claims: Row[] };
 };
 type DetailTab = "editor" | "evidence" | "quality" | "preview" | "distribution" | "history";
-const languages = ["ko", "en", "ja", "zh-CN"] as const;
-const languageNames: Record<string, string> = { ko: "한국어", en: "영어", ja: "일본어", "zh-CN": "중국어 간체" };
+type LanguageOption = { code: string; display_name: string; active: boolean };
+const defaultLanguageNames: Record<string, string> = { ko: "한국어", en: "영어", ja: "일본어", "zh-CN": "중국어 간체", de: "Deutsch", "pt-BR": "Português (Brasil)", vi: "Tiếng Việt" };
 const statusNames: Record<string, string> = {
   awaiting_human_review: "사람 검토 대기", review_started: "검토 중", changes_requested: "수정 필요",
   editorial_review_passed: "편집 검토 통과", requested: "외부 원고 대기", cancelled: "요청 취소",
@@ -80,11 +80,20 @@ const localStyle = `<style>body{margin:0;color:#202a34;font:17px/1.8 system-ui,s
 
 export function ExternalImportQueue() {
   const [items, setItems] = useState<Row[]>([]);
+  const [languageNames, setLanguageNames] = useState<Record<string, string>>(defaultLanguageNames);
   const [error, setError] = useState("");
   const [origin, setOrigin] = useState("all");
   const [page, setPage] = useState(1);
   const [pageCount, setPageCount] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
+  useEffect(() => {
+    let active = true;
+    void fetch("/api/config/languages", { cache: "no-store" }).then(response => response.ok ? response.json() : null).then(data => {
+      if (!active || !Array.isArray(data?.items)) return;
+      setLanguageNames(Object.fromEntries(data.items.map((language: LanguageOption) => [language.code, language.display_name])));
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, []);
   useEffect(() => {
     let active = true;
     void fetch(`/api/research/content-imports?origin=${encodeURIComponent(origin)}&page=${page}&page_size=25`, { cache: "no-store" }).then(async response => {
@@ -111,6 +120,24 @@ export default function ExternalImportWorkspace({ embedded = false, detailReques
   onPublicationRequested?: (jobId: string) => void;
 } = {}) {
   const [items, setItems] = useState<Row[]>([]);
+  const [targetLanguage, setTargetLanguage] = useState("ko");
+  const [languageOptions, setLanguageOptions] = useState<LanguageOption[]>([]);
+  const [languageNames, setLanguageNames] = useState<Record<string, string>>(defaultLanguageNames);
+  useEffect(() => {
+    let active = true;
+    void fetch("/api/config/languages", { cache: "no-store" }).then(async response => {
+      if (!response.ok) throw new Error("Language configuration unavailable");
+      return response.json();
+    }).then(data => {
+      if (!active || !Array.isArray(data.items)) return;
+      const languages = data.items as LanguageOption[];
+      setLanguageOptions(languages.filter(language => language.active));
+      setLanguageNames(Object.fromEntries(languages.map(language => [language.code, language.display_name])));
+      setTargetLanguage(current => languages.some(language => language.active && language.code === current)
+        ? current : (languages.find(language => language.active)?.code ?? ""));
+    }).catch(() => { if (active) setLanguageOptions([]); });
+    return () => { active = false; };
+  }, []);
   const [manualControlAllowed, setManualControlAllowed] = useState(false);
   useEffect(() => {
     let active = true;
@@ -147,7 +174,6 @@ export default function ExternalImportWorkspace({ embedded = false, detailReques
   });
   const manualSubmitting = useRef(false);
   const [manualOutcomeUnknown,setManualOutcomeUnknown]=useState(false);
-  const [targetLanguage, setTargetLanguage] = useState<(typeof languages)[number]>("ko");
   const [detailTab, setDetailTab] = useState<DetailTab>("editor");
   const [preview, setPreview] = useState<Row | null>(null);
   const autoOpened = useRef("");
@@ -470,7 +496,7 @@ export default function ExternalImportWorkspace({ embedded = false, detailReques
             <a href="https://www.blogger.com/" target="_blank" rel="noreferrer">Blogger 관리 열기</a>
             {Boolean((detail.item.blogger_delivery as Row).remote_status === "LIVE" && (detail.item.blogger_delivery as Row).remote_url) && <a href={String((detail.item.blogger_delivery as Row).remote_url)} target="_blank" rel="noreferrer">실제 공개 URL</a>}
           </section>}
-          <section className="workspace-panel" id="import-localization"><h3>다국어 확장</h3><p>생성 Provider가 연결되지 않아 요청은 대기하며 원고를 생성한 것으로 표시하지 않습니다.</p><label>대상 언어<select value={targetLanguage} onChange={event => setTargetLanguage(event.target.value as typeof targetLanguage)}>{languages.filter(language => language !== detail.item.language_code).map(language => <option key={language} value={language}>{languageNames[language]}</option>)}</select></label><button type="button" className="secondary-button" disabled={busy} onClick={() => void run(() => api("localizations", "POST", { target_language: targetLanguage, requester_label: reviewer, reason: "요청한 언어로 외부 원고를 준비하고 사람 검토 대기" }), "다국어 원고 요청을 외부 공급자 대기로 저장했습니다.")}>현지화 원고 요청</button>{detail.localization_requests.map(request => <article className="history-card" key={String(request.target_language)}><p>{languageNames[String(request.target_language)]} · {statusNames[String(request.event_type)] ?? String(request.event_type)} · {fmt(request.created_at)}</p>{request.event_type === "requested" && <button type="button" className="secondary-button" disabled={busy} onClick={() => void run(() => api(`localizations/${encodeURIComponent(String(request.target_language))}/cancel`, "POST", { requester_label: reviewer, reason: "사용자가 다국어 확장 요청을 취소" }), "현지화 요청을 취소 기록으로 저장했습니다.")}>요청 취소</button>}</article>)}</section>
+          <section className="workspace-panel" id="import-localization"><h3>다국어 확장</h3><p>생성 Provider가 연결되지 않아 요청은 대기하며 원고를 생성한 것으로 표시하지 않습니다.</p><label>대상 언어<select value={targetLanguage} onChange={event => setTargetLanguage(event.target.value)} disabled={!languageOptions.some(language => language.code !== detail.item.language_code)}>{languageOptions.filter(language => language.code !== detail.item.language_code).map(language => <option key={language.code} value={language.code}>{language.display_name}</option>)}</select></label><button type="button" className="secondary-button" disabled={busy || !languageOptions.some(language => language.code === targetLanguage && language.code !== detail.item.language_code)} onClick={() => void run(() => api("localizations", "POST", { target_language: targetLanguage, requester_label: reviewer, reason: "요청한 언어로 외부 원고를 준비하고 사람 검토 대기" }), "다국어 원고 요청을 외부 공급자 대기로 저장했습니다.")}>현지화 원고 요청</button>{detail.localization_requests.map(request => <article className="history-card" key={String(request.target_language)}><p>{languageNames[String(request.target_language)] ?? String(request.target_language)} · {statusNames[String(request.event_type)] ?? String(request.event_type)} · {fmt(request.created_at)}</p>{request.event_type === "requested" && <button type="button" className="secondary-button" disabled={busy} onClick={() => void run(() => api(`localizations/${encodeURIComponent(String(request.target_language))}/cancel`, "POST", { requester_label: reviewer, reason: "사용자가 다국어 확장 요청을 취소" }), "현지화 요청을 취소 기록으로 저장했습니다.")}>요청 취소</button>}</article>)}</section>
            <section className="workspace-panel" id="import-review"><h3>사람 편집 검토</h3><label>검토자 표시 이름<input value={reviewer} onChange={event => setReviewer(event.target.value)} /></label><label>검토 메모<input value={reason} onChange={event => setReason(event.target.value)} /></label><div className="review-attestations"><label><input type="checkbox" checked={attest.sources} onChange={event => setAttest({ ...attest, sources: event.target.checked })} />원문 문서를 직접 확인했습니다</label><label><input type="checkbox" checked={attest.claims} onChange={event => setAttest({ ...attest, claims: event.target.checked })} />주장과 근거를 대조했습니다</label><label><input type="checkbox" checked={attest.rights} onChange={event => setAttest({ ...attest, rights: event.target.checked })} />저작권·인용 권리를 검토했습니다</label></div><div className="import-actions"><button type="button" className="secondary-button" disabled={busy} onClick={() => void recordReview("review_started")}>검토 시작</button><button type="button" className="secondary-button" disabled={busy} onClick={() => void recordReview("changes_requested")}>수정 요청</button><button type="button" disabled={busy || !latestAssessment?.machine_passed || !attest.sources || !attest.claims || !attest.rights} onClick={() => void recordReview("editorial_review_passed")}>편집 검토 통과 기록</button></div><p>편집 검토 기록은 유지됩니다. 예약 Auto 범위에서는 별도의 최초 게시 승인 없이 자동 발행 정책과 안전 게이트를 적용합니다.</p></section>
           {detail.item.generation_method !== "manual_codex_import" && <ScheduledBloggerPublication detail={detail} selectedTargetId={publicationTargetId} setSelectedTargetId={setPublicationTargetId}
             busy={busy} onRefresh={() => void refreshScheduledPublication()} />}

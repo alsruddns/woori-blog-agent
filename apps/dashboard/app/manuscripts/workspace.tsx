@@ -134,7 +134,7 @@ export default function ManuscriptWorkspace() {
       const result = await response.json() as Row;
       if (detailSequence.current === requestId) {
         setDetail(result);
-        const localeLabel = ({ ko: "이슈", en: "Issues", ja: "話題", "zh-CN": "热点" } as Record<string, string>)[value(result, "language_code")];
+        const localeLabel = ({ ko: "이슈", en: "Issues", ja: "話題", "zh-CN": "热点", de: "Aktuelles", "pt-BR": "Atualidades", vi: "Tin tức" } as Record<string, string>)[value(result, "language_code")];
         const existingLabels = ((result.editorial_versions as Row[] | undefined)?.[0]?.blogger_labels as string[] | undefined) ?? [];
         setTargetBlogRecordId(value((result.editorial_versions as Row[] | undefined)?.[0] ?? {}, "target_blog_id"));
         setGoogleTrendsBased(Boolean(result.google_trends_based) || Boolean(localeLabel && existingLabels.includes(localeLabel)));
@@ -255,7 +255,7 @@ export default function ManuscriptWorkspace() {
   const submitRevision = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); if (!detail) return;
     const form = new FormData(event.currentTarget);
-    const languageLabel = ({ ko: "이슈", en: "Issues", ja: "話題", "zh-CN": "热点" } as Record<string, string>)[value(detail, "language_code")];
+    const languageLabel = ({ ko: "이슈", en: "Issues", ja: "話題", "zh-CN": "热点", de: "Aktuelles", "pt-BR": "Atualidades", vi: "Tin tức" } as Record<string, string>)[value(detail, "language_code")];
     const selectedLabels = String(form.get("labels") ?? "").split(",").map(item => item.trim()).filter(Boolean);
     const bloggerLabels = googleTrendsBased && languageLabel
       ? [languageLabel, ...selectedLabels.filter(label => label.toLocaleLowerCase() !== languageLabel.toLocaleLowerCase())]
