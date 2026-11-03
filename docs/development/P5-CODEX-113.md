@@ -71,6 +71,8 @@
 - `services/api/tests/test_language_codes.py`
 - `services/api/tests/test_multilingual.py`
 - `apps/dashboard/app/api/config/[...path]/route.ts`
+- `apps/dashboard/app/blogger/manager.tsx`
+- `apps/dashboard/app/config/manager.tsx`
 - `apps/dashboard/app/imports/external-import-workspace.tsx`
 - `apps/dashboard/app/manuscripts/workspace.tsx`
 - `apps/dashboard/app/publishing/publication-manager.tsx`
@@ -92,16 +94,18 @@
 1. The six operator-reported DE/PT-BR/VI Codex Desktop schedules were not in the actual Local automation registry. The owner must make those already-created tasks visible in the current Local project/account, after which their true IDs, schedules, timezone, enabled state, and next runs can be verified. No task was synthesized to fill the gap.
 2. No scheduled article was generated or imported for DE/PT-BR/VI. No content-generation provider was enabled by language registration.
 3. Blogger write permission was not tested; no publication approval or write gate was changed. New blogs remain non-publishable until the separate existing eligibility and approval gates pass.
-4. The code commit is `18f32b8217918ff5abe12fa5942debe73c29528a`; the P113 final operations/documentation commit and origin push are pending.
 
 ## Commit
 
 - Implementation commit: `18f32b8217918ff5abe12fa5942debe73c29528a`.
-- Final documentation commit: recorded in the subsequent Git history entry for this file.
+- Dashboard follow-up commit: `fe840a83de6e397940ff84eba765fb625602ee0e`.
+- Reflection/documentation commit: recorded in the subsequent Git history entry for this file.
 
 ## Follow-up UI state and final reflection
 
 - Follow-up UI commit: `fe840a83de6e397940ff84eba765fb625602ee0e`; the Blogger/language manager explicitly labels inactive ZH-CN as `운영 중단` while preserving historical records.
 - Before this follow-up is reflected, API PID 27000, Dashboard PID 31636, Research Worker PID 31708, and Publication Worker PID 8824 were still healthy. API and both worker heartbeats reported applied source `18f32b8217918ff5abe12fa5942debe73c29528a`; Dashboard also served the prior build. No active authoring or publication work was found, and no process was force-stopped.
-- The final Dashboard-only reflection and post-reflection browser check are pending. The verified-change script requires a clean tracked worktree; the documentation update is intentionally committed before invoking it. Existing unrelated untracked files/directories and stash are preserved.
-- Follow-up append-only runtime audit: event `agent.p5_codex_113.runtime_reflected`, ID 313859. A completion event and its ID will be recorded after final reflection and remote verification.
+- Dashboard-only reflection completed by `scripts/apply-verified-changes.ps1 -Apply -Confirm:$false`: the Dashboard stopped gracefully and restarted as PID 4200, serving the committed build `02b823c8dfcee9736807550de63361e52d83ecea`; API and both Workers remained running. API PID 27000, Research Worker PID 31708, and Publication Worker PID 8824 retained fresh health/heartbeats and revision 16. No active authoring job or live-due publication job was observed.
+- Post-reflection browser verification: `/blogger`, `/config`, and `/imports` returned HTTP 200 at 1440×1000 and 390×844. No horizontal overflow or page errors. `/blogger` and `/config` visibly showed ZH-CN and `운영 중단`; inactive ZH-CN was absent from the active Import language selector.
+- Full safe-reflection checks passed: API suite 64 passed, Ruff, mypy, wheel build, Dashboard ESLint, TypeScript typecheck, and production build. Earlier focused suite: 80 passed. Blogger writes remained 0.
+- Append-only audit events: start ID 313359; runtime reflection ID 313859; completion ID 313878. No schema migration was required. Existing untracked artifacts and `stash@{0}` were preserved.
