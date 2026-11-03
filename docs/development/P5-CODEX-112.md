@@ -58,6 +58,7 @@ DB Migration은 추가하지 않았다. 운영 콘텐츠·OAuth 연결·Blogger 
 - 실제 Blogger API 쓰기/연결 해제: 0건. DB 설정/연결 변경: 0건.
 - append-only PostgreSQL 실행 감사: `agent.p5_codex_112.completed`, event ID `312788`, 2026-11-03 11:37:18 KST. 작업 ID·브랜치·검증 요약만 기록했다.
 - 운영 반영 보호 차단 감사: `agent.p5_codex_112.reflection_blocked`, event ID `312805`, 2026-11-03 11:41:38 KST. 연결된 Dashboard를 강제 종료하지 않았고 API는 기존 stopped 상태, Worker는 기존 heartbeat 상태로 보존했다.
+- 최종 반영 재시도 감사: `agent.p5_codex_112.reflection_retried`, event ID `312816`, 2026-11-03 11:44:18 KST. Dashboard HTTP 200과 Worker heartbeat를 보존했고, 활성 연결로 인해 graceful 반영을 보류했다.
 - 최초 서비스 반영 사전 검증에서 발견된 mypy 오류 3건과 후속 동적 row 타입 경고 1건을 모두 수정했다. 마지막 검증은 Ruff·mypy·격리 wheel build·API tests 30건·ESLint·TypeScript·격리 Next Production Build까지 통과했다.
 
 ## 운영 반영 및 남은 항목
