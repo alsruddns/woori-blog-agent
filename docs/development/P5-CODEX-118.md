@@ -62,9 +62,11 @@
 
 ## 배포·커밋·잔여 작업
 
-- 운영 DB Migration은 적용됨. API/Dashboard/Research Worker는 이 기록을 작성할 당시 기존 HEAD 프로세스로 실행 중이며 새 코드 반영 재기동은 아직 남아 있음.
-- Publication Worker heartbeat는 fresh, 실행 중 Blogger writes/queue 없음 확인. 설정은 변경하지 않음.
-- 최종 lint/type/build/test 결과 후 `scripts/apply-verified-changes.ps1 -Apply`의 검증 및 안전 재기동 절차를 사용해 커밋 소스를 반영할 예정.
-- 커밋 해시: 구현 커밋 후 다음 기록으로 연결.
+- 운영 DB Migration 084 적용 완료. API, Dashboard, Research Worker, Publication Worker를 저장소의 `scripts/apply-verified-changes.ps1 -Apply` 절차로 순차 graceful stop/start 함. 정상 Blogger 쓰기 중이 아니고 게시 큐가 비어 있음을 확인한 뒤 교체함. 강제 종료 및 PostgreSQL 재시작은 없었음.
+- 재기동 후 API PID 24316 및 Dashboard PID 27356의 HTTP GET 200, Research Worker PID 20256 및 Publication Worker PID 5912의 fresh heartbeat 확인. 각 프로세스의 적용 커밋은 `f7ad7a27d68ee1a01bc3eb30883ab40ae45b2104`.
+- 재기동 후에도 Schema 84, 새 geo mapping 3건, automation Revision 18, Trends ON/30분, global publish 15분, daily LIVE limit 100, 중국어 블로그 inactive를 확인함. 활성 Bloggers 6개 및 기존 15개 예약 자동화 설정을 변경하지 않음.
+- 최종 검증: Backend 집중 테스트 59 passed; Ruff, API type check, wheel build, Dashboard lint/typecheck/production build passed; Playwright desktop/mobile 6 passed. `PYTEST_ADDOPTS=--basetemp .pytest-p118-verify2`로 Windows 임시 디렉터리 권한 문제를 격리함. 이 과정에서 최초 검증은 unused test local 변수와 pytest temp cleanup 권한 때문에 서비스 중지 전 안전하게 중단됐고, 수정·격리 후 전체 검증 및 반영 성공.
+- 구현 커밋: `f7ad7a27d68ee1a01bc3eb30883ab40ae45b2104`. 개발 기록의 배포 후속 커밋은 git history에서 확인.
+- 실제 Google Trends RSS 요청, 신규 Codex Trends 원고/Import 및 Blogger POST는 0건. 실제 국가별 feed 수집·후속 Import는 다음 정상 슬롯에서 관찰해야 함.
 - 관련 문서: `AGENTS.md`, `docs/operations/zero-cost-policy.md`.
-- 남은 문제: 운영 서비스 최신 소스 재기동·HTTP/heartbeat 재확인, 실제 DE/BR/VN 다음 수집 슬롯 검증, 외부 Codex 작성/Import 검증. Trends 자동 Blogger 발행은 정책상 본 작업 범위에서 허용되지 않음.
+- 남은 문제: 실제 DE/BR/VN 다음 30분 수집 슬롯과 후속 Codex 작성/Import를 운영에서 확인해야 함. Trends 자동 Blogger 발행은 저장소 정책상 본 작업 범위에서 허용되지 않으며 Import 이후 발행 작업 생성은 하지 않음.
