@@ -42,7 +42,7 @@
 - additive Migration 085를 적용했다. 두 기존 CHECK 제약을 `languages(code)` FK로 대체해 신규 언어는 등록 레지스트리로 제한하고 기존 데이터를 보존한다. API의 active-language 검사와 운영 발행 정책은 변경하지 않았다.
 - 적용 후 schema version 85. 기존 데이터 건수: external imports 169, content versions 521, publishing jobs 46, publishing records 21, audit events 144771. 운영 설정 revision 18 및 값은 유지됐다. Google Trends 30분, 자동 발행 및 승인, 긴급 정지 등 P119 대상 외 설정을 수정하지 않았다.
 - Migration 상태 검증: `scripts/migrate.py --status` → `woori_blog_agent`, schema 85.
-- API `http://127.0.0.1:8100/health`와 Dashboard `http://127.0.0.1:3100/`는 HTTP 200. Research Worker PID 20256 및 Publication Worker PID 5912의 heartbeat는 최신이었다. Worker 재시작은 불필요해 수행하지 않았다.
+- 최초 구현 검증 시 API `http://127.0.0.1:8100/health`와 Dashboard `http://127.0.0.1:3100/`는 HTTP 200. Research Worker PID 20256 및 Publication Worker PID 5912의 heartbeat는 최신이었다.
 - 실제 Blogger API POST 횟수: 0. 실제 Blogger 글을 생성하지 않았다.
 
 ## 수정 파일
@@ -79,3 +79,14 @@
 - 상태: 코드, Migration, 격리 Import 검증 완료. 실제 Desktop 예약 원고 작성·Import는 다음 실행 확인 대기.
 - 커밋: 후속 `git log` 기록에서 확인.
 - 원격: `origin/develop` 푸시 결과는 작업 종료 보고에 기록.
+
+## 후속 서비스 반영 기록
+
+- 시각: 2026-11-03 17:08 KST
+- 변경된 `automation_invocation.py`는 API의 scheduled receipt/pending 코드와 Research/Publication Worker가 공유하므로 기존 프로세스 반영을 위해 서비스 재시작이 필요했다.
+- 먼저 프로젝트 안전 반영 스크립트를 실행했으나 pytest가 테스트 종료 정리 중 Windows 기본 임시 폴더 권한 오류로 종료됐다. 이 시도는 서비스 정지 전에 실패했으며 기존 서비스는 건드리지 않았다.
+- 프로젝트 내부의 격리 basetemp로 검증을 다시 수행했다. 변경 범위 테스트 50건 통과, Ruff·Mypy·wheel·Dashboard production build가 통과했다. pytest cache 디렉터리 권한 관련 비치명 경고 1건이 있었고 임시 테스트 정리는 정상 완료됐다.
+- 검증 후 `scripts/apply-verified-changes.ps1`가 API, Publication Worker, Research Worker를 정상 종료하고 커밋 `952e4f03d2ae36533fa9a634a0bbc497f3b4682b` 기준으로 재기동했다. Worker는 현재 동기 작업 주기를 마친 뒤 종료했으며 강제 종료는 없었다. Dashboard는 변경 대상이 아니어서 재기동하지 않았다.
+- 반영 후 API PID 37580, Research Worker PID 22224, Publication Worker PID 11796. Worker heartbeat는 최신이며 API와 Dashboard HTTP 200, schema version 85를 재확인했다. Publication Worker의 대기 큐는 0건으로 확인됐다.
+- 자동 발행 운영 승인 상태는 OFF, Blogger 실제 쓰기는 0건이다. 서비스 반영 이벤트는 PostgreSQL `agent.p5_codex_119.services_reflected`에 비밀정보 없이 추가했다.
+- 후속 개발 기록 커밋은 P119 코드 커밋 이후 문서만 갱신한다. 따라서 실행 코드가 반영된 커밋은 `952e4f03d2ae36533fa9a634a0bbc497f3b4682b`이고, 최종 문서 커밋은 `git log`로 확인한다.
