@@ -25,7 +25,7 @@
 
 실패 Job 대상 Trend Journal EN의 실제 Blog ID `5240203250707821039`를 운영 DB에서 확인했다. 승인된 Blogger 읽기 정책으로 원격 LIVE 및 Draft 목록을 각각 조회해 총 28개 게시물을 확인했고, 제목 기반 중복 검사는 `clear`를 반환했다. 이 읽기 결과는 해당 조회 시점 및 스캔한 Blogger 목록 기준이며 게시 요청은 하지 않았다. 읽기 호출은 감사 로그에 남았다.
 
-실패 원고는 원격 중복 근거가 없어 명시적 새 요청의 대상이 될 수 있지만, 이 변경은 Job을 재시도·재등록하지 않았다. 현재 전역 공개 승인 상태는 비활성이고 운영 모드도 `manual`이다. 따라서 실제 공개 쓰기는 여전히 차단되어 있으며 관리자의 새 명시적 발행 요청 및 현재 승인 게이트 통과가 필요하다.
+실패 원고는 원격 중복 근거가 없어 명시적 새 요청의 대상이 될 수 있지만, 이 변경은 Job을 재시도·재등록하지 않았다. 현재 Automation revision 18의 `automatic_publication_operator_approved`는 ON이나, Blogger 공개 쓰기 별도 승인(`public_post_publish`)은 없고 운영 모드는 `manual`, `blogger_write_mode=manual_only`, 긴급 정지는 OFF이다. 따라서 allowlist 수정이 공개 쓰기 승인을 우회하지 않는다. 기존 실패 Job은 실패 상태로 남으며 새 명시적 발행 요청 및 해당 lane의 현재 승인 게이트 통과가 필요하다.
 
 운영 DB의 Blog 설정은 EN/KO/JA/DE/PT-BR/VI 6개 활성, ZH-CN 비활성으로 확인했다. 각 활성 Blog 레코드는 연결 상태 `connected` 및 Blogger 쓰기 OAuth scope를 보유한다. 이 DB 매핑 확인은 이 작업에서 각 Blog의 실제 API 쓰기 가능성 테스트를 뜻하지 않는다. Blogger API 쓰기 권한은 Mock 외부에서 호출하지 않았다.
 
@@ -48,7 +48,9 @@
 
 ## 운영 반영 및 상태
 
-현재 서비스 반영 전 PID는 Dashboard 28792, API 9192, Research Worker 31708, Publication Worker 17108이며 Worker heartbeat는 fresh였다. Publication Worker는 실패 Job 외에 due/queued LIVE 작업이 0건이었다. 정상 종료를 보장하는 프로젝트의 `scripts/apply-verified-changes.ps1 -Apply`로 변경 검증과 API/Publication Worker 코드 반영을 수행한다. 강제 종료, 기존 실패 Job 자동 재실행은 하지 않는다. 반영 후 실제 PID, heartbeat, 설정 revision, queue 상태를 아래에 추가한다.
+반영 전 PID는 Dashboard 28792, API 9192, Research Worker 31708, Publication Worker 17108이며 Worker heartbeat는 fresh였다. Worker는 실패 Job 외에 due/queued LIVE 작업이 0건이고 `publishing` Job도 0건이었다. 저장소 반영 스크립트의 전체 검증은 통과했다. 첫 실행은 비대화형 PowerShell `ShouldProcess` 오류로 종료 요청 전 중단되어 아무 프로세스도 바뀌지 않았다. 두 번째 실행은 API를 graceful 종료했으나 기존 브라우저 연결로 Dashboard 종료가 거부되어 나머지 서비스를 중지하지 않았다. API는 즉시 새 코드로 시작했다. 이후 Publication Worker만 프로젝트 `stop.ps1`의 정상 종료 절차로 현재 작업 주기를 마친 뒤 종료하고, `start.ps1`로 재시작했다. 강제 종료나 실패 Job 재실행은 없었다.
+
+반영 후 API PID `20260`, Publication Worker PID `34796`; 둘 다 적용 커밋 `b49f521b247dc7893113825c621751fbfe1aeacd`이다. Worker heartbeat는 fresh이며 Automation revision 18, runtime ack revision 18, engine `automation-controls/3`으로 일치했다. Worker queue는 live queued/due 각 0이고 기존 실패 Job 상태와 재시도 횟수 0이 유지됐다. API `/health`와 Dashboard `/`는 각각 HTTP 200이다. Dashboard PID `28792`는 기존 연결 때문에 교체하지 않았고, 이번 P116은 Dashboard 소스 변경이 없다. Research Worker PID `31708`도 유지됐다. API·Worker가 수정 코드를 사용하며 기존 UI 서비스는 계속 응답한다.
 
 ## 남은 문제 / 제한
 
@@ -58,7 +60,10 @@
 
 ## 마무리 기록
 
-- 최종 테스트: focused 31 passed, publication regression 132 passed
-- 최종 서비스 반영: 기록 예정
-- 완료 감사 이벤트: 기록 예정
-- 커밋: 기록 예정 (이 문서 수정 이후 `git log`로 확인)
+- 최종 테스트: P116 focused 31 passed, 6개 발행 회귀 테스트 파일 132 passed, 저장소 반영 검증 API tests 41 passed; Ruff, mypy, wheel build, Dashboard lint/typecheck/build 통과. pytest 기본 캐시 폴더의 Windows 권한 경고는 있었으며 isolated `--basetemp` 재검증은 132건 정상 종료했다.
+- 운영 쓰기 호출: 0. 원격 상태 확인은 Blogger 읽기 전용 목록 2회 요청, LIVE/Draft 합계 28건 스캔, 중복 상태 `clear`.
+- DB 백업: `backups/20261103T051845Z.dump` (42,678,510 bytes), 카탈로그 검증됨. Migration 없음. 설정 revision 18 유지.
+- 기존 실패 Job `cd2cf44a-98f6-47fc-8201-b801c13789e9`는 재시도하지 않았고, 원격 일치 없음은 조회 시점 스캔 결과다. Dashboard/Research Worker는 기존 PID 유지.
+- 완료 감사 이벤트 `agent.p5_codex_116.completed`, ID `315553`.
+- 구현 커밋: `b49f521b247dc7893113825c621751fbfe1aeacd`.
+- 개발 기록 최종 커밋: 이 문서가 들어간 후속 커밋을 `git log`로 확인.
