@@ -139,7 +139,11 @@ def test_source_date_precision_and_unopened_blocks_are_preserved_as_evidence():
 
 def test_trends_origin_is_distinct_from_scheduled_and_manual():
     item=valid_item()
-    article={**{k:item[k] for k in ('title','body_markdown','sources','claims','seo')},'source_region':'ZZ'}
+    body=("## Summary Deck\n\nThe notice sets out a specific policy development and its stated effective date for affected readers. [source:src-official-1]\n\n"
+          "## What happened\n\nThe agency notice states that the rule is scheduled to take effect on the date it published. [source:src-official-1]\n\n"
+          "## What readers should know\n\nThe notice describes the planned change and does not establish that every case will be affected. [source:src-official-1]")
+    article={**{k:item[k] for k in ('title','sources','claims','seo')},'body_markdown':body,'source_region':'ZZ',
+             'event_focus':{'summary':'The notice describes a specific policy development and its stated effective date.','status':'announced','source_ids':['src-official-1']}}
     job={'id':uuid4(),'trend_request_id':uuid4(),'job_type':'google_trends','category':'technology',
          'language_code':'ko','target_country':'KR','model':'gpt-6-luna'}
     proof={'opened_urls':{'https://example.gov/policy':datetime.now(UTC).isoformat()}}
@@ -158,6 +162,45 @@ def test_trends_output_contract_distinguishes_article_from_insufficient_evidence
         keyword_jobs.TrendArticleResult.model_validate({'status':'article','article':None,'reason':None})
     schema=keyword_jobs.trend_output_schema()
     assert set(schema['required'])=={'status','article','reason'}
+    article_schema=schema['$defs']['TrendArticleOutput']
+    assert 'event_focus' in article_schema['required']
+    assert article_schema['properties']['sources']['minItems']==1
+    assert article_schema['properties']['claims']['minItems']==1
+
+
+def test_trends_article_requires_event_anchor_openable_sources_and_claim_traceability():
+    item=valid_item()
+    body=("## Summary Deck\n\nA confirmed policy notice changes the next filing date for affected applicants. [source:src-official-1]\n\n"
+          "## What happened\n\nThe agency notice states that the filing rule will take effect on its published date. [source:src-official-1]\n\n"
+          "## What readers should know\n\nThe notice describes the planned change and does not establish that every case is affected. [source:src-official-1]")
+    source={**item['sources'][0],'source_id':'src-official-1'}
+    claim={**item['claims'][0],'source_ids':['src-official-1'],'evidence_excerpt':'The rule is scheduled to take effect on the stated date.'}
+    payload={'title':'Agency sets a filing rule effective date','source_region':'US','body_markdown':body,
+             'sources':[source],'claims':[claim],'seo':item['seo'],
+             'event_focus':{'summary':'The agency published a notice scheduling a filing-rule change for a stated effective date.',
+                            'status':'announced','source_ids':['src-official-1']}}
+    parsed=keyword_jobs.TrendArticleOutput.model_validate(payload)
+    assert parsed.event_focus.status=='announced'
+    assert len(parsed.claims)==1
+    with pytest.raises(ValueError,match='trend_event_focus_source_missing'):
+        keyword_jobs.TrendArticleOutput.model_validate({**payload,'event_focus':{**payload['event_focus'],'source_ids':['missing']}})
+    with pytest.raises(ValueError,match='trend_claim_source_excerpt_required'):
+        keyword_jobs.TrendArticleOutput.model_validate({**payload,'claims':[{**claim,'source_ids':[]}]})
+    with pytest.raises(ValueError,match='trend_body_citation_invalid'):
+        keyword_jobs.TrendArticleOutput.model_validate({**payload,'body_markdown':body.replace('src-official-1','unknown')})
+
+
+def test_trends_authoring_prompt_requires_confirmed_event_not_keyword_analysis():
+    prompt=keyword_jobs.trend_article_instructions(
+        {'keyword':'central bank decision','language_code':'de','target_country':'DE'},
+        {'source_country':'DE','target_country':'DE'},
+    )
+    assert 'one specific, source-confirmed real-world event or development' in prompt
+    assert 'none is evidence that an event happened' in prompt
+    assert 'Do not write a report about the search term' in prompt
+    assert 'status="insufficient_evidence"' in prompt
+    assert 'Claims remain unverified' in prompt
+    assert 'generic guide' in prompt
 
 
 def test_trends_date_only_source_metadata_uses_observed_time_without_fabricating_publication_time():
