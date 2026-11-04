@@ -54,6 +54,7 @@ No migration was added. No Blogger API write, draft creation, or external Blogge
 
 - Focused publication regression suite: 150 passed, 0 failed. One pytest cache permission warning was emitted; it did not affect test results.
 - Additional Import/Trends suite: 37 passed, 2 failed in existing category/schema registry assertions (`general-news` mismatch). Those assertions are outside the sanitizer/policy diff and match the unrelated taxonomy/schema failures noted in P128; no category/schema files were changed.
+- Verified reflection script: changed-file checks passed (125 tests passed), Ruff, mypy, wheel build, and isolated Dashboard production build passed. Pytest emitted one cache permission warning.
 - Ruff on six changed API modules: passed.
 - Mypy on six changed API modules: passed.
 - Python compile on changed modules: passed.
@@ -63,11 +64,13 @@ No migration was added. No Blogger API write, draft creation, or external Blogge
 
 ## Reflection and remaining limits
 
-The first verified-reflection attempt stopped during changed-file Ruff validation because a new test import was out of order; it stopped before any service was stopped. The import order was corrected and will be revalidated. The existing discarded manuscript remains blocked. No actual publication was tested or performed. Automatic posting still follows the current database-controlled approval and per-blog policy state; this work does not activate or bypass it.
+The first verified-reflection attempt stopped during changed-file Ruff validation because a new test import was out of order; it stopped before any service was stopped. The import order was corrected and the next verified-reflection run passed all checks. The script gracefully stopped API and both Workers, then started API PID 10688, Research Worker PID 32948, and Publication Worker PID 32812 at code revision `67e9218c1fecafffab079da4e960fbd979642dbb`. API `/health` and Dashboard `/` both returned HTTP 200. Dashboard PID 7656 remained on `6e7541524c421c23d2fcdd1011a32660474cb83b` because no Dashboard files changed. Research Worker heartbeat is fresh. Publication Worker runs the new revision but its heartbeat is `degraded` with sanitized error type `InsufficientPrivilege` / SQLSTATE `42501`; the logs do not identify a table or function beyond PostgreSQL's ACL check. No live/due queued work was present. This worker-health issue is not represented as a successful operational recovery and needs a separate permission diagnosis before relying on publication processing.
+
+After reflection, the actual failed manuscript dry run still produced 4,216 characters of body and 4,086 characters of safe HTML, with `READY_WITH_REMEDIATION`, zero content-policy blockers, and 17 follow-ups. The full manual decision still correctly blocks on `manuscript_discarded`. The existing discarded manuscript remains blocked. No actual publication was tested or performed. Automatic posting still follows the current database-controlled approval and per-blog policy state; this work does not activate or bypass it.
 
 ## Final record
 
-- End code HEAD: filled after commit.
-- Service reflection: filled after the verified reflection procedure.
+- End code HEAD: `67e9218c1fecafffab079da4e960fbd979642dbb` (code reflected in API and both Workers).
+- Service reflection: API and Research Worker healthy; Publication Worker revision applied but degraded by `InsufficientPrivilege`; Dashboard unaffected and left running on its prior revision.
 - Push: filled after verifying `origin/develop`.
 - Remaining issue: the actual failed manuscript is discarded and requires an explicit, separate restore decision; no automatic restore or publish was performed.
