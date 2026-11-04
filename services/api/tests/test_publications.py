@@ -354,7 +354,7 @@ def test_scheduled_first_post_status_exposes_exact_blockers_without_writing(monk
 
     monkeypatch.setattr(publications, "connection", fake_connection)
     monkeypatch.setattr(publications, "_candidate", lambda *_args: {"content_version_id": content_version_id})
-    monkeypatch.setattr(publications, "_manual_publication_snapshot", lambda *_args: {
+    monkeypatch.setattr(publications, "_manual_publication_snapshot", lambda *_args, **_kwargs: {
         "title": "테스트 원고", "body": body, "title_sha256": "a" * 64,
         "body_sha256": digest, "html_sha256": "b" * 64,
         "generation_method": generation_method, "followups": [],
@@ -903,7 +903,16 @@ def test_manual_live_request_commits_approval_job_and_followups_atomically_in_is
         (language,blog_record_id,profile),
     )
     candidate = publications._candidate(conn, version_id, blog_record_id)
-    snapshot = publications._manual_publication_snapshot(conn, candidate)
+    snapshot = publications._manual_publication_snapshot(conn, candidate, persist_search_description=True)
+    assert snapshot["seo"]["search_description"]
+    assert snapshot["seo"]["character_count"] <= 150
+    assert snapshot["seo"]["status"] == "STORED_LOCALLY"
+    description_audit_count = conn.execute(
+        """SELECT count(*) AS n FROM audit_events
+        WHERE event_type='blogger.search_description.generated'
+          AND payload->>'content_version_id'=%s""", (str(version_id),),
+    ).fetchone()["n"]
+    assert description_audit_count == 1
     other_blog = conn.execute("SELECT id FROM blogger_blogs WHERE language_code<>%s LIMIT 1", (language,)).fetchone()['id']
     wrong = publications._candidate(conn, version_id, other_blog)
     assert 'blog_language_mismatch' in publications._manual_publication_blockers(
@@ -943,6 +952,11 @@ def test_manual_live_request_commits_approval_job_and_followups_atomically_in_is
                         (payload["idempotency_key"],)).fetchone()["n"] == 1
     assert conn.execute("SELECT count(*) AS n FROM manual_publication_approval_events WHERE idempotency_key=%s",
                         (payload["idempotency_key"],)).fetchone()["n"] == 1
+    assert conn.execute(
+        """SELECT count(*) AS n FROM audit_events
+        WHERE event_type='blogger.search_description.generated'
+          AND payload->>'content_version_id'=%s""", (str(version_id),),
+    ).fetchone()["n"] == 1
     attest = conn.execute("SELECT reviewed_exact_content,assertions_safe_to_publish,rights_privacy_harm_checked FROM manual_publication_approval_events WHERE idempotency_key=%s",
                           (payload["idempotency_key"],)).fetchone()
     assert not any(attest.values())
@@ -1076,7 +1090,7 @@ def test_emergency_stop_blocks_live_job_before_any_blogger_request(monkeypatch: 
 
     monkeypatch.setattr(publication_worker, "connection", fake_connection)
     monkeypatch.setattr(publications, "_candidate", lambda *_: {"id": content_version_id})
-    monkeypatch.setattr(publications, "_manual_publication_snapshot", lambda *_: {
+    monkeypatch.setattr(publications, "_manual_publication_snapshot", lambda *_, **__: {
         "title": "A title", "body": "A body", "safe_html": "<p>A body</p>",
         "blogger_labels": [], "title_sha256": "a" * 64, "body_sha256": "b" * 64,
         "html_sha256": "c" * 64, "followups": [],

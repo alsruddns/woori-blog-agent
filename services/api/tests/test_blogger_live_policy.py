@@ -483,6 +483,9 @@ def test_live_creation_uses_is_draft_false_and_requires_verified_live_readback(m
             return httpx.Response(200, json={"id": "123", "url": "https://trend-en.blogspot.com"}, request=request)
         if request.method == "POST":
             assert request.url.params.get("isDraft") == "false"
+            body = json.loads(request.content.decode("utf-8"))
+            assert set(body) == {"title", "content", "labels"}
+            assert body["labels"] == ["Policy"]
             return httpx.Response(200, json={"id": "456", "blog": {"id": "123"}, "status": "LIVE",
                 "title": "Verified title", "content": "<p>Verified body</p>",
                 "url": "https://trend-en.blogspot.com/2026/11/verified.html", "published": "2026-11-03T00:00:00Z"}, request=request)
@@ -491,7 +494,7 @@ def test_live_creation_uses_is_draft_false_and_requires_verified_live_readback(m
             "url": "https://trend-en.blogspot.com/2026/11/verified.html", "published": "2026-11-03T00:00:00Z"}, request=request)
 
     publisher = blogger_writes.BloggerLivePublisher(httpx.MockTransport(handler))
-    result = publisher.create_live("live-once", blog_record_id, "Verified title", "<p>Verified body</p>")
+    result = publisher.create_live("live-once", blog_record_id, "Verified title", "<p>Verified body</p>", labels=["Policy"])
     assert result["status"] == "LIVE" and result["readback_verified"] is True
     assert result["post_id"] == "456" and result["url"].endswith("verified.html")
     assert [request.method for request in calls] == ["GET", "POST", "GET"]

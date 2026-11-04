@@ -89,6 +89,7 @@
 .packageView dt { color: #68766f; }
 .packageView dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
 .packageView button { margin-block: 8px; }
+.seoActions { display: flex; flex-wrap: wrap; gap: 8px; }
 
 @media (max-width: 640px) {
   .iframe { height: 62vh; }

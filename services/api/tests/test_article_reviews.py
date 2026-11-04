@@ -501,8 +501,8 @@ def test_publication_package_is_deterministic_non_submitting_and_fails_closed() 
     assert first["request"]["query"] == {"isDraft": True}
     assert set(first["request"]["body"]) == {"title", "content", "labels"}
     assert first["seo"]["search_description_api_supported"] is False
-    assert first["seo"]["search_description_storage_status"] == "content_version_stored"
-    assert first["seo"]["search_description_blogger_status"] == "manual_entry_required"
+    assert first["seo"]["search_description_storage_status"] == "STORED_LOCALLY"
+    assert first["seo"]["search_description_blogger_status"] == "APPLY_PENDING"
     assert first["seo"]["html_meta_description_verified"] is False
     assert first["seo"]["robots_indexing_status"] == "unverified"
     assert first["seo"]["title_candidates"] == ["정책 변화와 핵심 쟁점"]

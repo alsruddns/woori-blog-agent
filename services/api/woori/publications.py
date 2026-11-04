@@ -743,7 +743,7 @@ def create_manual_live_request(request: ManualLiveRequestInput) -> dict[str, Any
         if row is None:
             raise HTTPException(404, "Content version or registered blog not found")
         row = dict(row)
-        snapshot = _manual_publication_snapshot(conn, row)
+        snapshot = _manual_publication_snapshot(conn, row, persist_search_description=True)
         expected = (
             (request.expected_title_sha256, snapshot.get("title_sha256")),
             (request.expected_body_sha256, snapshot.get("body_sha256")),
@@ -1253,7 +1253,9 @@ def _candidate(conn: Any, version_id: UUID, blog_id: UUID) -> dict[str, Any] | N
     )
 
 
-def _manual_publication_snapshot(conn: Any, row: dict[str, Any] | None) -> dict[str, Any]:
+def _manual_publication_snapshot(
+    conn: Any, row: dict[str, Any] | None, *, persist_search_description: bool = False,
+) -> dict[str, Any]:
     """Build the exact sanitized manual payload and post-publication follow-ups."""
     from .editorial_html import markdown_to_blogger_html, sanitize_editorial_html
 
@@ -1424,9 +1426,39 @@ def _manual_publication_snapshot(conn: Any, row: dict[str, Any] | None) -> dict[
         followup("other", "low", "일반 품질 적격성 플래그를 재평가하세요. 핵심 안전 검사는 별도로 적용됩니다.")
 
     imported_seo = (imported.get("seo_metadata") or {}) if imported else {}
-    search_description = str(
-        row.get("seo_description") or imported_seo.get("search_description") or ""
-    ).strip()
+    # An imported description belongs to the imported body. If an editorial
+    # revision exists but has no description, generate from that revision
+    # instead of reusing potentially stale import metadata.
+    metadata_description = row.get("seo_description")
+    if not metadata_description and not row.get("editorial_version_id"):
+        metadata_description = imported_seo.get("search_description")
+    stored_search_description = str(metadata_description or "").strip()
+    from .blogger_search_description import (
+        article_revision_sha256,
+        generate_search_description,
+        load_generated_description,
+        persist_generated_description,
+    )
+    locale = str(row.get("version_language") or (imported.get("language_code") if imported else "") or "und")
+    article_sha256 = article_revision_sha256(title=title, body=body, language_code=locale)
+    search_description_metadata = (
+        generate_search_description(
+            title=title, body=body, language_code=locale,
+            existing_description=stored_search_description or None,
+        )
+        if stored_search_description else
+        load_generated_description(conn, content_version_id=content_version_id,
+                                   article_sha256=article_sha256)
+    ) or generate_search_description(title=title, body=body, language_code=locale)
+    if persist_search_description:
+        search_description_metadata = persist_generated_description(
+            conn, content_version_id=content_version_id,
+            editorial_version_id=str(row.get("editorial_version_id") or "") or None,
+            import_version_id=str(imported.get("import_version_id") or "") if imported else None,
+            article_sha256=article_sha256, result=search_description_metadata,
+        )
+    if not search_description_metadata["description"]:
+        followup("other", "low", "검색 설명을 만들 수 있는 기사 본문이 없습니다. Blogger 반영 상태는 미확인입니다.")
     from .publication_policy import evaluate_publication_content
     content_decision = evaluate_publication_content(
         blockers,
@@ -1446,11 +1478,12 @@ def _manual_publication_snapshot(conn: Any, row: dict[str, Any] | None) -> dict[
         "external_content_id": imported.get("external_content_id") if imported else None,
         "generation_method": imported.get("generation_method") if imported else None,
         "seo": {
-            "search_description": search_description or None,
-            "search_description_stored": bool(search_description),
+            **search_description_metadata,
+            "search_description": search_description_metadata["description"] or None,
+            "search_description_stored": search_description_metadata["status"] == "STORED_LOCALLY",
             "blogger_api_supported": False,
-            "manual_entry_required": bool(search_description),
-            "blogger_delivery_status": "manual_entry_required" if search_description else "missing",
+            "manual_entry_required": bool(search_description_metadata["description"]),
+            "blogger_delivery_status": search_description_metadata["blogger_status"],
             "html_meta_description_verified": False,
             "robots_indexing_status": "unverified",
             "canonical_status": "unverified",

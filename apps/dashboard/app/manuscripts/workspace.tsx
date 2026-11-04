@@ -481,12 +481,23 @@ function SeoReadiness({ result }: { result: RenderedPreview }) {
 }
 
 function PublicationPackageView({ result }: { result: RenderedPreview }) {
+  const [copyNotice, setCopyNotice] = useState("");
   const pkg = result.publication_package ?? {};
   const json = JSON.stringify(pkg, null, 2);
   const blockers = Array.isArray(pkg.blockers) ? pkg.blockers as string[] : [];
   const seo = (pkg.seo && typeof pkg.seo === "object" ? pkg.seo : {}) as Row;
   const sources = Array.isArray(pkg.sources) ? pkg.sources as Row[] : [];
   const titleCandidates = Array.isArray(seo.title_candidates) ? seo.title_candidates as string[] : [];
+  const searchDescription = value(seo, "search_description");
+  const copySearchDescription = async () => {
+    if (!searchDescription) return;
+    try {
+      await navigator.clipboard.writeText(searchDescription);
+      setCopyNotice("검색 설명을 클립보드에 복사했습니다. Blogger 글 편집의 검색 설명 칸에 붙여 넣으세요.");
+    } catch {
+      setCopyNotice("클립보드 접근이 차단됐습니다. 설명을 선택해 직접 복사하세요.");
+    }
+  };
   const saveJson = () => {
     const url = URL.createObjectURL(new Blob([json], { type: "application/json;charset=utf-8" }));
     const anchor = document.createElement("a");
@@ -512,10 +523,13 @@ function PublicationPackageView({ result }: { result: RenderedPreview }) {
         content_version_identity_missing: "원고 버전 식별자가 없습니다.",
       } as Record<string, string>)[item] ?? item).join(" · ") : "등록 매핑 조회됨. 별도 운영 승인과 전송 구현이 필요합니다."}</dd>
       <dt>SEO 제목</dt><dd>{value(seo, "title") || "미입력"}{titleCandidates.length > 0 && <ul>{titleCandidates.map(candidate => <li key={candidate}>{candidate}</li>)}</ul>}</dd>
-      <dt>검색 설명</dt><dd>{value(seo, "search_description") || "미입력"} · API 전송 대상이 아니며 Blogger 관리자에서 수동 확인</dd>
+      <dt>검색 설명</dt><dd>{searchDescription || "생성할 기사 본문이 없어 만들 수 없습니다."}</dd>
+      <dt>길이 / 대상 언어</dt><dd>{value(seo, "search_description_character_count") || searchDescription.length}자 · {value(seo, "search_description_language_code") || result.language_code}</dd>
+      <dt>로컬 저장 / Blogger 반영</dt><dd>{value(seo, "search_description_status") === "STORED_LOCALLY" ? "원고 버전 메타데이터 또는 revision 연결 감사 기록에 저장됨" : value(seo, "search_description_status") === "GENERATED" ? "미리보기 생성 · 발행 요청 시 revision 연결 감사 기록에 저장" : value(seo, "search_description_status") === "APPLY_FAILED" ? "본문이 없어 설명 생성 실패 · 발행을 위한 별도 본문 검토 필요" : "상태 미확인"} · {value(seo, "search_description_blogger_status") === "APPLY_PENDING" ? "Blogger 편집기 입력 대기" : value(seo, "search_description_blogger_status") === "APPLY_FAILED" ? "설명 생성 실패" : "반영 상태 미확인"} · API v3 게시물 필드 미지원</dd>
       <dt>실제 테마</dt><dd>{value((pkg.theme_compatibility as Row) ?? {}, "status") === "live_theme_not_inspected" ? "미조회 · 테마별 확인 필요" : "확인 상태 미기록"}</dd>
       <dt>출처</dt><dd>{sources.length ? <ul>{sources.map((source, index) => <li key={`${value(source, "url")}-${index}`}><a href={value(source, "url")} target="_blank" rel="noreferrer">{value(source, "title") || value(source, "url")}</a> · 검증 상태: 미확인</li>)}</ul> : "출처 정보 없음"}</dd></dl>
-    <button type="button" onClick={saveJson}>준비 자료 JSON 저장</button>
+    <div className={styles.seoActions}><button type="button" disabled={!searchDescription} onClick={()=>void copySearchDescription()}>검색 설명 복사</button><button type="button" onClick={saveJson}>준비 자료 JSON 저장</button></div>
+    {copyNotice&&<p role="status">{copyNotice}</p>}
     <details><summary>전체 패키지 JSON 보기</summary><pre className={styles.htmlSource}>{json}</pre></details>
   </section>;
 }

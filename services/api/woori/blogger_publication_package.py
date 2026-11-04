@@ -7,6 +7,8 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
+from .blogger_search_description import generate_search_description
+
 
 def _stable_hash(value: Any) -> str:
     encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -60,6 +62,11 @@ def build_publication_package(
     if not content_version_id:
         blockers.append("content_version_identity_missing")
 
+    search_description = generate_search_description(
+        title=title, body=post_html, language_code=language_code,
+        existing_description=str(seo_metadata.get("search_description") or "") or None,
+    )
+
     # Only documented Blogger Posts fields are placed in the future request body.
     request_body = {"title": title, "content": post_html, "labels": labels}
     package_without_generated_at: dict[str, Any] = {
@@ -87,11 +94,15 @@ def build_publication_package(
         "seo": {
             "title": seo_metadata.get("seo_title"),
             "title_candidates": seo_metadata.get("seo_title_candidates", []),
-            "search_description": seo_metadata.get("search_description"),
+            "search_description": search_description["description"],
+            "search_description_character_count": search_description["character_count"],
+            "search_description_language_code": language_code,
+            "search_description_status": search_description["status"],
+            "search_description_blogger_status": search_description["blogger_status"],
             "search_description_api_supported": False,
-            "search_description_manual_entry_required": bool(seo_metadata.get("search_description")),
-            "search_description_storage_status": "content_version_stored" if seo_metadata.get("search_description") else "missing",
-            "search_description_blogger_status": "manual_entry_required" if seo_metadata.get("search_description") else "not_available",
+            "search_description_html_meta_verified": False,
+            "search_description_manual_entry_required": bool(search_description["description"]),
+            "search_description_storage_status": search_description["status"],
             "html_meta_description_verified": False,
             "robots_indexing_status": "unverified",
             "canonical_status": "unverified",

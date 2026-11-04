@@ -556,7 +556,7 @@ def recover_interval_job(job_id: UUID) -> dict[str, Any]:
                     'account_minimum_interval_not_elapsed','blog_minimum_interval_not_elapsed'}):
             raise GoogleFailure('interval_recovery_state_invalid')
         candidate = publications._candidate(conn, job['content_version_id'], job['blog_id'])
-        snapshot = publications._manual_publication_snapshot(conn, candidate)
+        snapshot = publications._manual_publication_snapshot(conn, candidate, persist_search_description=True)
         blockers = publications._manual_publication_blockers(conn, candidate, snapshot, job['blog_id'], ignore_job_id=job_id)
         approval = conn.execute('SELECT * FROM manual_publication_approval_events WHERE job_id=%s', (job_id,)).fetchone()
         if blockers or not approval or any(approval[k] != snapshot[k] for k in ('title_sha256','body_sha256','html_sha256')):
@@ -598,7 +598,10 @@ def reconcile_interval_draft(job_id: UUID) -> dict[str, Any]:
         ledger=conn.execute('SELECT * FROM blogger_write_operations WHERE idempotency_key=%s',('live:'+key,)).fetchone()
         if not ledger or ledger['status']!='succeeded' or not ledger['result'].get('post_verified'):
             raise GoogleFailure('verified_draft_ledger_required')
-        snapshot=publications._manual_publication_snapshot(conn,publications._candidate(conn,job['content_version_id'],job['blog_id']))
+        snapshot=publications._manual_publication_snapshot(
+            conn, publications._candidate(conn,job['content_version_id'],job['blog_id']),
+            persist_search_description=True,
+        )
         approval=conn.execute('SELECT * FROM manual_publication_approval_events WHERE job_id=%s',(job_id,)).fetchone()
         if not approval or any(approval[k]!=snapshot[k] for k in ('title_sha256','body_sha256','html_sha256')):
             raise GoogleFailure('draft_reconciliation_approval_changed')
@@ -629,7 +632,7 @@ def reconcile_manual_draft(job_id: UUID, post_id: str) -> dict[str, Any]:
         if not job or job['publication_lane'] != 'manual' or job['status'] != 'failed':
             raise GoogleFailure('manual_failed_job_required')
         candidate = publications._candidate(conn, job['content_version_id'], job['blog_id'])
-        snapshot = publications._manual_publication_snapshot(conn, candidate)
+        snapshot = publications._manual_publication_snapshot(conn, candidate, persist_search_description=True)
     remote = blogger_service.post(job['blog_id'], post_id)
     target = BloggerLivePublisher._target(job['blog_id'])
     if (str(remote.get('id')) != post_id or str((remote.get('blog') or {}).get('id')) != target['blog_id']
@@ -678,7 +681,7 @@ def reconcile_published_manual_job(job_id: UUID) -> dict[str, Any]:
             raise GoogleFailure('verified_manual_publish_ledger_required')
         result = ledger['result']
         candidate = publications._candidate(conn, job['content_version_id'], job['blog_id'])
-        snapshot = publications._manual_publication_snapshot(conn, candidate)
+        snapshot = publications._manual_publication_snapshot(conn, candidate, persist_search_description=True)
     remote = blogger_service.post(job['blog_id'], str(result['post_id']))
     target = BloggerLivePublisher._target(job['blog_id'])
     if (remote.get('status') != 'LIVE' or str(remote.get('id')) != str(result['post_id'])
@@ -955,7 +958,7 @@ def process_next_live_job(
                 (job_id, blog_id, version_id),
             ).fetchone()
             candidate = dict(candidate) if candidate else None
-            snapshot = publications._manual_publication_snapshot(conn, candidate)
+            snapshot = publications._manual_publication_snapshot(conn, candidate, persist_search_description=True)
             reasons = publications._manual_publication_blockers(
                 conn, candidate, snapshot, blog_id, ignore_job_id=job_id,
             )
@@ -976,7 +979,9 @@ def process_next_live_job(
         else:
             reasons = list(publications._assess(dict(candidate) if candidate else None)["reasons"])
         if snapshot is None and candidate is not None:
-            snapshot = publications._manual_publication_snapshot(conn, dict(candidate))
+            snapshot = publications._manual_publication_snapshot(
+                conn, dict(candidate), persist_search_description=True,
+            )
         current = conn.execute(
             "SELECT oauth_connection_id,blog_id FROM blogger_blogs WHERE id=%s AND active",
             (blog_id,),
