@@ -71,7 +71,7 @@ export default function PublicationWorkerPanel({refreshKey=0,onOpenImport,onRequ
   return <section className="workspace-panel publication-worker-monitor" aria-labelledby="worker-monitor-title">
     <div className="section-heading"><div><h2 id="worker-monitor-title">{ui.title}</h2><p>{data?.period_label??ui.loading} · {"\ud654\uba74 \ud45c\uc2dc \uc911 10\ucd08\ub9c8\ub2e4 \uac31\uc2e0"}</p></div><button type="button" className="secondary-button" disabled={busy} onClick={()=>setRefresh(value=>value+1)}>{busy?ui.refreshing:ui.refresh}</button></div>
     {error&&<p className="quality-held" role="alert">{error} · {ui.errorTail}</p>}
-    {!data?<p className="loading-state" role="status">Worker\uc640 Job \uc0c1\ud0dc\ub97c \ubd88\ub7ec\uc624\ub294 \uc911\uc785\ub2c8\ub2e4.</p>:<>
+    {!data?<p className="loading-state" role="status">{"\uc6cc\ucee4\uc640 Job \uc0c1\ud0dc\ub97c \ubd88\ub7ec\uc624\ub294 \uc911\uc785\ub2c8\ub2e4."}</p>:<>
       {failureSummary&&<section className="workspace-panel" aria-label={ui.failureSummaryTitle}><h3>{ui.failureSummaryTitle}</h3>
         <p>{ui.unarchived} {failureSummary.active_unarchived_count.toLocaleString("ko-KR")}건 · {ui.archived} {failureSummary.archived_count.toLocaleString("ko-KR")}건</p>
         <div className="worker-monitor-status"><p>{ui.records} {failureSummary.current_record_count.toLocaleString("ko-KR")}건 · {"\uace0\uc720 Import"} {failureSummary.unique_import_count.toLocaleString("ko-KR")}건 · {ui.uniqueManuscripts} {failureSummary.unique_manuscript_count.toLocaleString("ko-KR")}건 · {ui.uniqueVersions} {failureSummary.unique_content_version_count.toLocaleString("ko-KR")}건</p>

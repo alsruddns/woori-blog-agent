@@ -236,7 +236,22 @@ def update_blog(blog_id: UUID, request: LanguageUpdate) -> dict[str, Any]:
 
 @router.post("/profiles")
 def save_profile(request: ProfileInput) -> dict[str, Any]:
-    return save("language_profiles", request.model_dump(), ["language_code", "target_country"])
+    values = request.model_dump()
+    # Keep the source-led operating defaults present for the three original
+    # country profiles when a profile is created or saved with blank fields.
+    defaults = {
+        "search_intent": "Country-specific, source-led news and analysis for local readers.",
+        "generation_policy": "Use reviewed source evidence and the existing scheduled-export workflow; no local generation adapter is enabled.",
+        "localization_policy": "Write in the registered BCP 47 language for the target country; do not disguise foreign news as local.",
+        "seo_policy": "Apply language-specific title, summary, search intent, and verified labels; do not claim unverified SEO checks.",
+    }
+    if (values["language_code"], values["target_country"]) in {
+        ("en", "US"), ("ko", "KR"), ("ja", "JP")
+    }:
+        for key, default in defaults.items():
+            if not str(values[key]).strip():
+                values[key] = default
+    return save("language_profiles", values, ["language_code", "target_country"])
 
 
 @router.post("/policies")

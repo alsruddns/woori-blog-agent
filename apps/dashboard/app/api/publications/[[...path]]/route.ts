@@ -28,7 +28,9 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path?: s
     if (body && Buffer.byteLength(body) > 10000) return NextResponse.json({ error: "Request too large" }, { status: 413 });
     const suffix = route ? `/${path.map(encodeURIComponent).join("/")}` : "";
     const response = await fetch(`${API_BASE}/admin/publications${suffix}${request.nextUrl.search}`, {
-      method: request.method, headers: headers(), body, cache: "no-store", signal: AbortSignal.timeout(10000),
+      // The read-only worker monitor joins the full publication and failure
+      // history. Its normal response can exceed 10 seconds on the local DB.
+      method: request.method, headers: headers(), body, cache: "no-store", signal: AbortSignal.timeout(30000),
     });
     const data: unknown = await response.json();
     return NextResponse.json(data, { status: response.status, headers: { "Cache-Control": "no-store" } });
