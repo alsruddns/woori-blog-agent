@@ -5,6 +5,13 @@ because the local duplicate lookup is unavailable. It does not grant Import or
 publication permission and does not change Automation ID, schedule, target,
 language, research standards, taxonomy, run-mode resolver, or occurrence identity.
 
+For an eligible current run, keep policy inspection concise and spend the turn on
+the actual research and file handoff. A scheduled resolver result with
+`automation_policy.allowed=true` is the required pre-research policy check; run
+the existing policy recheck once immediately before writing. Do not stop because
+the overall duplicate result is `unknown` when local status is definitely clear,
+the draft flag is true and remote status is only `not_checked`.
+
 1. Resolve the actual invocation with `scripts/resolve-codex-automation-run.py`.
    Preserve its actual scheduled/manual classification and confirmed KST slot.
    For a scheduled invocation up to five minutes early, the resolver records
@@ -24,35 +31,47 @@ language, research standards, taxonomy, run-mode resolver, or occurrence identit
    indexes. Scheduled model code must not read .env, tokens, database credentials
    or execute SQL/API calls itself. Only this fixed broker may internally use
    existing service credentials; it exposes no URL, SQL or publication option.
-3. Existing matches still block a new original. A successful local check permits
-   the established incoming -> validation -> exclusive atomic ready handoff.
+3. Existing matches still block a new original. A new article may proceed only
+   when generation preflight explicitly returns `local_status=not_found` or
+   `failed_only` AND `draft_import_allowed=true`. The overall result may remain
+   `unknown` and `remote_status=not_checked`; preserve both values. Any local
+   `unknown`, missing eligibility flag, confirmed match, ambiguous identity, or
+   active duplicate run blocks research and writing. Remote uniqueness is not
+   established here; the normal publication-time check remains mandatory.
    Never use a publication-stage check while drafting, call Blogger, create a
    Publishing Job, or change Google/Auto/emergency-stop settings.
-4. If the result explicitly says `research_allowed=true`,
-   `local_save_allowed=true` and `import_status=pending`, continue source research
-   and writing even if the command exits 3. Preserve `local_status=unknown` and
-   `draft_import_allowed=false`; never rewrite them to clear. Use verified,
-   accessible evidence, rights notes and source/claim mapping exactly as usual.
-   Missing sources, invalid invocation identity, an existing pending file or a
-   confirmed duplicate are not permission to manufacture a second manuscript.
+4. Do not create a new pending manuscript when preflight is unknown or
+   unavailable. The historical pending saver is only for reconciling already
+   existing pending artifacts under its authenticated recovery flow; it is not
+   an alternate path for a new article. Missing sources, invalid invocation
+   identity, an existing pending file or a confirmed duplicate are not
+   permission to manufacture a second manuscript.
 5. Record actual progress (`researching`, `writing`) with the shared progress
    helper. On a real usage limit record `usage_limit_waiting`; never invent token
    balances/reset times or switch providers. Preserve complete existing files.
-6. For an outage manuscript write a complete UTF-8 envelope to a unique
+6. For an eligible new article, write a complete UTF-8 envelope to a unique
    `.local/gpt-scheduled-import/incoming/<name>.part`. Validate with
-   `scripts/validate-scheduled-import.py`. Keep the truthful duplicate/occurrence
-   metadata, original evidence and actual execution time. Do not move it to ready.
-   Run `.venv/Scripts/python.exe scripts/save-pending-manuscript.py <incoming.part>`.
-   Manual Run now envelopes additionally require `--target-blog-id <actual-id>`;
-   they retain manual_codex_import and never receive scheduled provenance.
-7. Saving is local-only, content-hashed and exclusive by invocation/blog/language.
-   A retry must reuse byte-identical content. A changed payload for that identity
-   conflicts; do not replace it or allocate a fresh occurrence. The pending file
-   records manuscript_saved/import_pending, exact slot, topic, target, path, time
-   and duplicate_check_unavailable. No manuscript means do not report saved.
-   The helper also preserves the resolver's actual Desktop session identity.
-   Recovery re-reads that session's trigger and matches its scheduled occurrence
-   or manual run. A configured RRULE alone is insufficient. Missing context is
+   `scripts/validate-scheduled-import.py`; it uses the importer's Pydantic union
+   and accepts both `woori-scheduled-content-import/1.0` and
+   `woori-manual-automation-content-import/1.0`. The latter requires
+   `generation_method=manual_codex_import` and the exact resolver-returned
+   `manual_origin`; never add a scheduled slot to Run now. After preserving the
+   exact generation preflight JSON in a local temporary file, use
+   `scripts/handoff-automation-manuscript.py <incoming.part> --preflight-json
+   <preflight.json>`. It revalidates the exact current Desktop invocation,
+   envelope and eligible local duplicate result, then exclusively publishes the
+   file into `ready/` without overwrite. It does not call an API or Blogger.
+   Manual Run now receives no scheduled Auto authority from this handoff.
+7. Research snapshot, article file, schema validation, ready handoff and Research
+   Import are separate outcomes. Save an actual evidence-backed snapshot through
+   `scripts/write-research-snapshot.py` before writing the envelope. If the
+   snapshot or article cannot be saved and re-read, do not report that stage as
+   complete. Never replace or delete an existing file or allocate a fresh
+   occurrence for a retry. The ready handoff is local-only and exclusive; a
+   Research Worker receipt is required before claiming Import success. The helper
+   also preserves the resolver's actual Desktop session identity. Recovery
+   re-reads that session's trigger and matches its scheduled occurrence or
+   manual run. A configured RRULE alone is insufficient. Missing context is
    review-held; a historical session cannot relabel a newly written draft as its
    scheduled execution (execution time must remain within 6 hours of that start).
    Desktop may append multiple turns to one session transcript. Resolve the
