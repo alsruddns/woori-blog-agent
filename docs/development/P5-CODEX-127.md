@@ -33,3 +33,13 @@
 - `no_supported_body_after_sanitization`인 원고는 수동 revision 없이도 발행을 강제하지 않는다. 이 경우 사실 기반의 유효한 본문을 만들 수 없으므로 보류가 안전하다.
 - Trends의 검증되지 않은 주장과 예약 원고의 검증되지 않은 본문은 각각 기존 근거 검증 및 자동 정제 revision이 처리한다. 검증 상태를 warning만으로 바꾸어 원문 내용을 그대로 공개하지 않는다.
 - 최종 커밋 해시는 후속 Git 이력으로 기록한다.
+
+## P127 운영 반영 업데이트
+
+- 개발 검증 후 커밋 `b77ace192d38937bcd437819a59070ab98982437`를 origin/develop에 푸시했다.
+- 작업 전 운영 DB schema 89, 설정 Revision 20, 발행 간격 15분, LIVE 상한 100건을 확인했다. Migration이나 운영 설정 변경은 필요하지 않았다.
+- 반영 전 큐에는 blocked 3, failed 19, succeeded 24건만 있었고 queued/running 발행 Job 및 실행 중 Blogger 쓰기 시도는 0건이었다.
+- 검증된 서비스 반영 스크립트로 API와 Publication Worker만 graceful restart했다. API HTTP 200, Worker heartbeat 정상, 두 서비스 AppliedCommit은 P127 커밋이다. Dashboard와 Research Worker는 변경 대상이 아니어서 기존 PID/커밋으로 계속 실행 중이다.
+- Trends 수집은 ON/30분, 발행 제한은 15분/KST 100건으로 유지됐다. Blogger 발행 요청 및 테스트 게시물은 0건이다.
+- 서비스 반영 스크립트 변경 범위 테스트 50건 통과, 격리 wheel build 및 Dashboard build 통과. pytest 캐시 경로 권한 경고는 있었고 테스트 결과에는 영향이 없었다.
+- 최종 문서 갱신 커밋은 이 문서 작성 커밋으로 이어서 기록한다.
