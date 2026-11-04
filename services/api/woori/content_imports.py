@@ -1524,7 +1524,8 @@ def create_import_version(import_id: UUID, request: ImportVersionRequest) -> dic
 
 
 def _create_import_version(conn: Any, import_id: UUID, request: ImportVersionRequest) -> dict[str, Any]:
-    conn.execute('SELECT id FROM external_content_imports WHERE id=%s FOR UPDATE', (import_id,))
+    _lock_import_version_chain(conn, import_id)
+    conn.execute("SELECT id FROM external_content_imports WHERE id=%s", (import_id,))
     _require_import_review_schema(conn)
     imported = _require_import(conn, import_id)
     latest = _latest_version(conn, import_id)
@@ -1574,6 +1575,22 @@ def _create_import_version(conn: Any, import_id: UUID, request: ImportVersionReq
         "content_version_id": str(content_version_id),
         "content_sha256": digest, "created_at": version["created_at"], "duplicate": False,
         "generation_ready": False, "publish_ready": False}
+
+
+def _lock_import_version_chain(conn: Any, import_id: UUID) -> None:
+    """Serialize revision creation without granting UPDATE on immutable imports.
+
+    ``external_content_imports`` deliberately grants the application role only
+    SELECT/INSERT. PostgreSQL requires UPDATE for ``SELECT ... FOR UPDATE``,
+    even when the row is never changed, so use a transaction-scoped advisory
+    lock keyed to the import identity instead.
+    """
+    conn.execute(
+        """SELECT pg_advisory_xact_lock(
+            hashtextextended('external-content-import-version:' || %s::text, 0)
+        )""",
+        (import_id,),
+    )
 
 
 def prepare_scheduled_publishable_version(import_id: UUID) -> dict[str, Any]:

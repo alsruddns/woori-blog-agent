@@ -130,6 +130,11 @@ if ($migrationPaths.Count) {
 $affected = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 foreach ($path in $paths) {
   if ($path -match '^apps/dashboard/') { [void]$affected.Add('dashboard'); continue }
+  if ($path -eq 'services/api/woori/content_imports.py') {
+    # The shared import module is loaded by the API and both operational
+    # Workers, including Publication Worker's scheduled/Trends revision path.
+    [void]$affected.Add('api'); [void]$affected.Add('research_worker'); [void]$affected.Add('publication_worker'); continue
+  }
   if ($path -match '^services/api/woori/') {
     if ($path -match '^services/api/woori/(main|.*_routes|operations_dashboard)\.py$') { [void]$affected.Add('api'); continue }
     [void]$affected.Add('api')

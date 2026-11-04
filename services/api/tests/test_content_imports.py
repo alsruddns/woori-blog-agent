@@ -47,6 +47,27 @@ def test_scheduled_origin_reports_sanitized_database_error_classification(
     assert "sensitive database detail" not in response.text
 
 
+def test_import_revision_lock_does_not_require_update_on_immutable_imports() -> None:
+    class RecordingConnection:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, tuple[Any, ...] | None]] = []
+
+        def execute(self, query: str, params: tuple[Any, ...] | None = None) -> None:
+            self.calls.append((query, params))
+
+    import_id = uuid4()
+    conn = RecordingConnection()
+
+    content_imports._lock_import_version_chain(conn, import_id)
+
+    assert len(conn.calls) == 1
+    query, params = conn.calls[0]
+    assert "pg_advisory_xact_lock" in query
+    assert "external-content-import-version:" in query
+    assert "FOR UPDATE" not in query.upper()
+    assert params == (import_id,)
+
+
 def valid_item(**updates: Any) -> dict[str, Any]:
     item: dict[str, Any] = {
         "schema_version": "1.0", "content_id": "codex-export-article-001",
