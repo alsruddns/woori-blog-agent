@@ -51,4 +51,5 @@
 - 새 21:30 KST 회차는 14개 지역을 수집하고 topic evaluation을 완료했다. 검색량 기준 5,000 이상 6개 (BR/DE/GB/IN/US) 모두 `authoring_hourly_capacity_reached` 상태로 중복 검사를 통과했지만 요청 생성은 0이었다. stage result는 `created=0`, `hourly_capacity=4`, `capacity_waiting=6`; 직전 네 요청은 21:00:42에 생성되어 21:30 회차 시각에는 여전히 최근 1시간 내였다. 21:30 신규 후보를 대기 상태로 보존하고 과거 회차를 다시 돌리지 않았다.
 - 따라서 실제 신규 회차 관찰 결과는 코드의 capacity 사유 기록을 검증했지만, “중복만 통과하면 작성 요청”이라는 최종 조건은 기존 4건/시간 상한 때문에 운영에서 충족되지 않았다. 상한 유지와 임계값 전용 우회 중 어느 정책이 우선인지 후속 결정이 필요하다. 우회 승인이 없으면 이 작업은 부분 반영 상태다.
 - 운영 확인 당시 Trends 기준 5,000, automation revision 22, 활성 Blogger 6, `zh-CN` 비활성, 활성 geo authoring mappings 12, IN→Trend Journal EN 활성, Publication Worker queued/due 0이었다. 이번 작업의 Blogger POST/PATCH/DELETE/초안 작성 0건.
-- 시작 HEAD: `221b5aad43553a78627d872e024f7f176e75849a`. 코드 commit: `3cbe656c33e999e0cdc10f66ffe2b7b92d31ce1b`. P5-CODEX-135 기록 반영 및 푸시 결과는 이후 문서 커밋과 Git history에 연결한다.
+- 시작 HEAD: `221b5aad43553a78627d872e024f7f176e75849a`. 코드 commit: `3cbe656c33e999e0cdc10f66ffe2b7b92d31ce1b`; current documentation commit and push are recorded in Git history.
+- Append-only PostgreSQL `agent.work.completed` partial-result audit: ID `353073`; links to start event `352051`. Code commit and documentation commit were pushed to `origin/develop`; later operational audit/doc updates are linked by Git history.
