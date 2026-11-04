@@ -26,7 +26,7 @@
 | KO | `trend-ko.blogspot.com` | `3321654108096579717` | `9c4c3e67-6a0c-4213-a5f6-79e6e8841eb6` |
 | JA | `trend-ja.blogspot.com` | `7562596540375659150` | `769d3996-335c-4037-9216-a62f058f8638` |
 | DE | `trend-journal-de.blogspot.com` | `5857406989226346280` | `ab0feab6-1afa-4f00-b3c2-498179f72e7c` |
-| BR | `trend-journal-br.blogspot.com` | `2780805325207451782` | `e7626329-fd21-4420-b3c6-bd023ba3f3ad` |
+| BR | `trend-journal-br.blogspot.com` | `2780805325207451782` | `e7626329-fc21-4420-b3c6-bd023ba3f3ad` |
 | VI | `trend-journal-vn.blogspot.com` | `2392412558893856604` | `309f350b-fd4c-456c-ac1e-19f18dd6335d` |
 
 `zh-CN` record은 DB에서 inactive로 확인했으며 새 승인 범위에 포함하지 않는다. OAuth 연결 데이터는 읽기만 했고 수정하지 않았다.
@@ -50,16 +50,23 @@
 
 ## 운영 반영 및 검증
 
-운영 설정 및 Worker 반영 후 다음을 기록한다.
+### 설정 반영
 
-- Mode row 변경 전후 및 update timestamp:
-- Scheduled policy event 변경 전후:
-- Worker runtime: `MinimumIntervalMinutes=`, `DailyLiveCapKST=`, `AllowedBloggerCount=`
-- `AutoMode` / `AutoPolicyActive`:
-- Worker heartbeat / PID / applied revision:
-- 서비스 반영 결과:
-- Blogger API writes: 0 (연결 확인은 read-only API만 사용)
-- 테스트 결과:
+- `publication_mode_settings` 글로벌 row: 이전 manual / 1건 / 1440분 → 이후 manual / 100건 / 15분. emergency stop OFF 및 `operations_auto_approved=false` 유지. `updated_at=2026-11-04 18:25:16.771478 KST`. Mode row에는 별도 revision 열이 없다.
+- `automation_controls`: revision 22, global interval 15, KST global LIVE cap 100. 이 값은 작업 전부터 같았으므로 이번 작업에서 수정하지 않았다.
+- Scheduled Auto event: 이전 event 3, enabled / scope 4 / 1건 → 새 append-only event 4, enabled / scope 6 / 100건, `created_at=2026-11-04 18:29:00.626855 KST`. 과거 event 1~3은 그대로 보존했다.
+- 마지막 event의 6개 scope는 EN, KO, JA, DE, pt-BR, VI다. 각 DB Blog ID는 위 매핑과 일치한다. 중국어 record는 inactive이며 scope에 없다.
+- 실제 운영 API의 읽기 전용 연결 검증으로 6개 모두 HTTP 200, 등록 Blog ID와 원격 Blog ID 일치, `blogger_write_performed=false`를 확인했다. 첫 확인 요청은 BR record UUID 입력 오타로 DB 단계에서 404 거절됐으며 이 요청에서는 외부 API를 호출하지 않았다. DB에서 재확인한 정확한 `fc21` UUID로 다시 실행해 여섯 연결이 모두 검증됐다.
+- `AutoMode`: Publication Worker status의 `configured_mode=manual`, `AutoPolicyActive=false` 유지. 별도 `automation_controls.auto_mode=publish`, auto switches/operator approval은 원래 값과 revision22를 유지했다. 자동 모드/승인 상태는 이번 작업에서 변경하지 않았다.
+- Worker runtime status: `MinimumIntervalMinutes=15`, `DailyLiveCapKST=100` (공유 controls 및 global mode), `ScheduledDailyLimit=100`, `AllowedBloggerCount=6`. `LiveQueued=0`, `LiveDue=0`.
+- 우선순위는 기존 Worker query대로 scheduled → manual → Trends 유지했다. 기존 KO/JA 언어별 일일 cap 등 추가 제한은 그대로 두었고, 신규 DE/pt-BR/VI 시간 제한은 글로벌 간격에 맞춘 4건/시간으로 설정했다.
+
+### 서비스 및 테스트
+
+- 적용 스크립트: `scripts/apply-verified-changes.ps1 -Apply -Confirm:$false`. 첫 검증 시 공용 pytest temp 경로 정리에서 WinError 5가 발생했지만 테스트 완료 및 서비스 종료 전 단계에서 멈췄다. 저장소 전용 basetemp를 지정해 재실행했다.
+- 재실행 집중 테스트 84건 통과. Ruff 전체 API, 변경 모듈 mypy, API lint, dashboard lint/typecheck/production build, isolated wheel build 통과. 공용 pytest cache 권한 경고 1건은 남았지만 전용 basetemp에서 pytest 자체는 84건 모두 통과했다.
+- graceful 종료 후 재기동. 강제 종료 없음. API PID 35452, HTTP 200; Dashboard PID 26296, HTTP 200; Publication Worker PID 2196, heartbeat fresh; Research Worker PID 33368, heartbeat fresh. API, Dashboard, 두 Worker의 applied revision은 `11853f175f46016e1f449f6c253fb0485155b16b`.
+- Blogger write POST/PATCH/DELETE: 0건. 운영 연결 확인용 Blogger GET: 6회, 모두 200. Blogger 게시 Job이나 게시 이력은 만들거나 수정하지 않았다.
 
 ## 변경 파일
 
@@ -73,9 +80,10 @@
 - `apps/dashboard/app/publishing/publication-manager.tsx`
 - `docs/development/P5-CODEX-134.md`
 
-## Git 및 남은 문제
+## Audit and final state
 
-- 종료 HEAD / 커밋:
-- `origin/develop` push:
-- 남은 문제:
-
+- PostgreSQL append-only audit: `agent.work.started` ID 349078 and `agent.work.completed` ID 349682. The completion event records the applied code SHA, schema 90, settings, six-blog scheduled scope, Worker heartbeat, and Blogger read/write counts.
+- Code and operational reflection commit: `11853f175f46016e1f449f6c253fb0485155b16b`; pushed to `origin/develop` and confirmed running in the services.
+- The follow-up documentation-only commit is recorded in Git history after this change.
+- `AutoMode` and `AutoPolicyActive` were left unchanged as requested. Current Worker status is `manual` / `false`. Global settings 15/100 and scheduled scope six are separate from auto mode and approval state. Existing per-language safety limits remain under the global LIVE cap.
+- Pre-existing untracked files and test artifacts were preserved; none were cleaned.
