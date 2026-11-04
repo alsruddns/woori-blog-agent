@@ -359,6 +359,17 @@ class PublicLiveApproval(BaseModel):
 PUBLIC_LIVE_LANGUAGES = {"en", "ko", "ja", "de", "pt-BR", "vi"}
 
 
+def _scheduled_import_review_counts(conn: Any) -> dict[str, int]:
+    row = conn.execute(
+        """SELECT count(*)::int AS total,
+        count(*) FILTER (WHERE state='awaiting_human_review')::int AS awaiting_human_review
+        FROM external_content_imports WHERE generation_method='chatgpt_scheduled_export'"""
+    ).fetchone()
+    if not row:
+        raise RuntimeError("scheduled_import_counts_unavailable")
+    return dict(row)
+
+
 @router.post("/approve-public-live")
 def approve_public_live(request: PublicLiveApproval) -> dict[str, Any]:
     """Record exact-blog LIVE consent and atomically activate its current runtime policy."""
@@ -424,12 +435,7 @@ def approve_public_live(request: PublicLiveApproval) -> dict[str, Any]:
         assert writes is not None
         if writes["pending_operations"] or writes["requested_attempts"]:
             raise HTTPException(409, "Pending Blogger write operation or uncertain in-flight attempt must resolve before activation")
-        import_count = conn.execute(
-            """SELECT count(*)::int AS total,
-            count(*) FILTER (WHERE status='awaiting_human_review')::int AS awaiting_human_review
-            FROM external_content_imports WHERE generation_method='chatgpt_scheduled_export'"""
-        ).fetchone()
-        assert import_count is not None
+        import_count = _scheduled_import_review_counts(conn)
         if import_count["total"] != 24 or import_count["awaiting_human_review"] != 24:
             raise HTTPException(409, "Scheduled Import review-state precondition changed")
         categories = [row["slug"] for row in conn.execute("SELECT slug FROM categories ORDER BY slug").fetchall()]

@@ -110,6 +110,13 @@ def test_scoped_public_live_approval_requires_explicit_dual_confirmation(center)
     assert error.value.status_code == 422
 
 
+def test_scoped_public_live_preflight_reads_existing_import_state_column(center):
+    conn, _, _ = center
+    counts = controls._scheduled_import_review_counts(conn)
+    assert set(counts) == {"total", "awaiting_human_review"}
+    assert 0 <= counts["awaiting_human_review"] <= counts["total"]
+
+
 def test_independent_switches_persist_and_audit(center):
     conn, api, h = center
     assert update(center, trends_collection_enabled=False).status_code == 200
