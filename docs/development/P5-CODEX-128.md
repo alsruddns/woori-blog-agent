@@ -60,6 +60,6 @@ Known limitation: the evaluator does not turn unknown evidence into verified evi
 
 - End code HEAD: `6e7541524c421c23d2fcdd1011a32660474cb83b`.
 - Commits: `9e683b3324c2404c8f2c9462c2cbc0d18350df19` (shared policy), `e44c0c396557d7f6f04b6f26a5ffd45466b6c04a` (runtime record), `6e7541524c421c23d2fcdd1011a32660474cb83b` (eligibility display).
-- Remote push: code and UI commits pushed to `origin/develop`; final record update is pending.
+- Remote push: implementation, UI, and final reflection record commits are pushed to `origin/develop`; final HEAD was verified against the remote.
 - Reflection: API, Dashboard, Research Worker, and Publication Worker applied at `6e7541524c421c23d2fcdd1011a32660474cb83b`.
 - Remaining issue: 8 unrelated full-suite failures listed above; automatic operation remains governed by current DB policy (manual mode/off).
