@@ -909,16 +909,16 @@ def test_manual_live_request_commits_approval_job_and_followups_atomically_in_is
     assert 'blog_language_mismatch' in publications._manual_publication_blockers(
         conn, wrong, publications._manual_publication_snapshot(conn, wrong), other_blog,
     )
-    # The transaction-path fixture intentionally omits a reviewed source ledger,
-    # approved evidence, human review, SEO audit, and publish-ready evaluation.
-    # Verify the real gate blocks it, then isolate the SQL/transaction assertions
+    # This short one-paragraph fixture intentionally has no source ledger and is
+    # too small to form a publishable article. Missing review is a follow-up;
+    # the actual body-size/substance check still holds it. Isolate the SQL path
     # below from editorial gate setup complexity.
     held = publications._manual_publication_blockers(conn, candidate, snapshot, blog_record_id)
-    assert "claims_or_sources_missing" in held
+    assert "claims_or_sources_missing" not in held
     assert "manual_supported_revision_required" not in held
     assert "no_supported_body_after_sanitization" in held
-    assert any("manual_supported_revision_required" in item["description"]
-               for item in snapshot["followups"])
+    assert not any("manual_supported_revision_required" in item["description"]
+                   for item in snapshot["followups"])
     assert "machine_quality_not_passed" not in held
     assert "seo_check_not_passed" not in held
     monkeypatch.setattr(publications, "_manual_publication_blockers", lambda *_args, **_kwargs: [])

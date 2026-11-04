@@ -208,11 +208,21 @@ def _scheduled_eligibility(conn: Any, imported: Any, version: Any, blog: Any) ->
         claims = [claim for claim in claims if str(claim.get("claim_id")) in retained_claim_ids]
     else:
         claims = [claim for claim in claims if {str(value) for value in claim.get("source_ids") or []}.issubset(cited_source_ids)]
-    sanitizer = sanitize_scheduled_body(body, claims, verified_claim_ids=verified_claim_ids)
+    source_rights = {
+        str(source.get("source_id")): str(source.get("rights_status") or "unknown")
+        for source in sources if source.get("source_id")
+    }
+    sanitizer = sanitize_scheduled_body(
+        body, claims, verified_claim_ids=verified_claim_ids, source_rights=source_rights,
+    )
+    removed_claim_ids = set(sanitizer.get("removed_claim_ids") or [])
+    claims = [claim for claim in claims if str(claim.get("claim_id") or "") not in removed_claim_ids]
     if sanitizer['changed']:
         reasons.append('scheduled_sanitized_revision_required' if sanitizer['substantive_blocks_remaining'] >= 2
                        else 'no_supported_body_after_sanitization')
-    used_sources = [source for source in sources if str(source.get("source_id")) in cited_source_ids]
+    sanitized_body = sanitizer["body_markdown"]
+    sanitized_source_ids = set(re.findall(r"\[source:([A-Za-z0-9_-]+)\]", sanitized_body))
+    used_sources = [source for source in sources if str(source.get("source_id")) in sanitized_source_ids]
     filtered_import = {**dict(imported), "claims": claims, "sources": used_sources}
     evidence_result = evaluate_scheduled_evidence(
         filtered_import,
@@ -220,7 +230,7 @@ def _scheduled_eligibility(conn: Any, imported: Any, version: Any, blog: Any) ->
         source_proofs=proof_by_id,
         human_review=review,
         scheduled_publish_first=True,
-        article_body=body,
+        article_body=sanitized_body,
     )
     evidence_result["followups"].extend(machine_followups)
     reasons.extend(evidence_result["reasons"])

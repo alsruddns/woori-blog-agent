@@ -94,7 +94,10 @@ def assess_trends_article(
         excerpt = str(claim.get("evidence_excerpt") or "")
         if len(excerpt) > 200 and excerpt in body:
             reasons.append("long_source_copy_requires_review")
-    if any(source.get("rights_status") in {"prohibited", "denied", "permission_denied"}
+    if any(source.get("rights_status") in {
+        "restricted", "permission_required", "prohibited", "denied", "permission_denied",
+        "copyright_blocked",
+    }
            for source in item.get("sources") or []):
         reasons.append("known_rights_restriction")
     safe_html = ""
@@ -361,10 +364,20 @@ def validate_trends_job(conn: Any, blog_id: UUID, content_version_id: UUID) -> d
                   if {str(value) for value in claim.get("source_ids") or []}.issubset(cited_source_ids)]
     sources = [source for source in (row.get("sources") or [])
                if str(source.get("source_id")) in cited_source_ids]
-    sanitizer = sanitize_scheduled_body(article_body, claims, verified_claim_ids=verified_claim_ids)
-    row["claims"] = claims
-    row["sources"] = sources
+    source_rights = {
+        str(source.get("source_id")): str(source.get("rights_status") or "unknown")
+        for source in sources if source.get("source_id")
+    }
+    sanitizer = sanitize_scheduled_body(
+        article_body, claims, verified_claim_ids=verified_claim_ids, source_rights=source_rights,
+    )
+    removed_claim_ids = set(sanitizer.get("removed_claim_ids") or [])
+    claims = [claim for claim in claims if str(claim.get("claim_id") or "") not in removed_claim_ids]
     sanitized_body = sanitizer["body_markdown"]
+    sanitized_source_ids = set(re.findall(r"\[source:([A-Za-z0-9_-]+)\]", sanitized_body))
+    row["claims"] = claims
+    row["sources"] = [source for source in sources
+                      if str(source.get("source_id")) in sanitized_source_ids]
     if sanitizer["changed"]:
         reasons.append(
             "trends_sanitized_revision_required"

@@ -127,8 +127,18 @@ def test_scheduled_machine_evidence_holds_unknown_rights() -> None:
     result = evaluate_scheduled_evidence(
         imported, version_sha256="c" * 64, source_proofs=proofs, human_review=None,
     )
-    assert result["status"] == "held"
-    assert "source_rights_not_machine_verified" in result["reasons"]
+    assert "source_rights_not_machine_verified" not in result["reasons"]
+    assert any(item["issue_type"] == "copyright" for item in result["followups"])
+
+
+def test_scheduled_machine_evidence_blocks_explicit_rights_restriction() -> None:
+    imported, proofs = _case()
+    imported["sources"][0]["rights_status"] = "permission_required"
+    result = evaluate_scheduled_evidence(
+        imported, version_sha256="c" * 64, source_proofs=proofs, human_review=None,
+        scheduled_publish_first=True, article_body="The rate was reported. [source:source-1]",
+    )
+    assert "source_rights_explicitly_restricted" in result["reasons"]
 
 
 def test_scheduled_machine_evidence_holds_expired_reuse_policy() -> None:
@@ -137,8 +147,8 @@ def test_scheduled_machine_evidence_holds_expired_reuse_policy() -> None:
     result = evaluate_scheduled_evidence(
         imported, version_sha256="c" * 64, source_proofs=proofs, human_review=None,
     )
-    assert result["status"] == "held"
-    assert "source_rights_not_machine_verified" in result["reasons"]
+    assert "source_rights_not_machine_verified" not in result["reasons"]
+    assert any(item["issue_type"] == "copyright" for item in result["followups"])
 
 
 def test_scheduled_evidence_holds_unsupported_number_or_hash() -> None:

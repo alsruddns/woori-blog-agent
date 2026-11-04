@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal, cast
 from urllib.parse import urlsplit
@@ -1337,14 +1338,37 @@ def _manual_publication_snapshot(conn: Any, row: dict[str, Any] | None) -> dict[
             }
             evidence_import = {**dict(imported), "id": str(imported["import_id"]),
                                "generation_method": method}
+            verified = verified_scheduled_claim_ids(evidence_import, proofs)
+            source_rights = {
+                str(source.get("source_id")): str(source.get("rights_status") or "unknown")
+                for source in imported.get("sources") or [] if source.get("source_id")
+            }
+            sanitized = sanitize_scheduled_body(
+                body, imported["claims"] or [], verified_claim_ids=verified,
+                source_rights=source_rights,
+            )
+            removed_claim_ids = set(sanitized.get("removed_claim_ids") or [])
+            evidence_import["claims"] = [
+                claim for claim in imported.get("claims") or []
+                if str(claim.get("claim_id") or "") not in removed_claim_ids
+            ]
+            sanitized_source_ids = set(re.findall(
+                r"\[source:([A-Za-z0-9_-]+)\]", sanitized["body_markdown"]
+            ))
+            evidence_import["sources"] = [
+                source for source in imported.get("sources") or []
+                if str(source.get("source_id")) in sanitized_source_ids
+            ]
             evidence = evaluate_scheduled_evidence(
                 evidence_import, version_sha256=str(imported["content_sha256"]),
                 source_proofs=proofs, human_review=None,
-                scheduled_publish_first=True, article_body=body,
+                scheduled_publish_first=True, article_body=sanitized["body_markdown"],
                 expected_generation_method=method,
             )
-            verified = verified_scheduled_claim_ids(evidence_import, proofs)
-            sanitized = sanitize_scheduled_body(body, imported["claims"] or [], verified_claim_ids=verified)
+            evidence["reasons"].extend(
+                reason for warning in sanitized.get("retained_warnings") or []
+                for reason in warning.get("reasons") or []
+            )
             from .publication_policy import evaluate_publication_content
             safe_body_available = (
                 sanitized["substantive_blocks_remaining"] >= 2

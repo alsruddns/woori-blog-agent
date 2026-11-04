@@ -1,4 +1,5 @@
 from woori.publication_worker import scheduled_publish_first_assessment
+from woori.publication_policy import evaluate_publication_content
 from woori.scheduled_auto_verification import (
     evaluate_scheduled_evidence,
     sanitize_scheduled_body,
@@ -95,12 +96,12 @@ def test_scheduled_publish_first_still_blocks_restricted_rights_and_unverified_f
         human_review=None, scheduled_publish_first=True,
         article_body="The rate was reported. [source:S1]",
     )
-    assert "source_rights_not_machine_verified" in result["reasons"]
+    assert "source_rights_explicitly_restricted" in result["reasons"]
     imported["claims"][0]["factual_state"] = "unverified"
     assert verified_scheduled_claim_ids(imported, proof) == set()
 
 
-def test_scheduled_sanitizer_removes_uncited_and_unverified_source_blocks():
+def test_scheduled_sanitizer_retains_uncited_and_unverified_content_as_followups():
     claims = [
         {"claim_id": "C1", "source_ids": ["S1"], "factual_state": "enacted",
          "verification_status": "source_span_verified"},
@@ -109,35 +110,123 @@ def test_scheduled_sanitizer_removes_uncited_and_unverified_source_blocks():
     ]
     body = "# Evidence\n\nA supported paragraph. [source:S1]\n\nAn unsupported paragraph. [source:S2]\n\nUncited factual paragraph."
     result = sanitize_scheduled_body(body, claims, verified_claim_ids={"C1"})
-    assert result["changed"] is True
+    assert result["changed"] is False
     assert "A supported paragraph." in result["body_markdown"]
-    assert "unsupported paragraph" not in result["body_markdown"]
-    assert "Uncited factual paragraph" not in result["body_markdown"]
-    assert len(result["removed_blocks"]) == 2
+    assert "unsupported paragraph" in result["body_markdown"]
+    assert "Uncited factual paragraph" in result["body_markdown"]
+    warning_reasons = {reason for item in result["retained_warnings"] for reason in item["reasons"]}
+    assert warning_reasons == {
+        "source_or_claim_verification_incomplete_retained",
+        "source_rights_review_incomplete_retained",
+        "uncited_paragraph_retained_for_review",
+    }
+    assert result["removed_blocks"] == []
 
 
-def test_scheduled_sanitizer_drops_body_when_no_claim_has_live_evidence():
+def test_scheduled_sanitizer_retains_body_when_live_proof_is_missing():
     imported, _ = _scheduled_fixture()
     result = sanitize_scheduled_body(
         "A long paragraph with no usable support. [source:S1]", imported["claims"],
         verified_claim_ids=set(),
     )
-    assert result["body_markdown"] == ""
-    assert result["substantive_blocks_remaining"] == 0
+    assert "A long paragraph with no usable support." in result["body_markdown"]
+    assert result["substantive_blocks_remaining"] == 1
+    assert result["retained_warnings"]
 
 
-def test_scheduled_sanitizer_removes_verbatim_evidence_and_direct_quotes():
+def test_missing_source_and_rights_records_remain_followups_with_publishable_body():
+    imported, _proofs = _scheduled_fixture()
+    imported["claims"][0]["verification_status"] = "unverified"
+    body = (
+        "The agency announced a policy change for local residents. [source:S1]\n\n"
+        "The change will take effect after a public consultation period. [source:S1]\n\n"
+        "Officials said implementation details remain under discussion. [source:S1]"
+    )
+    sanitized = sanitize_scheduled_body(
+        body, imported["claims"], verified_claim_ids=set(),
+        source_rights={"S1": "quotation_review_required"},
+    )
+    evidence = evaluate_scheduled_evidence(
+        imported, version_sha256="b" * 64, source_proofs={}, human_review=None,
+        scheduled_publish_first=True, article_body=sanitized["body_markdown"],
+    )
+    policy = evaluate_publication_content(
+        [*evidence["reasons"], *(reason for warning in sanitized["retained_warnings"]
+                                 for reason in warning["reasons"])],
+        safe_body_available=sanitized["substantive_blocks_remaining"] >= 2,
+        existing_followups=evidence["followups"],
+    )
+    assert policy["decision"] == "READY_WITH_REMEDIATION"
+    assert policy["safety_blockers"] == []
+    assert "source_live_verification_missing" in policy["remediation_codes"]
+    assert "claim_evidence_incomplete" in policy["remediation_codes"]
+    assert evidence["checks"]["human_rights_review_present"] is False
+
+
+def test_scheduled_sanitizer_removes_verbatim_excerpt_but_keeps_surrounding_body():
     claims = [{
         "claim_id": "C1", "source_ids": ["S1"], "factual_state": "enacted",
         "verification_status": "source_span_verified",
         "evidence_excerpt": "The published rate was 2 percent.",
     }]
     body = (
-        "The published rate was 2 percent. [source:S1]\n\n"
-        "‘Quoted wording that should not be republished.’ [source:S1]"
+        "The agency announced a policy. The published rate was 2 percent. [source:S1]\n\n"
+        "A separate explanation helps readers understand the event. [source:S1]"
     )
     result = sanitize_scheduled_body(body, claims, verified_claim_ids={"C1"})
-    assert result["body_markdown"] == ""
-    assert {reason for block in result["removed_blocks"] for reason in block["reasons"]} == {
-        "direct_quote_removed", "source_excerpt_copy_removed",
+    assert "The agency announced a policy." in result["body_markdown"]
+    assert "The published rate was 2 percent." not in result["body_markdown"]
+    assert "A separate explanation" in result["body_markdown"]
+    assert "source_excerpt_removed" in {
+        reason for block in result["removed_blocks"] for reason in block["reasons"]
     }
+
+
+def test_scheduled_sanitizer_strips_quoted_span_without_erasing_article_paragraph():
+    result = sanitize_scheduled_body(
+        'The club won the match. "A long direct quotation from a source appears here." '
+        'The result changes the table. [source:S1]', [],
+    )
+    assert "The club won the match." in result["body_markdown"]
+    assert "The result changes the table." in result["body_markdown"]
+    assert "A long direct quotation" not in result["body_markdown"]
+    assert result["substantive_blocks_remaining"] == 1
+    assert "quoted_text_removed" in {
+        reason for block in result["removed_blocks"] for reason in block["reasons"]
+    }
+
+
+def test_scheduled_sanitizer_keeps_empty_original_as_empty():
+    result = sanitize_scheduled_body("   ", [], verified_claim_ids=set())
+    assert result["body_markdown"] == ""
+    assert result["substantive_blocks_remaining"] == 0
+
+
+def test_scheduled_sanitizer_removes_only_confirmed_false_claim_paragraph():
+    claims = [
+        {"claim_id": "false-1", "source_ids": ["S1"], "claim": "The product was banned by law.",
+         "factual_state": "contradicted", "verification_status": "contradicted"},
+        {"claim_id": "ok-1", "source_ids": ["S2"], "claim": "The company reported a new product.",
+         "factual_state": "enacted", "verification_status": "unverified"},
+    ]
+    body = (
+        "The product was banned by law. [source:S1]\n\n"
+        "The company reported a new product. [source:S2]"
+    )
+    result = sanitize_scheduled_body(body, claims, verified_claim_ids=set())
+    assert "banned by law" not in result["body_markdown"]
+    assert "reported a new product" in result["body_markdown"]
+    assert result["removed_claim_ids"] == ["false-1"]
+    assert result["substantive_blocks_remaining"] == 1
+
+
+def test_scheduled_sanitizer_removes_content_for_explicit_rights_restriction_only():
+    claims = [{"claim_id": "C1", "source_ids": ["S1"], "claim": "Restricted source claim.",
+               "factual_state": "enacted", "verification_status": "unverified"}]
+    result = sanitize_scheduled_body(
+        "Restricted source claim. [source:S1]\n\nIndependent editorial context without the restricted source.",
+        claims, source_rights={"S1": "permission_required"},
+    )
+    assert "Restricted source claim" not in result["body_markdown"]
+    assert "Independent editorial context" in result["body_markdown"]
+    assert result["removed_claim_ids"] == ["C1"]

@@ -1662,6 +1662,10 @@ def _prepare_publishable_version(
         sanitized = sanitize_scheduled_body(
             str(latest["body_markdown"]), retained_claims,
             verified_claim_ids=verified_claim_ids,
+            source_rights={
+                str(source.get("source_id")): str(source.get("rights_status") or "unknown")
+                for source in imported.get("sources") or [] if source.get("source_id")
+            },
         )
         if not sanitized["changed"]:
             return {"status": "unchanged", "version_id": str(latest["id"]),
@@ -1692,7 +1696,7 @@ def _prepare_publishable_version(
     revision = create_import_version(import_id, ImportVersionRequest(
         base_version_id=base_id, title=title, body_markdown=sanitized["body_markdown"],
         seo_metadata=seo, blogger_labels=labels, author_label=f"{publication_source}-policy-sanitizer",
-        reason=f"{publication_source}: remove paragraphs without current supported source evidence",
+        reason=f"{publication_source}: remove only confirmed false, explicitly restricted, or copied source material",
     ))
     if revision.get("duplicate"):
         version_id = UUID(revision["version_id"])
@@ -1723,9 +1727,11 @@ def _prepare_publishable_version(
         return {"status": "held", "reason": "sanitized_revision_assessment_failed",
                 "version_id": str(version_id)}
     retained_source_ids = sorted(set(re.findall(r"\[source:([A-Za-z0-9_-]+)\]", sanitized["body_markdown"])))
+    removed_claim_ids = set(sanitized.get("removed_claim_ids") or [])
     retained_claim_ids = sorted({
         str(claim.get("claim_id")) for claim in imported["claims"]
-        if isinstance(claim, dict) and str(claim.get("claim_id")) in verified_claim_ids
+        if isinstance(claim, dict)
+        and str(claim.get("claim_id")) not in removed_claim_ids
         and {str(x) for x in claim.get("source_ids") or []}.intersection(retained_source_ids)
     })
     if publication_source == "trends_auto":
@@ -1770,6 +1776,8 @@ def _prepare_publishable_version(
             "retained_source_ids": retained_source_ids,
             "retained_claim_ids": retained_claim_ids,
             "removed_blocks": sanitized["removed_blocks"],
+            "removed_claim_ids": sanitized.get("removed_claim_ids", []),
+            "retained_warnings": sanitized.get("retained_warnings", []),
             "assessment_id": assessment["assessment_id"],
             "machine_passed": assessment["machine_passed"],
             "policy_version": sanitized["policy_version"], "publish_ready": False,

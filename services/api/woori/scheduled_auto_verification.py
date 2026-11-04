@@ -63,15 +63,20 @@ _EN_MONTHS = {
 
 _SOURCE_MARKER = re.compile(r"\[source:([A-Za-z0-9_-]+)\]")
 _IMAGE_MARKDOWN = re.compile(r"!\[[^\]]*\]\([^)]*\)")
-_DIRECT_QUOTE = re.compile(r"「[^」]{2,}」|『[^』]{2,}』|“[^”]{2,}”|‘[^’]{2,}’|\"[^\"]{8,}\"")
+_DIRECT_QUOTE = re.compile(r"[\u300c\u300e\u201c\u2018][^\u300d\u300f\u201d\u2019]{2,}[\u300d\u300f\u201d\u2019]|\"[^\"]{8,}\"")
 
 
 def sanitize_scheduled_body(
     body: str, claims: list[Mapping[str, Any]], *, verified_claim_ids: set[str] | None = None,
+    source_rights: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
-    """Keep only complete Markdown paragraphs whose cited sources have no
-    unverified claims. Uncited substantive paragraphs and embedded images are
-    removed. This is a conservative mechanical sanitizer, not fact approval.
+    """Remove only known unsafe material; retain content with missing review data.
+
+    Lack of a verification record is recorded as a remediation warning, not
+    treated as proof that a claim is false. Explicitly contradicted claims and
+    content tied to explicitly restricted sources are removed. Quoted source
+    spans and embedded images are stripped while surrounding article prose is
+    preserved. This is a mechanical sanitizer, not factual or legal approval.
     """
     claims_by_source: dict[str, list[Mapping[str, Any]]] = {}
     for claim in claims:
@@ -82,6 +87,8 @@ def sanitize_scheduled_body(
 
     retained: list[str] = []
     removed: list[dict[str, Any]] = []
+    retained_warnings: list[dict[str, Any]] = []
+    removed_claim_ids: set[str] = set()
     pending_heading: str | None = None
     for raw in re.split(r"\n\s*\n", body.strip()):
         block = raw.strip()
@@ -91,39 +98,98 @@ def sanitize_scheduled_body(
             pending_heading = block
             continue
         markers = set(_SOURCE_MARKER.findall(block))
-        reasons: list[str] = []
+        candidate_claims = [claim for source_id in markers for claim in claims_by_source.get(source_id, [])]
         if not markers:
-            reasons.append("uncited_paragraph")
-        for source_id in markers:
-            source_claims = claims_by_source.get(source_id, [])
-            if not source_claims or any(
-                claim.get("factual_state") == "unverified"
-                or (verified_claim_ids is not None and str(claim.get("claim_id")) not in verified_claim_ids)
-                or claim.get("verification_status") not in {"source_span_verified", "corroborated"}
-                for claim in source_claims
-            ):
-                reasons.append("source_has_unverified_claim")
-            if any(
-                str(claim.get("evidence_excerpt") or "").strip()
-                and str(claim.get("evidence_excerpt")).strip() in block
-                for claim in source_claims
-            ):
-                reasons.append("source_excerpt_copy_removed")
-        if _IMAGE_MARKDOWN.search(block):
-            reasons.append("embedded_image_removed")
-        if _DIRECT_QUOTE.search(block):
-            reasons.append("direct_quote_removed")
-        if reasons:
+            candidate_claims = list(claims)
+        source_claims = [claim for claim in candidate_claims if any(
+            (text := " ".join(str(claim.get(key) or "").split()))
+            and len(text) >= 8 and text in " ".join(block.split())
+            for key in ("claim", "evidence_excerpt")
+        )]
+        source_ids_for_block = markers | {
+            str(source_id)
+            for claim in source_claims
+            for source_id in claim.get("source_ids") or []
+        }
+        block_rights = [str((source_rights or {}).get(source_id, "unknown"))
+                        for source_id in source_ids_for_block]
+        known_false = any(
+            str(claim.get("factual_state") or "").casefold() in {"false", "contradicted", "rejected"}
+            or str(claim.get("verification_status") or "").casefold()
+            in {"conflict", "contradicted", "rejected", "false"}
+            for claim in source_claims
+        )
+        explicit_rights_block = any(
+            status.casefold() in {"restricted", "permission_required", "prohibited",
+                                  "copyright_blocked", "permission_denied", "denied"}
+            for status in block_rights
+        )
+        if known_false or explicit_rights_block:
+            removed_claim_ids.update(str(claim.get("claim_id")) for claim in source_claims
+                                     if claim.get("claim_id"))
             removed.append({
                 "block_sha256": hashlib.sha256(block.encode("utf-8")).hexdigest(),
-                "source_ids": sorted(markers), "reasons": sorted(set(reasons)),
+                "source_ids": sorted(markers),
+                "reasons": ["confirmed_false_claim"] if known_false else ["explicit_source_rights_restriction"],
             })
             pending_heading = None
             continue
+
+        warnings: list[str] = []
+        if not markers:
+            warnings.append("uncited_paragraph_retained_for_review")
+        elif not source_claims or any(
+            str(claim.get("factual_state") or "").casefold() == "unverified"
+            or (verified_claim_ids is not None and str(claim.get("claim_id")) not in verified_claim_ids)
+            or str(claim.get("verification_status") or "").casefold()
+            not in {"source_span_verified", "corroborated"}
+            for claim in source_claims
+        ):
+            warnings.append("source_or_claim_verification_incomplete_retained")
+        if any(status.casefold() not in {"public_domain", "open_license", "permission_confirmed"}
+               for status in block_rights):
+            warnings.append("source_rights_review_incomplete_retained")
+
+        # Remove an exact stored source excerpt or quoted/image material, but
+        # keep any independent prose around it. An absent proof is not evidence
+        # that the whole paragraph is false or infringing.
+        cleaned_block = block
+        removed_reasons: set[str] = set()
+        for claim in source_claims:
+            excerpt = " ".join(str(claim.get("evidence_excerpt") or "").split())
+            normalized_block = " ".join(cleaned_block.split())
+            if len(excerpt) >= 24 and excerpt in normalized_block:
+                # The common case is an exact paragraph excerpt. If whitespace
+                # differs, use a whitespace-tolerant match and remove its span.
+                pattern = re.escape(excerpt).replace(r"\ ", r"\s+")
+                cleaned_block, count = re.subn(pattern, "", cleaned_block, count=1)
+                if count:
+                    removed_reasons.add("source_excerpt_removed")
+        cleaned_block, quote_count = _DIRECT_QUOTE.subn("", cleaned_block)
+        if quote_count:
+            removed_reasons.add("quoted_text_removed")
+        cleaned_block, image_count = _IMAGE_MARKDOWN.subn("", cleaned_block)
+        if image_count:
+            removed_reasons.add("embedded_image_removed")
+        cleaned_block = re.sub(r"[ \t]{2,}", " ", cleaned_block).strip()
+        remaining_text = _SOURCE_MARKER.sub("", cleaned_block)
+        if removed_reasons:
+            removed.append({
+                "block_sha256": hashlib.sha256(block.encode("utf-8")).hexdigest(),
+                "source_ids": sorted(markers), "reasons": sorted(removed_reasons),
+            })
+        if not remaining_text.strip(" \t\r\n-*#[]()"):
+            pending_heading = None
+            continue
+        if warnings:
+            retained_warnings.append({
+                "block_sha256": hashlib.sha256(block.encode("utf-8")).hexdigest(),
+                "source_ids": sorted(markers), "reasons": sorted(set(warnings)),
+            })
         if pending_heading:
             retained.append(pending_heading)
             pending_heading = None
-        retained.append(block)
+        retained.append(cleaned_block)
 
     cleaned = "\n\n".join(retained).strip()
     return {
@@ -132,8 +198,10 @@ def sanitize_scheduled_body(
         "input_sha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
         "output_sha256": hashlib.sha256(cleaned.encode("utf-8")).hexdigest(),
         "removed_blocks": removed,
+        "removed_claim_ids": sorted(removed_claim_ids),
+        "retained_warnings": retained_warnings,
         "substantive_blocks_remaining": sum(1 for item in retained if not item.startswith("#")),
-        "policy_version": "scheduled-post-first-sanitizer-1",
+        "policy_version": "publication-review-gap-preserving-sanitizer-2",
     }
 
 
@@ -374,6 +442,14 @@ def evaluate_scheduled_evidence(
         if not isinstance(claim, Mapping):
             reasons.append("claim_schema_invalid")
             continue
+        if (
+            str(claim.get("factual_state") or "").casefold()
+            in {"false", "contradicted", "rejected"}
+            or str(claim.get("verification_status") or "").casefold()
+            in {"conflict", "contradicted", "rejected", "false"}
+        ):
+            reasons.append("known_conflicting_claim")
+            continue
         source_ids = [str(value) for value in (claim.get("source_ids") or [])]
         evidence = str(claim.get("evidence_excerpt") or "").strip()
         if (
@@ -430,7 +506,10 @@ def evaluate_scheduled_evidence(
             terms_url = str(proof.get("reuse_terms_url") or "")
             terms_url_parts = urlsplit(terms_url)
             rights_explicitly_blocked = source.get("rights_status") in {
-                "restricted", "permission_required", "prohibited", "copyright_blocked"
+                "restricted", "permission_required", "prohibited", "copyright_blocked",
+                "permission_denied", "denied",
+            } or proof.get("reuse_terms_status") in {
+                "restricted", "permission_required", "prohibited", "permission_denied", "denied",
             }
             verbatim_excerpt_in_body = any(
                 str(claim.get("evidence_excerpt") or "").strip()
@@ -438,7 +517,11 @@ def evaluate_scheduled_evidence(
                 and source_id in [str(item) for item in (claim.get("source_ids") or [])]
                 for claim in claims if isinstance(claim, Mapping)
             )
-            if rights_explicitly_blocked or verbatim_excerpt_in_body or (
+            if rights_explicitly_blocked:
+                reasons.append("source_rights_explicitly_restricted")
+            elif verbatim_excerpt_in_body:
+                reasons.append("source_verbatim_excerpt_present")
+            elif (
                 source.get("rights_status") not in {"public_domain", "open_license", "permission_confirmed"}
                 or not proof.get("reuse_terms_verified")
                 or proof.get("reuse_terms_status") != "allowed"
@@ -451,12 +534,10 @@ def evaluate_scheduled_evidence(
                 or not str(proof.get("reuse_policy_version") or "").strip()
                 or not terms_current
             ):
-                if scheduled_publish_first and not rights_explicitly_blocked and not verbatim_excerpt_in_body:
-                    followups.append({"issue_type": "copyright", "severity": "medium",
-                                      "description": f"출처 {source_id}의 재사용 조건을 추가 확인하세요. 본문은 검증 구간을 그대로 복사하지 않도록 제한했습니다."})
-                else:
-                    reasons.append("source_rights_not_machine_verified")
-                    break
+                followups.append({
+                    "issue_type": "copyright", "severity": "medium",
+                    "description": f"Source {source_id} reuse terms require review; no unreviewed source excerpt is retained.",
+                })
 
     unique_reasons = list(dict.fromkeys(reasons))
     evidence_hashes = {
