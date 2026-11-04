@@ -108,9 +108,10 @@ def test_google_trends_feed_preserves_source_fields_without_inventing_rank() -> 
 
 @pytest.mark.parametrize(("label", "expected"), [
     ("100+", 100), ("1,000+", 1000), ("1.2K+", 1200),
-    ("2M+", 2_000_000), (None, None), ("about 1,000", None), ("0+", 0),
+    ("2M+", 2_000_000), ("10000+", 10000), ("10K+", 10000), ("100K+", 100000),
+    ("10000", 10000), (10000, 10000), (None, None), ("about 1,000", None), ("0+", 0),
 ])
-def test_approx_traffic_lower_bound_is_conservative(label: str | None, expected: int | None) -> None:
+def test_approx_traffic_lower_bound_is_conservative(label: str | int | None, expected: int | None) -> None:
     assert trends.parse_approx_traffic(label) == expected
 
 

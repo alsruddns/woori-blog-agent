@@ -326,6 +326,9 @@ def authoring_tick() -> None:
     """
     from . import keyword_jobs, trend_editorial
 
+    # A threshold-qualified candidate may wait only while its collection slot is
+    # still current. General editorial ranking remains isolated to topic_evaluation.
+    trend_editorial.retry_volume_capacity()
     trend_editorial.expire_pending()
     trend_editorial.dispatch()
     keyword_jobs.tick(import_results=False)

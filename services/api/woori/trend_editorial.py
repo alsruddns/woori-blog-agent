@@ -239,9 +239,11 @@ def listing(page:int=Query(1,ge=1),page_size:int=Query(25,ge=1,le=100),
         total=total_row['n'] if total_row else 0
         items=conn.execute('''SELECT o.*,t.id topic_id,t.representative_query,t.grouping_status,
           COALESCE(e.state,'pending_classification') editorial_state,e.category internal_category,e.reason_code,e.reason,
-          g.id generation_request_id,g.state generation_state,j.id authoring_job_id,j.state authoring_state,j.import_id,j.content_version_id
+          g.id generation_request_id,g.state generation_state,j.id authoring_job_id,j.state authoring_state,
+          j.error_code authoring_error_code,j.import_id,j.content_version_id
           '''+BASE+where+' ORDER BY o.collected_at DESC,o.id LIMIT %s OFFSET %s',
           [*params,page_size,(page-1)*page_size]).fetchall()
+        volume_setting=conn.execute("SELECT trends_authoring_min_volume FROM automation_controls WHERE id=1").fetchone()
         summary=conn.execute('''SELECT count(*) total,count(*) FILTER(WHERE o.collected_at>=now()-interval '24 hours') last24,
           count(*) FILTER(WHERE e.state='selected') selected,count(*) FILTER(WHERE e.state='discarded') discarded,
           count(*) FILTER(WHERE e.state IS NULL OR e.state IN ('pending_classification','review_candidate')) pending,
@@ -251,6 +253,7 @@ def listing(page:int=Query(1,ge=1),page_size:int=Query(25,ge=1,le=100),
         blog_geo_mappings=conn.execute('''SELECT blog_id,geo,enabled,processing_order FROM trend_blog_geo_authoring
             WHERE enabled ORDER BY blog_id,processing_order,geo''').fetchall()
     return {'items':items,'total':total,'page':page,'page_size':page_size,'summary':summary,'blogs':blogs,
+            'authoring_volume_threshold':int(volume_setting['trends_authoring_min_volume']) if volume_setting else None,
             'blog_geo_mappings':blog_geo_mappings,
             'geos':sorted(trends.ALLOWED_GEOS),'categories':list(EDITORIAL_CATEGORIES),
             'summary_unit':'observations; one topic may have many observations',
@@ -464,8 +467,8 @@ def dispatch(limit:int=1) -> dict[str,int]:
     return {'created':created}
 
 
-def queue_selected() -> dict[str,int]:
-    """Prioritize current-slot volume-threshold requests, then use normal editorial ranking."""
+def queue_selected(*, include_general:bool=True) -> dict[str,int]:
+    """Queue current-slot threshold candidates ahead of optional general editorial ranking."""
     from .config import settings
     from .keyword_jobs import targets
     slot=current_slot()
@@ -482,8 +485,6 @@ def queue_selected() -> dict[str,int]:
         limit=settings().trend_research_hourly_limit
         recent=conn.execute("SELECT count(*) n FROM trend_generation_requests WHERE created_at>=now()-interval '1 hour'").fetchone()
         remaining=max(0,limit-int(recent['n'] if recent else 0))
-        if not remaining:
-            return {'created':0,'hourly_capacity':limit}
         mappings=conn.execute('''SELECT m.blog_id,m.geo,m.processing_order,b.display_name
             FROM trend_blog_geo_authoring m JOIN blogger_blogs b ON b.id=m.blog_id
             WHERE m.enabled AND b.active AND b.blog_id IS NOT NULL
@@ -502,8 +503,6 @@ def queue_selected() -> dict[str,int]:
         seen_keys:set[tuple[str,str,str]]=set()
         from . import editorial_scoring as scoring
         for mapping in ordered:
-            if created>=remaining:
-                break
             blog=blogs.get(mapping['blog_id'])
             if not blog:
                 continue
@@ -530,10 +529,11 @@ def queue_selected() -> dict[str,int]:
             aliases=[dict(row) for row in conn.execute(
                 'SELECT geo,alias,canonical FROM editorial_query_aliases WHERE created_at<=%s ORDER BY id',(slot,)).fetchall()]
             for rank,row in enumerate(high_volume,1):
-                if created>=remaining:
-                    break
                 current=latest(conn,row['id'])
-                if current and current['state'] in {'imported','published','generating'}:
+                if not include_general and (not current or current['state']!='review_candidate'
+                                             or current['reason_code']!='authoring_hourly_capacity_reached'):
+                    continue
+                if current and current['state'] in {'generation_queued','generating','imported','published'}:
                     continue
                 if current and current['state']=='discarded' and not str(current['actor']).startswith('system:'):
                     continue
@@ -541,10 +541,28 @@ def queue_selected() -> dict[str,int]:
                     {'representative_query':row['representative_query'],'normalized_key':row['normalized_key']},
                     mapping['blog_id'],row,aliases,seen_keys)
                 if duplicates:
+                    if not current or current['state']!='discarded' or current['reason_code']!='volume_priority_duplicate':
+                        transition(conn,row['id'],'discarded','volume_priority_duplicate',
+                            '검색량 기준은 충족했지만 기존 원고·작성 요청 또는 동일 회차 후보와 중복되어 제외했습니다.',
+                            'system:trend-volume-priority',evidence={'geo':mapping['geo'],
+                            'blog_id':str(mapping['blog_id']),'collection_slot':slot.isoformat(),
+                            'volume_lower_bound':row['source_volume_lower_bound'],
+                            'minimum_authoring_volume':minimum_volume,'duplicate_matches':duplicates})
                     continue
                 previous=prior_authoring_requests(conn,row['normalized_key'],mapping['blog_id'])
                 if previous and (not all(recoverable_usage_request(item) for item in previous)
                         or any(slot_is_current(item['contract'].get('collection_slot')) for item in previous)):
+                    continue
+                if created>=remaining:
+                    if not current or current['state']!='review_candidate' or current['reason_code']!='authoring_hourly_capacity_reached':
+                        transition(conn,row['id'],'review_candidate','authoring_hourly_capacity_reached',
+                            '검색량 기준은 충족했고 중복 검사는 통과했지만 기존 시간당 Codex 작성 한도가 사용 중입니다. 현재 수집 회차 안에서만 다시 확인합니다.',
+                            'system:trend-volume-priority',category=current.get('category') if current else None,
+                            evidence={'geo':mapping['geo'],'blog_id':str(mapping['blog_id']),
+                            'volume_lower_bound':row['source_volume_lower_bound'],
+                            'minimum_authoring_volume':minimum_volume,'collection_slot':slot.isoformat(),
+                            'duplicate_check':'passed','hourly_limit':limit,'remaining_capacity':0,
+                            'publication_authorized':False})
                     continue
                 raw_material=row.get('raw_payload') or {}
                 headline_context=' '.join(str(item.get('title') or '') for item in raw_material.get('news_items',[])
@@ -572,7 +590,7 @@ def queue_selected() -> dict[str,int]:
                 created+=1
             # The threshold lane is authoritative for the pass. If its requests
             # consume the hourly capacity, remaining candidates wait for a later pass.
-            if created>=remaining:
+            if not include_general or created>=remaining:
                 continue
             eligible_general=[row for row in low_volume if row['trend_started_at'] is not None]
             if not eligible_general:
@@ -615,7 +633,29 @@ def queue_selected() -> dict[str,int]:
                     'publication_authorized':False})
                 created+=1
                 break
-        return {'created':created,'hourly_capacity':limit}
+        waiting_row=conn.execute(
+            "SELECT count(*) n FROM trend_editorial_events e JOIN trend_topic_memberships m ON m.topic_id=e.topic_id JOIN trend_observations o ON o.id=m.observation_id JOIN trend_collection_slots s ON s.run_id=o.run_id AND s.geo=o.geo WHERE e.id=(SELECT max(e2.id) FROM trend_editorial_events e2 WHERE e2.topic_id=e.topic_id) AND e.state='review_candidate' AND e.reason_code='authoring_hourly_capacity_reached' AND s.slot_at=%s",
+            (slot,)).fetchone()
+        return {'created':created,'hourly_capacity':limit,
+                'capacity_waiting':int(waiting_row['n']) if waiting_row else 0}
+
+
+def retry_volume_capacity() -> dict[str,int]:
+    """Retry only explicit waiters from the still-current slot; never inspect old slots."""
+    from .automation_controls import allowed
+    if not allowed('auto_manuscript_enabled'):
+        return {'created':0,'capacity_waiting':0}
+    slot=current_slot()
+    with connection() as conn:
+        waiting=conn.execute('''SELECT EXISTS(SELECT 1 FROM trend_editorial_events e
+            JOIN trend_topic_memberships m ON m.topic_id=e.topic_id
+            JOIN trend_observations o ON o.id=m.observation_id
+            JOIN trend_collection_slots s ON s.run_id=o.run_id AND s.geo=o.geo
+            WHERE e.id=(SELECT max(e2.id) FROM trend_editorial_events e2 WHERE e2.topic_id=e.topic_id)
+              AND e.state='review_candidate' AND e.reason_code='authoring_hourly_capacity_reached' AND s.slot_at=%s) AS found''',(slot,)).fetchone()
+    if not waiting or not waiting['found']:
+        return {'created':0,'capacity_waiting':0}
+    return queue_selected(include_general=False)
 
 def expire_pending(limit:int=100) -> int:
     """Expire only queued, never-started authoring requests under row locks."""

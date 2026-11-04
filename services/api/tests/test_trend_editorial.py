@@ -133,7 +133,10 @@ def test_old_slot_candidate_expires_without_deleting_observation(lab,monkeypatch
 
 
 def test_selected_current_slot_queues_once_for_unambiguous_blog(lab,monkeypatch):
+    from woori import automation_controls
     conn,api,h=bind(lab,monkeypatch)
+    monkeypatch.setattr(automation_controls,'allowed',lambda key:key in {'trends_collection_enabled','auto_manuscript_enabled'})
+    monkeypatch.setattr(keyword_jobs,'authoring_backoff',lambda _conn:None)
     fixed_slot=datetime(2026,10,30,0,0,tzinfo=UTC)
     monkeypatch.setattr(editorial,'current_slot',lambda:fixed_slot)
     name='software launch '+uuid4().hex
@@ -175,6 +178,64 @@ def test_threshold_volume_forces_research_request_without_editorial_score_gate(l
     assert request['contract']['authoring_volume_threshold']==5000
     assert request['contract']['target_blog_id']==str(blog)
     assert request['contract']['publication_authorized'] is False
+
+
+def test_threshold_volume_waits_for_hourly_capacity_and_retries_only_current_slot(lab,monkeypatch):
+    from woori import automation_controls
+    conn,_api,_h=bind(lab,monkeypatch)
+    monkeypatch.setattr(automation_controls,'allowed',lambda key:key in {'trends_collection_enabled','auto_manuscript_enabled'})
+    monkeypatch.setattr(keyword_jobs,'authoring_backoff',lambda _conn:None)
+    blog=authoring_blog(conn,monkeypatch)
+    observed=observation(conn,'weather',payload={},volume=10000)
+    fixtures=[]
+    for index in range(4):
+        query=f'capacity fixture {index} {uuid4().hex}'
+        dummy=observation(conn,query,payload={},volume=1000)
+        fixtures.append((query,dummy))
+    editorial.reconcile()
+    for index,(query,dummy) in enumerate(fixtures):
+        topic=conn.execute('SELECT topic_id FROM trend_topic_memberships WHERE observation_id=%s',(dummy,)).fetchone()['topic_id']
+        conn.execute("""INSERT INTO trend_generation_requests(topic_id,duplicate_key,contract,state)
+            VALUES(%s,%s,%s,'failed')""",(topic,f'capacity-fixture-{uuid4()}',Jsonb({
+                'query':query,'source_country':'KR','target_blog_id':str(blog),
+                'collection_slot':editorial.current_slot().isoformat()})))
+    result=editorial.queue_selected()
+    event=conn.execute("""SELECT state,reason_code,evidence FROM trend_editorial_events
+        WHERE topic_id=(SELECT topic_id FROM trend_topic_memberships WHERE observation_id=%s)
+        ORDER BY id DESC LIMIT 1""",(observed,)).fetchone()
+    assert result['created']==0 and result['capacity_waiting']==1
+    assert event['state']=='review_candidate' and event['reason_code']=='authoring_hourly_capacity_reached'
+    assert event['evidence']['volume_lower_bound']==10000
+    assert event['evidence']['duplicate_check']=='passed'
+
+    conn.execute("UPDATE trend_generation_requests SET created_at=now()-interval '61 minutes' WHERE duplicate_key LIKE 'capacity-fixture-%'")
+    assert editorial.retry_volume_capacity()['created']==1
+    request=conn.execute("""SELECT q.* FROM trend_generation_requests q
+        JOIN trend_topic_memberships m ON m.topic_id=q.topic_id WHERE m.observation_id=%s""",(observed,)).fetchone()
+    assert request['contract']['selection_mode']=='volume_threshold_priority'
+    assert request['contract']['authoring_volume_threshold']==5000
+    assert editorial.dispatch()['created']==1
+
+
+def test_capacity_waiter_from_old_slot_is_never_requeued(lab,monkeypatch):
+    from woori import automation_controls, keyword_jobs
+    conn,_api,_h=bind(lab,monkeypatch)
+    monkeypatch.setattr(automation_controls,'allowed',lambda key:key in {'trends_collection_enabled','auto_manuscript_enabled'})
+    monkeypatch.setattr(keyword_jobs,'authoring_backoff',lambda _conn:None)
+    blog=authoring_blog(conn,monkeypatch)
+    observed=observation(conn,'weather',payload={},volume=10000)
+    editorial.reconcile()
+    topic=conn.execute('SELECT topic_id FROM trend_topic_memberships WHERE observation_id=%s',(observed,)).fetchone()['topic_id']
+    for index in range(4):
+        conn.execute("""INSERT INTO trend_generation_requests(topic_id,duplicate_key,contract,state)
+            VALUES(%s,%s,%s,'failed')""",(topic,f'old-slot-capacity-fixture-{index}-{uuid4()}',Jsonb({
+                'query':f'prior request {index}','source_country':'US','target_blog_id':str(blog),
+                'collection_slot':editorial.current_slot().isoformat()})))
+    assert editorial.queue_selected()['created']==0
+    current=editorial.current_slot()
+    monkeypatch.setattr(editorial,'current_slot',lambda:current+timedelta(minutes=30))
+    assert editorial.retry_volume_capacity()['created']==0
+    assert conn.execute('SELECT count(*) n FROM trend_generation_requests WHERE topic_id=%s',(topic,)).fetchone()['n']==4
 
 
 @pytest.mark.parametrize('volume',[3000,1000,None])
@@ -296,7 +357,10 @@ def test_country_rank_queue_creates_distinct_jobs_for_one_multicountry_blog(lab,
 
 
 def test_country_rank_queue_falls_through_after_insufficient_evidence(lab,monkeypatch):
+    from woori import automation_controls
     conn,_api,_h=bind(lab,monkeypatch)
+    monkeypatch.setattr(automation_controls,'allowed',lambda key:key in {'trends_collection_enabled','auto_manuscript_enabled'})
+    monkeypatch.setattr(keyword_jobs,'authoring_backoff',lambda _conn:None)
     profile=conn.execute("INSERT INTO language_profiles(language_code,target_country) VALUES('ko','KR') ON CONFLICT(language_code,target_country) DO UPDATE SET search_intent=language_profiles.search_intent RETURNING id").fetchone()['id']
     blog=conn.execute("INSERT INTO blogger_blogs(language_code,url,display_name,blog_id) VALUES('ko',%s,'Rank fallback fixture','1234567902') RETURNING id",('https://fallback-'+uuid4().hex[:8]+'.blogspot.com',)).fetchone()['id']
     conn.execute("INSERT INTO publishing_policies(language_code,blog_id,profile_id,active) VALUES('ko',%s,%s,false)",(blog,profile))

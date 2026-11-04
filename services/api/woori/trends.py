@@ -63,12 +63,16 @@ def _date(value: str | None) -> datetime | None:
         return None
 
 
-def parse_approx_traffic(value: str | None) -> int | None:
-    """Parse only documented-looking bucket labels; never treat them as exact counts."""
-    if not value:
+def parse_approx_traffic(value: str | float | None) -> int | None:
+    """Return a safe lower-bound comparison value without asserting an exact bucket count."""
+    if value is None or isinstance(value, bool):
         return None
+    if isinstance(value, int):
+        return value if 0 <= value <= 9_223_372_036_854_775_807 else None
+    if isinstance(value, float):
+        value = str(value)
     label = " ".join(value.split()).upper().replace(",", "")
-    match = re.fullmatch(r"(\d+(?:\.\d+)?)([KMB]?)\+", label)
+    match = re.fullmatch(r"(\d+(?:\.\d+)?)([KMB]?)(\+?)", label)
     if not match:
         return None
     multiplier = {"": 1, "K": 1_000, "M": 1_000_000, "B": 1_000_000_000}[match.group(2)]
