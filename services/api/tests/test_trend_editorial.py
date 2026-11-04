@@ -30,7 +30,22 @@ def observation(conn,query,geo='KR',payload=None,volume=5000):
         conn.execute("INSERT INTO trend_collection_slots(geo,slot_at,run_id,result) VALUES(%s,%s,%s,%s)",(geo,editorial.current_slot(),run,Jsonb({'status':'succeeded'})))
     return conn.execute("""INSERT INTO trend_observations(run_id,geo,platform,query,source_url,response_sha256,raw_payload,source_volume_label,source_volume_lower_bound,trend_started_at)
         VALUES(%s,%s,'google_trends',%s,'https://trends.google.com/trending/rss',%s,%s,%s,%s,now()) RETURNING id""",
-        (run,geo,query,'a'*64,Jsonb(payload or {}),f'{volume}+',volume)).fetchone()['id']
+        (run,geo,query,'a'*64,Jsonb(payload or {}),f'{volume}+' if volume is not None else None,volume)).fetchone()['id']
+
+
+def authoring_blog(conn,monkeypatch,geo='KR',language='ko'):
+    country={'KR':'KR','US':'US','JP':'JP','DE':'DE','BR':'BR','VN':'VN'}[geo]
+    conn.execute("INSERT INTO languages(code,display_name,active) VALUES(%s,%s,true) ON CONFLICT(code) DO UPDATE SET active=true",
+        (language,f'{geo} authoring language'))
+    conn.execute("INSERT INTO language_profiles(language_code,target_country) VALUES(%s,%s) ON CONFLICT(language_code,target_country) DO UPDATE SET search_intent=language_profiles.search_intent",
+        (language,country))
+    blog=conn.execute("INSERT INTO blogger_blogs(language_code,url,display_name,blog_id) VALUES(%s,%s,'Volume fixture','1234567898') RETURNING id",
+        (language,f'https://volume-{uuid4().hex[:8]}.blogspot.com')).fetchone()['id']
+    conn.execute("INSERT INTO publishing_policies(language_code,blog_id,profile_id,active) SELECT %s,%s,id,false FROM language_profiles WHERE language_code=%s AND target_country=%s",
+        (language,blog,language,country))
+    conn.execute("INSERT INTO trend_blog_geo_authoring(blog_id,geo,enabled,processing_order) VALUES(%s,%s,true,1)",(blog,geo))
+    monkeypatch.setattr(keyword_jobs,'targets',lambda _:[{'id':blog,'target_country':country,'language_code':language}])
+    return blog
 
 
 @pytest.mark.parametrize(('query','payload','expected'),[
@@ -133,16 +148,77 @@ def test_selected_current_slot_queues_once_for_unambiguous_blog(lab,monkeypatch)
     conn.execute("INSERT INTO trend_blog_geo_authoring(blog_id,geo,enabled,processing_order) VALUES(%s,'KR',true,1)",(blog,))
     monkeypatch.setattr(keyword_jobs,'targets',lambda _:[{'id':blog,'target_country':'KR','language_code':'ko'}])
     assert editorial.queue_selected()['created']==1
-    assert editorial.queue_selected()['created']==0
-    assert conn.execute("SELECT count(*) n FROM trend_generation_requests q JOIN trend_topic_memberships m ON m.topic_id=q.topic_id WHERE m.observation_id=%s",(low_observation,)).fetchone()['n']==0
+    assert editorial.queue_selected()['created']==1
+    assert conn.execute("SELECT count(*) n FROM trend_generation_requests q JOIN trend_topic_memberships m ON m.topic_id=q.topic_id WHERE m.observation_id=%s",(low_observation,)).fetchone()['n']==1
     low_topic=api.get('/admin/research/trend-editorial/'+str(low_observation),headers=h).json()['topic_id']
-    rejected=api.post('/admin/research/trend-editorial/topics/'+low_topic+'/decision',headers=h,
+    accepted=api.post('/admin/research/trend-editorial/topics/'+low_topic+'/decision',headers=h,
         json={'request_key':str(uuid4()),'action':'queue','reason':'Isolated minimum volume check','blog_id':str(blog)})
-    assert rejected.status_code==409 and rejected.json()['detail']=='trend_authoring_volume_below_minimum'
+    assert accepted.status_code==200
     row=conn.execute('SELECT * FROM trend_generation_requests WHERE topic_id=%s',(topic,)).fetchone()
     assert row['contract']['selection_rank']==1 and row['contract']['source_country']=='KR'
     assert editorial.slot_is_current(row['contract']['collection_slot'])
     assert editorial.dispatch()['created']==1
+
+
+@pytest.mark.parametrize('volume',[20000,10000,5000])
+def test_threshold_volume_forces_research_request_without_editorial_score_gate(lab,monkeypatch,volume):
+    conn,_api,_h=bind(lab,monkeypatch)
+    blog=authoring_blog(conn,monkeypatch)
+    query='weather'
+    observed=observation(conn,query,payload={},volume=volume)
+    editorial.reconcile()
+    assert conn.execute("SELECT state FROM trend_editorial_events WHERE topic_id=(SELECT topic_id FROM trend_topic_memberships WHERE observation_id=%s) ORDER BY id DESC LIMIT 1",(observed,)).fetchone()['state']=='discarded'
+    assert editorial.queue_selected()['created']==1
+    request=conn.execute("SELECT q.* FROM trend_generation_requests q JOIN trend_topic_memberships m ON m.topic_id=q.topic_id WHERE m.observation_id=%s",(observed,)).fetchone()
+    assert request['state']=='generation_queued'
+    assert request['contract']['selection_mode']=='volume_threshold_priority'
+    assert request['contract']['authoring_volume_threshold']==5000
+    assert request['contract']['target_blog_id']==str(blog)
+    assert request['contract']['publication_authorized'] is False
+
+
+@pytest.mark.parametrize('volume',[3000,1000,None])
+def test_below_threshold_and_missing_volume_use_general_policy(lab,monkeypatch,volume):
+    conn,_api,_h=bind(lab,monkeypatch)
+    authoring_blog(conn,monkeypatch)
+    query='software product launch '+uuid4().hex
+    observed=observation(conn,query,payload={'news_items':[{'title':query+' announced'}]},volume=volume)
+    editorial.reconcile()
+    assert editorial.queue_selected()['created']==1
+    request=conn.execute("SELECT q.* FROM trend_generation_requests q JOIN trend_topic_memberships m ON m.topic_id=q.topic_id WHERE m.observation_id=%s",(observed,)).fetchone()
+    assert request['state']=='generation_queued'
+    assert request['contract']['selection_mode']=='general_editorial_policy'
+    assert request['contract']['search_volume_raw']==(None if volume is None else f'{volume}+')
+
+
+def test_threshold_volume_duplicate_alias_is_queued_only_once(lab,monkeypatch):
+    conn,_api,_h=bind(lab,monkeypatch)
+    authoring_blog(conn,monkeypatch)
+    suffix=uuid4().hex
+    first=observation(conn,'TSLA quarterly earnings '+suffix,'KR',payload={'news_items':[{'title':'Quarterly earnings announced'}]},volume=20000)
+    second=observation(conn,'Tesla quarterly earnings '+suffix,'KR',payload={'news_items':[{'title':'Quarterly earnings announced'}]},volume=10000)
+    # Same reviewed alias is used in the actual queries, not heuristic translation.
+    conn.execute("INSERT INTO editorial_query_aliases(geo,alias,canonical,reason) VALUES('KR','TSLA','Tesla','Reviewed company ticker alias for duplicate detection.')")
+    editorial.reconcile()
+    assert editorial.queue_selected()['created']==1
+    requests=conn.execute("SELECT count(*) n FROM trend_generation_requests WHERE contract->>'source_country'='KR'").fetchone()['n']
+    assert requests==1
+    assert conn.execute("SELECT count(*) n FROM trend_generation_requests q JOIN trend_topic_memberships m ON m.topic_id=q.topic_id WHERE m.observation_id=ANY(%s)",([first,second],)).fetchone()['n']==1
+
+
+def test_threshold_request_reaches_existing_codex_dispatch_without_publication(lab,monkeypatch):
+    conn,_api,_h=bind(lab,monkeypatch)
+    conn.execute("INSERT INTO categories(slug) VALUES('general-news') ON CONFLICT DO NOTHING")
+    authoring_blog(conn,monkeypatch)
+    observed=observation(conn,'weather',payload={},volume=20000)
+    editorial.reconcile()
+    before=conn.execute('SELECT count(*) n FROM publishing_jobs').fetchone()['n']
+    assert editorial.queue_selected()['created']==1
+    assert editorial.dispatch()['created']==1
+    job=conn.execute("SELECT j.* FROM codex_authoring_jobs j JOIN trend_generation_requests q ON q.authoring_job_id=j.id JOIN trend_topic_memberships m ON m.topic_id=q.topic_id WHERE m.observation_id=%s",(observed,)).fetchone()
+    assert job['job_type']=='google_trends' and job['state']=='queued'
+    assert job['options']['trend_contract']['search_volume_raw']=='20000+'
+    assert conn.execute('SELECT count(*) n FROM publishing_jobs').fetchone()['n']==before
 
 
 def test_blog_geo_mapping_supports_multiple_countries_with_audit(lab,monkeypatch):
@@ -214,12 +290,12 @@ def test_country_rank_queue_falls_through_after_insufficient_evidence(lab,monkey
     observation(conn,'software platform product update','KR',payload={},volume=5000)
     editorial.reconcile()
     monkeypatch.setattr(keyword_jobs,'targets',lambda _:[{'id':blog,'target_country':'KR','language_code':'ko'}])
-    assert editorial.queue_selected()['created']==1
+    assert editorial.queue_selected()['created']==2
     assert editorial.dispatch()['created']==1
     first=conn.execute("SELECT id,keyword FROM codex_authoring_jobs WHERE job_type='google_trends'").fetchone()
     assert first['keyword']=='technology launch highest rank'
     keyword_jobs.state(first['id'],'failed',error_code='insufficient_evidence',completed_at=datetime.now(UTC))
-    assert editorial.queue_selected()['created']==1
+    assert editorial.queue_selected()['created']==0
     assert editorial.dispatch()['created']==1
     second=conn.execute("SELECT id,keyword FROM codex_authoring_jobs WHERE job_type='google_trends' AND id<>%s",(first['id'],)).fetchone()
     assert second['keyword']=='software platform product update'

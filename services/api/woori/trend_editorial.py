@@ -283,7 +283,8 @@ class Decision(BaseModel):
 
 def queue_topic(conn:Any,topic_id:UUID,blog_id:UUID,*,selection_rank:int|None=None,
                 processing_order:int|None=None,new_event_key:UUID|None=None,
-                selected_observation_id:UUID|None=None) -> dict[str,Any]:
+                selected_observation_id:UUID|None=None,selection_mode:str='editorial_selection',
+                authoring_volume_threshold:int|None=None) -> dict[str,Any]:
     from .keyword_jobs import targets
     current=latest(conn,topic_id)
     if not current or current['state'] not in {'selected','generation_queued'}:raise HTTPException(409,'topic_not_selected')
@@ -301,11 +302,6 @@ def queue_topic(conn:Any,topic_id:UUID,blog_id:UUID,*,selection_rank:int|None=No
     if not observations:raise HTTPException(409,'expired_collection_slot')
     newest=next((item for item in observations if item['id']==selected_observation_id),None) if selected_observation_id else observations[0]
     if newest is None:raise HTTPException(409,'selected_observation_not_in_current_slot')
-    minimum_volume=conn.execute(
-        'SELECT trends_authoring_min_volume FROM automation_controls WHERE id=1'
-    ).fetchone()['trends_authoring_min_volume']
-    if newest['source_volume_lower_bound'] is None or newest['source_volume_lower_bound']<minimum_volume:
-        raise HTTPException(409,'trend_authoring_volume_below_minimum')
     # Missing event date is deliberately a review boundary, not an invented event ID.
     event_stamp=newest['trend_started_at'] or newest['collected_at'].astimezone(trends.SCHEDULE_TIMEZONE).date()
     duplicate=hashlib.sha256(f"trend:{topic_id}:{event_stamp}:{blog_id}".encode()).hexdigest()
@@ -338,6 +334,9 @@ def queue_topic(conn:Any,topic_id:UUID,blog_id:UUID,*,selection_rank:int|None=No
         'collected_at':newest['collected_at'].isoformat(),'collection_slot':newest['slot_at'].isoformat(),
         'selection_reason':current['reason'],
         'editorial_selection':(current.get('evidence') or {}).get('selection'),
+        'selection_mode':selection_mode,
+        'authoring_volume_threshold':authoring_volume_threshold,
+        'publication_authorized':False,
         'raw_material':newest['raw_payload'],'duplicate_key':duplicate,'category':category,
         'selection_rank':selection_rank,'processing_order':processing_order,
         'content_type':'trends_major_issue','requires_codex_evaluation':True,'remote_duplicate_status':'not_checked'}
@@ -354,6 +353,65 @@ def queue_topic(conn:Any,topic_id:UUID,blog_id:UUID,*,selection_rank:int|None=No
 
 def recoverable_usage_request(row:dict[str,Any]) -> bool:
     return row['state']=='failed' and not row.get('import_id') and row.get('error_code') in {'codex_usage_limit','codex_capacity_unavailable'}
+
+
+def volume_priority_duplicates(conn:Any,topic:dict[str,Any],blog_id:UUID,observation:dict[str,Any],
+                              aliases:list[dict[str,Any]],seen_keys:set[tuple[str,str,str]]) -> list[dict[str,Any]]:
+    """Run duplicate checks without letting editorial scores gate the volume lane."""
+    from . import editorial_scoring as scoring
+
+    geo=str(observation['geo'])
+    key=scoring.canonical_query(topic['representative_query'],geo,aliases)
+    scoped_key=(str(blog_id),geo,key)
+    if not key or scoped_key in seen_keys:
+        return [{'type':'same_current_slot_candidate','normalized_query':key}]
+    matches:list[dict[str,Any]]=[]
+    history=conn.execute('''SELECT j.id,j.keyword,j.state,j.import_id,q.contract
+        FROM codex_authoring_jobs j LEFT JOIN trend_generation_requests q ON q.authoring_job_id=j.id
+        WHERE j.blog_id=%s AND (j.import_id IS NOT NULL OR j.state IN
+          ('queued','researching','writing','validating','import_pending')) LIMIT 2001''',(blog_id,)).fetchall()
+    if len(history)>=2000:
+        return [{'type':'history_limit_requires_review'}]
+    for item in history:
+        prior_geo=(item['contract'] or {}).get('source_country','')
+        if key==scoring.canonical_query(item['keyword'],prior_geo,aliases):
+            matches.append({'type':'existing_authoring_query','job_id':str(item['id'])})
+    prior_requests=conn.execute('''SELECT t.normalized_key,t.representative_geo,q.contract,q.state,
+            q.authoring_job_id,j.error_code,j.import_id
+        FROM trend_generation_requests q JOIN trend_topics t ON t.id=q.topic_id
+        LEFT JOIN codex_authoring_jobs j ON j.id=q.authoring_job_id
+        WHERE q.contract->>'target_blog_id'=%s AND q.contract->>'source_country'=%s
+        ORDER BY q.created_at DESC LIMIT 2001''',(str(blog_id),geo)).fetchall()
+    if len(prior_requests)>=2000:
+        return [{'type':'request_history_limit_requires_review'}]
+    for item in prior_requests:
+        if (key==scoring.canonical_query(item['normalized_key'],item['representative_geo'],aliases)
+                and not (item['state']=='failed' and not item['import_id']
+                         and item['error_code'] in {'codex_usage_limit','codex_capacity_unavailable'})):
+            matches.append({'type':'existing_trends_request','state':item['state']})
+    imported=conn.execute('''SELECT v.title,l.content_version_id,i.id import_id
+        FROM external_content_imports i JOIN external_content_import_versions v ON v.import_id=i.id
+        JOIN external_content_import_content_links l ON l.import_version_id=v.id
+        WHERE EXISTS(SELECT 1 FROM blogger_blogs b WHERE b.id=%s AND b.language_code=i.language_code)
+        ORDER BY v.created_at DESC LIMIT 2001''',(blog_id,)).fetchall()
+    if len(imported)>=2000:
+        return [{'type':'import_history_limit_requires_review'}]
+    candidates=[scoring.normalize(str(item.get('title') or ''))
+        for item in (observation.get('raw_payload') or {}).get('news_items',[]) if isinstance(item,dict)]
+    for item in imported:
+        title=scoring.normalize(item['title'])
+        if key==title or scoring.overlap(topic['representative_query'],item['title']) or any(
+            candidate and (title==candidate or scoring.overlap(candidate,item['title'])) for candidate in candidates
+        ):
+            matches.append({'type':'existing_import_title','import_id':str(item['import_id']),
+                            'content_version_id':str(item['content_version_id'])})
+    for item in prior_requests:
+        raw=(item['contract'] or {}).get('raw_material') or {}
+        prior_titles=[scoring.normalize(str(news.get('title') or ''))
+            for news in raw.get('news_items',[]) if isinstance(news,dict)]
+        if any(title and title in candidates for title in prior_titles):
+            matches.append({'type':'same_event_discovery_headline'})
+    return matches
 
 
 def prior_authoring_requests(conn:Any,key:str,blog_id:UUID) -> list[dict[str,Any]]:
@@ -407,38 +465,33 @@ def dispatch(limit:int=1) -> dict[str,int]:
 
 
 def queue_selected() -> dict[str,int]:
-    """Queue current-slot candidates by country rank using explicit blog mappings."""
+    """Prioritize current-slot volume-threshold requests, then use normal editorial ranking."""
     from .config import settings
     from .keyword_jobs import targets
     slot=current_slot()
-    from .editorial_intelligence import assess_current
-    assess_current(slot)
     with connection() as conn:
         conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('trend-selected-queue',0))")
-        # Read the latest operator setting for each queue pass. Unknown RSS volume
-        # is not evidence that the threshold was met.
-        volume_setting = conn.execute(
-            "SELECT trends_authoring_min_volume FROM automation_controls WHERE id=1"
-        ).fetchone()
+        volume_setting=conn.execute("SELECT trends_authoring_min_volume FROM automation_controls WHERE id=1").fetchone()
         if volume_setting is None:
             raise RuntimeError('trends_authoring_volume_setting_missing')
-        minimum_volume = int(volume_setting["trends_authoring_min_volume"])
+        minimum_volume=int(volume_setting['trends_authoring_min_volume'])
         from .keyword_jobs import authoring_backoff
         pause=authoring_backoff(conn)
-        if pause and pause['active']:return {'created':0,'codex_backoff':1}
+        if pause and pause['active']:
+            return {'created':0,'codex_backoff':1}
         limit=settings().trend_research_hourly_limit
-        recent=conn.execute('SELECT count(*) n FROM trend_generation_requests WHERE created_at>=now()-interval \'1 hour\'').fetchone()
+        recent=conn.execute("SELECT count(*) n FROM trend_generation_requests WHERE created_at>=now()-interval '1 hour'").fetchone()
         remaining=max(0,limit-int(recent['n'] if recent else 0))
-        if not remaining:return {'created':0,'hourly_capacity':limit}
+        if not remaining:
+            return {'created':0,'hourly_capacity':limit}
         mappings=conn.execute('''SELECT m.blog_id,m.geo,m.processing_order,b.display_name
             FROM trend_blog_geo_authoring m JOIN blogger_blogs b ON b.id=m.blog_id
             WHERE m.enabled AND b.active AND b.blog_id IS NOT NULL
             ORDER BY m.blog_id,m.processing_order,m.geo''').fetchall()
         blogs={b['id']:b for b in targets(conn)}
-        # Rotate each blog's starting geography by collection slot so a fixed
-        # ordering cannot starve the last country in a multi-country mapping.
         by_blog:dict[UUID,list[dict[str,Any]]]={}
-        for row in mappings:by_blog.setdefault(row['blog_id'],[]).append(dict(row))
+        for row in mappings:
+            by_blog.setdefault(row['blog_id'],[]).append(dict(row))
         interval=int(trends.collection_settings()['interval_minutes'])
         epoch=int(slot.timestamp()//(interval*60))
         ordered=[]
@@ -446,59 +499,120 @@ def queue_selected() -> dict[str,int]:
             offset=epoch%len(items) if items else 0
             ordered.extend(items[offset:]+items[:offset])
         created=0
+        seen_keys:set[tuple[str,str,str]]=set()
+        from . import editorial_scoring as scoring
         for mapping in ordered:
-            if created>=remaining:break
+            if created>=remaining:
+                break
             blog=blogs.get(mapping['blog_id'])
-            if not blog:continue
-            already=conn.execute('''SELECT count(*) n, bool_or(state IN ('generation_queued','generating','imported')) active
-                FROM trend_generation_requests WHERE contract->>'source_country'=%s
-                  AND contract->>'target_blog_id'=%s AND (contract->>'collection_slot')::timestamptz=%s''',
-                (mapping['geo'],str(mapping['blog_id']),slot.isoformat())).fetchone()
-            if already and (already['active'] or already['n']>=3):continue
-            rows=conn.execute('''SELECT t.id,t.representative_query,t.normalized_key,t.source_language,o.id observation_id,o.geo,
-                    o.source_volume_lower_bound,o.source_volume_label,o.trend_started_at,o.collected_at,o.raw_payload,
-                    e.state,e.category,e.reason_code
+            if not blog:
+                continue
+            rows=conn.execute('''SELECT DISTINCT ON (t.id) t.id,t.representative_query,t.normalized_key,
+                    t.source_language,o.id observation_id,o.geo,o.source_volume_lower_bound,o.source_volume_label,
+                    o.trend_started_at,o.collected_at,o.raw_payload,e.state,e.category,e.reason_code,e.actor
                 FROM trend_topics t
                 JOIN trend_topic_memberships m ON m.topic_id=t.id
                 JOIN trend_observations o ON o.id=m.observation_id AND o.geo=%s
                 JOIN trend_collection_slots s ON s.run_id=o.run_id AND s.geo=o.geo AND s.slot_at=%s
-                LEFT JOIN LATERAL(SELECT state,category,reason_code FROM trend_editorial_events
+                LEFT JOIN LATERAL(SELECT state,category,reason_code,actor FROM trend_editorial_events
                     WHERE topic_id=t.id ORDER BY id DESC LIMIT 1)e ON true
-                WHERE o.source_volume_lower_bound >= %s
-                  AND o.trend_started_at IS NOT NULL
-                ORDER BY o.source_volume_lower_bound DESC,o.trend_started_at DESC,o.collected_at DESC,t.id LIMIT 100''',
-                (mapping['geo'],slot,minimum_volume)).fetchall()
-            from .editorial_intelligence import rank_candidates
-            rows=rank_candidates(conn,[dict(r) for r in rows],mapping['blog_id'],slot)
-            for rank,row in enumerate(rows,1):
-                if row['selection']['decision']!='selected':continue
-                previous=prior_authoring_requests(conn,row['normalized_key'],mapping['blog_id'])
-                if previous and (not all(recoverable_usage_request(p) for p in previous)
-                        or any(slot_is_current(p['contract'].get('collection_slot')) for p in previous)):continue
-                _state,code,category='selected','editorial_intelligence_selected',row['selection']['category']
-                if not (row['category'] or category):continue
-                category=row['category'] or category
+                WHERE s.slot_at=%s
+                ORDER BY t.id,o.collected_at DESC,o.id DESC''',
+                (mapping['geo'],slot,slot)).fetchall()
+            candidates=[dict(row) for row in rows]
+            high_volume=sorted((row for row in candidates if row['source_volume_lower_bound'] is not None
+                and row['source_volume_lower_bound']>=minimum_volume),
+                key=lambda row:(-int(row['source_volume_lower_bound']),
+                    -(row['trend_started_at'].timestamp() if row['trend_started_at'] else 0),
+                    -row['collected_at'].timestamp(),str(row['id'])))
+            low_volume=[row for row in candidates if row['source_volume_lower_bound'] is None
+                or row['source_volume_lower_bound']<minimum_volume]
+            aliases=[dict(row) for row in conn.execute(
+                'SELECT geo,alias,canonical FROM editorial_query_aliases WHERE created_at<=%s ORDER BY id',(slot,)).fetchall()]
+            created_for_mapping=0
+            for rank,row in enumerate(high_volume,1):
+                if created>=remaining:
+                    break
                 current=latest(conn,row['id'])
-                if current and current['state']=='discarded' and current['actor'] not in {'system:trend-slot'}:continue
-                if not current or current['state'] in {'selected','review_candidate','pending_classification','collected','discarded'} or previous:
-                    transition(conn,row['id'],'selected',code,
-                        '현재 수집 회차의 검색량·최신성·주제 적합성으로 Codex 독립 조사를 선정했습니다. 근거나 사실 승인으로 간주하지 않습니다.',
-                        'system:trend-country-rank',category=category,evidence={'geo':mapping['geo'],
-                        'volume_lower_bound':row['source_volume_lower_bound'],'trend_started_at':row['trend_started_at'].isoformat(),
-                        'collection_slot':slot.isoformat(),'selection':row['selection'],
-                        'minimum_authoring_volume':minimum_volume,
-                        'rank_basis':'weighted_within_geo_editorial_priority'})
+                if current and current['state'] in {'imported','published','generating'}:
+                    continue
+                if current and current['state']=='discarded' and not str(current['actor']).startswith('system:'):
+                    continue
+                duplicates=volume_priority_duplicates(conn,
+                    {'representative_query':row['representative_query'],'normalized_key':row['normalized_key']},
+                    mapping['blog_id'],row,aliases,seen_keys)
+                if duplicates:
+                    continue
+                previous=prior_authoring_requests(conn,row['normalized_key'],mapping['blog_id'])
+                if previous and (not all(recoverable_usage_request(item) for item in previous)
+                        or any(slot_is_current(item['contract'].get('collection_slot')) for item in previous)):
+                    continue
+                raw_material=row.get('raw_payload') or {}
+                headline_context=' '.join(str(item.get('title') or '') for item in raw_material.get('news_items',[])
+                    if isinstance(item,dict))
+                valid_categories={entry['slug'] for entry in EDITORIAL_CATEGORIES}
+                category=next((item for item in (row.get('category'),*topics.research_domains(
+                    row['representative_query']+' '+headline_context)) if item in valid_categories),'general-news')
+                transition(conn,row['id'],'selected','volume_threshold_authoring_priority',
+                    'Current-slot Trends volume met the configured authoring threshold. Independent research and existing evidence and publication checks remain required.',
+                    'system:trend-volume-priority',category=category,evidence={'geo':mapping['geo'],
+                    'volume_lower_bound':row['source_volume_lower_bound'],'minimum_authoring_volume':minimum_volume,
+                    'collection_slot':slot.isoformat(),'selection_mode':'volume_threshold_priority',
+                    'duplicate_check':'passed','publication_authorized':False})
                 queued=queue_topic(conn,row['id'],mapping['blog_id'],selection_rank=rank,
-                                    processing_order=mapping['processing_order'],
-                                    selected_observation_id=row['observation_id'])
+                    processing_order=mapping['processing_order'],selected_observation_id=row['observation_id'],
+                    selection_mode='volume_threshold_priority',authoring_volume_threshold=minimum_volume)
+                transition(conn,row['id'],'generation_queued','volume_threshold_authoring_request',
+                    'Volume-priority research request queued; article facts still require independent verification.',
+                    'system:trend-volume-priority',category=category,evidence={'generation_request_id':str(queued['id']),
+                    'geo':mapping['geo'],'blog_id':str(mapping['blog_id']),'processing_order':mapping['processing_order'],
+                    'volume_lower_bound':row['source_volume_lower_bound'],'minimum_authoring_volume':minimum_volume,
+                    'publication_authorized':False})
+                seen_keys.add((str(mapping['blog_id']),mapping['geo'],
+                               scoring.canonical_query(row['representative_query'],mapping['geo'],aliases)))
+                created+=1
+                created_for_mapping+=1
+            # The threshold lane is authoritative for the pass. If its requests
+            # consume the hourly capacity, remaining candidates wait for a later pass.
+            if created_for_mapping or created>=remaining:
+                continue
+            eligible_general=[row for row in low_volume if row['trend_started_at'] is not None]
+            if not eligible_general:
+                continue
+            from .editorial_intelligence import rank_candidates
+            ranked=rank_candidates(conn,eligible_general,mapping['blog_id'],slot)
+            for rank,row in enumerate(ranked,1):
+                if row['selection']['decision']!='selected':
+                    continue
+                previous=prior_authoring_requests(conn,row['normalized_key'],mapping['blog_id'])
+                if previous and (not all(recoverable_usage_request(item) for item in previous)
+                        or any(slot_is_current(item['contract'].get('collection_slot')) for item in previous)):
+                    continue
+                category=row['selection'].get('category')
+                if not category or category not in {entry['slug'] for entry in EDITORIAL_CATEGORIES}:
+                    continue
+                current=latest(conn,row['id'])
+                if current and current['state']=='discarded' and not str(current['actor']).startswith('system:'):
+                    continue
+                if current and current['state'] in {'imported','published','generating'}:
+                    continue
+                transition(conn,row['id'],'selected','editorial_intelligence_selected',
+                    'Below-threshold or unavailable-volume candidate passed the existing editorial selection policy; research and publication approvals remain separate.',
+                    'system:trend-country-rank',category=category,evidence={'geo':mapping['geo'],
+                    'volume_lower_bound':row['source_volume_lower_bound'],'trend_started_at':row['trend_started_at'].isoformat(),
+                    'collection_slot':slot.isoformat(),'selection':row['selection'],
+                    'minimum_authoring_volume':minimum_volume,'selection_mode':'general_editorial_policy'})
+                queued=queue_topic(conn,row['id'],mapping['blog_id'],selection_rank=rank,
+                    processing_order=mapping['processing_order'],selected_observation_id=row['observation_id'],
+                    selection_mode='general_editorial_policy',authoring_volume_threshold=minimum_volume)
                 transition(conn,row['id'],'generation_queued','automatic_country_rank_queue',
-                    '국가별 편집 우선순위 후보를 공통 Codex Runner의 웹 조사 큐로 전달했습니다.',
+                    'General editorial selection candidate queued for independent research.',
                     'system:trend-slot',category=category,evidence={'generation_request_id':str(queued['id']),
-                    'geo':mapping['geo'],'blog_id':str(mapping['blog_id']),'processing_order':mapping['processing_order']})
+                    'geo':mapping['geo'],'blog_id':str(mapping['blog_id']),'processing_order':mapping['processing_order'],
+                    'publication_authorized':False})
                 created+=1
                 break
         return {'created':created,'hourly_capacity':limit}
-
 
 def expire_pending(limit:int=100) -> int:
     """Expire only queued, never-started authoring requests under row locks."""

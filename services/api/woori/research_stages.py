@@ -268,15 +268,21 @@ def evaluation_tick(stop: Callable[[], bool] = lambda: False) -> dict[str, Any]:
         )
         if stop() or editorial.current_slot() != slot:
             return {"stage_status": "superseded"}
+        # Handoff is evaluated before optional aggregate score refresh so a
+        # qualifying volume-priority candidate cannot be blocked by the general
+        # scoring pass. queue_selected applies the normal scoring policy itself
+        # to below-threshold and volume-unavailable candidates.
+        queued = editorial.queue_selected()
         scored = (
             (saved["result"].get("scores", {}) if saved else {})
             if finished >= 2
+            else {"authoring_requests_queued": int(queued.get("created", 0))}
+            if queued.get("created", 0) > 0
             else engine.assess_current(slot)
         )
         progress(job, "scores_saved", sum(scored.values()), details={"scores": scored})
         if stop() or editorial.current_slot() != slot:
             return {"stage_status": "superseded"}
-        queued = editorial.queue_selected()
         editorial.expire_pending()
         dispatched = editorial.dispatch()
         checkpoint("handoff_saved", sum(scored.values()))

@@ -35,3 +35,17 @@
 - 구현 커밋 및 운영 적용 결과는 후속 Git 로그와 서비스 상태에서 확인한다.
 
 관련 문서: `AGENTS.md`, `docs/development/P5-CODEX-124.md`, `docs/operations/runbook.md`.
+
+## Follow-up: Google Trends volume-priority authoring (2026-11-04)
+
+- Work ID: P5-CODEX-125 follow-up; branch: develop; start HEAD: a8ef505c9242de8303c511bcf5122818b6d817c6. This ID is already used by the Blogger policy-controls entry above; this follow-up is appended to preserve that record.
+- Reason: the existing minimum-volume rule rejected observations below the threshold and did not reliably guarantee authoring requests for high-volume observations.
+- Change: current-slot observations at or above the persisted threshold (default 5,000) now enter a distinct authoring-priority path after explicit active region/blog mapping and duplicate/idempotency checks. This path does not require editorial score, general-news ranking, or source-count selection to create the research request. It records publication_authorized=false; existing Codex research, evidence, quality, Import, and publication controls remain independent.
+- Below-threshold and null-volume observations are passed to the existing general editorial selection; volume alone no longer rejects them. Unknown volume is not coerced to a number. Only current collection slots are considered.
+- Dashboard wording now describes the setting as Trends search-volume authoring threshold and explains the two paths and that authoring does not grant publication approval. The existing ON/OFF semantics and 5,000 default are unchanged.
+- Migration 088 adds the neutral general-news research category for high-volume topics that have no narrower deterministic taxonomy. The migration is additive and idempotent.
+- Changed files: services/api/woori/trend_editorial.py, services/api/woori/research_stages.py, services/api/woori/editorial_taxonomy.py, services/api/tests/test_trend_editorial.py, services/api/tests/test_research_stages.py, apps/dashboard/app/operations/automation/controls.tsx, scripts/088_trends_general_news_category.sql, scripts/migrate.py, this record.
+- Verification: focused pytest suite 70 passed; Ruff passed; mypy passed for the three changed backend modules; Dashboard typecheck, lint, and production build passed; git diff --check passed. Blogger writes: 0.
+- Read-only operating DB check: current authoring threshold is 5,000 and schema version is 87. Migration 088 was not applied; service/runtime reflection is therefore pending. No historical collection slot was reprocessed.
+- Existing Trends schedules, 14-region configuration, publication queue, publication limits, and publication approval were not changed. Reservation/manual authoring flows are unaffected.
+- Commit: to be linked by the following Git history after commit. Remaining: apply the additive migration through the approved backup procedure and reflect the code in the local operating services; verify that the live Research Worker loads the new code/settings.

@@ -155,13 +155,13 @@ def test_partial_retry_only_failed_region_once(lanes, monkeypatch):
         (slot,),
     )
     assert trends.schedule_tick()["failures"] == 1
-    assert seen.count("JP") == 2 and len(seen) == 12
+    assert seen.count("JP") == 2 and len(seen) == len(trends.ALLOWED_GEOS) + 1
     conn.execute(
         "UPDATE trend_collection_slots SET updated_at=now()-interval '2 minutes' WHERE geo='JP' AND slot_at=%s",
         (slot,),
     )
     assert trends.schedule_tick()["status"] == "slot_complete"
-    assert len(seen) == 12
+    assert len(seen) == len(trends.ALLOWED_GEOS) + 1
 
 
 def test_collector_advances_two_slots_while_evaluation_is_blocked(lanes, monkeypatch):
@@ -189,8 +189,8 @@ def test_collector_advances_two_slots_while_evaluation_is_blocked(lanes, monkeyp
         slot[0] += timedelta(minutes=10)
         second = stages.collection_tick()
         assert second["status"] == "completed" and first["job_id"] != second["job_id"]
-        assert evaluator.is_alive() and len(seen) == 22
-        assert stages.collection_tick()["status"] == "cached" and len(seen) == 22
+        assert evaluator.is_alive() and len(seen) == 2 * len(trends.ALLOWED_GEOS)
+        assert stages.collection_tick()["status"] == "cached" and len(seen) == 2 * len(trends.ALLOWED_GEOS)
     finally:
         stop.set()
         release.set()
@@ -230,6 +230,27 @@ def test_latest_slot_evaluation_skips_legacy_all_pairs_and_reuses_scores(lanes, 
     assert stages.evaluation_tick()["status"] == "completed"
     assert stages.evaluation_tick()["status"] == "cached"
     assert calls == ["classify", "score"]
+
+
+def test_authoring_handoff_precedes_general_score_gate(lanes, monkeypatch):
+    conn, _, _ = lanes
+    monkeypatch.setattr(trends, "_collect_geo", fake_geo(conn, []))
+    assert stages.collection_tick()["status"] == "completed"
+    calls = []
+    monkeypatch.setattr(trend_editorial, "reconcile", lambda **_: {"selected": 0})
+    monkeypatch.setattr(
+        trend_editorial, "queue_selected", lambda: calls.append("queue") or {"created": 1}
+    )
+    monkeypatch.setattr(
+        editorial_intelligence,
+        "assess_current",
+        lambda *_: pytest.fail("general scores must not block an already queued volume candidate"),
+    )
+    monkeypatch.setattr(trend_editorial, "expire_pending", lambda: 0)
+    monkeypatch.setattr(trend_editorial, "dispatch", lambda: {"created": 0})
+    result = stages.evaluation_tick()
+    assert result["status"] == "completed"
+    assert calls == ["queue"]
 
 
 def test_sql_wait_limits_are_local_not_global():

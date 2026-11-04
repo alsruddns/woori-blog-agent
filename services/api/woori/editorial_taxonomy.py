@@ -7,6 +7,7 @@ from typing import Any
 # Registry is deliberately data-shaped: new categories can be added without
 # changing the import contract or hard-coding category branches in workflows.
 EDITORIAL_CATEGORIES: tuple[dict[str, Any], ...] = (
+    {"slug": "general-news", "name_ko": "일반 뉴스", "name_en": "General News", "deduplication_group": "general-news"},
     {"slug": "economy", "name_ko": "경제", "name_en": "Economy", "deduplication_group": "macro-markets"},
     {"slug": "finance", "name_ko": "금융", "name_en": "Finance", "deduplication_group": "macro-markets"},
     {"slug": "stocks", "name_ko": "주식", "name_en": "Stocks", "deduplication_group": "macro-markets"},
@@ -24,6 +25,7 @@ ISSUE_LABELS = {
     "de": "Aktuelles", "pt-BR": "Atualidades", "vi": "Tin tức",
 }
 CATEGORY_LABELS = {
+    "general-news": {"ko": "일반 뉴스", "en": "General News", "ja": "一般ニュース", "de": "Allgemeine Nachrichten", "pt-BR": "Notícias Gerais", "vi": "Tin tức chung"},
     "economy": {"ko": "경제", "en": "Economy", "ja": "経済", "zh-CN": "经济", "de": "Wirtschaft", "pt-BR": "Economia", "vi": "Kinh tế"},
     "finance": {"ko": "금융", "en": "Finance", "ja": "金融", "zh-CN": "金融", "de": "Finanzen", "pt-BR": "Finanças", "vi": "Tài chính"},
     "stocks": {"ko": "주식", "en": "Stocks", "ja": "株式", "zh-CN": "股票", "de": "Aktien", "pt-BR": "Ações", "vi": "Cổ phiếu"},
