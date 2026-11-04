@@ -843,12 +843,24 @@ def job_permitted(conn: Any, job_id: Any, *, running: bool = False) -> bool:
     if row["job_publication_mode"] != row["publication_mode"]:
         return False
     if running:
-        from .automation_auto import readiness
+        if row["lane"] == "auto" and origin.get("kind") == "google_trends":
+            # Trends admission and the Blogger wire must share the same
+            # fail-closed blocker decision. Editorial/SEO/research gaps are
+            # retained as follow-ups by this policy; generic manual readiness
+            # would turn those warnings into an extra approval gate here.
+            from .trends_publication import validate_trends_job
 
-        _content, _snapshot, quality_reasons = readiness(
-            conn, row["content_version_id"], row["blog_id"]
-        )
-        candidate["quality_ready"] = _content is not None and not quality_reasons
+            checked = validate_trends_job(conn, row["blog_id"], row["content_version_id"])
+            candidate["quality_ready"] = bool(
+                checked["row"] and checked["assessment"] and not checked["reasons"]
+            )
+        else:
+            from .automation_auto import readiness
+
+            _content, _snapshot, quality_reasons = readiness(
+                conn, row["content_version_id"], row["blog_id"]
+            )
+            candidate["quality_ready"] = _content is not None and not quality_reasons
     candidate["duplicate"] = bool(
         conn.execute(
             """SELECT 1 FROM publishing_records p

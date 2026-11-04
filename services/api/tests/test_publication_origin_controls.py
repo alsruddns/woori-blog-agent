@@ -8,7 +8,7 @@ from psycopg.types.json import Jsonb
 from test_automation_controls import BASE, link_trends, make_job, origin_grant, update
 from test_automation_controls import center as shared_center
 from test_automation_controls import lab as shared_lab
-from woori import automation_auto
+from woori import automation_auto, trends_publication
 from woori import automation_controls as controls
 from woori import publication_origin as origin
 from woori import scheduled_execution_receipts as receipts
@@ -190,8 +190,12 @@ def test_route_off_at_wire_blocks_without_http_and_other_route_survives(center, 
     enable(center, blog)
     link_trends(conn, version, blog)
     origin_grant(conn, job, version, controls.read(conn), blog)
-    # Mock only the independent editorial approval boundary, not lineage/policy.
-    monkeypatch.setattr(automation_auto, "readiness", lambda *a: ({}, {}, []))
+    # Mock only the Trends content decision, not lineage/policy.
+    monkeypatch.setattr(
+        trends_publication,
+        "validate_trends_job",
+        lambda *_args: {"row": {"id": "linked"}, "assessment": {"followups": []}, "reasons": []},
+    )
     assert controls.job_permitted(conn, job, running=True)
     # Unrelated path setting changes do not revoke this route's immutable grant.
     assert update(center, scheduled_auto_publishing_enabled=False).status_code == 200
@@ -351,6 +355,27 @@ def test_wire_rechecks_real_quality_without_promoting_import(center):
         "SELECT payload->'reasons' reasons FROM audit_events WHERE event_type='automation.origin_publication.blocked' ORDER BY id DESC LIMIT 1"
     ).fetchone()["reasons"]
     assert "quality_review_required" in reasons
+
+
+def test_trends_wire_uses_trends_blockers_and_keeps_review_gaps_as_followups(center, monkeypatch):
+    conn, _, _ = center
+    job, blog, version = make_job(
+        center, "scheduled_auto", "draft", method="codex_trends_export"
+    )
+    enable(center, blog)
+    link_trends(conn, version, blog)
+    origin_grant(conn, job, version, controls.read(conn), blog)
+    monkeypatch.setattr(
+        trends_publication,
+        "validate_trends_job",
+        lambda *_args: {"row": {"id": "linked"}, "assessment": {"followups": ["review gap"]}, "reasons": []},
+    )
+    monkeypatch.setattr(
+        automation_auto,
+        "readiness",
+        lambda *_args: pytest.fail("Trends wire must use its Trends-specific policy"),
+    )
+    assert controls.job_permitted(conn, job, running=True)
 
 
 def test_local_record_of_same_import_blocks_another_version_before_http(center):
