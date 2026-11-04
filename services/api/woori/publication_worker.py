@@ -247,8 +247,21 @@ def _scheduled_eligibility(conn: Any, imported: Any, version: Any, blog: Any) ->
         ).fetchone()["duplicate"]
         if duplicate:
             reasons.append("same_event_already_queued_or_published")
-    unique_reasons = list(dict.fromkeys(reasons))
-    return {"reasons": unique_reasons, "evidence": evidence_result,
+    from .publication_policy import evaluate_publication_content
+    safe_body_available = (
+        not sanitizer["changed"]
+        and sanitizer["substantive_blocks_remaining"] >= 2
+        and bool(assessment and assessment.get("safe_html"))
+        and "no_supported_body_after_sanitization" not in reasons
+    )
+    content_policy = evaluate_publication_content(
+        reasons, safe_body_available=safe_body_available,
+        existing_followups=evidence_result["followups"],
+    )
+    evidence_result["followups"] = content_policy["remediation_items"]
+    unique_reasons = list(dict.fromkeys(content_policy["blockers"]))
+    return {"reasons": unique_reasons, "decision": content_policy["decision"],
+            "remediation_codes": content_policy["remediation_codes"], "evidence": evidence_result,
             "sanitizer": sanitizer, "body": body, "assessment": assessment}
 
 

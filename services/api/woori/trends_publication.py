@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -51,7 +52,10 @@ def search_description_is_publishable(value: Any) -> bool:
     return 30 <= len(description) <= 150
 
 
-def assess_trends_article(item: dict[str, Any], body: str) -> dict[str, Any]:
+def assess_trends_article(
+    item: dict[str, Any], body: str, *, safe_body_available: bool | None = None,
+    review_gaps: Iterable[str] = (),
+) -> dict[str, Any]:
     """Post-editing Trends policy: assess format and basic risk, never promote claims."""
     from .editorial_html import markdown_to_blogger_html, sanitize_editorial_html
     reasons: list[str] = []
@@ -70,6 +74,14 @@ def assess_trends_article(item: dict[str, Any], body: str) -> dict[str, Any]:
         reasons.append("unsafe_article_format")
     if not item.get("sources") or not claims_are_publish_verified(item.get("claims")):
         reasons.append("claims_or_sources_not_verified")
+    if item.get("machine_passed") is not True:
+        reasons.append("machine_quality_not_passed")
+    if any(
+        isinstance(check, dict) and check.get("status") in {"fail", "failed", "not_measured", "review"}
+        for check in item.get("seo_checks") or []
+    ):
+        reasons.append("seo_check_not_passed")
+    reasons.extend(str(reason) for reason in review_gaps)
     risk_text = title + " " + body
     if item.get("category") in {"finance", "health"} or re.search(
         r"\b(death|died|suicide|murder|fraud|allegation|cancer|diagnosis|investment|stock price)\b"
@@ -94,7 +106,20 @@ def assess_trends_article(item: dict[str, Any], body: str) -> dict[str, Any]:
         reasons.append("unsafe_article_html")
     if not safe_html:
         reasons.append("unsafe_article_html")
-    return {"reasons": sorted(set(reasons)), "followups": followups, "safe_html": safe_html,
+    if safe_body_available is None:
+        usable_body = bool(
+            safe_html and len(body.strip()) >= 100 and item.get("sources")
+            and claims_are_publish_verified(item.get("claims"))
+        )
+    else:
+        usable_body = bool(safe_body_available and safe_html and len(body.strip()) >= 100)
+    from .publication_policy import evaluate_publication_content
+    content_policy = evaluate_publication_content(reasons, safe_body_available=usable_body,
+                                                   existing_followups=followups)
+    return {"reasons": content_policy["safety_blockers"],
+            "decision": content_policy["decision"],
+            "remediation_codes": content_policy["remediation_codes"],
+            "followups": content_policy["remediation_items"], "safe_html": safe_html,
             "html_sha256": hashlib.sha256(safe_html.encode()).hexdigest(),
             "policy_version": "trends-post-edit-1", "claims_promoted": False,
             "post_publication_review_required": True}
@@ -253,17 +278,19 @@ def validate_trends_job(conn: Any, blog_id: UUID, content_version_id: UUID) -> d
           j.error_code AS authoring_error,q.id AS trend_request_id,q.contract,t.id AS trend_topic_id,
           b.id AS blog_record_id,b.blog_id,b.language_code AS blog_language,b.active,b.connection_verified_at,
           b.oauth_connection_id,g.status AS oauth_status,g.scopes,a.machine_passed,a.safe_html,a.html_sha256,
+          a.seo_checks,a.generation_ready,a.publish_ready,
           locale.language_code AS content_language,locale.target_country,cv.group_id,cv.localization_id
         FROM external_content_imports i
         JOIN external_content_import_content_links link ON link.import_id=i.id
         JOIN external_content_import_versions iv ON iv.id=link.import_version_id AND iv.import_id=i.id
         JOIN content_versions cv ON cv.id=link.content_version_id
-        JOIN codex_authoring_jobs j ON j.import_id=i.id AND j.content_version_id=link.content_version_id
+        JOIN codex_authoring_jobs j ON j.import_id=i.id
         JOIN trend_generation_requests q ON q.authoring_job_id=j.id
         JOIN trend_topics t ON t.id=q.topic_id
         JOIN blogger_blogs b ON b.id=%s JOIN google_connections g ON g.id=b.oauth_connection_id
         JOIN content_localizations locale ON locale.id=cv.localization_id
-        LEFT JOIN LATERAL (SELECT machine_passed,safe_html,html_sha256 FROM external_content_import_assessments
+        LEFT JOIN LATERAL (SELECT machine_passed,safe_html,html_sha256,seo_checks,generation_ready,publish_ready
+          FROM external_content_import_assessments
           WHERE import_id=i.id AND version_id=iv.id ORDER BY assessed_at DESC,id DESC LIMIT 1) a ON true
         WHERE link.content_version_id=%s AND i.generation_method='codex_trends_export'
           AND j.job_type='google_trends' AND j.state='imported_review'
@@ -300,11 +327,92 @@ def validate_trends_job(conn: Any, blog_id: UUID, content_version_id: UUID) -> d
     if not latest or str(latest["id"]) != str(content_version_id):
         reasons.append("stale_content_version")
     body = conn.execute("SELECT body FROM content_versions WHERE id=%s", (content_version_id,)).fetchone()
-    assessment = assess_trends_article(row, str(body["body"] if body else ""))
+    article_body = str(body["body"] if body else "")
+    proof_rows = conn.execute(
+        """SELECT DISTINCT ON (payload->>'source_id') payload FROM audit_events
+        WHERE event_type='research.source.live_document_verified' AND payload->>'import_id'=%s
+        ORDER BY payload->>'source_id',id DESC""", (str(row["id"]),),
+    ).fetchall()
+    proofs = {
+        str(proof["payload"].get("source_id")): {
+            **proof["payload"],
+            "source_url": proof["payload"].get("source_url") or proof["payload"].get("url"),
+            "source_body_sha256": proof["payload"].get("source_body_sha256") or proof["payload"].get("body_sha256"),
+        }
+        for proof in proof_rows
+    }
+    from .scheduled_auto_verification import sanitize_scheduled_body, verified_scheduled_claim_ids
+    import_metadata = {**row, "id": str(row["id"])}
+    verified_claim_ids = verified_scheduled_claim_ids(import_metadata, proofs)
+    cited_source_ids = set(re.findall(r"\[source:([A-Za-z0-9_-]+)\]", article_body))
+    claims = list(row.get("claims") or [])
+    manifest = conn.execute(
+        """SELECT payload FROM audit_events
+        WHERE event_type='publication.trends_auto.sanitization_revision_created'
+          AND payload->>'output_version_id'=%s AND payload->>'output_sha256'=%s
+        ORDER BY id DESC LIMIT 1""",
+        (str(row["import_version_id"]), hashlib.sha256(article_body.encode("utf-8")).hexdigest()),
+    ).fetchone()
+    if manifest:
+        retained_ids = {str(value) for value in manifest["payload"].get("retained_claim_ids", [])}
+        claims = [claim for claim in claims if str(claim.get("claim_id")) in retained_ids]
+    else:
+        claims = [claim for claim in claims
+                  if {str(value) for value in claim.get("source_ids") or []}.issubset(cited_source_ids)]
+    sources = [source for source in (row.get("sources") or [])
+               if str(source.get("source_id")) in cited_source_ids]
+    sanitizer = sanitize_scheduled_body(article_body, claims, verified_claim_ids=verified_claim_ids)
+    row["claims"] = claims
+    row["sources"] = sources
+    sanitized_body = sanitizer["body_markdown"]
+    if sanitizer["changed"]:
+        reasons.append(
+            "trends_sanitized_revision_required"
+            if sanitizer["substantive_blocks_remaining"] >= 2
+            else "no_supported_body_after_sanitization"
+        )
+    import_review = conn.execute(
+        """SELECT sources_examined,claims_checked,rights_reviewed
+        FROM external_content_import_review_events WHERE import_id=%s AND version_id=%s
+          AND event_type='editorial_review_passed' ORDER BY created_at DESC,id DESC LIMIT 1""",
+        (row["id"], row["import_version_id"]),
+    ).fetchone()
+    review_gaps: list[str] = []
+    if not import_review or not import_review.get("sources_examined"):
+        review_gaps.append("source_original_review_required")
+    if not import_review or not import_review.get("claims_checked"):
+        review_gaps.append("claim_source_verification_unavailable")
+    if not import_review or not import_review.get("rights_reviewed"):
+        review_gaps.append("source_rights_review_missing")
+    if not row.get("research_package_reviewed"):
+        review_gaps.append("research_package_not_reviewed")
+    assessment = assess_trends_article(
+        row, sanitized_body,
+        safe_body_available=(not sanitizer["changed"]
+                             and sanitizer["substantive_blocks_remaining"] >= 2),
+        review_gaps=review_gaps,
+    )
     reasons.extend(assessment["reasons"])
+    assessment["followups"].extend([
+        {"issue_type": "source", "severity": "medium",
+         "description": "일부 원고 문단을 검증 가능한 근거에 맞춰 정제했습니다."}
+    ] if manifest and manifest["payload"].get("removed_blocks") else [])
+    from .publication_policy import evaluate_publication_content
+    safe_body_available = (
+        not sanitizer["changed"]
+        and sanitizer["substantive_blocks_remaining"] >= 2
+        and bool(assessment["safe_html"])
+    )
+    content_policy = evaluate_publication_content(
+        reasons, safe_body_available=safe_body_available,
+        existing_followups=assessment["followups"],
+    )
+    assessment["followups"] = content_policy["remediation_items"]
     row["safe_html"] = assessment["safe_html"]
     row["html_sha256"] = assessment["html_sha256"]
-    return {"row": row, "assessment": assessment, "reasons": list(dict.fromkeys(reasons)),
+    return {"row": row, "assessment": assessment, "reasons": content_policy["blockers"],
+            "decision": content_policy["decision"],
+            "remediation_codes": content_policy["remediation_codes"],
             "policy": dict(policy) if policy else None}
 
 
@@ -313,6 +421,43 @@ def enqueue_trends_auto_jobs() -> dict[str, int]:
     from . import automation_controls, external_policy
     from .scheduled_duplicates import find_remote_duplicate
     created = held = 0
+    # Create any required evidence-safe immutable revision before selecting the
+    # enqueue candidates. Old collection slots remain ineligible for this pass.
+    with connection() as conn:
+        controls_snapshot = automation_controls.read(conn)
+        emergency_snapshot = conn.execute(
+            "SELECT emergency_stopped FROM publication_mode_settings WHERE scope_type='global' AND scope_key=''"
+        ).fetchone()
+        if (controls_snapshot["auto_publishing_enabled"]
+                and controls_snapshot["trends_auto_publishing_enabled"]
+                and not controls_snapshot["emergency_stop"]
+                and not controls_snapshot["blogger_api_restricted"]
+                and emergency_snapshot and not emergency_snapshot["emergency_stopped"]):
+            preparation_targets = conn.execute(
+                """SELECT DISTINCT i.id AS import_id,b.id AS blog_id,p.created_at,q.contract
+                FROM external_content_imports i
+                JOIN external_content_import_content_links link ON link.import_id=i.id
+                JOIN codex_authoring_jobs j ON j.import_id=i.id
+                JOIN trend_generation_requests q ON q.authoring_job_id=j.id AND q.state='imported'
+                JOIN blogger_blogs b ON b.active
+                JOIN google_connections g ON g.id=b.oauth_connection_id AND g.status='connected'
+                JOIN LATERAL (SELECT id,enabled,allowed_geos,created_at FROM trends_publication_policy_events
+                  WHERE blog_id=b.id ORDER BY id DESC LIMIT 1) p ON p.enabled
+                JOIN trend_blog_geo_authoring m ON m.blog_id=b.id AND m.enabled
+                WHERE i.generation_method='codex_trends_export' AND j.job_type='google_trends'
+                  AND j.state='imported_review' AND j.error_code IS NULL
+                  AND q.contract->>'target_blog_id'=b.id::text
+                  AND q.contract->>'target_language'=b.language_code
+                  AND q.contract->>'source_country'=m.geo AND m.geo=ANY(p.allowed_geos)"""
+            ).fetchall()
+        else:
+            preparation_targets = []
+    from .content_imports import prepare_trends_publishable_version
+    for target in preparation_targets:
+        if target.get("created_at") and collection_after_activation(
+            target["contract"].get("collection_slot"), target["created_at"]
+        ):
+            prepare_trends_publishable_version(UUID(str(target["import_id"])), UUID(str(target["blog_id"])))
     with connection() as conn:
         conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('trends-publication-enqueue',0))")
         controls = automation_controls.read(conn, lock=True)
@@ -362,7 +507,6 @@ def enqueue_trends_auto_jobs() -> dict[str, int]:
                 WHERE i.generation_method='codex_trends_export' AND j.job_type='google_trends'
                   AND j.state='imported_review' AND j.error_code IS NULL
                   AND iv.version_number=(SELECT max(i2.version_number) FROM external_content_import_versions i2 WHERE i2.import_id=i.id)
-                  AND link.content_version_id=j.content_version_id
                   AND q.contract->>'target_blog_id'=%s
                   AND q.contract->>'target_language'=%s
                 ORDER BY i.received_at,i.id""", (blog_id, str(blog_id), policy["language_code"]),
@@ -405,9 +549,11 @@ def enqueue_trends_auto_jobs() -> dict[str, int]:
                 if list(item["scopes"] or []) != ["https://www.googleapis.com/auth/blogger"]: reasons.append("blogger_write_oauth_not_verified")
                 if item["content_language"] != item["blog_language"]: reasons.append("blog_language_mismatch")
                 if str(item["target_country"]) != str(item["contract"].get("target_country")): reasons.append("blog_country_mismatch")
-                body_row = conn.execute("SELECT body FROM content_versions WHERE id=%s", (item["content_version_id"],)).fetchone()
-                safety = assess_trends_article(dict(item), str(body_row["body"] if body_row else ""))
-                reasons.extend(safety["reasons"])
+                checked = validate_trends_job(conn, blog_id, UUID(str(item["content_version_id"])))
+                safety = checked["assessment"] or {
+                    "reasons": checked["reasons"], "followups": [], "safe_html": "", "html_sha256": "",
+                }
+                reasons.extend(checked["reasons"])
                 if reasons:
                     held += 1
                     _record_hold(conn, item, blog_id, reasons)
@@ -492,8 +638,6 @@ def enqueue_trends_auto_jobs() -> dict[str, int]:
                     "unverified_claim_count": sum(c.get("verification_status") == "unverified" for c in item["claims"] or []),
                     "idempotency_key": key, "public_write_performed": False,
                 })
-                if policy["publication_mode"] == "draft":
-                    continue
                 review = conn.execute(
                     """INSERT INTO post_publication_reviews(publishing_job_id,blog_id,content_version_id,
                     import_id,content_id,review_notes) VALUES(%s,%s,%s,%s,%s,'Trends auto publication follow-up review')
@@ -506,13 +650,21 @@ def enqueue_trends_auto_jobs() -> dict[str, int]:
                         issue_key = "trends-prepub-" + hashlib.sha256(
                             f"{job['id']}:{index}:{followup['description']}".encode()
                         ).hexdigest()[:40]
-                        conn.execute(
+                        item_row = conn.execute(
                             """INSERT INTO post_publication_review_items
                             (review_id,issue_type,severity,description,idempotency_key)
-                            VALUES(%s,%s,%s,%s,%s) ON CONFLICT(idempotency_key) DO NOTHING""",
+                            VALUES(%s,%s,%s,%s,%s) ON CONFLICT(idempotency_key) DO NOTHING RETURNING id""",
                             (review["id"], followup["issue_type"], followup["severity"],
                              followup["description"], issue_key),
-                        )
+                        ).fetchone()
+                        if item_row:
+                            _append_audit(conn, "publication.post_review_item.prepublication_created", {
+                                "review_id": str(review["id"]), "item_id": str(item_row["id"]),
+                                "job_id": str(job["id"]), "issue_type": followup["issue_type"],
+                                "severity": followup["severity"], "description": followup["description"][:500],
+                            })
+                if policy["publication_mode"] == "draft":
+                    continue
     return {"created": created, "held": held}
 
 

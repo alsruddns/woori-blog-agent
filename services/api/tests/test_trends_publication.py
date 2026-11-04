@@ -27,7 +27,8 @@ def test_trends_information_density_is_followup_when_core_evidence_is_present() 
             "[source:S1]\n\n") * 2
     result = assess_trends_article(item, body)
     assert result["reasons"] == []
-    assert len(result["followups"]) == 1
+    assert len(result["followups"]) == 2
+    assert any("machine_quality_not_passed" in item["description"] for item in result["followups"])
     assert result["safe_html"]
     item["claims"][0]["verification_status"] = "unverified"
     assert "claims_or_sources_not_verified" in assess_trends_article(item, body)["reasons"]

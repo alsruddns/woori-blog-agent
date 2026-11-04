@@ -117,7 +117,8 @@ def test_manual_live_route_keeps_quality_gaps_as_followups_and_has_no_write_call
     blockers = source[source.index("def _manual_publication_blockers"):source.index('@router.get("")')]
     request = source[source.index('@router.post("/manual-live-requests"'):source.index('@router.post("/scheduled-auto/verify-connections")')]
     assert 'followup("source"' in snapshot
-    assert 'evidence_followups.extend(evidence["followups"])' in snapshot
+    assert 'evaluate_publication_content(' in snapshot
+    assert 'evidence_followups.extend(content_policy["remediation_items"])' in snapshot
     assert "machine_passed" not in blockers and "publish_ready" not in blockers
     assert 'blockers.append("content_import_link_required")' in snapshot
     assert 'imported["generation_method"] != "manual_codex_import"' not in snapshot

@@ -1334,25 +1334,27 @@ def _manual_publication_snapshot(conn: Any, row: dict[str, Any] | None) -> dict[
                 scheduled_publish_first=True, article_body=body,
                 expected_generation_method=method,
             )
-            remediation_codes = {
-                "source_live_verification_missing": ("source", "원문 확인 증명이 아직 없어 발행 후 보완이 필요합니다."),
-                "claim_source_verification_unavailable": ("number", "일부 주장에 연결된 원문 검증 자료가 없어 보완이 필요합니다."),
-                "source_original_review_required": ("source", "출처 원문 검토가 미완료 상태로 보완 목록에 기록했습니다."),
-            }
-            for reason in evidence["reasons"]:
-                remediation = remediation_codes.get(reason)
-                if remediation:
-                    issue_type, description = remediation
-                    evidence_followups.append({"issue_type": issue_type, "severity": "medium",
-                                               "description": f"{reason}: {description}"})
-                else:
-                    blockers.append(reason)
-            evidence_followups.extend(evidence["followups"])
             verified = verified_scheduled_claim_ids(evidence_import, proofs)
             sanitized = sanitize_scheduled_body(body, imported["claims"] or [], verified_claim_ids=verified)
+            from .publication_policy import evaluate_publication_content
+            safe_body_available = (
+                sanitized["substantive_blocks_remaining"] >= 2
+                and bool(safe_html)
+                and "sanitized_blogger_html_unavailable" not in blockers
+            )
+            content_policy = evaluate_publication_content(
+                evidence["reasons"], safe_body_available=safe_body_available,
+                existing_followups=evidence["followups"],
+            )
+            evidence_followups.extend(content_policy["remediation_items"])
+            blockers.extend(content_policy["blockers"])
             if sanitized["changed"]:
-                evidence_followups.append({"issue_type": "source", "severity": "medium",
-                    "description": "manual_supported_revision_required: 검증되지 않은 문단을 제외한 안전한 본문으로 발행하며 원문 보완이 필요합니다."})
+                revision_policy = evaluate_publication_content(
+                    ["manual_supported_revision_required"],
+                    safe_body_available=safe_body_available,
+                    existing_followups=evidence_followups,
+                )
+                evidence_followups = revision_policy["remediation_items"]
                 if sanitized["substantive_blocks_remaining"] >= 2:
                     try:
                         safe_html = markdown_to_blogger_html(sanitized["body_markdown"], post_title=title)
@@ -1392,8 +1394,17 @@ def _manual_publication_snapshot(conn: Any, row: dict[str, Any] | None) -> dict[
     search_description = str(
         row.get("seo_description") or imported_seo.get("search_description") or ""
     ).strip()
+    from .publication_policy import evaluate_publication_content
+    content_decision = evaluate_publication_content(
+        blockers,
+        safe_body_available=bool(safe_html and body.strip()),
+        existing_followups=followups,
+    )
     return {
-        "blockers": list(dict.fromkeys(blockers)), "followups": followups,
+        "blockers": content_decision["blockers"], "decision": content_decision["decision"],
+        "safety_blockers": content_decision["safety_blockers"],
+        "policy_reasons": content_decision["policy_reasons"],
+        "followups": content_decision["remediation_items"],
         "title": title, "body": body, "safe_html": safe_html, "blogger_labels": labels,
         "title_sha256": _body_digest(title), "body_sha256": _body_digest(body),
         "html_sha256": _body_digest(safe_html),
@@ -1486,7 +1497,13 @@ def _manual_publication_blockers(
     ).fetchone()
     if record:
         reasons.append("remote_publication_already_recorded")
-    return list(dict.fromkeys(reasons))
+    from .publication_policy import evaluate_publication_content
+    content_decision = evaluate_publication_content(
+        reasons,
+        safe_body_available=bool(snapshot.get("safe_html") and snapshot.get("body", "").strip()),
+        existing_followups=snapshot.get("followups", []),
+    )
+    return [str(reason) for reason in content_decision["blockers"]]
 
 
 @router.get('/worker-jobs')

@@ -23,8 +23,10 @@ from woori.trends_publication import assess_trends_article, enqueue_trends_auto_
 
 lab = shared_lab
 BODY = ("## Practical considerations\n\n"
-        "A useful guide explains the options and their trade-offs. Readers can compare the steps against their own needs. "
-        "The discussion offers general guidance rather than reporting an unconfirmed event. " * 3)
+        "A public agency described the available options and their trade-offs for local readers. [source:s1]\n\n"
+        "Readers can compare those published options against their own needs and circumstances. [source:s1]\n\n"
+        "The published guidance gives readers a practical way to understand the available choices. [source:s1]")
+EVIDENCE_EXCERPT = "The agency described the available options for local readers."
 
 
 def item():
@@ -81,8 +83,49 @@ def test_verified_trends_job_enqueue_and_duplicate_reuse(monkeypatch):
     class Fake(_TrendsEnqueueConnection):
         saved = None
         def execute(self, query, params=None):
+            self.statements.append(query)
+            if "SELECT emergency_stopped FROM publication_mode_settings" in query:
+                return _Result({"emergency_stopped": False})
+            if "SELECT i.*,iv.title,iv.body_markdown" in query:
+                return _Result(rows=[{
+                    "id":self.import_id,"external_content_id":"trend-test-1",
+                    "generation_method":"codex_trends_export","claims":self.claims,
+                    "sources":[{"source_id":"s1","url":"https://source.example/"}],
+                    "seo_metadata":{"search_description":"A valid search description for this article."},
+                    "import_version_id":uuid4(),"version_number":1,"import_hash":"a"*64,
+                    "content_version_id":self.version_id,"group_id":uuid4(),"localization_id":uuid4(),
+                    "title":"A practical guide to organizing information","category":"technology",
+                    "contract":{"source_country":"JP","target_country":"JP","target_language":"ja",
+                                "target_blog_id":str(self.blog_id),"collection_slot":"2026-10-31T09:00:00+09:00"},
+                    "blog_language":"ja","target_country":"JP","active":True,
+                    "connection_verified_at":"verified","oauth_status":"connected",
+                    "scopes":["https://www.googleapis.com/auth/blogger"],
+                    "machine_passed":True,"seo_checks":[],"research_package_reviewed":True,
+                    "content_language":"ja","content_version":1,
+                    "authoring_job_id":uuid4(),"job_type":"google_trends",
+                    "authoring_state":"imported_review","authoring_evidence":{},
+                    "authoring_error":None,"trend_request_id":self.request_id,
+                    "trend_topic_id":self.topic_id,"blog_record_id":self.blog_id,
+                    "test_publish_verified_at":"verified","oauth_connection_id":uuid4(),
+                    "safe_html":"<p>Reviewed article</p>","html_sha256":"b"*64,
+                    }])
+            if "SELECT DISTINCT ON (payload->>'source_id') payload FROM audit_events" in query:
+                return _Result(rows=[{"payload": {
+                    "source_id": "s1", "import_id": str(self.import_id),
+                    "source_url": "https://source.example/", "http_status": 200,
+                    "source_body_sha256": "c" * 64,
+                    "verified_claim_evidence": [EVIDENCE_EXCERPT],
+                }}])
             if "SELECT body FROM content_versions" in query:
                 return _Result({"body": BODY})
+            if "SELECT id,enabled,allowed_geos,daily_limit,publication_mode FROM trends_publication_policy_events" in query:
+                return _Result({"id":1,"enabled":True,"allowed_geos":["JP"],"daily_limit":3,
+                                "publication_mode":"publish"})
+            if "SELECT DISTINCT ON(p.blog_id) p.*,b.language_code,b.blog_id AS blogger_id" in query:
+                return _Result(rows=[{"id":1,"blog_id":self.blog_id,"language_code":"ja",
+                    "blogger_id":"123456","enabled":True,"allowed_geos":["JP"],
+                    "daily_limit":3,"publication_mode":"publish",
+                    "created_at":"2026-10-31T08:00:00+09:00"}])
             if "SELECT id,status FROM publishing_jobs" in query:
                 return _Result({"id": self.saved, "status": "queued"} if self.saved else None)
             if "AS n" in query:
@@ -99,6 +142,7 @@ def test_verified_trends_job_enqueue_and_duplicate_reuse(monkeypatch):
                 result.rows[0].update(title="A practical guide to organizing information", category="technology")
             return result
     fake = Fake([{"claim_id": "c", "source_ids": ["s1"],
+                  "evidence_excerpt": EVIDENCE_EXCERPT, "claim": "The agency described available options.",
                   "verification_status": "source_span_verified", "factual_state": "planned"}])
     @contextmanager
     def shared():
@@ -114,7 +158,12 @@ def test_verified_trends_job_enqueue_and_duplicate_reuse(monkeypatch):
     monkeypatch.setattr(external_policy, "_blogger_policy_approval", lambda: {"approved": True})
     monkeypatch.setattr(external_policy, "_blogger_operation_is_approved", lambda _: True)
     monkeypatch.setattr(scheduled_duplicates, "find_remote_duplicate", lambda *_, **__: {"status": "clear"})
-    assert enqueue_trends_auto_jobs() == {"created": 1, "held": 0}
+    monkeypatch.setattr(trends_publication, "collection_after_activation", lambda *_args: True)
+    monkeypatch.setattr(trends_publication, "validate_trends_job", lambda *_args: {
+        "reasons": [], "assessment": {"followups": [], "safe_html": "<p>sanitized</p>", "html_sha256": "d"*64},
+    })
+    result = enqueue_trends_auto_jobs()
+    assert result == {"created": 1, "held": 0}, fake.statements
     assert enqueue_trends_auto_jobs() == {"created": 0, "held": 0}
     assert fake.claims[0]["verification_status"] == "source_span_verified"
 
@@ -139,11 +188,40 @@ def test_isolated_import_enqueue_worker_and_live_receipt(lab, monkeypatch, mode,
         payload.update(language_code=language,source_region=geo,
             target_audiences=[{'language_code':language,'target_region':geo,'reader_relevance_reason':'Localized isolated contract test'}],
             title='資料整理の進め方と比較のポイント' if language=='ja' else '자료 정리 방법과 비교 기준을 살펴보는 안내',
-            body_markdown=('資料を整理する際は、目的と読み手を確認し、情報を比較しやすい形にまとめます。手順と選択肢を区別し、必要な情報を見つけやすくすることが大切です。' if language=='ja' else '자료를 정리할 때는 목적과 독자를 확인하고 정보를 비교하기 쉬운 형태로 구성합니다. 절차와 선택지를 구분하고 필요한 정보를 찾기 쉽게 정리하는 방법을 설명합니다.')*8,
+            body_markdown=(('공식 안내문은 규칙의 예정된 시행일을 설명합니다. [source:src-official-1]\n\n'
+                            '문서는 보고 요건의 변경 범위를 설명합니다. [source:src-official-1]\n\n'
+                            '기관은 조직이 시행일을 준비할 수 있도록 일정을 제공합니다. [source:src-official-1]') if language=='ko' else
+                           ('The notice describes the planned effective date for the rule. [source:src-official-1]\n\n'
+                            'The document describes the scope of the reporting requirement change. [source:src-official-1]\n\n'
+                            'The agency provides a schedule for organizations to prepare. [source:src-official-1]')),
             blogger_labels=suggested_labels('technology',language,google_trends_based=True))
+    else:
+        payload["body_markdown"] = (
+            "The notice describes the planned effective date for the rule. [source:src-official-1]\n\n"
+            "The document describes the scope of the reporting requirement change. [source:src-official-1]\n\n"
+            "The agency provides a schedule for organizations to prepare. [source:src-official-1]"
+        )
+    payload["claims"] = [
+        {"claim_id":"claim-date","claim":"The rule has a planned effective date.",
+         "source_ids":["src-official-1"],"evidence_excerpt":"The rule is scheduled to take effect on the stated date.",
+         "verification_status":"source_span_verified","factual_state":"planned"},
+        {"claim_id":"claim-scope","claim":"The notice describes a reporting requirement change.",
+         "source_ids":["src-official-1"],"evidence_excerpt":"The notice describes a change to reporting requirements.",
+         "verification_status":"source_span_verified","factual_state":"approved"},
+        {"claim_id":"claim-schedule","claim":"Organizations can use a reporting schedule to prepare.",
+         "source_ids":["src-official-1"],"evidence_excerpt":"Organizations can use its reporting schedule to prepare for the stated date.",
+         "verification_status":"source_span_verified","factual_state":"planned"},
+    ]
     response = api.post('/admin/research/content-imports', headers=headers, json={'submitted_by': 'isolated', 'item': payload})
     assert response.status_code == 201, response.text
     imported, version = response.json()['import_id'], response.json()['content_version_id']
+    conn.execute("INSERT INTO audit_events(event_type,payload) VALUES ('research.source.live_document_verified',%s)",
+        (Jsonb({"import_id":imported,"source_id":"src-official-1","source_url":"https://example.gov/policy",
+                "http_status":200,"source_body_sha256":"c"*64,"verified_claim_evidence":[
+                    "The rule is scheduled to take effect on the stated date.",
+                    "The notice describes a change to reporting requirements.",
+                    "Organizations can use its reporting schedule to prepare for the stated date.",
+                ]}),))
     oauth = conn.execute("INSERT INTO google_connections(label,status,scopes) VALUES ('isolated','connected',%s) RETURNING id",
         (['https://www.googleapis.com/auth/blogger'],)).fetchone()['id']
     blog = conn.execute("""INSERT INTO blogger_blogs(language_code,url,display_name,blog_id,oauth_connection_id,
@@ -181,7 +259,8 @@ def test_isolated_import_enqueue_worker_and_live_receipt(lab, monkeypatch, mode,
         automatic_publication_approval_changed_at=now(),
         auto_mode=%s,auto_enabled_at=now(),
         trends_auto_enabled_at=now() WHERE id=1""", (mode,))
-    assert enqueue_trends_auto_jobs()['created']==1
+    enqueue_result = enqueue_trends_auto_jobs()
+    assert enqueue_result['created']==1, enqueue_result
     assert enqueue_trends_auto_jobs()['created']==0
     bound=conn.execute("SELECT id,publication_mode,trends_policy_event_id FROM publishing_jobs WHERE blog_id=%s",(blog,)).fetchone()
     assert bound['publication_mode']==mode and bound['trends_policy_event_id']

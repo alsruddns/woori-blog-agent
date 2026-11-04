@@ -1577,7 +1577,20 @@ def _create_import_version(conn: Any, import_id: UUID, request: ImportVersionReq
 
 
 def prepare_scheduled_publishable_version(import_id: UUID) -> dict[str, Any]:
-    """Create an immutable scheduled-only revision that removes unsupported blocks.
+    """Create an immutable scheduled revision containing only source-supported blocks."""
+    return _prepare_publishable_version(import_id, "chatgpt_scheduled_export", "scheduled_auto")
+
+
+def prepare_trends_publishable_version(import_id: UUID, blog_id: UUID) -> dict[str, Any]:
+    """Create an immutable Trends revision containing only source-supported blocks."""
+    return _prepare_publishable_version(import_id, "codex_trends_export", "trends_auto", blog_id)
+
+
+def _prepare_publishable_version(
+    import_id: UUID, expected_method: str, publication_source: str,
+    target_blog_id: UUID | None = None,
+) -> dict[str, Any]:
+    """Evidence-aware sanitizer shared by scheduled and Trends imports.
 
     A sanitized revision is never created when the source evidence cannot support
     at least two substantive paragraphs. Existing versions remain immutable.
@@ -1586,14 +1599,44 @@ def prepare_scheduled_publishable_version(import_id: UUID) -> dict[str, Any]:
 
     with connection() as conn:
         imported = _require_import(conn, import_id)
-        if imported["generation_method"] != "chatgpt_scheduled_export":
-            return {"status": "not_scheduled"}
-        policy = conn.execute("SELECT action FROM scheduled_publication_policy_events ORDER BY id DESC LIMIT 1").fetchone()
+        if imported["generation_method"] != expected_method:
+            return {"status": "origin_mismatch"}
         global_state = conn.execute(
             "SELECT emergency_stopped FROM publication_mode_settings WHERE scope_type='global' AND scope_key=''"
         ).fetchone()
-        if not policy or policy["action"] != "enabled" or not global_state or global_state["emergency_stopped"]:
+        if not global_state or global_state["emergency_stopped"]:
             return {"status": "policy_off_or_stopped"}
+        if publication_source == "scheduled_auto":
+            policy = conn.execute("SELECT action FROM scheduled_publication_policy_events ORDER BY id DESC LIMIT 1").fetchone()
+            if not policy or policy["action"] != "enabled":
+                return {"status": "policy_off_or_stopped"}
+        else:
+            from . import automation_controls
+            controls = automation_controls.read(conn)
+            if (not controls["auto_publishing_enabled"] or not controls["trends_auto_publishing_enabled"]
+                    or controls["emergency_stop"] or controls["blogger_api_restricted"]):
+                return {"status": "policy_off_or_stopped"}
+            mapped = conn.execute(
+                """SELECT 1 FROM external_content_import_content_links link
+                JOIN codex_authoring_jobs j ON j.import_id=link.import_id
+                JOIN trend_generation_requests q ON q.authoring_job_id=j.id
+                JOIN blogger_blogs b ON b.id=%s AND b.active
+                JOIN LATERAL (SELECT enabled,allowed_geos FROM trends_publication_policy_events
+                  WHERE blog_id=b.id ORDER BY id DESC LIMIT 1) p ON p.enabled
+                JOIN trend_blog_geo_authoring m ON m.blog_id=b.id AND m.enabled
+                WHERE link.import_id=%s
+                  AND j.job_type='google_trends' AND j.state='imported_review' AND j.error_code IS NULL
+                  AND q.state='imported' AND q.contract->>'target_blog_id'=b.id::text
+                  AND q.contract->>'target_language'=b.language_code
+                  AND q.contract->>'source_country'=m.geo AND m.geo=ANY(p.allowed_geos)
+                  AND EXISTS(SELECT 1 FROM external_content_import_versions latest
+                    WHERE latest.import_id=link.import_id AND latest.id=link.import_version_id
+                      AND latest.version_number=(SELECT max(v2.version_number)
+                        FROM external_content_import_versions v2 WHERE v2.import_id=link.import_id))""",
+                (target_blog_id, import_id),
+            ).fetchone()
+            if not mapped:
+                return {"status": "policy_off_or_target_unverified"}
         latest = _latest_version(conn, import_id)
         proofs = conn.execute(
             """SELECT DISTINCT ON (payload->>'source_id') payload FROM audit_events
@@ -1606,10 +1649,11 @@ def prepare_scheduled_publishable_version(import_id: UUID) -> dict[str, Any]:
             "source_body_sha256": proof.get("source_body_sha256") or proof.get("body_sha256"),
         } for source_id, proof in proof_by_id.items()}
         verified_claim_ids = verified_scheduled_claim_ids(imported, normalized_proofs)
+        manifest_event = f"publication.{publication_source}.sanitization_revision_created"
         manifest = conn.execute(
-            """SELECT payload FROM audit_events WHERE event_type='publication.scheduled_auto.sanitization_revision_created'
+            """SELECT payload FROM audit_events WHERE event_type=%s
             AND payload->>'output_version_id'=%s AND payload->>'output_sha256'=%s ORDER BY id DESC LIMIT 1""",
-            (str(latest['id']), hashlib.sha256(str(latest['body_markdown']).encode('utf-8')).hexdigest()),
+            (manifest_event, str(latest['id']), hashlib.sha256(str(latest['body_markdown']).encode('utf-8')).hexdigest()),
         ).fetchone()
         retained_claims = imported['claims'] or []
         if manifest:
@@ -1625,12 +1669,12 @@ def prepare_scheduled_publishable_version(import_id: UUID) -> dict[str, Any]:
         if (sanitized["substantive_blocks_remaining"] < 2
             or len(sanitized["body_markdown"]) < 100):
             prior = conn.execute(
-                """SELECT 1 FROM audit_events WHERE event_type='publication.scheduled_auto.sanitization_held'
+                """SELECT 1 FROM audit_events WHERE event_type=%s
                 AND payload->>'import_id'=%s AND payload->>'version_id'=%s AND payload->>'input_sha256'=%s LIMIT 1""",
-                (str(import_id), str(latest["id"]), sanitized["input_sha256"]),
+                (f"publication.{publication_source}.sanitization_held", str(import_id), str(latest["id"]), sanitized["input_sha256"]),
             ).fetchone()
             if not prior:
-                _audit(conn, "publication.scheduled_auto.sanitization_held", {
+                _audit(conn, f"publication.{publication_source}.sanitization_held", {
                     "import_id": str(import_id), "version_id": str(latest["id"]),
                     "input_sha256": sanitized["input_sha256"], "output_sha256": sanitized["output_sha256"],
                     "removed_blocks": sanitized["removed_blocks"],
@@ -1647,17 +1691,30 @@ def prepare_scheduled_publishable_version(import_id: UUID) -> dict[str, Any]:
 
     revision = create_import_version(import_id, ImportVersionRequest(
         base_version_id=base_id, title=title, body_markdown=sanitized["body_markdown"],
-        seo_metadata=seo, blogger_labels=labels, author_label="scheduled-policy-sanitizer",
-        reason="P5-CODEX-052: remove paragraphs whose cited claims lack current source evidence",
+        seo_metadata=seo, blogger_labels=labels, author_label=f"{publication_source}-policy-sanitizer",
+        reason=f"{publication_source}: remove paragraphs without current supported source evidence",
     ))
     if revision.get("duplicate"):
-        return {"status": "duplicate_revision", "version_id": revision["version_id"]}
-    version_id = UUID(revision["version_id"])
+        version_id = UUID(revision["version_id"])
+        duplicate = True
+        with connection() as conn:
+            linked = conn.execute(
+                """SELECT content_version_id FROM external_content_import_content_links
+                WHERE import_id=%s AND import_version_id=%s""", (import_id, version_id),
+            ).fetchone()
+        if not linked:
+            return {"status": "held", "reason": "duplicate_revision_link_missing",
+                    "version_id": str(version_id)}
+        revision_content_version_id = linked["content_version_id"]
+    else:
+        version_id = UUID(revision["version_id"])
+        duplicate = False
+        revision_content_version_id = revision["content_version_id"]
     try:
         assessment = assess_import(import_id, ImportAssessmentRequest(version_id=version_id))
     except (HTTPException, ValueError, ValidationError, psycopg.Error) as exc:
         with connection() as conn:
-            _audit(conn, "publication.scheduled_auto.sanitization_assessment_failed", {
+            _audit(conn, f"publication.{publication_source}.sanitization_assessment_failed", {
                 "import_id": str(import_id), "version_id": str(version_id),
                 "input_sha256": sanitized["input_sha256"], "output_sha256": sanitized["output_sha256"],
                 "error_category": type(exc).__name__,
@@ -1671,8 +1728,41 @@ def prepare_scheduled_publishable_version(import_id: UUID) -> dict[str, Any]:
         if isinstance(claim, dict) and str(claim.get("claim_id")) in verified_claim_ids
         and {str(x) for x in claim.get("source_ids") or []}.intersection(retained_source_ids)
     })
+    if publication_source == "trends_auto":
+        # The existing Trends review constraint binds a queued job to the
+        # source authoring job's content version. Advance that pointer with an
+        # append-only audit event so the immutable sanitized revision remains
+        # the exact version assessed and queued.
+        with connection() as conn:
+            authoring_jobs = conn.execute(
+                """SELECT id,content_version_id FROM codex_authoring_jobs
+                WHERE import_id=%s AND job_type='google_trends' AND state='imported_review'
+                  AND error_code IS NULL FOR UPDATE""", (import_id,),
+            ).fetchall()
+            if not authoring_jobs:
+                _audit(conn, "publication.trends_auto.sanitization_job_link_failed", {
+                    "import_id": str(import_id), "output_version_id": str(version_id),
+                    "reason": "authoring_job_not_found",
+                })
+                return {"status": "held", "reason": "authoring_job_not_found",
+                        "version_id": str(version_id)}
+            for authoring_job in authoring_jobs:
+                old_version_id = authoring_job["content_version_id"]
+                if str(old_version_id) == str(revision_content_version_id):
+                    continue
+                conn.execute(
+                    "UPDATE codex_authoring_jobs SET content_version_id=%s,updated_at=now() WHERE id=%s",
+                    (revision_content_version_id, authoring_job["id"]),
+                )
+                _audit(conn, "publication.trends_auto.sanitization_job_version_advanced", {
+                    "import_id": str(import_id), "authoring_job_id": str(authoring_job["id"]),
+                    "prior_content_version_id": str(old_version_id),
+                    "content_version_id": str(revision_content_version_id),
+                    "import_version_id": str(version_id), "input_sha256": sanitized["input_sha256"],
+                    "output_sha256": sanitized["output_sha256"],
+                })
     with connection() as conn:
-        _audit(conn, "publication.scheduled_auto.sanitization_revision_created", {
+        _audit(conn, manifest_event, {
             "import_id": str(import_id), "input_version_id": str(base_id),
             "output_version_id": str(version_id), "content_version_id": revision["content_version_id"],
             "input_sha256": sanitized["input_sha256"],
@@ -1684,8 +1774,8 @@ def prepare_scheduled_publishable_version(import_id: UUID) -> dict[str, Any]:
             "machine_passed": assessment["machine_passed"],
             "policy_version": sanitized["policy_version"], "publish_ready": False,
         })
-    return {"status": "revision_created", "version_id": str(version_id),
-            "content_version_id": revision["content_version_id"],
+    return {"status": "duplicate_revision" if duplicate else "revision_created", "version_id": str(version_id),
+            "content_version_id": str(revision_content_version_id),
             "body_sha256": sanitized["output_sha256"],
             "removed_block_count": len(sanitized["removed_blocks"]),
             "machine_passed": assessment["machine_passed"]}
