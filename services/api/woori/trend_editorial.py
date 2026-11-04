@@ -529,7 +529,6 @@ def queue_selected() -> dict[str,int]:
                 or row['source_volume_lower_bound']<minimum_volume]
             aliases=[dict(row) for row in conn.execute(
                 'SELECT geo,alias,canonical FROM editorial_query_aliases WHERE created_at<=%s ORDER BY id',(slot,)).fetchall()]
-            created_for_mapping=0
             for rank,row in enumerate(high_volume,1):
                 if created>=remaining:
                     break
@@ -571,10 +570,9 @@ def queue_selected() -> dict[str,int]:
                 seen_keys.add((str(mapping['blog_id']),mapping['geo'],
                                scoring.canonical_query(row['representative_query'],mapping['geo'],aliases)))
                 created+=1
-                created_for_mapping+=1
             # The threshold lane is authoritative for the pass. If its requests
             # consume the hourly capacity, remaining candidates wait for a later pass.
-            if created_for_mapping or created>=remaining:
+            if created>=remaining:
                 continue
             eligible_general=[row for row in low_volume if row['trend_started_at'] is not None]
             if not eligible_general:
@@ -583,6 +581,11 @@ def queue_selected() -> dict[str,int]:
             ranked=rank_candidates(conn,eligible_general,mapping['blog_id'],slot)
             for rank,row in enumerate(ranked,1):
                 if row['selection']['decision']!='selected':
+                    continue
+                duplicates=volume_priority_duplicates(conn,
+                    {'representative_query':row['representative_query'],'normalized_key':row['normalized_key']},
+                    mapping['blog_id'],row,aliases,seen_keys)
+                if duplicates:
                     continue
                 previous=prior_authoring_requests(conn,row['normalized_key'],mapping['blog_id'])
                 if previous and (not all(recoverable_usage_request(item) for item in previous)

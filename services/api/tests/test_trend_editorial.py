@@ -147,8 +147,8 @@ def test_selected_current_slot_queues_once_for_unambiguous_blog(lab,monkeypatch)
     conn.execute("INSERT INTO publishing_policies(language_code,blog_id,profile_id,active) VALUES('ko',%s,%s,false)",(blog,profile))
     conn.execute("INSERT INTO trend_blog_geo_authoring(blog_id,geo,enabled,processing_order) VALUES(%s,'KR',true,1)",(blog,))
     monkeypatch.setattr(keyword_jobs,'targets',lambda _:[{'id':blog,'target_country':'KR','language_code':'ko'}])
-    assert editorial.queue_selected()['created']==1
-    assert editorial.queue_selected()['created']==1
+    assert editorial.queue_selected()['created']==2
+    assert editorial.queue_selected()['created']==0
     assert conn.execute("SELECT count(*) n FROM trend_generation_requests q JOIN trend_topic_memberships m ON m.topic_id=q.topic_id WHERE m.observation_id=%s",(low_observation,)).fetchone()['n']==1
     low_topic=api.get('/admin/research/trend-editorial/'+str(low_observation),headers=h).json()['topic_id']
     accepted=api.post('/admin/research/trend-editorial/topics/'+low_topic+'/decision',headers=h,
@@ -189,6 +189,21 @@ def test_below_threshold_and_missing_volume_use_general_policy(lab,monkeypatch,v
     assert request['state']=='generation_queued'
     assert request['contract']['selection_mode']=='general_editorial_policy'
     assert request['contract']['search_volume_raw']==(None if volume is None else f'{volume}+')
+
+
+def test_high_volume_priority_does_not_suppress_general_candidates(lab,monkeypatch):
+    conn,_api,_h=bind(lab,monkeypatch)
+    authoring_blog(conn,monkeypatch)
+    high=observation(conn,'weather',payload={},volume=20000)
+    low=observation(conn,'software product launch '+uuid4().hex,
+        payload={'news_items':[{'title':'Software product launch announced'}]},volume=3000)
+    editorial.reconcile()
+    assert editorial.queue_selected()['created']==2
+    requests=conn.execute("SELECT q.contract->>'selection_mode' mode,count(*) n FROM trend_generation_requests q JOIN trend_topic_memberships m ON m.topic_id=q.topic_id WHERE m.observation_id=ANY(%s) GROUP BY 1",([high,low],)).fetchall()
+    assert {row['mode']:row['n'] for row in requests}=={
+        'volume_threshold_priority':1,
+        'general_editorial_policy':1,
+    }
 
 
 def test_threshold_volume_duplicate_alias_is_queued_only_once(lab,monkeypatch):
