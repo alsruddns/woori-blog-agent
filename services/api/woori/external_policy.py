@@ -361,7 +361,8 @@ def _blogger_operation_is_approved(operation: str) -> bool:
         if trends_blog_id is not None:
             # Consent must come from an authenticated per-blog enable request
             # or the existing explicit global operations approval.
-            return ((_blogger_public_publish_approval() is not None
+            public_approval = _blogger_public_publish_approval()
+            return ((bool(public_approval and str(trends_blog_id) in public_approval["approved_blog_ids"])
                      or _trends_public_write_approval(trends_blog_id) is not None)
                     and _trends_publication_approval(trends_blog_id) is not None)
         manual_approval = _manual_publication_approval.get()
@@ -409,7 +410,17 @@ def _blogger_public_publish_approval() -> dict[str, Any] | None:
         or row["payload"].get("approved_scope") != ["public_post_publish"]
     ):
         return None
-    return {"created_at": row["created_at"], "scope": ["public_post_publish"]}
+    approved_blog_ids = row["payload"].get("approved_blog_ids")
+    if (not isinstance(approved_blog_ids, list) or not approved_blog_ids
+            or len(approved_blog_ids) != len(set(map(str, approved_blog_ids)))):
+        return None
+    return {
+        "created_at": row["created_at"],
+        "scope": ["public_post_publish"],
+        "approved_blog_ids": sorted(map(str, approved_blog_ids)),
+        "operator_actor": row["payload"].get("operator_actor"),
+        "reason": row["payload"].get("reason"),
+    }
 
 
 def _scheduled_publication_approval(blog_id: str) -> dict[str, Any] | None:

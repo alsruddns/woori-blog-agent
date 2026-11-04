@@ -74,6 +74,33 @@ def test_snapshot_is_real_and_auth_required(center):
     assert data.json()["effective"]["auto_publishing_enabled"] == "신규 실행 중지"
 
 
+def test_scoped_public_live_approval_requires_explicit_dual_confirmation(center):
+    from fastapi import HTTPException
+    from pydantic import ValidationError
+    from woori.automation_controls import PublicLiveApproval, approve_public_live
+
+    with pytest.raises(ValidationError):
+        PublicLiveApproval(
+            expected_revision=1,
+            actor="isolated operator",
+            reason="Explicitly scoped Blogger live approval",
+            approved_blog_ids=[uuid4() for _ in range(5)],
+            confirm_public_live=True,
+            confirm_billing_quota_reviewed=True,
+        )
+    request = PublicLiveApproval(
+        expected_revision=1,
+        actor="isolated operator",
+        reason="Explicitly scoped Blogger live approval",
+        approved_blog_ids=[uuid4() for _ in range(6)],
+        confirm_public_live=False,
+        confirm_billing_quota_reviewed=True,
+    )
+    with pytest.raises(HTTPException) as error:
+        approve_public_live(request)
+    assert error.value.status_code == 422
+
+
 def test_independent_switches_persist_and_audit(center):
     conn, api, h = center
     assert update(center, trends_collection_enabled=False).status_code == 200
@@ -454,6 +481,9 @@ def test_mock_auto_dispatch_modes_and_off_invalidate_grants(center, monkeypatch,
 
     conn, _, _ = center
     job, blog, _version = make_job(center, "scheduled_auto", mode)
+    monkeypatch.setattr(external_policy, "_blogger_public_publish_approval", lambda: {
+        "scope": ["public_post_publish"], "approved_blog_ids": [str(blog)]
+    })
     assert (
         update(
             center,
@@ -473,6 +503,9 @@ def test_mock_auto_dispatch_modes_and_off_invalidate_grants(center, monkeypatch,
     )
     link_trends(conn, _version, blog)
     origin_grant(conn, job, _version, controls.read(conn), blog, mode)
+    # This test isolates the synthetic worker's queue dispatch. The live wire
+    # admission gate is separately covered by the scoped public-write policy.
+    monkeypatch.setattr(automation_auto, "context_allowed", lambda *_args, **_kwargs: True)
     conn.execute(
         "UPDATE publishing_jobs SET status='queued',publication_state='publication_queued' WHERE id=%s",
         (job,),

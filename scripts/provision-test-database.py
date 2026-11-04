@@ -82,6 +82,8 @@ MIGRATIONS = [ROOT / "scripts" / f"{i:03d}_{name}.sql" for i, name in [
     (87, "default_en_ko_ja_country_policies"),
     (88, "trends_general_news_category"),
     (89, "manual_publication_intent"),
+    (90, "publication_worker_operational_limits"),
+    (91, "scoped_blogger_live_approval"),
 ]]
 
 

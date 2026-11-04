@@ -34,7 +34,33 @@ def context_allowed(operation: str = "") -> bool:
         if not controls.job_permitted(conn, job, running=True):
             return False
         state = controls.read(conn)
-        return operation != "blogger_public_publish" or state["auto_mode"] == "publish"
+        if operation != "blogger_public_publish":
+            return True
+        from .external_policy import _blogger_public_publish_approval
+
+        approval = _blogger_public_publish_approval()
+        target = conn.execute(
+            "SELECT blog_id FROM publishing_jobs WHERE id=%s AND status='running'", (job,)
+        ).fetchone()
+        write_settings = conn.execute(
+            """SELECT configured_mode,operations_auto_approved,blogger_write_mode,
+                blogger_api_restricted,emergency_stopped FROM publication_mode_settings
+            WHERE scope_type='global' AND scope_key=''"""
+        ).fetchone()
+        return bool(
+            state["auto_mode"] == "publish"
+            and state["automatic_publication_operator_approved"]
+            and write_settings
+            and write_settings["configured_mode"] == "auto"
+            and write_settings["operations_auto_approved"]
+            and write_settings["blogger_write_mode"] == "public_write_approved"
+            and not write_settings["blogger_api_restricted"]
+            and not write_settings["emergency_stopped"]
+            and approval
+            and target
+            and str(target["blog_id"]) in approval["approved_blog_ids"]
+            and str(target["blog_id"]) in {str(value) for value in state["auto_blog_ids"]}
+        )
 
 
 def readiness(

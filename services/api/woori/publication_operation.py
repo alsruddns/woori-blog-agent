@@ -16,9 +16,24 @@ def manual_requests_allowed() -> bool:
                 "SELECT blogger_write_mode,blogger_api_restricted,emergency_stopped FROM publication_mode_settings "
                 "WHERE scope_type='global' AND scope_key=''"
             ).fetchone()
-            return bool(row and row['blogger_write_mode'] == 'manual_only'
-                        and not row['blogger_api_restricted']
-                        and not row['emergency_stopped'])
+            if not row or row['blogger_api_restricted'] or row['emergency_stopped']:
+                return False
+            if row['blogger_write_mode'] == 'manual_only':
+                return True
+            if row['blogger_write_mode'] != 'public_write_approved':
+                return False
+            from .automation_controls import read
+            controls = read(conn)
+            from .external_policy import _blogger_public_publish_approval
+            approval = _blogger_public_publish_approval()
+            return bool(
+                controls['auto_publishing_enabled']
+                and controls['automatic_publication_operator_approved']
+                and controls['auto_mode'] == 'publish'
+                and approval
+                and sorted(approval['approved_blog_ids'])
+                    == sorted(str(value) for value in controls['auto_blog_ids'])
+            )
     except (psycopg.Error, OSError, RuntimeError):
         return False
 

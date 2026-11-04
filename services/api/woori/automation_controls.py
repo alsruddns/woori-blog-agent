@@ -175,7 +175,12 @@ def snapshot() -> dict[str, Any]:
     from . import external_policy
 
     owner_cost_approval = external_policy._blogger_policy_approval() is not None
-    owner_public_approval = external_policy._blogger_public_publish_approval() is not None
+    public_approval = external_policy._blogger_public_publish_approval()
+    owner_public_approval = bool(
+        public_approval
+        and sorted(public_approval["approved_blog_ids"])
+            == sorted(str(value) for value in state["auto_blog_ids"])
+    )
     approval_blockers: list[str] = []
     if not state["automatic_publication_operator_approved"]:
         approval_blockers.append("operator_auto_publication_approval_off")
@@ -189,8 +194,10 @@ def snapshot() -> dict[str, Any]:
         approval_blockers.append("blogger_api_restricted")
     if not owner_cost_approval:
         approval_blockers.append("external_blogger_cost_policy_approval_missing")
-    if not owner_public_approval:
+    if public_approval is None:
         approval_blockers.append("external_blogger_public_write_approval_missing")
+    elif not owner_public_approval:
+        approval_blockers.append("external_blogger_public_write_approval_scope_mismatch")
     if state["blogger_write_mode"] != "public_write_approved":
         approval_blockers.append("blogger_write_mode_not_public_write_approved")
     if not state["operations_auto_approved"]:
@@ -312,6 +319,196 @@ class Change(BaseModel):
         if len(value) < 10:
             raise ValueError("reason_must_contain_at_least_ten_characters")
         return value
+
+
+class PublicLiveApproval(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    expected_revision: int = Field(ge=1)
+    actor: str = Field(min_length=2, max_length=100)
+    reason: str = Field(min_length=10, max_length=500)
+    approved_blog_ids: list[UUID] = Field(min_length=6, max_length=6)
+    confirm_public_live: bool
+    confirm_billing_quota_reviewed: bool
+
+    @field_validator("actor")
+    @classmethod
+    def normalize_actor(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 2:
+            raise ValueError("actor_must_contain_at_least_two_characters")
+        return value
+
+    @field_validator("reason")
+    @classmethod
+    def normalize_reason(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 10:
+            raise ValueError("reason_must_contain_at_least_ten_characters")
+        return value
+
+
+PUBLIC_LIVE_LANGUAGES = {"en", "ko", "ja", "de", "pt-BR", "vi"}
+
+
+@router.post("/approve-public-live")
+def approve_public_live(request: PublicLiveApproval) -> dict[str, Any]:
+    """Record exact-blog LIVE consent and atomically activate its current runtime policy."""
+    if request.confirm_public_live is not True or request.confirm_billing_quota_reviewed is not True:
+        raise HTTPException(422, "Explicit LIVE and Billing/quota confirmations are required")
+    target_ids = sorted({str(value) for value in request.approved_blog_ids})
+    if len(target_ids) != 6:
+        raise HTTPException(422, "Exactly the six existing approved Blogger IDs are required")
+    from . import external_policy
+
+    if external_policy.billing_credential_names():
+        raise HTTPException(409, "Potentially billable credentials block Blogger LIVE writes")
+    if external_policy._blogger_policy_approval() is None:
+        raise HTTPException(409, "Existing Blogger zero-cost policy attestation is unavailable")
+
+    with connection() as conn:
+        conn.execute("SELECT pg_advisory_xact_lock(20261102,103)")
+        before = read(conn, lock=True)
+        if before["revision"] != request.expected_revision:
+            raise HTTPException(409, "Automation controls changed; reload the current revision")
+        active_blogs = conn.execute(
+            """SELECT b.id,b.language_code,g.status AS oauth_status,g.scopes
+            FROM blogger_blogs b JOIN google_connections g ON g.id=b.oauth_connection_id
+            WHERE b.id=ANY(%s::uuid[]) AND b.active ORDER BY b.id""",
+            (request.approved_blog_ids,),
+        ).fetchall()
+        if (len(active_blogs) != 6 or {str(row["id"]) for row in active_blogs} != set(target_ids)
+                or {row["language_code"] for row in active_blogs} != PUBLIC_LIVE_LANGUAGES
+                or any(row["oauth_status"] != "connected"
+                       or list(row["scopes"] or []) != ["https://www.googleapis.com/auth/blogger"]
+                       for row in active_blogs)):
+            raise HTTPException(422, "Approval scope must match the six active Blogger-connected EN/KO/JA/DE/pt-BR/VI blogs")
+        if sorted(str(value) for value in before["auto_blog_ids"]) != target_ids:
+            raise HTTPException(409, "Configured automatic Blogger scope differs from the requested six blogs")
+        if not (before["auto_publishing_enabled"] and before["automatic_publication_operator_approved"]
+                and before["auto_mode"] == "publish" and before["scheduled_auto_publishing_enabled"]
+                and before["trends_auto_publishing_enabled"]):
+            raise HTTPException(409, "Existing global, LIVE, scheduled and Trends controls must already be enabled")
+        if before["emergency_stop"] or before["blogger_api_restricted"]:
+            raise HTTPException(409, "Emergency stop or Blogger API restriction is active")
+        if before["global_publish_min_interval_minutes"] != 15 or before["global_daily_live_publish_limit"] != 100:
+            raise HTTPException(409, "Required 15-minute and 100/day LIVE limits are not in effect")
+        scheduled_policy = conn.execute(
+            "SELECT action,approved_blog_ids,daily_limit FROM scheduled_publication_policy_events ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        if (not scheduled_policy or scheduled_policy["action"] != "enabled"
+                or set(target_ids) != {str(value) for value in scheduled_policy["approved_blog_ids"]}
+                or scheduled_policy["daily_limit"] != 100):
+            raise HTTPException(409, "Existing scoped Scheduled Auto policy is not active for the six blogs")
+        queue = conn.execute(
+            """SELECT count(*) FILTER (WHERE NOT simulation_only AND status='queued')::int AS queued,
+            count(*) FILTER (WHERE NOT simulation_only AND status IN ('running','uncertain'))::int AS in_flight
+            FROM publishing_jobs"""
+        ).fetchone()
+        assert queue is not None
+        if queue["queued"] or queue["in_flight"]:
+            raise HTTPException(409, "Publication queue or in-flight Blogger job must drain before activation")
+        writes = conn.execute(
+            """SELECT
+            (SELECT count(*)::int FROM blogger_write_operations WHERE status='pending') AS pending_operations,
+            (SELECT count(*)::int FROM live_publication_attempts WHERE outcome='requested') AS requested_attempts"""
+        ).fetchone()
+        assert writes is not None
+        if writes["pending_operations"] or writes["requested_attempts"]:
+            raise HTTPException(409, "Pending Blogger write operation or uncertain in-flight attempt must resolve before activation")
+        import_count = conn.execute(
+            """SELECT count(*)::int AS total,
+            count(*) FILTER (WHERE status='awaiting_human_review')::int AS awaiting_human_review
+            FROM external_content_imports WHERE generation_method='chatgpt_scheduled_export'"""
+        ).fetchone()
+        assert import_count is not None
+        if import_count["total"] != 24 or import_count["awaiting_human_review"] != 24:
+            raise HTTPException(409, "Scheduled Import review-state precondition changed")
+        categories = [row["slug"] for row in conn.execute("SELECT slug FROM categories ORDER BY slug").fetchall()]
+        if not categories:
+            raise HTTPException(409, "Registered publication category allowlist is unavailable")
+
+        from uuid import uuid4
+
+        approval_id = str(uuid4())
+        scope = {
+            "blog_ids": target_ids,
+            "languages": sorted(PUBLIC_LIVE_LANGUAGES),
+            "publication_mode": "auto",
+            "daily_live_limit_kst": 100,
+            "minimum_interval_minutes": 15,
+            "scheduled_daily_limit": 100,
+            "priority": ["scheduled", "manual", "trends"],
+            "zh-CN": "denied",
+        }
+        conn.execute(
+            """INSERT INTO audit_events(event_type,payload) VALUES (%s,%s)""",
+            (external_policy.BLOGGER_PUBLIC_APPROVAL_EVENT, Jsonb({
+                "approval_id": approval_id,
+                "provider": "google_blogger_read",
+                "policy_version": 1,
+                "actor": "project_owner_explicit_public_publish_approval",
+                "operator_actor": request.actor,
+                "reason": request.reason,
+                "evidence": "I_APPROVE_BLOGGER_PUBLIC_PUBLISH",
+                "approved_scope": ["public_post_publish"],
+                "approved_blog_ids": target_ids,
+                "approved_languages": sorted(PUBLIC_LIVE_LANGUAGES),
+                "billing_quota_reviewed_and_confirmed": True,
+                "cloud_console_approval_required": False,
+                "scope": scope,
+                "existing_imports_reactivated": False,
+                "existing_jobs_reauthorized": False,
+                "actual_blogger_write_performed": False,
+            })),
+        )
+        mode = conn.execute(
+            """UPDATE publication_mode_settings SET configured_mode='auto',daily_auto_limit=100,
+            minimum_interval_minutes=15,timezone='Asia/Seoul',allowed_categories=%s,
+            operations_auto_approved=true,blogger_write_mode='public_write_approved',updated_at=clock_timestamp()
+            WHERE scope_type='global' AND scope_key=''
+            RETURNING configured_mode,daily_auto_limit,minimum_interval_minutes,operations_auto_approved,blogger_write_mode""",
+            (categories,),
+        ).fetchone()
+        if not mode:
+            raise HTTPException(503, "Global publication settings are unavailable")
+        conn.execute(
+            """UPDATE automation_controls SET auto_epoch=gen_random_uuid(),auto_enabled_at=clock_timestamp(),
+            trends_auto_epoch=gen_random_uuid(),trends_auto_enabled_at=clock_timestamp(),
+            scheduled_auto_epoch=gen_random_uuid(),scheduled_auto_enabled_at=clock_timestamp(),
+            automatic_publication_approval_actor=%s,automatic_publication_approval_reason=%s,
+            automatic_publication_approval_changed_at=clock_timestamp(),automatic_publication_approval_scope=%s::jsonb,
+            revision=revision+1,updated_at=clock_timestamp() WHERE id=1""",
+            (request.actor, request.reason, Jsonb(scope)),
+        )
+        saved = read(conn)
+        conn.execute(
+            "INSERT INTO audit_events(event_type,payload) VALUES('publication.mode.changed',%s)",
+            (Jsonb({"actor": request.actor, "reason": request.reason, "scope_type": "global",
+                "configured_mode": "auto", "effective_mode": "auto", "live_auto_enabled": False,
+                "worker_ack_pending": True, "real_writes_enabled": False, "operations_auto_approved": True,
+                "blogger_write_mode": "public_write_approved", "allowed_blog_ids": target_ids,
+                "allowed_categories": categories, "daily_live_limit_kst": 100,
+                "minimum_interval_minutes": 15, "migration_version": 91}),),
+        )
+        conn.execute(
+            "INSERT INTO audit_events(event_type,payload) VALUES('automation.controls.changed',%s)",
+            (Jsonb({"actor": request.actor, "reason": request.reason,
+                "revision": saved["revision"], "changed_fields": ["publication_mode_settings", "auto_epoch",
+                    "trends_auto_epoch", "scheduled_auto_epoch", "automatic_publication_approval_scope"],
+                "auto_blog_ids": target_ids, "queue_before": {**dict(queue), **dict(writes)},
+                "scheduled_imports": dict(import_count), "old_jobs_reauthorized": False,
+                "existing_imports_reactivated": False, "worker_ack": "pending"}),),
+        )
+        conn.execute(
+            "INSERT INTO audit_events(event_type,payload) VALUES('automation.operator_publication_approval.changed',%s)",
+            (Jsonb({"previous_approval": True, "new_approval": True, "actor": request.actor,
+                "reason": request.reason, "revision": saved["revision"], "approved_scope": scope,
+                "billing_quota_reviewed_and_confirmed": True, "result": "persisted_worker_ack_pending"}),),
+        )
+    return {"saved": True, "approval_id": approval_id, "revision": saved["revision"],
+        "configured_mode": mode["configured_mode"], "AutoMode": mode["configured_mode"],
+        "AutoPolicyActive": False, "application": "pending_worker_ack",
+        "approved_blog_ids": target_ids, "blogger_write_performed": False}
 
 
 @router.put("")

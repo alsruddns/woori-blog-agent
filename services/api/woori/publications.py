@@ -69,11 +69,16 @@ def _live_write_capability(
         LEFT JOIN google_connections g ON g.id=b.oauth_connection_id
         ORDER BY p.blog_id,p.id DESC"""
     ).fetchall()
-    trends = bool(owner_policy and external_policy._blogger_public_publish_approval()
+    public_approval = external_policy._blogger_public_publish_approval()
+    controls = conn.execute("SELECT auto_blog_ids FROM automation_controls WHERE id=1").fetchone()
+    configured_blogs = {str(value) for value in (controls["auto_blog_ids"] if controls else [])}
+    public_scope = set(public_approval["approved_blog_ids"]) if public_approval else set()
+    trends = bool(owner_policy and public_scope and public_scope == configured_blogs
                   and trends_worker and not emergency_stopped and no_billable_credentials
                   and any(p["enabled"] and p["allowed_geos"] and p["active"]
                           and p["oauth_status"] == "connected"
                           and list(p["scopes"] or []) == ["https://www.googleapis.com/auth/blogger"]
+                          and str(p["blog_id"]) in public_scope
                           for p in trends_policies))
     reason = None
     if not (scheduled or manual or trends):
@@ -339,13 +344,13 @@ def _mode_settings(conn: Any) -> dict[str, Any]:
     return {
         "migration_required": False,
         "default_mode": "manual",
-        "blogger_write_mode": "manual_only",
+        "blogger_write_mode": str(global_setting["blogger_write_mode"]) if global_setting else "manual_only",
         "blogger_api_restricted": bool(global_setting and global_setting.get("blogger_api_restricted", True)),
         "settings": items,
         "languages": languages,
         "blogs": blogs,
         "emergency_stopped": bool(global_setting and global_setting["emergency_stopped"]),
-        "operations_auto_approved": False,
+        "operations_auto_approved": bool(global_setting and global_setting["operations_auto_approved"]),
         "live_auto_enabled": capability["scheduled_auto"],
         "real_writes_enabled": bool(capability["scheduled_auto"] or capability["manual_confirmed"]),
         "scoped_write_capability": {"scheduled_auto": capability["scheduled_auto"],
@@ -949,13 +954,37 @@ def verify_trends_connections(request: ScheduledConnectionCheckInput) -> dict[st
 def save_mode_settings(request: ModeSettingsInput) -> dict[str, Any]:
     with connection() as conn:
         current = _mode_settings(conn)
-        if str(request.configured_mode) not in {"authoring_only", "manual"}:
-            raise HTTPException(409, "authoring_only: new operations approval and safety review required")
+        approval = None
+        if request.configured_mode == "auto":
+            from . import automation_controls
+
+            controls = automation_controls.read(conn)
+            approval = external_policy._blogger_public_publish_approval()
+            if (approval is None
+                    or sorted(approval["approved_blog_ids"]) != sorted(str(value) for value in controls["auto_blog_ids"])
+                    or not controls["auto_publishing_enabled"]
+                    or not controls["automatic_publication_operator_approved"]
+                    or controls["auto_mode"] != "publish"
+                    or not controls["scheduled_auto_publishing_enabled"]
+                    or not controls["trends_auto_publishing_enabled"]
+                    or controls["emergency_stop"]
+                    or controls["blogger_api_restricted"]
+                    or current.get("blogger_write_mode") != "public_write_approved"
+                    or not current.get("operations_auto_approved")
+                    or external_policy._blogger_policy_approval() is None
+                    or external_policy.billing_credential_names()):
+                raise HTTPException(409, "Scoped public LIVE approval and active six-blog controls are required")
+            if (request.scope_type == "blog" and request.scope_key not in approval["approved_blog_ids"]
+                    or request.scope_type == "language" and request.scope_key not in {
+                        "en", "ko", "ja", "de", "pt-BR", "vi"
+                    }):
+                raise HTTPException(409, "Auto mode scope is outside the approved six-blog scope")
+        elif request.configured_mode not in {"authoring_only", "manual"}:
+            raise HTTPException(409, "Unsupported publication mode")
         if current["migration_required"]:
             raise HTTPException(409, "Publication settings migration 042 is required")
-        # Auto preferences may be recorded for review, but this does not
-        # activate the policy or permit Blogger writes. Runtime dispatch has
-        # independent activation and live-write gates and remains disabled.
+        # Auto mode can be stored only after the append-only exact-blog LIVE
+        # approval and its independent runtime controls have been applied.
         if request.scope_type == "language":
             found = conn.execute(
                 "SELECT 1 FROM languages WHERE code=%s AND active", (request.scope_key,)
@@ -1000,16 +1029,22 @@ def save_mode_settings(request: ModeSettingsInput) -> dict[str, Any]:
         conn.execute(
             "INSERT INTO audit_events(event_type,payload) VALUES ('publication.mode.changed',%s)",
             (Jsonb({"scope_type": request.scope_type, "scope_key": request.scope_key,
+                "actor": approval.get("operator_actor") if approval else None,
+                "reason": approval.get("reason") if approval else None,
                 "configured_mode": request.configured_mode, "effective_mode": effective_mode(
                     request.configured_mode,
                     emergency_stopped=bool(current["emergency_stopped"]),
-                ), "live_auto_enabled": False, "real_writes_enabled": False,
+                ), "live_auto_enabled": False,
+                "real_writes_enabled": False,
+                "worker_ack_pending": request.configured_mode == "auto",
                 "daily_auto_limit": request.daily_auto_limit,
                 "minimum_interval_minutes": request.minimum_interval_minutes,
                 "retry_limit": request.retry_limit}),),
         )
-        return {**dict(saved), "live_auto_enabled": False, "real_writes_enabled": False,
-                "operations_auto_approved": False}
+        return {**dict(saved), "live_auto_enabled": False,
+                "real_writes_enabled": False,
+                "worker_ack_pending": request.configured_mode == "auto",
+                "operations_auto_approved": bool(saved["operations_auto_approved"])}
 
 
 @router.post("/emergency-stop")
@@ -1529,7 +1564,11 @@ def _manual_publication_blockers(
         else:
             mode = resolve_mode(modes["settings"], str(blog["language_code"]), str(blog_id))
             if mode["configured_mode"] != "manual" and modes.get("blogger_write_mode") != "manual_only":
-                reasons.append("target_uses_auto_mode")
+                public_approval = external_policy._blogger_public_publish_approval()
+                if (modes.get("blogger_write_mode") != "public_write_approved"
+                        or public_approval is None
+                        or str(blog_id) not in public_approval["approved_blog_ids"]):
+                    reasons.append("target_uses_auto_mode")
         if modes["emergency_stopped"]:
             reasons.append("publication_emergency_stop_active")
     # Ordinary quality, SEO and editorial flags are follow-ups. The snapshot
@@ -2950,7 +2989,7 @@ def publication_worker_status() -> dict[str, Any]:
         ).fetchone()
         mode = conn.execute(
             """SELECT configured_mode,daily_auto_limit,minimum_interval_minutes,emergency_stopped,
-                operations_auto_approved FROM publication_mode_settings
+                operations_auto_approved,blogger_write_mode,blogger_api_restricted FROM publication_mode_settings
               WHERE scope_type='global' AND scope_key=''"""
         ).fetchone()
         last_job = conn.execute(
@@ -2968,6 +3007,56 @@ def publication_worker_status() -> dict[str, Any]:
         heartbeat = dict(row) if row else None
         policy = _scheduled_auto_state(conn)
         capability = _live_write_capability(conn, policy, heartbeat, bool(mode["emergency_stopped"]))
+        from . import automation_controls
+        controls = automation_controls.read(conn)
+        ack = conn.execute(
+            """SELECT revision,last_seen_at,process_id FROM automation_runtime_ack
+            WHERE service_name='publication_worker'"""
+        ).fetchone()
+        public_approval = external_policy._blogger_public_publish_approval()
+        live_targets = conn.execute(
+            """SELECT b.id::text,b.language_code,g.status AS oauth_status,g.scopes
+            FROM blogger_blogs b JOIN google_connections g ON g.id=b.oauth_connection_id
+            WHERE b.active AND b.id=ANY(%s::uuid[])""",
+            (controls["auto_blog_ids"],),
+        ).fetchall()
+        live_scope_valid = bool(
+            len(live_targets) == 6
+            and {item["language_code"] for item in live_targets} == {"en", "ko", "ja", "de", "pt-BR", "vi"}
+            and all(item["oauth_status"] == "connected"
+                    and list(item["scopes"] or []) == ["https://www.googleapis.com/auth/blogger"]
+                    for item in live_targets)
+        )
+        auto_policy_active = bool(
+            mode["configured_mode"] == "auto"
+            and mode["operations_auto_approved"]
+            and mode["blogger_write_mode"] == "public_write_approved"
+            and mode["daily_auto_limit"] == 100
+            and mode["minimum_interval_minutes"] == 15
+            and controls["auto_publishing_enabled"]
+            and controls["automatic_publication_operator_approved"]
+            and controls["auto_mode"] == "publish"
+            and controls["trends_auto_publishing_enabled"]
+            and controls["scheduled_auto_publishing_enabled"]
+            and controls["global_publish_min_interval_minutes"] == 15
+            and controls["global_daily_live_publish_limit"] == 100
+            and not mode["emergency_stopped"]
+            and not mode["blogger_api_restricted"]
+            and external_policy._blogger_policy_approval() is not None
+            and public_approval is not None
+            and len(public_approval["approved_blog_ids"]) == 6
+            and live_scope_valid
+            and sorted(public_approval["approved_blog_ids"])
+                == sorted(str(value) for value in controls["auto_blog_ids"])
+            and int(((policy or {}).get("policy_event") or {}).get("daily_limit") or 0) == 100
+            and not external_policy.billing_credential_names()
+            and heartbeat and heartbeat.get("status") == "running"
+            and heartbeat.get("last_seen_at")
+            and datetime.now(UTC) - heartbeat["last_seen_at"] <= timedelta(seconds=45)
+            and ack and ack["revision"] == controls["revision"]
+            and ack["process_id"] == heartbeat.get("process_id")
+            and datetime.now(UTC) - ack["last_seen_at"] <= timedelta(seconds=45)
+        )
         if queue.get('auto_paused'):
             idle_reason = 'automatic_publication_suspended'
         elif queue.get('manual_action_required'):
@@ -2990,7 +3079,7 @@ def publication_worker_status() -> dict[str, Any]:
             "last_job": dict(last_job) if last_job else None,
             "idle_reason_if_processed_false": idle_reason,
             "global_mode": dict(mode),
-            "auto_policy_active": False,
+            "auto_policy_active": auto_policy_active,
             "scheduled_auto_policy": policy,
             "scheduled_auto_queued": queue["scheduled_auto_queued"],
             "scheduled_auto_due": queue["scheduled_auto_due"],

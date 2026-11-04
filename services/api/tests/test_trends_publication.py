@@ -96,9 +96,12 @@ def test_trends_policy_needs_separate_public_write_approval(monkeypatch) -> None
 
 def test_trends_policy_requires_both_explicit_public_and_trends_scope(monkeypatch) -> None:
     monkeypatch.setattr(external_policy, "_blogger_policy_approval", lambda: {"scope": ["blogger_read"]})
-    monkeypatch.setattr(external_policy, "_blogger_public_publish_approval", lambda: {"scope": ["public_post_publish"]})
+    blog = str(uuid4())
+    monkeypatch.setattr(external_policy, "_blogger_public_publish_approval", lambda: {
+        "scope": ["public_post_publish"], "approved_blog_ids": [blog]
+    })
     monkeypatch.setattr(external_policy, "_trends_publication_approval", lambda _blog: {"scope": ["trends_auto"]})
-    with external_policy.trends_publication_context(str(uuid4())):
+    with external_policy.trends_publication_context(blog):
         assert external_policy._blogger_operation_is_approved("blogger_public_publish")
 
 

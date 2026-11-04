@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 
-def test_mode_migration_is_additive_manual_by_default_and_live_auto_locked() -> None:
+def test_mode_migration_is_additive_manual_by_default_and_live_auto_scoped() -> None:
     root = Path(__file__).resolve().parents[3]
     migration = (root / "scripts/042_publication_modes.sql").read_text(encoding="utf-8").casefold()
     runner = (root / "scripts/migrate.py").read_text(encoding="utf-8")
@@ -19,6 +19,12 @@ def test_mode_migration_is_additive_manual_by_default_and_live_auto_locked() -> 
     assert "publication_lane text not null default 'manual'" in scheduled
     assert "create trigger scheduled_publication_policy_events_immutable" in scheduled
     assert "052_scheduled_publication_approval.sql" in runner
+    scoped = (root / "scripts/091_scoped_blogger_live_approval.sql").read_text(encoding="utf-8").casefold()
+    assert "manual_only','public_write_approved" in scoped
+    assert "operations_auto_approved boolean not null default false" not in scoped
+    assert "drop trigger if exists publication_mode_settings_identity" in scoped
+    assert "values (91)" in scoped
+    assert "091_scoped_blogger_live_approval.sql" in runner
     assert "auto_publish_allowed" not in migration
     assert "drop table" not in migration and "delete from" not in migration
     assert "check (not auto_publish_allowed)" not in migration
@@ -51,3 +57,10 @@ def test_dashboard_publication_proxy_only_exposes_mode_write_and_stop_routes() -
     assert 'request.method === "DELETE" && /^jobs\\/[a-f0-9-]+\\/schedule$/.test(route)' in proxy
     assert "export const DELETE = proxy" in proxy
     assert 'route === "requests"' in proxy
+
+
+def test_dashboard_automation_proxy_exposes_scoped_live_approval_only_as_admin_post() -> None:
+    root = Path(__file__).resolve().parents[3]
+    proxy = (root / "apps/dashboard/app/api/automation-controls/[[...path]]/route.ts").read_text(encoding="utf-8")
+    assert 'path.join("/") === "approve-public-live" && request.method === "POST"' in proxy
+    assert "localRequest(request, true)" in proxy

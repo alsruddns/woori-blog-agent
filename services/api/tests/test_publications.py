@@ -671,11 +671,11 @@ def test_new_active_locales_obey_shared_global_writer_spacing() -> None:
     }
 
 
-def test_auto_mode_preferences_remain_blocked_under_authoring_only_policy() -> None:
+def test_auto_mode_remains_blocked_until_scoped_public_live_approval() -> None:
     from fastapi import HTTPException
     from woori import publications
 
-    with pytest.raises(HTTPException, match="authoring_only"):
+    with pytest.raises(HTTPException, match="Scoped public LIVE approval"):
         publications.save_mode_settings(
             ModeSettingsInput(configured_mode="auto", allowed_categories=["policy"])
         )
