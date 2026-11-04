@@ -1,5 +1,5 @@
-from woori.publication_worker import scheduled_publish_first_assessment
 from woori.publication_policy import evaluate_publication_content
+from woori.publication_worker import scheduled_publish_first_assessment
 from woori.scheduled_auto_verification import (
     evaluate_scheduled_evidence,
     sanitize_scheduled_body,

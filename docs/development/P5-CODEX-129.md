@@ -63,7 +63,7 @@ No migration was added. No Blogger API write, draft creation, or external Blogge
 
 ## Reflection and remaining limits
 
-The code is implemented and tests pass. Service reflection is pending the approved `scripts/apply-verified-changes.ps1` procedure after this change is committed. The existing discarded manuscript remains blocked. No actual publication was tested or performed. Automatic posting still follows the current database-controlled approval and per-blog policy state; this work does not activate or bypass it.
+The first verified-reflection attempt stopped during changed-file Ruff validation because a new test import was out of order; it stopped before any service was stopped. The import order was corrected and will be revalidated. The existing discarded manuscript remains blocked. No actual publication was tested or performed. Automatic posting still follows the current database-controlled approval and per-blog policy state; this work does not activate or bypass it.
 
 ## Final record
 
