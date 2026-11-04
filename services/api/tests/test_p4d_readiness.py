@@ -87,8 +87,8 @@ def test_readiness_is_fail_closed_and_distinguishes_machine_human_and_live_gates
     assert items["publication_mock"]["evidence"]["captured_at"] is not None
     assert items["publication_mock"]["evidence"]["scope"].startswith("historical")
     assert items["worker_recovery"]["status"] == "verified_historical"
-    assert items["operating_write_block"]["status"] == "blocked_safe"
-    assert items["separate_live_publication_approval"]["status"] == "required_not_granted"
+    assert items["operating_write_block"]["status"] == "scoped_write_unavailable"
+    assert items["separate_live_publication_approval"]["status"] == "not_required_for_scoped_scheduled_auto"
 
 
 def test_editorial_review_does_not_grant_live_publication(monkeypatch: Any) -> None:
@@ -103,7 +103,7 @@ def test_editorial_review_does_not_grant_live_publication(monkeypatch: Any) -> N
     items = {item["key"]: item for item in result["items"]}
     assert items["fed_human"]["status"] == "editorially_approved"
     assert items["fed_human"]["evidence"].startswith("4/4 reviewed")
-    assert items["separate_live_publication_approval"]["status"] == "required_not_granted"
+    assert items["separate_live_publication_approval"]["status"] == "not_required_for_scoped_scheduled_auto"
 
 
 def test_failed_sec_attempt_is_visible_without_creating_a_human_review_item(monkeypatch: Any) -> None:

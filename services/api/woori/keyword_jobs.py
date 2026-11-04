@@ -8,15 +8,15 @@ import re
 import threading
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Any, Literal
-from uuid import UUID
+from typing import Any, Literal, cast
+from uuid import UUID, uuid4
 
 import httpx
 import psycopg
 from fastapi import APIRouter, HTTPException
 from psycopg import sql
 from psycopg.types.json import Jsonb
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from . import codex_runner
 from .config import settings
@@ -145,6 +145,101 @@ def normalize_trend_source_times(article:dict[str,Any], evidence:dict[str,Any]) 
                                  'precision':'day' if len(published)==10 else 'timezone_unknown','verified':False})
                 source['published_at']=None
     return candidate
+
+
+def curate_opened_trend_sources(article:dict[str,Any], evidence:dict[str,Any]) -> dict[str,Any]:
+    """Remove model-listed sources that were not opened in this run before schema validation."""
+    candidate=json.loads(json.dumps(article))
+    opened=evidence.get('opened_urls') or {}
+    missing={source['source_id'] for source in candidate.get('sources',[])
+             if not opened.get(codex_runner.canonical_url(str(source.get('url') or '')))}
+    if not missing:return cast(dict[str,Any],candidate)
+    original=candidate.get('body_markdown') or '';blocks=[];removed=[]
+    marker=re.compile(r'\[source:([A-Za-z0-9_.:-]+)\]')
+    for block in re.split(r'\n\s*\n',original):
+        ids=set(marker.findall(block))
+        if ids & missing and not ids-missing:
+            removed.append(hashlib.sha256(block.encode()).hexdigest());continue
+        blocks.append(marker.sub(lambda match:'' if match.group(1) in missing else match.group(0),block).strip())
+    candidate['body_markdown']='\n\n'.join(blocks).strip()
+    candidate['sources']=[source for source in candidate.get('sources',[]) if source['source_id'] not in missing]
+    candidate['claims']=[{**claim,'source_ids':[source_id for source_id in claim['source_ids'] if source_id not in missing]}
+        for claim in candidate.get('claims',[]) if set(claim['source_ids'])-missing]
+    focus=candidate.get('event_focus')
+    if isinstance(focus,dict):
+        focus['source_ids']=[source_id for source_id in focus.get('source_ids',[]) if source_id not in missing]
+    if (not candidate['sources'] or not candidate['claims'] or not candidate['event_focus']['source_ids']
+            or len(candidate['body_markdown'])<100):
+        raise codex_runner.CodexFailure('source_not_opened_in_this_run')
+    evidence['draft_curation']={'removed_source_ids':sorted(missing),'removed_block_hashes':removed,
+        'input_sha256':hashlib.sha256(original.encode()).hexdigest(),
+        'output_sha256':hashlib.sha256(candidate['body_markdown'].encode()).hexdigest(),
+        'semantic_approval':False}
+    return cast(dict[str,Any],candidate)
+
+
+def _save_trend_research_snapshot(job:dict[str,Any], article:dict[str,Any], evidence:dict[str,Any]) -> tuple[str,str]:
+    from .research_snapshot import write_snapshot
+    payload={'schema':'woori-trends-research-snapshot/1.0','job_id':str(job['id']),
+        'trend_request_id':str(job.get('trend_request_id')),'keyword':job['keyword'],
+        'source_country':(job.get('options') or {}).get('trend_contract',{}).get('source_country'),
+        'target_language':job['language_code'],'target_country':job['target_country'],
+        'model':job['model'],'evidence':evidence,'article':article,
+        'claim_verification_status':'unverified','semantic_fact_verification':'not_performed'}
+    raw=(json.dumps(payload,ensure_ascii=False,allow_nan=False,indent=2)+'\n').encode('utf-8')
+    for base in (ROOT/'.local',INBOX):
+        if base.is_symlink() or (hasattr(base,'is_junction') and base.is_junction()):
+            raise codex_runner.CodexFailure('unsafe_snapshot_directory')
+    research_dir=INBOX/'research'
+    research_dir.mkdir(parents=True,exist_ok=True)
+    if research_dir.is_symlink() or (hasattr(research_dir,'is_junction') and research_dir.is_junction()):
+        raise codex_runner.CodexFailure('unsafe_snapshot_directory')
+    work=job_workdir(job);staging=work/'research-snapshot.part.json'
+    if staging.exists():raise codex_runner.CodexFailure('research_snapshot_staging_exists')
+    with staging.open('xb') as stream:
+        stream.write(raw);stream.flush();os.fsync(stream.fileno())
+    digest=hashlib.sha256(raw).hexdigest()
+    destination=research_dir/f"{job['id']}-{digest[:16]}.research.json"
+    try:
+        write_snapshot(staging,destination)
+    except FileExistsError:
+        if destination.read_bytes()!=raw:raise codex_runner.CodexFailure('research_snapshot_identity_conflict') from None
+    finally:
+        staging.unlink(missing_ok=True)
+    return str(destination.relative_to(ROOT)),digest
+
+
+def _save_trend_import_receipt(job:dict[str,Any], raw:bytes, result:dict[str,Any], assessment_error:str|None) -> str:
+    directory=INBOX/'import_receipts'
+    for base in (ROOT/'.local',INBOX):
+        if base.is_symlink() or (hasattr(base,'is_junction') and base.is_junction()):
+            raise codex_runner.CodexFailure('unsafe_receipt_directory')
+    directory.mkdir(parents=True,exist_ok=True)
+    if directory.is_symlink() or (hasattr(directory,'is_junction') and directory.is_junction()):
+        raise codex_runner.CodexFailure('unsafe_receipt_directory')
+    payload={'schema':'woori-research-import-receipt/1.0','status':'imported',
+        'provenance':'google_trends','job_id':str(job['id']),
+        'trend_request_id':str(job.get('trend_request_id')),'content_id':str(job['id']),
+        'import_id':str(result['import_id']),'content_version_id':str(result['content_version_id']),
+        'audit_event_id':result.get('audit_event_id'),'envelope_sha256':hashlib.sha256(raw).hexdigest(),
+        'assessment_error':assessment_error,'claim_verification_status':'unverified',
+        'publish_ready':False,'blogger_write_performed':False}
+    receipt=(json.dumps(payload,ensure_ascii=False,allow_nan=False,sort_keys=True,indent=2)+'\n').encode('utf-8')
+    path=directory/f"{job['id']}.json"
+    if path.exists():
+        if path.is_symlink() or path.read_bytes()!=receipt:
+            raise codex_runner.CodexFailure('import_receipt_identity_conflict')
+        return str(path.relative_to(ROOT))
+    part=directory/f"{job['id']}.{uuid4()}.part"
+    try:
+        with part.open('xb') as stream:
+            stream.write(receipt);stream.flush();os.fsync(stream.fileno())
+        os.link(part,path)
+    except FileExistsError:
+        if path.is_symlink() or path.read_bytes()!=receipt:
+            raise codex_runner.CodexFailure('import_receipt_identity_conflict') from None
+    finally:part.unlink(missing_ok=True)
+    return str(path.relative_to(ROOT))
 
 
 def trend_article_instructions(job:dict[str,Any], trend_contract:dict[str,Any]) -> str:
@@ -489,6 +584,7 @@ def generate(job:dict[str,Any]) -> None:
             +json.dumps(user_direction,ensure_ascii=False))
     if job['job_type']=='google_trends':
         prompt+=trend_article_instructions(job,trend_contract)
+    evidence:dict[str,Any]={}
     try:
         if work.resolve().is_relative_to(ROOT.resolve()):raise codex_runner.CodexFailure('codex_workspace_must_be_outside_checkout')
         if (job.get('evidence') or {}).get('resume_saved_output'):
@@ -507,7 +603,8 @@ def generate(job:dict[str,Any]) -> None:
         evidence.update({k:job['evidence'][k] for k in ('artifact_attempt','retry_request_key') if k in (job.get('evidence') or {})})
         if job['job_type']=='google_trends':
             if article.get('status')=='article' and isinstance(article.get('article'),dict):
-                article={**article,'article':normalize_trend_source_times(article['article'],evidence)}
+                curated=curate_opened_trend_sources(article['article'],evidence)
+                article={**article,'article':normalize_trend_source_times(curated,evidence)}
             result=TrendArticleResult.model_validate(article)
             if result.status=='insufficient_evidence':
                 state(job_id,'failed',error_code='insufficient_evidence',
@@ -517,6 +614,8 @@ def generate(job:dict[str,Any]) -> None:
             if result.article is None:raise codex_runner.CodexFailure('trend_article_missing')
             trend_output=result.article.model_dump(mode='json')
             event_focus=trend_output.pop('event_focus')
+            snapshot_path,snapshot_sha256=_save_trend_research_snapshot(job,trend_output,evidence)
+            evidence['research_snapshot']={'path':snapshot_path,'sha256':snapshot_sha256}
             focus_hash=hashlib.sha256(event_focus['summary'].encode('utf-8')).hexdigest()
             from .article_quality import inspect_trend_article
             reader_quality=inspect_trend_article(trend_output['title'],trend_output['body_markdown'],job['language_code'])
@@ -577,8 +676,15 @@ def generate(job:dict[str,Any]) -> None:
         os.link(incoming,ready);incoming.unlink()
         state(job_id,'import_pending',result_path=str(ready.relative_to(ROOT)),result_sha256=hashlib.sha256(raw).hexdigest(),evidence=Jsonb(evidence),error_code=None)
     except (RuntimeError,ValueError,OSError,KeyError,httpx.HTTPError,psycopg.Error) as error:
-        code=str(error) if isinstance(error,codex_runner.CodexFailure) else 'json_schema_invalid' if isinstance(error,ValueError) else 'authoring_internal_error'
-        state(job_id,'cancelled' if code=='cancelled' else 'failed',error_code=code,completed_at=datetime.now(UTC))
+        code=(str(error) if isinstance(error,codex_runner.CodexFailure) else
+              'article_schema_invalid' if isinstance(error,ValidationError) else
+              'json_schema_invalid' if isinstance(error,ValueError) else 'authoring_internal_error')
+        failure:dict[str,Any]={'failure_code':code,'exception_type':type(error).__name__}
+        if isinstance(error,ValidationError):
+            failure['validation_errors']=[{'type':item['type'],'location':list(item['loc'])}
+                for item in error.errors(include_input=False)]
+        state(job_id,'cancelled' if code=='cancelled' else 'failed',error_code=code,
+              evidence=Jsonb({**evidence,'failure':failure}),completed_at=datetime.now(UTC))
 
 
 def run_one() -> None:
@@ -644,10 +750,15 @@ def import_pending(*,transport:httpx.BaseTransport|None=None,api_url:str='http:/
                     assessment=client.post('/admin/research/content-imports/'+import_id+'/assessment',json={'version_id':current['id']})
                     if assessment.status_code not in {200,201}:assessment_error='assessment_http_'+str(assessment.status_code)
                 else:assessment_error='import_detail_http_'+str(detail.status_code)
-            update(conn,job['id'],'imported_review',import_id=UUID(import_id),content_version_id=UUID(str(result['content_version_id'])),error_code=assessment_error,completed_at=datetime.now(UTC))
+            receipt_path=None
+            if job['job_type']=='google_trends':
+                receipt_path=_save_trend_import_receipt(dict(job),raw,result,assessment_error)
+            update(conn,job['id'],'imported_review',import_id=UUID(import_id),content_version_id=UUID(str(result['content_version_id'])),
+                   error_code=assessment_error,completed_at=datetime.now(UTC))
             if job.get('trend_request_id'):
                 topic=conn.execute("UPDATE trend_generation_requests SET state='imported',updated_at=now() WHERE id=%s AND authoring_job_id=%s RETURNING topic_id",(job['trend_request_id'],job['id'])).fetchone()
-                audit(conn,job['id'],'trend_imported',{'trend_request_id':str(job['trend_request_id']),'import_id':import_id})
+                audit(conn,job['id'],'trend_imported',{'trend_request_id':str(job['trend_request_id']),
+                    'import_id':import_id,'import_receipt':receipt_path,'blogger_write_performed':False})
                 if topic:
                     from .trend_editorial import transition
                     transition(conn,topic['topic_id'],'imported','codex_imported',

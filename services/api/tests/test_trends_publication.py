@@ -6,7 +6,7 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
-from woori import automation_controls, external_policy, publication_operation
+from woori import automation_controls, external_policy, publication_operation, trends_publication
 from woori.publications import TrendsAutoPolicyInput
 from woori.trends_publication import (
     assess_trends_article,
@@ -84,6 +84,59 @@ def test_trends_auto_policy_defaults_to_unlimited_and_accepts_none() -> None:
     )
     assert request.daily_limit is None
     assert request.publication_mode == 'draft'
+
+
+def test_trends_policy_accepts_all_existing_collection_geographies_but_not_cn():
+    for geo in ("DE", "VN"):
+        request=TrendsAutoPolicyInput(blog_id=uuid4(),enabled=True,publication_mode="publish",
+            allowed_geos=[geo],daily_limit=None,actor_label="operator",reason="Scoped approved Trend LIVE scope",
+            idempotency_key="trends-policy-geo-"+geo.lower(),confirmation="ENABLE TRENDS AUTO PUBLICATION")
+        assert request.allowed_geos==[geo]
+    assert {"DE","VN"}.issubset(trends_publication.ALLOWED_GEOGRAPHIES)
+    assert "CN" not in trends_publication.ALLOWED_GEOGRAPHIES
+
+
+def test_trends_live_policy_uses_exact_six_blog_approval_without_test_post(monkeypatch):
+    from woori.google_http import WRITE_SCOPE
+    blog_id=uuid4()
+    approval={"scope":["public_post_publish"],"approved_blog_ids":[str(blog_id)]}
+    monkeypatch.setattr(external_policy,"_blogger_policy_approval",lambda:{"scope":["blogger_read"]})
+    monkeypatch.setattr(external_policy,"_blogger_public_publish_approval",lambda:approval)
+    monkeypatch.setattr(trends_publication,"_recent_identity_verification",lambda *_args:True)
+    class Result:
+        def __init__(self,row=None,rows=None): self.row=row;self.rows=rows or []
+        def fetchone(self): return self.row
+        def fetchall(self): return self.rows
+    class Conn:
+        def __init__(self): self.statements=[]
+        def execute(self,query,params=None):
+            self.statements.append((query,params))
+            if "SELECT b.id,b.blog_id,b.language_code,b.active" in query:
+                return Result({"id":blog_id,"blog_id":"verified-blogger-id","language_code":"de","active":True,
+                    "oauth_connection_id":uuid4(),"connection_verified_at":"verified","test_publish_verified_at":None,
+                    "oauth_status":"connected","scopes":[WRITE_SCOPE]})
+            if "SELECT geo FROM trend_blog_geo_authoring" in query:return Result(rows=[{"geo":"DE"}])
+            if "WHERE idempotency_key=%s" in query:return Result()
+            if "ORDER BY id DESC LIMIT 1" in query:return Result()
+            if "RETURNING id,created_at" in query:return Result({"id":92,"created_at":datetime.now()})
+            return Result()
+    conn=Conn()
+    request=TrendsAutoPolicyInput(blog_id=blog_id,enabled=True,publication_mode="publish",allowed_geos=["DE"],
+        daily_limit=None,actor_label="Project owner",reason="P5-CODEX-137 scoped authorized LIVE operation",
+        idempotency_key="p5codex137-trends-de-001",confirmation="ENABLE TRENDS AUTO PUBLICATION")
+    saved=trends_publication.record_policy(conn,request)
+    assert saved["enabled"] is True and saved["publication_mode"]=="publish"
+    assert any("publication.trends_public_write.approved" in str(params) for _,params in conn.statements)
+    assert any("publication.trends_auto.policy_changed" in str(params) for _,params in conn.statements)
+    assert not any("test_publish_verified_at=" in query for query,_ in conn.statements)
+
+
+def test_trends_live_policy_rejects_blog_outside_owner_approval(monkeypatch):
+    blog_id=uuid4()
+    monkeypatch.setattr(external_policy,"_blogger_policy_approval",lambda:{"scope":["blogger_read"]})
+    monkeypatch.setattr(external_policy,"_blogger_public_publish_approval",lambda:{
+        "scope":["public_post_publish"],"approved_blog_ids":[str(uuid4())]})
+    assert not trends_publication._scoped_public_approval(str(blog_id))
 
 
 def test_trends_policy_needs_separate_public_write_approval(monkeypatch) -> None:

@@ -1112,14 +1112,14 @@ def test_trend_worker_builds_candidates_only_after_successful_feed_collection(
     monkeypatch.setattr(worker.trends, "schedule_tick", lambda: {"status": "not_due"})
     monkeypatch.setattr(worker.topics, "build_candidates", lambda: calls.append("built"))
     monkeypatch.setattr(worker.topics, "select_research_candidates", lambda _limit=4: calls.append("selected"))
-    assert worker.collect_trends_and_build_topics() == {"status": "not_due"}
+    assert worker.collect_trends_and_build_topics() == {"status": "not_due", "editorial_triage": {}}
     assert calls == []
-    monkeypatch.setattr(worker.trends, "schedule_tick", lambda: {"status": "succeeded", "geo": "KR"})
+    monkeypatch.setattr(worker.trends, "schedule_tick", lambda: {"status": "succeeded", "geo": "KR", "successes": 1})
     monkeypatch.setattr(worker.topics, "build_candidates", lambda: calls.append("built") or {"topic_count": 1})
     monkeypatch.setattr(worker.topics, "select_research_candidates", lambda _limit=4: calls.append("selected") or {"selected_count": 0})
     assert worker.collect_trends_and_build_topics() == {
         "status": "succeeded", "geo": "KR", "candidate_build": {"topic_count": 1},
-        "research_triage": {"selected_count": 0}
+        "research_triage": {"selected_count": 0}, "successes": 1, "editorial_triage": {}
     }
     assert calls == ["built", "selected"]
 

@@ -128,7 +128,8 @@ def test_blogger_backoff_preserves_jobs_and_does_not_dispatch(lab,monkeypatch):
 
 @pytest.mark.parametrize('lane',['scheduled_auto','manual'])
 def test_trends_backoff_never_starves_existing_publication_lanes(monkeypatch,lane):
-    from woori import publication_worker
+    from woori import publication_operation, publication_worker
+    monkeypatch.setattr(publication_operation,"manual_requests_allowed",lambda:True)
     def process(**flags):
         if flags.get('trends_auto_only'):return {'status':'external_backoff','job_id':None}
         return {'status':'isolated_other_lane','job_id':str(uuid4())}

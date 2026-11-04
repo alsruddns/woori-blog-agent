@@ -137,6 +137,60 @@ def test_source_date_precision_and_unopened_blocks_are_preserved_as_evidence():
     assert envelope.item.claims[0].verification_status=='unverified'
 
 
+def test_trends_unopened_date_only_source_is_curated_before_schema_validation():
+    item=valid_item()
+    body=("## Summary\n\nThe agency published a notice that changes a filing date for affected applicants. [source:src-open]\n\n"
+          "## Details\n\nThe notice states the new date and describes which applications it covers. [source:src-open]\n\n"
+          "The announcement identifies the effective date, the category of applications affected, and the agency responsible for administering the process. It does not establish that unrelated applications or jurisdictions are covered by the same change. [source:src-open]\n\n"
+          "## Context\n\nA separate un-opened page claimed an additional impact that cannot be retained. [source:src-missing]")
+    opened={**item['sources'][0],'source_id':'src-open','observed_at':'2026-11-05T00:30:00+09:00'}
+    missing={**item['sources'][0],'source_id':'src-missing','url':'https://example.gov/not-opened',
+             'published_at':'2026-11-05','observed_at':'2026-11-05'}
+    claim={**item['claims'][0],'source_ids':['src-open'],'evidence_excerpt':'The filing date changes on the published effective date.'}
+    missing_claim={**item['claims'][0],'claim_id':'claim-missing','source_ids':['src-missing'],
+                   'evidence_excerpt':'The un-opened page says a separate effect applies.'}
+    article={'title':'Agency notice changes filing date','source_region':'US','body_markdown':body,
+        'sources':[opened,missing],'claims':[claim,missing_claim],'seo':item['seo'],
+        'event_focus':{'summary':'The agency notice sets a filing-date change and identifies the applications it covers.',
+                       'status':'announced','source_ids':['src-open','src-missing']}}
+    evidence={'opened_urls':{'https://example.gov/policy':'2026-11-05T00:30:00+09:00'}}
+    curated=keyword_jobs.curate_opened_trend_sources(article,evidence)
+    normalized=keyword_jobs.normalize_trend_source_times(curated,evidence)
+    parsed=keyword_jobs.TrendArticleOutput.model_validate(normalized)
+    assert [source.source_id for source in parsed.sources]==['src-open']
+    assert parsed.event_focus.source_ids==['src-open']
+    assert 'src-missing' not in parsed.body_markdown
+    assert parsed.sources[0].observed_at.astimezone(UTC).isoformat()=='2026-11-04T15:30:00+00:00'
+    assert evidence['draft_curation']['semantic_approval'] is False
+    assert missing['observed_at']=='2026-11-05'
+
+
+def test_trends_research_snapshot_and_import_receipt_are_immutable(tmp_path,monkeypatch):
+    job_id=uuid4()
+    job={'id':job_id,'trend_request_id':uuid4(),'keyword':'sample query','language_code':'en',
+         'target_country':'US','model':'gpt-6-luna','options':{'trend_contract':{'source_country':'IN'}}}
+    monkeypatch.setenv('LOCALAPPDATA',str(tmp_path/'local'))
+    monkeypatch.setattr(keyword_jobs,'ROOT',tmp_path/'project')
+    monkeypatch.setattr(keyword_jobs,'INBOX',tmp_path/'project'/'.local'/'keyword-import')
+    work=keyword_jobs.job_workdir(job);work.mkdir(parents=True)
+    article={'title':'Evidence-led title','claims':[{'verification_status':'unverified'}]}
+    evidence={'opened_urls':{'https://example.gov/report':'2026-11-05T00:30:00+09:00'}}
+    path,digest=keyword_jobs._save_trend_research_snapshot(job,article,evidence)
+    snapshot=tmp_path/'project'/path
+    assert snapshot.is_file() and len(digest)==64
+    assert json.loads(snapshot.read_text(encoding='utf-8'))['claim_verification_status']=='unverified'
+    assert keyword_jobs._save_trend_research_snapshot(job,article,evidence)==(path,digest)
+    envelope=b'{"schema_version":"1.0"}'
+    result={'import_id':str(uuid4()),'content_version_id':str(uuid4())}
+    receipt=keyword_jobs._save_trend_import_receipt(job,envelope,result,None)
+    receipt_path=tmp_path/'project'/receipt
+    payload=json.loads(receipt_path.read_text(encoding='utf-8'))
+    assert payload['provenance']=='google_trends' and payload['blogger_write_performed'] is False
+    assert keyword_jobs._save_trend_import_receipt(job,envelope,result,None)==receipt
+    with pytest.raises(codex_runner.CodexFailure,match='identity_conflict'):
+        keyword_jobs._save_trend_import_receipt(job,envelope,{**result,'import_id':str(uuid4())},None)
+
+
 def test_trends_origin_is_distinct_from_scheduled_and_manual():
     item=valid_item()
     body=("## Summary Deck\n\nThe notice sets out a specific policy development and its stated effective date for affected readers. [source:src-official-1]\n\n"

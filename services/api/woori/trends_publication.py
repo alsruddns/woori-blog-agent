@@ -14,7 +14,14 @@ from psycopg.types.json import Jsonb
 
 from .db import connection
 
-ALLOWED_GEOGRAPHIES = {"KR", "US", "GB", "CA", "AU", "IN", "JP", "TW", "HK", "SG", "PH", "BR"}
+ALLOWED_GEOGRAPHIES = {"KR", "US", "GB", "CA", "AU", "IN", "JP", "TW", "HK", "SG", "PH", "DE", "BR", "VN"}
+
+
+def _scoped_public_approval(blog_id: str) -> bool:
+    """Use only the existing owner approval for the exact Blogger record."""
+    from . import external_policy
+    approval=external_policy._blogger_public_publish_approval()
+    return bool(approval and str(blog_id) in set(approval.get('approved_blog_ids') or []))
 
 
 def trends_write_backoff(conn:Any) -> dict[str,Any]|None:
@@ -148,17 +155,19 @@ def policy_state(conn: Any) -> dict[str, Any]:
     ).fetchall()
     policies = {str(row["blog_id"]): dict(row) for row in latest}
     from . import external_policy
-    public_approved = external_policy._blogger_public_publish_approval() is not None
     emergency = conn.execute("SELECT emergency_stopped FROM publication_mode_settings WHERE scope_type='global' AND scope_key=''").fetchone()
     for blog in blogs:
         blockers = []
         if not blog["mapped_geos"]: blockers.append("country_mapping_required")
         if blog["oauth_status"] != "connected" or list(blog["scopes"] or []) != ["https://www.googleapis.com/auth/blogger"]:
             blockers.append("blogger_write_oauth_required")
-        if not blog["test_publish_verified_at"]: blockers.append("actual_write_verification_required")
+        scoped_approval=_scoped_public_approval(str(blog['id']))
+        if not blog["test_publish_verified_at"] and not scoped_approval:
+            blockers.append("actual_write_verification_required")
         if not _recent_identity_verification(conn, blog["id"], str(blog["blog_id"])):
             blockers.append("fresh_blog_identity_verification_required")
-        blog['public_approval_present'] = public_approved or external_policy._trends_public_write_approval(str(blog['id'])) is not None
+        blog['public_approval_present'] = (scoped_approval or
+            external_policy._trends_public_write_approval(str(blog['id'])) is not None)
         if not blog['public_approval_present']:
             blockers.append("authenticated_public_publish_approval_required")
         blog["draft_activation_blockers"] = [b for b in blockers if b not in {"actual_write_verification_required", "authenticated_public_publish_approval_required"}]
@@ -202,7 +211,8 @@ def record_policy(conn: Any, request: Any) -> dict[str, Any]:
     if request.enabled:
         from .google_http import WRITE_SCOPE
         if (not geos or not blog["blog_id"] or not blog["connection_verified_at"]
-                or (request.publication_mode == "publish" and not blog["test_publish_verified_at"]) or blog["oauth_status"] != "connected"
+                or (request.publication_mode == "publish" and not blog["test_publish_verified_at"]
+                    and not _scoped_public_approval(str(request.blog_id))) or blog["oauth_status"] != "connected"
                 or list(blog["scopes"] or []) != [WRITE_SCOPE]):
             raise HTTPException(409, "Enabled policy requires a verified Blogger write connection and explicit country mapping")
         if not _recent_identity_verification(conn, request.blog_id, str(blog["blog_id"])):

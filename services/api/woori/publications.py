@@ -165,7 +165,7 @@ class TrendsAutoPolicyInput(BaseModel):
     blog_id: UUID
     enabled: bool
     publication_mode: Literal["draft", "publish"] = "draft"
-    allowed_geos: list[str] = Field(default_factory=list, max_length=11)
+    allowed_geos: list[str] = Field(default_factory=list, max_length=14)
     daily_limit: int | None = Field(default=None, ge=1, le=10)
     actor_label: str = Field(min_length=2, max_length=120)
     reason: str = Field(min_length=10, max_length=2000)
@@ -177,7 +177,7 @@ class TrendsAutoPolicyInput(BaseModel):
         expected = "ENABLE TRENDS AUTO PUBLICATION" if self.enabled else "STOP TRENDS AUTO PUBLICATION"
         if self.publication_mode == "publish" and self.confirmation != expected:
             raise ValueError("explicit_trends_publication_confirmation_required")
-        if any(value not in {"KR","US","GB","CA","AU","IN","JP","TW","HK","SG","PH","BR"}
+        if any(value not in {"KR","US","GB","CA","AU","IN","JP","TW","HK","SG","PH","DE","BR","VN"}
                for value in self.allowed_geos):
             raise ValueError("unsupported_trends_geography")
         if len(set(self.allowed_geos)) != len(self.allowed_geos):

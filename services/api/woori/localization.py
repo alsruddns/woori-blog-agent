@@ -108,7 +108,9 @@ def localize_fact(
         if entry.get("target_language") == target_language and entry.get("localized_term")
     )
     missing_entities = sorted(e for e in required_entities
-                              if e.casefold() not in localized_folded and e.casefold() not in glossary_sources)
+                              if e.casefold() not in localized_folded and not any(
+                                  e.casefold() in source_term or source_term in e.casefold()
+                                  for source_term in glossary_sources))
     # No new numerals/dates; source references are added outside model output.
     no_new_numbers = target_numbers.issubset(source_numbers)
     found_urls = {u.rstrip("/.,);]") for u in re.findall(r"https?://[^\s<>]+", localized)}
