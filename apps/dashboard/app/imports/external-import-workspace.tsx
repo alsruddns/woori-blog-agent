@@ -510,7 +510,11 @@ export default function ExternalImportWorkspace({ embedded = false, detailReques
                   <p>정제 Blogger HTML SHA-256: <code>{String(manual?.html_sha256 ?? "확인 불가")}</code></p>
                   <p>OAuth: {selected?.oauth_status === "connected" && manual?.oauth_write_scope === true ? "연결됨 · Blogger 쓰기 scope 확인" : "쓰기 scope 확인 안 됨"} · 공개 쓰기 정책: {manual?.remote_write_policy_available === true ? "허용" : "차단 또는 미승인"}</p>
                   <details><summary>공개될 본문 전체 보기</summary><pre className="manual-publication-body">{String(manual?.body ?? latestVersion.body_markdown ?? "본문을 읽을 수 없습니다.")}</pre></details>
-                  {Array.isArray(manual?.followups) && manual.followups.length > 0 && <div><strong>게시 후 보완 예정 {manual.followups.length}건</strong><ul>{(manual.followups as Row[]).map((item, index) => <li key={`${String(item.issue_type)}-${index}`}>{String(item.description)}</li>)}</ul></div>}
+                  {manual?.decision === "READY" && <p className="quality-ok" role="status">{"\ubc1c\ud589 \uac00\ub2a5"}</p>}
+                  {manual?.decision === "READY_WITH_REMEDIATION" && <p className="quality-ok" role="status">{"\ubc1c\ud589 \uac00\ub2a5 \u00b7 \ubcf4\uc644\uc0ac\ud56d \uc788\uc74c"}</p>}
+                  {manual?.decision === "SAFETY_HOLD" && <p className="quality-held" role="status">{"\uc548\uc804 \ubcf4\ub958"}</p>}
+                  {manual?.decision === "POLICY_BLOCKED" && <p className="quality-held" role="status">{"\uc6b4\uc601 \uc815\ucc45 \ucc28\ub2e8"}</p>}
+                  {Array.isArray(manual?.followups) && manual.followups.length > 0 && <div><strong>게시 전후 보완사항 {manual.followups.length}건</strong><ul>{(manual.followups as Row[]).map((item, index) => <li key={`${String(item.issue_type)}-${index}`}>{String(item.description)}</li>)}</ul></div>}
                 </div>
                 {manual?.eligible === true ? <p className="quality-ok" role="status">게시 가능 · 품질·출처·SEO 등 미완료 항목은 게시 후 보완 목록에 연결됩니다.</p>
                   : <div className="quality-held" role="status"><strong>현재 게시 요청 불가 · 다음 조건</strong><ul>{blockers.length ? blockers.map(reason => <li key={reason}>{manualBlockerNames[reason] ?? reason}</li>) : <li>수동 발행 상태를 확인할 수 없습니다.</li>}</ul></div>}

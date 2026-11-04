@@ -625,11 +625,20 @@ def scheduled_first_post_status(import_id: Annotated[UUID, Query()]) -> dict[str
                 manual_blockers = _manual_publication_blockers(
                     conn, manual_row, manual_snapshot, UUID(blog_id),
                 )
+                from .publication_policy import evaluate_publication_content
+                manual_decision = evaluate_publication_content(
+                    manual_blockers,
+                    safe_body_available=bool(manual_snapshot.get("safe_html") and manual_snapshot.get("body", "").strip()),
+                    existing_followups=manual_snapshot.get("followups", []),
+                )
                 manual_publication = {
                     "status": "eligible" if not manual_blockers else "blocked",
                     "request_available": True,
                     "eligible": not manual_blockers,
                     "blockers": manual_blockers,
+                    "decision": manual_decision["decision"],
+                    "safety_blockers": manual_decision["safety_blockers"],
+                    "policy_reasons": manual_decision["policy_reasons"],
                     "title": manual_snapshot.get("title"),
                     "body": manual_snapshot.get("body"),
                     "title_sha256": manual_snapshot.get("title_sha256"),

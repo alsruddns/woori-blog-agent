@@ -20,6 +20,7 @@ Scheduled and Trends content use the existing immutable import/content-version s
 
 - `services/api/woori/publication_policy.py`: new shared content decision/remediation evaluator; separates remediation, safety holds, and operational policy blockers.
 - `services/api/woori/publications.py`: manual route/snapshot uses the shared evaluator and stores follow-ups with the existing queue transaction.
+- `apps/dashboard/app/imports/external-import-workspace.tsx`: manual eligibility detail distinguishes ready, ready-with-remediation, safety hold, and policy block.
 - `services/api/woori/publication_worker.py`: scheduled eligibility uses the shared evaluator after evidence-aware sanitization; operational gates remain.
 - `services/api/woori/trends_publication.py`: Trends validation/enqueue uses the shared evaluator and stores follow-ups with queue creation.
 - `services/api/woori/content_imports.py`: reuses the immutable sanitizer for Trends as well as scheduled content, with active target/policy checks and append-only lineage audit.
@@ -45,11 +46,11 @@ No database migration was added. Existing `post_publication_reviews`, review ite
 
 ## Runtime baseline and remaining limits
 
-At inspection, Dashboard PID 19452 was on `fdc2add590bbbd9164dd4b3172f86d2549048f69`; API PID 26600 and Publication Worker PID 36012 were on `b77ace192d38937bcd437819a59070ab98982437`; Research Worker heartbeat was fresh on `fdc2add590bbbd9164dd4b3172f86d2549048f69`. The runtime reported `AutoMode=manual` and automatic policy inactive. These operator settings were not changed. Code reflection can update the services but cannot enable automatic publishing.
+Before the final UI follow-up, Dashboard PID 19452 was on `fdc2add590bbbd9164dd4b3172f86d2549048f69`; API PID 26600 and Publication Worker PID 36012 were on `b77ace192d38937bcd437819a59070ab98982437`; Research Worker heartbeat was fresh on `fdc2add590bbbd9164dd4b3172f86d2549048f69`. Operating controls were revision 20: collection ON/30 min, global publication interval 15 min, global LIVE cap 100, six active blogs, auto/Trends/scheduled/manual toggles ON, operator approval true, emergency stop OFF. Global configured mode is `manual`, and the Worker reports automatic policy inactive. These user-controlled settings were not changed.
 
 The existing `scripts/apply-verified-changes.ps1 -Apply -Confirm:$false` procedure passed its changed-file Ruff/mypy/tests, wheel build, and isolated Dashboard production build. It gracefully stopped the old API and both Workers after confirming no active/uncertain non-simulation publication jobs and no pending Blogger writes, then started the new API and Workers. API health and Dashboard root both returned HTTP 200. Research and Publication Worker heartbeats are fresh.
 
-Applied service revisions: API, Research Worker heartbeat, and Publication Worker run commit `9e683b3324c2404c8f2c9462c2cbc0d18350df19`. Dashboard remains PID 19452 on `fdc2add590bbbd9164dd4b3172f86d2549048f69`; no Dashboard files changed in P128, and it returned HTTP 200. PostgreSQL schema remains 89. No DB backup was required because no schema/data mutation was performed other than the append-only agent audit event.
+Initial code reflection applied API, Research Worker, and Publication Worker at `9e683b3324c2404c8f2c9462c2cbc0d18350df19`. A follow-up changes the manual detail read model and Dashboard decision labels; those paths require a second verified reflection. PostgreSQL schema remains 89. No DB backup was required because no schema migration or operational configuration mutation was performed other than append-only agent audit events.
 
 The live operator setting currently reports `AutoMode=manual` and `AutoPolicyActive=False`; this work deliberately preserved it. The implementation is reflected in the runtime, but automatic public publishing is not operationally enabled under the current policy state.
 
@@ -57,8 +58,8 @@ Known limitation: the evaluator does not turn unknown evidence into verified evi
 
 ## Final record
 
-- End code HEAD: `9e683b3324c2404c8f2c9462c2cbc0d18350df19`.
-- Commit: `9e683b3324c2404c8f2c9462c2cbc0d18350df19` (`Fix : [Publication] Unify publication policy evaluation`).
+- End code HEAD: `9e683b3324c2404c8f2c9462c2cbc0d18350df19` (follow-up pending).
+- Commit: main code commit `9e683b3324c2404c8f2c9462c2cbc0d18350df19`; follow-up pending.
 - Remote push: pending.
-- Reflection: API, Research Worker, and Publication Worker applied; Dashboard unchanged and healthy.
+- Reflection: backend/Workers applied; follow-up API/Dashboard detail display pending.
 - Remaining issue: 8 unrelated full-suite failures listed above; automatic operation remains governed by current DB policy (manual mode/off).

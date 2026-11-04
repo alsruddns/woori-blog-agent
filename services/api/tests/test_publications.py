@@ -371,6 +371,7 @@ def test_scheduled_first_post_status_exposes_exact_blockers_without_writing(monk
     assert result["targets"][0]["first_publication_approval_required"] is False
     assert result["targets"][0]["approval_blockers"] == []
     assert result["targets"][0]["manual_publication"]["status"] == "eligible"
+    assert result["targets"][0]["manual_publication"]["decision"] == "READY"
     assert result["targets"][0]["manual_publication"]["generation_method"] == "chatgpt_scheduled_export"
 
     # Ordinary manual imports must get the same manual eligibility read model
@@ -380,6 +381,7 @@ def test_scheduled_first_post_status_exposes_exact_blockers_without_writing(monk
     manual_target = manual_result["targets"][0]["manual_publication"]
     assert manual_result["auto_publication_failure"] is False
     assert manual_target["status"] == "eligible"
+    assert manual_target["decision"] == "READY"
     assert manual_target["generation_method"] == "manual_codex_import"
 
 
