@@ -53,3 +53,11 @@
 - 운영 확인 당시 Trends 기준 5,000, automation revision 22, 활성 Blogger 6, `zh-CN` 비활성, 활성 geo authoring mappings 12, IN→Trend Journal EN 활성, Publication Worker queued/due 0이었다. 이번 작업의 Blogger POST/PATCH/DELETE/초안 작성 0건.
 - 시작 HEAD: `221b5aad43553a78627d872e024f7f176e75849a`. 코드 commit: `3cbe656c33e999e0cdc10f66ffe2b7b92d31ce1b`; current documentation commit and push are recorded in Git history.
 - Append-only PostgreSQL `agent.work.completed` partial-result audit: ID `353073`; links to start event `352051`. Code commit and documentation commit were pushed to `origin/develop`; later operational audit/doc updates are linked by Git history.
+
+### Verified full service reflection follow-up (2026-11-04 21:38 KST)
+
+- After active Dashboard connections cleared, the same `scripts/apply-verified-changes.ps1 -Apply -Confirm:$false` completed successfully. Dashboard, API, Publication Worker and Research Worker all now run applied revision `9ff7158d685a93842cbe13a478c6f825d4a99761`.
+- Graceful stop/start only; no force termination. Final PIDs: Dashboard 37224, API 32852, Publication Worker 22980, Research Worker 21596. Dashboard `/research` and API `/health` returned HTTP 200; both Worker heartbeats were fresh with no error.
+- Publication Worker remained in `scheduled-auto-manual-trends`, `AutoMode=manual`, `AutoPolicyActive=false`; Mock/Live queued and due were all 0. OAuth, policy events, publication history and scheduled work were not edited. Blogger writes remain 0.
+- The 21:30 KST code-path observation above is after Research Worker reflection and confirms the capacity wait state. No request was generated because the existing four-per-hour cap was still saturated. The unresolved policy decision still prevents claiming the requested threshold-only guarantee complete.
+- Append-only follow-up `agent.work.completed` audit ID `353098` records the full service reflection and the unresolved threshold-cap behavior; it links to start event `352051` and the earlier partial audit `353073`.
