@@ -3,8 +3,10 @@
 - 작업 일시: 2026-11-04 (Asia/Seoul)
 - 브랜치: `develop`
 - 시작 HEAD: `58301e73e8d770a46faf8d65ecdd98f76d93ede4`
+- 구현 커밋: `a0f0722a5d8c5714994fcbc76accb9ccb22d4799`
 - 작업 시작 감사 이벤트: `agent.work.started`, id `347891`
-- 작업 완료 이벤트와 최종 커밋 해시는 후속 감사 기록 및 Git 이력으로 연결한다.
+- 작업 완료 감사 이벤트: `agent.work.completed`, id `347930`
+- 개발 기록 종료 커밋은 후속 Git 이력으로 연결한다.
 
 ## 기존 문제와 목적
 
@@ -51,7 +53,12 @@
 - Dashboard isolated production build는 안전 반영 스크립트에서 재검증한다.
 - 운영 서비스 상태는 2026-11-04 확인 시 Dashboard/API/Research Worker/Publication Worker가 실행 중이었다. API와 Publication Worker의 기존 AppliedCommit은 `5826b59bbb1944ed4a954745ffe4e6270c256217`, Dashboard는 `6e7541524c421c23d2fcdd1011a32660474cb83b`, Research Worker는 `67e9218c1fecafffab079da4e960fbd979642dbb`였다. DB schema는 애플리케이션 기능상 migration이 없어 변경하지 않는다.
 - 읽기 전용 운영 점검에서 queued/running/uncertain 발행 Job 0건, queued/running Research Job 0건, Worker heartbeat 정상, LIVE queue due 0건을 확인했다.
-- 안전 반영 스크립트 적용 및 서비스별 실제 반영 상태는 완료 후 갱신한다.
+- 첫 안전 반영 실행은 전체 테스트 뒤 pytest의 Windows 임시 경로 정리에서 접근 거부로 멈췄다. 서비스 종료 단계 전이었고 어떠한 프로세스도 중지되지 않았다. 새로 확인한 저장소 내 전용 pytest 경로로 재실행해 검증을 완료했다.
+- 안전 반영 스크립트 결과: Pester 31 통과, Ruff 통과, mypy 9 모듈 통과, 변경 범위 pytest `227 passed, 1 cache 권한 경고`, wheel 빌드 통과, Dashboard lint/typecheck/build 통과.
+- API, Dashboard, Publication Worker, Research Worker는 정상 종료 요청을 완료한 뒤 `a0f0722a5d8c5714994fcbc76accb9ccb22d4799`로 재기동됐다. API `/health`와 Dashboard `/research`는 HTTP 200. 네 서비스의 실행 revision이 새 커밋과 일치하고 두 Worker heartbeat는 fresh다.
+- API/Dashboard와 Worker는 실제 PID가 새 값으로 바뀌었다. 작업 중이던 발행·Research Job은 사전 읽기 전용 검사에서 0건이었고 Worker들은 현재 동기 작업 주기를 마친 후 종료했다. 강제 종료는 없었다.
+- 재기동 후 Publication Worker는 `LiveQueued=0`, `LiveDue=0`, heartbeat running이며 최근 게시 완료 기록은 읽기 전용 상태 조회로만 확인했다. 현 운영 자동 모드는 `manual`, Auto policy는 비활성으로 보고되었으며 이번 작업에서 변경하지 않았다.
+- DB schema/Migration: 변경 없음. OAuth, 게시 기록, 예약 작업 및 자동화 설정을 변경하지 않았다. 실제 Blogger 게시/수정/초안 요청은 0건.
 
 ## 남은 문제
 
@@ -61,4 +68,4 @@
 
 ## 커밋 및 완료 상태
 
-- 테스트 결과, 운영 반영, 완료 감사 이벤트, 최종 Git commit/push 결과는 후속 기록으로 갱신한다.
+- 구현 커밋 `a0f0722a5d8c5714994fcbc76accb9ccb22d4799`는 `origin/develop`에 푸시됐다. 최종 개발 기록 커밋은 후속 Git 이력에서 연결한다.
