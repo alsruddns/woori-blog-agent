@@ -67,3 +67,13 @@ P131 기록상 로컬 TOML 정의는 총 21개(활성 cron 20개, 일시중지 1
 - 원격 push: 작업 마감 후 기록.
 - 남은 문제: 공식 Desktop Run now 컨텍스트에서 연구 스냅샷, 원고 파일, `ready/` handoff, 운영 Import Receipt를 확인해야 운영 복구로 판정할 수 있다.
 
+
+## 2026-11-04 17:43 KST — 운영 반영 후속 결과
+
+- 검증된 `scripts/apply-verified-changes.ps1 -Apply -Confirm:$false`를 사용했다. 첫 시도는 테스트가 32건 통과한 뒤 Windows 공용 pytest temp 정리 권한 오류로 서비스 정지 전에 중단했다. 저장소 내부의 새 basetemp를 지정해 다시 실행했고 검증 및 안전 반영이 완료됐다.
+- 정상 종료: API, Publication Worker, Research Worker가 각 작업 주기를 마친 뒤 graceful stop 됐다. 당시 live queued/due=0, scheduled/manual queued/due=0, Research `job_runs`/`research_stage_runs` running=0이었다. 강제 종료 없음.
+- 적용 revision: API `a56ef78f773e1646c522ac838fd244fc40d4601d`, Research Worker heartbeat `a56ef78f773e1646c522ac838fd244fc40d4601d`, Publication Worker heartbeat `a56ef78f773e1646c522ac838fd244fc40d4601d`. Dashboard는 변경 대상이 아니어서 재기동하지 않았고 기존 `a0f0722a5d8c5714994fcbc76accb9ccb22d4799` 적용 revision을 유지했다.
+- 사후 점검: API `/health` HTTP 200, Dashboard `/research` HTTP 200, Research/Publication heartbeat fresh. Worker의 queued/due Blogger job 0. `import_receipts/` 디렉터리가 준비됐고 운영 receipt는 0개(실제 운영 Import를 실행하지 않았음).
+- 운영 설정은 조회만 했으며 변경하지 않았다. 현재 런타임 `global_mode`는 `manual`, 최소 간격 1440분, 일일 상한 1, `operations_auto_approved=false`였고 Scheduled Auto 승인 범위는 4개 blog ID였다. 이는 이 작업 요청에 적힌 15분/100건 및 활성 6개 범위와 일치하지 않는다. 이 설정을 P133에서 덮어쓰지 않았으며 별도 운영 정책 정합성 확인이 필요하다.
+- Desktop UI에서 실제 Run now를 눌러 생성/Import하는 검증은 수행하지 않았다. UI 자동화 skill에서 Codex Desktop 직접 조작이 금지되어 있고, 현재 이번 세션으로부터 별도의 신뢰 가능한 Automation trigger를 만들 수 없었다. 따라서 실제 Desktop E2E 운영 복구는 미검증이다.
+- 최종 코드 커밋: `a56ef78f773e1646c522ac838fd244fc40d4601d`. 개발 기록의 운영 반영 후속 커밋은 Git 이력으로 연결한다.
