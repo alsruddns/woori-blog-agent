@@ -242,6 +242,11 @@ def _save_trend_import_receipt(job:dict[str,Any], raw:bytes, result:dict[str,Any
     return str(path.relative_to(ROOT))
 
 
+def _article_for_trend_import(article:dict[str,Any], event_focus:dict[str,Any]) -> dict[str,Any]:
+    """Keep the event anchor in the Trends import contract after snapshot extraction."""
+    return {**article,'event_focus':event_focus}
+
+
 def trend_article_instructions(job:dict[str,Any], trend_contract:dict[str,Any]) -> str:
     language=job['language_code']
     locale_guidance={
@@ -657,7 +662,7 @@ def generate(job:dict[str,Any]) -> None:
                     'reader_quality_recommendation':evidence['trend_reader_quality']['recommendation'],
                     'semantic_fact_verification':'not_performed','publish_ready':False,
                 })
-            article=trend_output
+            article=_article_for_trend_import(trend_output,event_focus)
         state(job_id,'validating',evidence=Jsonb(evidence))
         envelope=make_envelope(job,article,evidence)
         if evidence.get('draft_curation'):

@@ -201,7 +201,8 @@ def test_trends_origin_is_distinct_from_scheduled_and_manual():
     job={'id':uuid4(),'trend_request_id':uuid4(),'job_type':'google_trends','category':'technology',
          'language_code':'ko','target_country':'KR','model':'gpt-6-luna'}
     proof={'opened_urls':{'https://example.gov/policy':datetime.now(UTC).isoformat()}}
-    envelope=keyword_jobs.make_envelope(job,article,proof)
+    event_focus=article.pop('event_focus') # Snapshot/audit extraction must not drop the Import contract field.
+    envelope=keyword_jobs.make_envelope(job,keyword_jobs._article_for_trend_import(article,event_focus),proof)
     assert envelope.item.generation_method=='codex_trends_export'
     assert envelope.item.google_trends_based is True
     assert envelope.item.event_group_id=='trend-'+str(job['trend_request_id'])

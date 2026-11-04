@@ -63,3 +63,13 @@
 - 다음 신규 수집 회차에서 작성 요청→Research Worker→snapshot→원고 파일→Import Receipt→LIVE queue가 실제로 연결되는지 아직 확인하지 않았다. 현재 신규 회차의 실제 작성 Job은 기존 코드로 실패했고, 과거 회차를 다시 실행하지 않았다.
 - Google Blogger 쓰기 0건, 테스트 게시/초안 0건, 유료 AI/API 호출 0건.
 - 커밋/푸시 및 완료 감사 ID는 운영 반영 후 이 문서의 후속 기록에 추가한다.
+
+
+## P5-CODEX-137 follow-up: fresh-slot failure and correction (2026-11-05 KST)
+
+- After the initial implementation reached operations schema 92 and code commit `64af1fccae72d5117287923e87a3aff09c151fe9`, the approved Trends LIVE policy was recorded for the six active blogs through the authenticated management route. Policy event IDs 4?9 target only EN (AU, CA, GB, IN, PH, SG, US), KO (KR), JA (JP), DE (DE), pt-BR (BR), and VI (VN). The publication policy event did not issue Blogger writes.
+- The new 01:30 KST collection slot completed successfully for all 14 configured regions. Two current-slot authoring requests were created and polled by Research Worker. Both authoring Jobs reached `article_schema_invalid` before snapshot/file/import creation. The recorded Pydantic error was missing `event_focus` in the Trends Import article contract. No prior slot was replayed.
+- Root cause: the generation path extracted `event_focus` for immutable snapshot/audit metadata and then omitted it when passing the article to the Import envelope builder, whose Trends schema requires the field.
+- Correction: retain the extracted `event_focus` in the article passed to Import; add a regression assertion reproducing the snapshot extraction boundary. Files changed: `services/api/woori/keyword_jobs.py`, `services/api/tests/test_keyword_authoring.py`.
+- Verification after correction: focused authoring tests 17 passed; full API suite 920 passed; Ruff passed; mypy passed. Dashboard lint/typecheck/build previously passed on the same Dashboard source and it is unchanged by this follow-up.
+- At this checkpoint the source fix is tested but has not yet been committed or applied to runtime; next operation is commit/push and the approved four-service graceful reflection procedure. No test article, Import, publication queue item, paid AI call, or Blogger write was created.
