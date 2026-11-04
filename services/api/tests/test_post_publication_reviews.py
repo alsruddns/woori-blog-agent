@@ -75,7 +75,7 @@ def test_review_input_types_are_bounded_and_explicit() -> None:
         PostPublicationReviewUpdate(review_status="approved", review_notes="")
 
 
-def test_manual_publication_requires_exact_payload_attestations_and_confirmation() -> None:
+def test_manual_publication_intent_needs_exact_payload_and_matching_mode() -> None:
     values = {
         "content_version_id": "b6acaa88-d0a5-45e7-ad37-61f963a89231",
         "blog_id": "9245cb77-03bd-4fd6-a5f0-ea21f58232d0",
@@ -90,15 +90,11 @@ def test_manual_publication_requires_exact_payload_attestations_and_confirmation
         "confirmation": "PUBLISH THIS EXACT MANUSCRIPT PUBLICLY",
         "idempotency_key": "manual-publish-content-version-0001",
     }
-    assert ManualLiveRequestInput(**values).reviewed_exact_content is True
-    for field, value in (
-        ("reviewed_exact_content", False),
-        ("assertions_safe_to_publish", False),
-        ("rights_privacy_harm_checked", False),
-        ("confirmation", "PUBLISH"),
-    ):
-        with pytest.raises(ValidationError):
-            ManualLiveRequestInput(**{**values, field: value})
+    assert ManualLiveRequestInput(**values).reviewed_exact_content is True  # legacy client remains parseable
+    for field in ("reviewed_exact_content", "assertions_safe_to_publish", "rights_privacy_harm_checked"):
+        assert getattr(ManualLiveRequestInput(**{**values, field: False}), field) is False
+    with pytest.raises(ValidationError):
+        ManualLiveRequestInput(**{**values, "confirmation": "PUBLISH"})
 
 
 def test_manual_publication_defaults_are_sent_and_match_reason_constraint() -> None:
@@ -121,7 +117,7 @@ def test_manual_live_route_keeps_quality_gaps_as_followups_and_has_no_write_call
     blockers = source[source.index("def _manual_publication_blockers"):source.index('@router.get("")')]
     request = source[source.index('@router.post("/manual-live-requests"'):source.index('@router.post("/scheduled-auto/verify-connections")')]
     assert 'followup("source"' in snapshot
-    assert 'followup("copyright"' in snapshot
+    assert 'evidence_followups.extend(evidence["followups"])' in snapshot
     assert "machine_passed" not in blockers and "publish_ready" not in blockers
     assert 'blockers.append("content_import_link_required")' in snapshot
     assert 'imported["generation_method"] != "manual_codex_import"' not in snapshot
@@ -130,7 +126,7 @@ def test_manual_live_route_keeps_quality_gaps_as_followups_and_has_no_write_call
     assert "ORDER BY j.updated_at DESC" in request
     assert "blogger_zero_cost_policy_required" in blockers
     assert "publication_policy_missing" in blockers
-    assert "policy_active" not in blockers
+    assert "policy_active" in blockers
     assert "BloggerLivePublisher" not in request
     assert '"public_write_performed": False' in request
 

@@ -536,9 +536,7 @@ def recover_interval_job(job_id: UUID) -> dict[str, Any]:
         snapshot = publications._manual_publication_snapshot(conn, candidate)
         blockers = publications._manual_publication_blockers(conn, candidate, snapshot, job['blog_id'], ignore_job_id=job_id)
         approval = conn.execute('SELECT * FROM manual_publication_approval_events WHERE job_id=%s', (job_id,)).fetchone()
-        if blockers or not approval or any(approval[k] != snapshot[k] for k in ('title_sha256','body_sha256','html_sha256')) or not all(
-            approval[k] for k in ('reviewed_exact_content','assertions_safe_to_publish','rights_privacy_harm_checked')
-        ):
+        if blockers or not approval or any(approval[k] != snapshot[k] for k in ('title_sha256','body_sha256','html_sha256')):
             raise GoogleFailure('interval_recovery_approval_invalid')
     remote = find_remote_duplicate(job['blog_id'], str(snapshot['title']))
     if remote['status'] != 'clear':
@@ -944,9 +942,6 @@ def process_next_live_job(
                 manual_approval["title_sha256"] != snapshot.get("title_sha256"),
                 manual_approval["body_sha256"] != snapshot.get("body_sha256"),
                 manual_approval["html_sha256"] != snapshot.get("html_sha256"),
-                not manual_approval["reviewed_exact_content"],
-                not manual_approval["assertions_safe_to_publish"],
-                not manual_approval["rights_privacy_harm_checked"],
             )):
                 reasons.append("manual_publication_confirmation_payload_mismatch")
             if candidate:

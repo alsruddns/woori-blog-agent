@@ -324,6 +324,7 @@ def evaluate_scheduled_evidence(
     human_review: Mapping[str, Any] | None,
     scheduled_publish_first: bool = False,
     article_body: str = "",
+    expected_generation_method: str = "chatgpt_scheduled_export",
 ) -> dict[str, Any]:
     """Evaluate machine-verifiable evidence without impersonating a reviewer.
 
@@ -340,8 +341,9 @@ def evaluate_scheduled_evidence(
         for source in sources
         if isinstance(source, Mapping) and source.get("source_id")
     }
-    if imported.get("generation_method") != "chatgpt_scheduled_export":
-        reasons.append("not_a_scheduled_export")
+    if imported.get("generation_method") != expected_generation_method:
+        reasons.append("not_a_scheduled_export" if expected_generation_method == "chatgpt_scheduled_export"
+                       else "publication_origin_mismatch")
     if not _SHA256.fullmatch(version_sha256):
         reasons.append("scheduled_version_hash_invalid")
     if not claims or not sources:

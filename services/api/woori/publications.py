@@ -134,12 +134,14 @@ class ManualLiveRequestInput(BaseModel):
     expected_body_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     expected_html_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     actor_label: str = Field(min_length=2, max_length=120)
-    # A concise reason such as "확인완료" is sufficient alongside the exact
-    # content hashes and the three explicit safety attestations recorded below.
+    # A concise reason such as "확인완료" records publication intent alongside
+    # exact content hashes. Independent safety checks remain server-side.
     reason: str = Field(min_length=3, max_length=2000)
-    reviewed_exact_content: Literal[True]
-    assertions_safe_to_publish: Literal[True]
-    rights_privacy_harm_checked: Literal[True]
+    # Legacy clients may send these fields, but a click is publication intent,
+    # not a truthful assertion that separate reviews were completed.
+    reviewed_exact_content: bool = False
+    assertions_safe_to_publish: bool = False
+    rights_privacy_harm_checked: bool = False
     publication_mode: Literal["draft", "publish"] = "publish"
     confirmation: Literal["PUBLISH THIS EXACT MANUSCRIPT PUBLICLY", "SAVE THIS EXACT MANUSCRIPT AS DRAFT"]
 
@@ -784,7 +786,7 @@ def create_manual_live_request(request: ManualLiveRequestInput) -> dict[str, Any
             (job_id,blog_id,content_version_id,import_id,title_sha256,body_sha256,html_sha256,
              actor_label,reason,reviewed_exact_content,assertions_safe_to_publish,
              rights_privacy_harm_checked,idempotency_key)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,true,true,true,%s)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,false,false,false,%s)
             RETURNING id,created_at""",
             (inserted["id"], request.blog_id, request.content_version_id,
              snapshot["import_id"], snapshot["title_sha256"], snapshot["body_sha256"],
@@ -839,8 +841,8 @@ def create_manual_live_request(request: ManualLiveRequestInput) -> dict[str, Any
                 "import_id": snapshot["import_id"], "generation_method": snapshot["generation_method"],
                 "title_sha256": snapshot["title_sha256"], "body_sha256": snapshot["body_sha256"],
                 "html_sha256": snapshot["html_sha256"], "actor_label": request.actor_label,
-                "reason": request.reason, "reviewed_exact_content": True,
-                "assertions_safe_to_publish": True, "rights_privacy_harm_checked": True,
+                "reason": request.reason, "manual_publication_intent": True,
+                "legacy_review_attestations_ignored": True,
                 "followup_review_id": str(review_id) if review_id else None,
                 "public_write_performed": False,
             })),
@@ -1250,6 +1252,7 @@ def _manual_publication_snapshot(conn: Any, row: dict[str, Any] | None) -> dict[
         """SELECT i.id AS import_id,i.external_content_id,i.generation_method,i.language_code,
             v.id AS import_version_id,v.version_number,v.title AS import_title,
             v.body_markdown,v.seo_metadata,v.blogger_labels,v.content_sha256,
+            i.claims,i.sources,
             (SELECT id FROM external_content_import_versions newest
               WHERE newest.import_id=i.id ORDER BY newest.version_number DESC LIMIT 1) AS latest_import_version_id
         FROM external_content_import_content_links link
@@ -1293,6 +1296,49 @@ def _manual_publication_snapshot(conn: Any, row: dict[str, Any] | None) -> dict[
     if len(labels) > 10 or any(not str(label).strip() or len(str(label)) > 100 for label in labels):
         blockers.append("blogger_labels_invalid")
 
+    # A manual click is publication intent, not a claim that a human checked
+    # sources, facts or rights. Reuse the scheduled lane's independent source
+    # proof and conservative paragraph checks without changing stored reviews.
+    evidence_followups: list[dict[str, str]] = []
+    if imported:
+        from .scheduled_auto_verification import (
+            evaluate_scheduled_evidence,
+            sanitize_scheduled_body,
+            verified_scheduled_claim_ids,
+        )
+        method = str(imported["generation_method"])
+        if method not in {"manual_codex_import", "chatgpt_scheduled_export", "codex_trends_export"}:
+            blockers.append("publication_origin_unsupported")
+        else:
+            proof_rows = conn.execute(
+                """SELECT DISTINCT ON (payload->>'source_id') payload FROM audit_events
+                WHERE event_type='research.source.live_document_verified'
+                  AND payload->>'import_id'=%s
+                ORDER BY payload->>'source_id',id DESC""", (str(imported["import_id"]),),
+            ).fetchall()
+            proofs = {
+                str(proof["payload"].get("source_id")): {
+                    **proof["payload"],
+                    "source_url": proof["payload"].get("source_url") or proof["payload"].get("url"),
+                    "source_body_sha256": proof["payload"].get("source_body_sha256") or proof["payload"].get("body_sha256"),
+                }
+                for proof in proof_rows
+            }
+            evidence_import = {**dict(imported), "id": str(imported["import_id"]),
+                               "generation_method": method}
+            evidence = evaluate_scheduled_evidence(
+                evidence_import, version_sha256=str(imported["content_sha256"]),
+                source_proofs=proofs, human_review=None,
+                scheduled_publish_first=True, article_body=body,
+                expected_generation_method=method,
+            )
+            blockers.extend(evidence["reasons"])
+            evidence_followups.extend(evidence["followups"])
+            verified = verified_scheduled_claim_ids(evidence_import, proofs)
+            sanitized = sanitize_scheduled_body(body, imported["claims"] or [], verified_claim_ids=verified)
+            if sanitized["changed"] or sanitized["substantive_blocks_remaining"] < 2:
+                blockers.append("manual_supported_revision_required")
+
     followups: list[dict[str, str]] = []
     def followup(issue_type: str, severity: str, description: str) -> None:
         followups.append({"issue_type": issue_type, "severity": severity, "description": description})
@@ -1303,14 +1349,17 @@ def _manual_publication_snapshot(conn: Any, row: dict[str, Any] | None) -> dict[
         followup("source", "medium", "출처 원문과 이용 조건을 확인하세요.")
     if not row.get("evidence_facts_reviewed"):
         followup("number", "medium", "주요 주장과 수치에 원문 근거를 연결하세요.")
+    if not row.get("research_package_reviewed"):
+        followup("source", "medium", "조사 자료의 출처와 사건 맥락을 추가 검토하세요.")
     if not row.get("rights_reviewed"):
-        followup("copyright", "medium", "출처 이용 조건과 인용 범위를 검토하세요.")
+        followup("copyright", "medium", "출처 이용 조건과 인용 범위를 추가 검토하세요.")
+    followups.extend(evidence_followups)
     if not row.get("seo_passed"):
         followup("other", "low", "SEO 제목·설명과 검색 의도를 보완하세요.")
     if row.get("human_review_required") or not row.get("human_review_approved"):
-        followup("other", "low", "사람의 편집 검토를 완료하세요.")
+        followup("other", "low", "선택적으로 편집 품질을 추가 검토하세요.")
     if not row.get("publish_ready"):
-        followup("other", "low", "필수 공개 적격성 검사를 통과한 뒤 다시 요청하세요.")
+        followup("other", "low", "일반 품질 적격성 플래그를 재평가하세요. 핵심 안전 검사는 별도로 적용됩니다.")
 
     imported_seo = (imported.get("seo_metadata") or {}) if imported else {}
     search_description = str(
@@ -1379,30 +1428,8 @@ def _manual_publication_blockers(
                 reasons.append("target_uses_auto_mode")
         if modes["emergency_stopped"]:
             reasons.append("publication_emergency_stop_active")
-    # A user confirmation authorizes a request, but cannot replace evidence,
-    # editorial review, rights review, or the current version's quality gate.
-    # Keep the manual action available as a way to inspect/recheck eligibility;
-    # never enqueue a public or draft write while these required checks are held.
-    if not row.get("machine_passed"):
-        reasons.append("machine_quality_not_passed")
-    if not row.get("sources_reviewed"):
-        reasons.append("reviewed_source_missing")
-    if not row.get("evidence_facts_reviewed"):
-        reasons.append("evidence_fact_verification_missing")
-    if not row.get("research_package_reviewed"):
-        reasons.append("research_package_not_reviewed")
-    if not row.get("rights_reviewed"):
-        reasons.append("source_rights_review_missing")
-    if not row.get("seo_passed"):
-        reasons.append("seo_check_not_passed")
-    if not row.get("html_ready"):
-        reasons.append("sanitized_blogger_html_missing")
-    if row.get("human_review_required") or not row.get("human_review_approved"):
-        reasons.append("human_review_pending")
-    if not row.get("publication_approval_approved"):
-        reasons.append("publication_approval_missing_or_stale")
-    if not row.get("publish_ready"):
-        reasons.append("publish_ready_disabled")
+    # Ordinary quality, SEO and editorial flags are follow-ups. The snapshot
+    # above independently checks source evidence, rights and usable HTML.
     if external_policy._blogger_policy_approval() is None:
         reasons.append("blogger_zero_cost_policy_required")
     try:

@@ -44,6 +44,28 @@ def test_scheduled_publish_first_allows_minor_review_followups_only():
     assert any(item["issue_type"] == "copyright" for item in result["followups"])
 
 
+def test_manual_intent_uses_same_evidence_proof_without_fake_human_review():
+    imported, proof = _scheduled_fixture()
+    imported["generation_method"] = "manual_codex_import"
+    result = evaluate_scheduled_evidence(
+        imported, version_sha256="b" * 64, source_proofs=proof,
+        human_review=None, scheduled_publish_first=True,
+        article_body="The rate was reported. [source:S1]",
+        expected_generation_method="manual_codex_import",
+    )
+    assert result["status"] == "passed"
+    assert result["checks"]["human_claim_review_present"] is False
+    assert result["followups"]
+    imported["claims"][0]["verification_status"] = "unverified"
+    held = evaluate_scheduled_evidence(
+        imported, version_sha256="b" * 64, source_proofs=proof,
+        human_review=None, scheduled_publish_first=True,
+        article_body="The rate was reported. [source:S1]",
+        expected_generation_method="manual_codex_import",
+    )
+    assert "claim_evidence_incomplete" in held["reasons"]
+
+
 def test_scheduled_publish_first_routes_failed_quality_flags_to_followups_without_mutating_them():
     reasons, followups = scheduled_publish_first_assessment({
         "machine_passed": False,

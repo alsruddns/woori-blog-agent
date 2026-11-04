@@ -55,15 +55,21 @@ def assess_trends_article(item: dict[str, Any], body: str) -> dict[str, Any]:
     """Post-editing Trends policy: assess format and basic risk, never promote claims."""
     from .editorial_html import markdown_to_blogger_html, sanitize_editorial_html
     reasons: list[str] = []
+    followups: list[dict[str, str]] = []
     title = str(item.get("title") or "").strip()
-    if len(title) < 5 or len(body.strip()) < 300:
+    if not title or len(body.strip()) < 100:
         reasons.append("article_title_or_body_insufficient")
+    elif len(title) < 5 or len(body.strip()) < 300:
+        followups.append({"issue_type": "other", "severity": "medium",
+                          "description": "제목과 본문의 정보 밀도를 추가 검토하세요."})
     if re.search(r"insufficient[_ ]evidence|근거\s*부족|증거\s*부족|情報不足|证据不足", title, re.IGNORECASE):
         reasons.append("insufficient_evidence_is_not_article")
     if re.match(r"\s*(?:I (?:cannot|could not|am unable to) verify|Unable to verify|No sufficient evidence|검증 가능한 정보가 없습니다|근거를 확보하지 못했습니다)", body, re.IGNORECASE):
         reasons.append("insufficient_evidence_is_not_article")
     if re.search(r"</?[A-Za-z][^>]*>|\x00", body):
         reasons.append("unsafe_article_format")
+    if not item.get("sources") or not claims_are_publish_verified(item.get("claims")):
+        reasons.append("claims_or_sources_not_verified")
     risk_text = title + " " + body
     if item.get("category") in {"finance", "health"} or re.search(
         r"\b(death|died|suicide|murder|fraud|allegation|cancer|diagnosis|investment|stock price)\b"
@@ -86,7 +92,9 @@ def assess_trends_article(item: dict[str, Any], body: str) -> dict[str, Any]:
         safe_html, _ = sanitize_editorial_html(safe_html, post_title=title)
     except ValueError:
         reasons.append("unsafe_article_html")
-    return {"reasons": sorted(set(reasons)), "safe_html": safe_html,
+    if not safe_html:
+        reasons.append("unsafe_article_html")
+    return {"reasons": sorted(set(reasons)), "followups": followups, "safe_html": safe_html,
             "html_sha256": hashlib.sha256(safe_html.encode()).hexdigest(),
             "policy_version": "trends-post-edit-1", "claims_promoted": False,
             "post_publication_review_required": True}
@@ -486,12 +494,25 @@ def enqueue_trends_auto_jobs() -> dict[str, int]:
                 })
                 if policy["publication_mode"] == "draft":
                     continue
-                conn.execute(
+                review = conn.execute(
                     """INSERT INTO post_publication_reviews(publishing_job_id,blog_id,content_version_id,
                     import_id,content_id,review_notes) VALUES(%s,%s,%s,%s,%s,'Trends auto publication follow-up review')
-                    ON CONFLICT(publishing_job_id) WHERE publishing_job_id IS NOT NULL DO NOTHING""",
+                    ON CONFLICT(publishing_job_id) WHERE publishing_job_id IS NOT NULL DO NOTHING
+                    RETURNING id""",
                     (job["id"], blog_id, item["content_version_id"], item["id"], item["external_content_id"]),
-                )
+                ).fetchone()
+                if review:
+                    for index, followup in enumerate(safety["followups"]):
+                        issue_key = "trends-prepub-" + hashlib.sha256(
+                            f"{job['id']}:{index}:{followup['description']}".encode()
+                        ).hexdigest()[:40]
+                        conn.execute(
+                            """INSERT INTO post_publication_review_items
+                            (review_id,issue_type,severity,description,idempotency_key)
+                            VALUES(%s,%s,%s,%s,%s) ON CONFLICT(idempotency_key) DO NOTHING""",
+                            (review["id"], followup["issue_type"], followup["severity"],
+                             followup["description"], issue_key),
+                        )
     return {"created": created, "held": held}
 
 

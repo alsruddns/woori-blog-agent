@@ -230,14 +230,13 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
         content_version_id:item.content_version_id,blog_id:item.blog_id,
         expected_title_sha256:manual.title_sha256,expected_body_sha256:manual.body_sha256,expected_html_sha256:manual.html_sha256,
         actor_label:"Dashboard admin action",reason:"발행 관리에서 사용자가 선택한 정확한 원고 버전의 LIVE 발행 요청",
-        reviewed_exact_content:true,assertions_safe_to_publish:true,rights_privacy_harm_checked:true,
         publication_mode:"publish",confirmation:"PUBLISH THIS EXACT MANUSCRIPT PUBLICLY",
         idempotency_key:`manual-publish-${versionKey}-${manual.body_sha256.slice(0,24)}`,
       })});
-      const result=await response.json().catch(()=>({})) as {id?:string;recorded?:boolean;duplicate?:boolean;state?:string;reasons?:string[];detail?:string;code?:string;request_id?:string};
+      const result=await response.json().catch(()=>({})) as {id?:string;recorded?:boolean;duplicate?:boolean;state?:string;reasons?:string[];detail?:string;code?:string;request_id?:string;followup_count?:number};
       if(!response.ok)throw new Error(result.detail??`발행 요청에 실패했습니다 (HTTP ${response.status}${result.code?`, ${result.code}`:""}${result.request_id?`, 요청 ID ${result.request_id}`:""}).`);
       if(result.recorded===false)throw new Error(`발행이 차단됐습니다. ${(result.reasons??[]).map(reasonLabel).join(" · ")||"필수 조건을 충족하지 못했습니다."}`);
-      setNotice(result.duplicate?`기존 발행 요청을 확인했습니다. Job ${result.id??""} · 중복 게시 요청은 생성하지 않았습니다.`:`발행 큐에 등록했습니다. Job ${result.id??""} · 실제 Blogger 게시 결과는 Job 관리에서 확인하세요.`);
+      setNotice(result.duplicate?`기존 발행 요청을 확인했습니다. Job ${result.id??""} · 중복 게시 요청은 생성하지 않았습니다.`:`발행 큐에 등록했습니다. Job ${result.id??""} · 보완사항 ${result.followup_count??0}건 · 실제 Blogger 게시 결과는 Job 관리에서 확인하세요.`);
       if(result.id)setPendingManualJobId(result.id);
       setSelection([]);setMonitorRefresh(value=>value+1);await refresh(1,view);
     }catch(cause){

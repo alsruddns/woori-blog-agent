@@ -7,7 +7,7 @@ test("publishing reuses detail, keeps filters, and explicit manual confirmation 
     posts++;
     const data=route.request().postDataJSON();
     expect(data.actor_label).toBe("admin");expect(data.reason).toBe("확인완료");
-    expect(data.reviewed_exact_content).toBe(true);
+    expect(data.reviewed_exact_content).toBeUndefined();
     await new Promise(resolve=>setTimeout(resolve,300));
     await route.fulfill({json:{id:"test-only-job",recorded:true,followup_count:2}});
   });
@@ -42,16 +42,10 @@ test("publishing reuses detail, keeps filters, and explicit manual confirmation 
   expect(new URL(page.url()).searchParams.has("open_import_id")).toBe(false);
   await row.getByRole("button",{name:"Blogger에 수동 발행"}).click();
   await expect(sheet.locator("#manual-blogger-publication")).toBeVisible();
-  const checks=sheet.locator(".manual-publication-checks input");
-  expect(await checks.count()).toBe(3);
-  for(const c of await checks.all())await expect(c).toBeChecked();
-  const boxes=await checks.evaluateAll(nodes=>nodes.map(n=>n.getBoundingClientRect().top));
-  expect(boxes[1]).toBeGreaterThan(boxes[0]);expect(boxes[2]).toBeGreaterThan(boxes[1]);
-  await sheet.locator(".manual-publication-checks").screenshot({path:`.playwright-mcp/P5-CODEX-078-${test.info().project.name}-checks.png`});
+  await expect(sheet.locator(".manual-publication-checks")).toHaveCount(0);
   await expect(sheet.getByLabel("게시 승인자 표시 이름")).toHaveValue("admin");
   expect(posts).toBe(0);
   const before=monitorReads;
-  page.once("dialog",dialog=>dialog.accept());
   await sheet.getByTestId("manual-publication-submit").click();
   await expect(sheet.getByTestId("manual-publication-submit")).toBeDisabled();
   await expect(sheet.getByRole("status").filter({hasText:"test-only-job"})).toBeVisible();
@@ -65,7 +59,6 @@ test("publishing reuses detail, keeps filters, and explicit manual confirmation 
   });
   await row.getByRole("button",{name:"Blogger에 수동 발행"}).click();
   await expect(sheet.getByTestId("manual-publication-submit")).toBeEnabled();
-  page.once("dialog",dialog=>dialog.accept());
   await sheet.getByTestId("manual-publication-submit").click();
   await expect(sheet.getByRole("alert")).toContainText("HTTP 503");
   await expect(sheet.getByTestId("manual-publication-submit")).toBeDisabled();

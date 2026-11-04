@@ -34,6 +34,14 @@ def item():
         blogger_labels=suggested_labels("technology", "en", google_trends_based=True))
 
 
+def publishable_item():
+    payload = item()
+    evidence = valid_item()
+    payload.update(sources=evidence["sources"], source_ids=evidence["source_ids"],
+                   claims=evidence["claims"], fact_checked_at=evidence["fact_checked_at"])
+    return payload
+
+
 def test_source_free_trends_import_commits_only_inside_isolated_rollback(lab, monkeypatch):
     conn, api, headers = lab
     @contextmanager
@@ -57,11 +65,11 @@ def test_source_free_trends_import_commits_only_inside_isolated_rollback(lab, mo
         content_imports.ContentImport.model_validate({**payload, "title": "Insufficient evidence for this topic"})
 
 
-def test_unverified_claims_pass_basic_trends_check_without_mutation():
+def test_unverified_claims_are_held_without_mutation():
     payload = item()
     payload["claims"] = [{"verification_status": "unverified", "factual_state": "unverified"}]
     original = deepcopy(payload)
-    assert assess_trends_article(payload, BODY)["reasons"] == []
+    assert "claims_or_sources_not_verified" in assess_trends_article(payload, BODY)["reasons"]
     assert payload == original
     assert "article_title_or_body_insufficient" in assess_trends_article(payload, "short")["reasons"]
     assert "high_impact_topic_requires_review" in assess_trends_article({**payload, "title": "Unconfirmed death report"}, BODY)["reasons"]
@@ -69,7 +77,7 @@ def test_unverified_claims_pass_basic_trends_check_without_mutation():
     assert "known_conflicting_claim" in assess_trends_article(payload, BODY)["reasons"]
 
 
-def test_unverified_trends_job_enqueue_and_duplicate_reuse(monkeypatch):
+def test_verified_trends_job_enqueue_and_duplicate_reuse(monkeypatch):
     class Fake(_TrendsEnqueueConnection):
         saved = None
         def execute(self, query, params=None):
@@ -90,7 +98,8 @@ def test_unverified_trends_job_enqueue_and_duplicate_reuse(monkeypatch):
             if "FROM external_content_imports i" in query:
                 result.rows[0].update(title="A practical guide to organizing information", category="technology")
             return result
-    fake = Fake([{"claim_id": "c", "verification_status": "unverified", "factual_state": "unverified"}])
+    fake = Fake([{"claim_id": "c", "source_ids": ["s1"],
+                  "verification_status": "source_span_verified", "factual_state": "planned"}])
     @contextmanager
     def shared():
         yield fake
@@ -107,7 +116,7 @@ def test_unverified_trends_job_enqueue_and_duplicate_reuse(monkeypatch):
     monkeypatch.setattr(scheduled_duplicates, "find_remote_duplicate", lambda *_, **__: {"status": "clear"})
     assert enqueue_trends_auto_jobs() == {"created": 1, "held": 0}
     assert enqueue_trends_auto_jobs() == {"created": 0, "held": 0}
-    assert fake.claims[0]["verification_status"] == "unverified"
+    assert fake.claims[0]["verification_status"] == "source_span_verified"
 
 
 @pytest.mark.parametrize("mode,recover,language", [("draft",False,"en"),("publish",False,"en"),("draft",True,"en"),("draft",False,"ja"),("draft",False,"ko")])
@@ -125,15 +134,13 @@ def test_isolated_import_enqueue_worker_and_live_receipt(lab, monkeypatch, mode,
     monkeypatch.setattr(external_policy, "_blogger_operation_is_approved", lambda op: mode != "draft" or op != "blogger_public_publish")
     monkeypatch.setattr(scheduled_duplicates, "find_remote_duplicate", lambda *_, **__: {"status": "clear"})
     monkeypatch.setattr(publication_worker, "find_remote_duplicate", lambda *_, **__: {"status": "clear"})
-    payload = item()
+    payload = publishable_item()
     if language != 'en':
         payload.update(language_code=language,source_region=geo,
             target_audiences=[{'language_code':language,'target_region':geo,'reader_relevance_reason':'Localized isolated contract test'}],
             title='資料整理の進め方と比較のポイント' if language=='ja' else '자료 정리 방법과 비교 기준을 살펴보는 안내',
             body_markdown=('資料を整理する際は、目的と読み手を確認し、情報を比較しやすい形にまとめます。手順と選択肢を区別し、必要な情報を見つけやすくすることが大切です。' if language=='ja' else '자료를 정리할 때는 목적과 독자를 확인하고 정보를 비교하기 쉬운 형태로 구성합니다. 절차와 선택지를 구분하고 필요한 정보를 찾기 쉽게 정리하는 방법을 설명합니다.')*8,
             blogger_labels=suggested_labels('technology',language,google_trends_based=True))
-    payload['claims'] = [{"claim_id": "general", "claim": "Readers can compare organizational approaches.",
-        "source_ids": [], "evidence_excerpt": "", "verification_status": "unverified", "factual_state": "unverified"}]
     response = api.post('/admin/research/content-imports', headers=headers, json={'submitted_by': 'isolated', 'item': payload})
     assert response.status_code == 201, response.text
     imported, version = response.json()['import_id'], response.json()['content_version_id']
@@ -168,7 +175,11 @@ def test_isolated_import_enqueue_worker_and_live_receipt(lab, monkeypatch, mode,
     conn.execute("INSERT INTO trend_generation_requests(topic_id,duplicate_key,contract,state,authoring_job_id) VALUES (%s,%s,%s,'imported',%s)",(topic,uuid4().hex,Jsonb(contract),job))
     conn.execute("UPDATE publication_mode_settings SET emergency_stopped=false,blogger_api_restricted=false WHERE scope_type='global' AND scope_key=''")
     conn.execute("""UPDATE automation_controls SET auto_publishing_enabled=true,
-        trends_auto_publishing_enabled=true,auto_mode=%s,auto_enabled_at=now(),
+        trends_auto_publishing_enabled=true,automatic_publication_operator_approved=true,
+        automatic_publication_approval_actor='isolated manager',
+        automatic_publication_approval_reason='Isolated worker policy lifecycle test',
+        automatic_publication_approval_changed_at=now(),
+        auto_mode=%s,auto_enabled_at=now(),
         trends_auto_enabled_at=now() WHERE id=1""", (mode,))
     assert enqueue_trends_auto_jobs()['created']==1
     assert enqueue_trends_auto_jobs()['created']==0
@@ -256,4 +267,4 @@ def test_isolated_import_enqueue_worker_and_live_receipt(lab, monkeypatch, mode,
         result=publication_worker.process_next_live_job(trends_auto_only=True)
     assert result['status']=='published', result
     assert conn.execute("SELECT remote_status FROM publishing_records WHERE blog_id=%s",(blog,)).fetchone()['remote_status']=='LIVE'
-    assert conn.execute("SELECT claims->0->>'verification_status' status FROM external_content_imports WHERE id=%s",(imported,)).fetchone()['status']=='unverified'
+    assert conn.execute("SELECT claims->0->>'verification_status' status FROM external_content_imports WHERE id=%s",(imported,)).fetchone()['status']=='source_span_verified'

@@ -76,6 +76,12 @@ MIGRATIONS = [ROOT / "scripts" / f"{i:03d}_{name}.sql" for i, name in [
     (81, "trends_and_global_publish_intervals"),
     (82, "global_daily_live_limit_and_15m_interval"),
     (83, "automatic_publication_operator_approval"),
+    (84, "trends_de_br_vn_authoring"),
+    (85, "registered_import_languages"),
+    (86, "trends_authoring_min_volume"),
+    (87, "default_en_ko_ja_country_policies"),
+    (88, "trends_general_news_category"),
+    (89, "manual_publication_intent"),
 ]]
 
 

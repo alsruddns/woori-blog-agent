@@ -167,7 +167,6 @@ export default function ExternalImportWorkspace({ embedded = false, detailReques
   const [publicationTargetId, setPublicationTargetId] = useState("");
   const [approvalActor, setApprovalActor] = useState("admin");
   const [approvalReason, setApprovalReason] = useState("\uD655\uC778\uC644\uB8CC");
-  const [manualAttest, setManualAttest] = useState({ content: true, facts: true, rights: true });
   const [manualMode, setManualMode] = useState<"publish" | "draft">(() => {
     try { if (typeof window !== "undefined" && localStorage.getItem("woori-manual-publication-mode") === "draft") return "draft"; } catch { /* Use the default when storage is unavailable. */ }
     return "publish";
@@ -213,7 +212,6 @@ export default function ExternalImportWorkspace({ embedded = false, detailReques
     const defaultTarget = publicationTargets.find(target => target.in_scheduled_scope === true)
       ?? publicationTargets[0];
     setPublicationTargetId(String(defaultTarget?.id ?? ""));
-    setManualAttest({ content: true, facts: true, rights: true });
     setApprovalActor("admin");
     setApprovalReason("\uD655\uC778\uC644\uB8CC");
     const current = data.latest_version ?? data.item;
@@ -380,9 +378,6 @@ export default function ExternalImportWorkspace({ embedded = false, detailReques
     ...(approvalReason.trim().length < MANUAL_PUBLICATION_REASON_MIN_LENGTH
       ? [`게시 사유를 ${MANUAL_PUBLICATION_REASON_MIN_LENGTH}자 이상 입력하세요. (현재 ${approvalReason.trim().length}자)`]
       : []),
-    ...(!manualAttest.content ? ["최신 제목·본문·HTML 확인을 표시하세요."] : []),
-    ...(!manualAttest.facts ? ["미확인 주장을 사실로 단정하지 않았음을 확인하세요."] : []),
-    ...(!manualAttest.rights ? ["권리·개인정보·위해 확인을 표시하세요."] : []),
     ...(selectedManual?.eligible !== true
       ? ((selectedManual?.blockers as string[] | undefined)
         ?? [String(detail?.publication?.status_error ?? "수동 발행 자격 결과가 응답에 없습니다. 원고 상세를 새로고침하세요.")])
@@ -394,10 +389,7 @@ export default function ExternalImportWorkspace({ embedded = false, detailReques
     if (!detail || !latestVersion?.content_version_id || !publicationTargetId) return;
     const target = ((detail.publication?.targets as Row[] | undefined) ?? []).find(item => String(item.id) === publicationTargetId);
     const manual = target?.manual_publication as Row | undefined;
-    const titleText = String(manual?.title ?? latestVersion.title ?? detail.item.title ?? "제목 없음");
-    const bodyText = String(manual?.body ?? latestVersion.body_markdown ?? "");
-    if (!target || manual?.eligible !== true || !manualAttest.content || !manualAttest.facts || !manualAttest.rights) return;
-    if (manualMode === "publish" && !window.confirm(`다음 원고를 Blogger에 공개 게시하도록 승인합니다.\n\n제목: ${titleText}\nContent Version: ${String(latestVersion.content_version_id)}\n본문 SHA-256: ${String(manual.body_sha256)}\n정제 HTML SHA-256: ${String(manual.html_sha256)}\n대상 Blogger: ${String(target.display_name)} · ${String(target.url)}\n\n게시용 본문을 화면에서 확인했고, 미확인 주장을 사실로 단정하지 않았으며, 알고 있는 권리·개인정보·중대한 위해 문제가 없음을 확인합니다. 이 확인은 정확한 본문 해시와 블로그에만 기록됩니다.`)) return;
+    if (!target || manual?.eligible !== true) return;
     manualSubmitting.current = true;
     setBusy(true); setError(""); setNotice("");
     try {
@@ -406,8 +398,7 @@ export default function ExternalImportWorkspace({ embedded = false, detailReques
         body: JSON.stringify({ content_version_id: latestVersion.content_version_id, blog_id: publicationTargetId,
           expected_title_sha256: manual.title_sha256, expected_body_sha256: manual.body_sha256,
           expected_html_sha256: manual.html_sha256, actor_label: approvalActor.trim(),
-          reason: approvalReason.trim(), reviewed_exact_content: true, assertions_safe_to_publish: true,
-          rights_privacy_harm_checked: true, publication_mode: manualMode,
+          reason: approvalReason.trim(), publication_mode: manualMode,
           confirmation: manualMode === "draft" ? "SAVE THIS EXACT MANUSCRIPT AS DRAFT" : "PUBLISH THIS EXACT MANUSCRIPT PUBLICLY",
           idempotency_key: `manual-${manualMode}-${versionKey}-${String(manual.body_sha256).slice(0,24)}` }) });
       const result = await response.json() as Row;
@@ -529,9 +520,8 @@ export default function ExternalImportWorkspace({ embedded = false, detailReques
             <label>게시 승인자 표시 이름<input value={approvalActor} onChange={event => setApprovalActor(event.target.value)} minLength={2} maxLength={120} /></label>
             <label>게시 사유<input value={approvalReason} onChange={event => setApprovalReason(event.target.value)} minLength={MANUAL_PUBLICATION_REASON_MIN_LENGTH} maxLength={2000} aria-describedby="manual-publication-reason-hint" placeholder="예: 확인완료" /></label>
             <p id="manual-publication-reason-hint">{MANUAL_PUBLICATION_REASON_MIN_LENGTH}자 이상 입력하면 감사 기록에 원고 해시와 함께 저장됩니다. 현재 {approvalReason.trim().length}자입니다.</p>
-            <p>체크 항목은 기본 선택이며 검토 증거로 자동 저장되지 않습니다. 본문과 대상 블로그를 확인하고 공개 게시 버튼 및 최종 확인을 눌러야 발행 승인이 기록됩니다.</p>
+            <p>발행 버튼 클릭은 표시된 원고 버전과 대상 블로그에 대한 발행 요청입니다. 사실·권리 안전 검사는 서버에서 별도로 수행합니다.</p>
             {manualOutcomeUnknown && <button type="button" className="secondary-button" disabled={busy} onClick={()=>void openDetail(selectedId).then(()=>{setManualOutcomeUnknown(false);setDetailTab("distribution");})}>발행 상태 다시 확인</button>}
-            <div className="review-attestations manual-publication-checks"><label><input type="checkbox" checked={manualAttest.content} onChange={event => setManualAttest({ ...manualAttest, content: event.target.checked })} />위에 표시된 최신 제목·본문·HTML을 확인했습니다.</label><label><input type="checkbox" checked={manualAttest.facts} onChange={event => setManualAttest({ ...manualAttest, facts: event.target.checked })} />미확인 주장을 확인된 사실처럼 단정하지 않았습니다.</label><label><input type="checkbox" checked={manualAttest.rights} onChange={event => setManualAttest({ ...manualAttest, rights: event.target.checked })} />알고 있는 저작권 침해·개인정보 노출·중대한 위해 문제가 없습니다.</label></div>
             <label>발행 방식<select data-testid="manual-publication-mode" value={manualMode} disabled={busy} onChange={event => { const mode = event.target.value as "publish" | "draft"; setManualMode(mode); try { localStorage.setItem("woori-manual-publication-mode", mode); } catch { /* The current choice remains usable. */ } }}><option value="publish">바로 발행 (공개 · 기본)</option><option value="draft">초안 저장 (비공개)</option></select></label>
             <p>Google Blogger API 제한이 확인된 동안 요청은 차단됩니다. 원고를 복사하여 Blogger 관리자에서 직접 게시할 수 있습니다.</p>
             <button type="button" data-testid="manual-publication-submit" disabled={manualPublishDisabledReasons.length > 0} aria-describedby={manualPublishDisabledReasons.length ? "manual-publication-disabled-reasons" : undefined} onClick={() => void submitManualPublication()}>{busy ? "수동 Job 등록 중…" : manualMode === "draft" ? "Blogger 초안 저장" : "Blogger 공개 발행"}</button>

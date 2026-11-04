@@ -191,6 +191,56 @@ def test_manual_publication_requires_editorial_and_exact_version_approval() -> N
     assert "production_writes_disabled" in approved["reasons"]
 
 
+def test_manual_intent_routes_soft_flags_to_followups_but_keeps_safety_gates(monkeypatch: Any) -> None:
+    from woori import publication_operation
+    from woori.google_http import WRITE_SCOPE
+
+    version_id, blog_id, group_id, localization_id = (uuid4() for _ in range(4))
+    row = {
+        "content_version_id": version_id, "group_id": group_id, "localization_id": localization_id,
+        "language_active": True, "blog_active": True, "version_language": "en",
+        "blog_language": "en", "blog_id_value": "123456789",
+        "connection_verified_at": datetime.now(UTC), "oauth_status": "connected",
+        "oauth_scopes": [WRITE_SCOPE], "policy_id": uuid4(), "policy_active": True,
+        "machine_passed": False, "seo_passed": False, "html_ready": False,
+        "human_review_required": True, "human_review_approved": False,
+        "publication_approval_approved": False, "publish_ready": False,
+    }
+
+    class Result:
+        def __init__(self, one: Any = None) -> None:
+            self.one = one
+
+        def fetchone(self) -> Any:
+            return self.one
+
+    class Conn:
+        def execute(self, sql: str, *_args: Any) -> Result:
+            if "SELECT id FROM content_versions" in sql:
+                return Result({"id": version_id})
+            return Result()
+
+    monkeypatch.setattr(publication_operation, "manual_requests_allowed", lambda: True)
+    monkeypatch.setattr(publications.publication_discards, "discarded", lambda *_: False)
+    monkeypatch.setattr(publications, "_mode_settings", lambda *_: {
+        "migration_required": False, "settings": {}, "emergency_stopped": False,
+        "blogger_write_mode": "manual_only",
+    })
+    monkeypatch.setattr(publications, "_blog_settings", lambda *_: ({"language_code": "en"}, None))
+    monkeypatch.setattr(publications, "resolve_mode", lambda *_: {"configured_mode": "manual"})
+    monkeypatch.setattr(publications.external_policy, "_blogger_policy_approval", lambda: {"approved": True})
+    monkeypatch.setattr(publications.BloggerLivePublisher, "_target", staticmethod(lambda *_: {"blog_id": "123456789"}))
+
+    assert publications._manual_publication_blockers(Conn(), row, {"blockers": []}, blog_id) == []
+    assert "claim_evidence_incomplete" in publications._manual_publication_blockers(
+        Conn(), row, {"blockers": ["claim_evidence_incomplete"]}, blog_id,
+    )
+    row["policy_active"] = False
+    assert "publication_policy_inactive" in publications._manual_publication_blockers(
+        Conn(), row, {"blockers": []}, blog_id,
+    )
+
+
 def test_quality_failure_remains_held_and_not_eligible() -> None:
     row = {
         "language_active": True,
@@ -862,11 +912,9 @@ def test_manual_live_request_commits_approval_job_and_followups_atomically_in_is
     # Verify the real gate blocks it, then isolate the SQL/transaction assertions
     # below from editorial gate setup complexity.
     held = publications._manual_publication_blockers(conn, candidate, snapshot, blog_record_id)
-    assert {
-        "machine_quality_not_passed", "reviewed_source_missing",
-        "evidence_fact_verification_missing", "source_rights_review_missing",
-        "human_review_pending", "publish_ready_disabled",
-    }.issubset(set(held))
+    assert {"claims_or_sources_missing", "manual_supported_revision_required"}.issubset(set(held))
+    assert "machine_quality_not_passed" not in held
+    assert "seo_check_not_passed" not in held
     monkeypatch.setattr(publications, "_manual_publication_blockers", lambda *_args, **_kwargs: [])
     payload = {
         "content_version_id": str(version_id), "blog_id": str(blog_record_id),
@@ -889,6 +937,9 @@ def test_manual_live_request_commits_approval_job_and_followups_atomically_in_is
                         (payload["idempotency_key"],)).fetchone()["n"] == 1
     assert conn.execute("SELECT count(*) AS n FROM manual_publication_approval_events WHERE idempotency_key=%s",
                         (payload["idempotency_key"],)).fetchone()["n"] == 1
+    attest = conn.execute("SELECT reviewed_exact_content,assertions_safe_to_publish,rights_privacy_harm_checked FROM manual_publication_approval_events WHERE idempotency_key=%s",
+                          (payload["idempotency_key"],)).fetchone()
+    assert not any(attest.values())
     assert conn.execute("SELECT count(*) AS n FROM post_publication_reviews WHERE publishing_job_id=%s",
                         (first.json()["id"],)).fetchone()["n"] == 1
     again = api.post("/admin/publications/manual-live-requests", headers=headers, json=payload)

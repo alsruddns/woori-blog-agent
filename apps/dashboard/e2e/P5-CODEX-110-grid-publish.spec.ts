@@ -41,7 +41,8 @@ test("grid manual publish sends one direct exact-version request without a detai
   await expect(page.getByRole("dialog", { name: "수동 발행 큐 등록 확인" })).toHaveCount(0);
   await expect(page.locator(".embedded-import-detail")).not.toContainText("Grid manuscript");
   await expect(page.getByRole("status").filter({ hasText: "발행 큐에 등록했습니다." })).toBeVisible();
-  expect(submitted).toMatchObject({ content_version_id: version, blog_id: blog, publication_mode: "publish", reviewed_exact_content: true });
+  expect(submitted).toMatchObject({ content_version_id: version, blog_id: blog, publication_mode: "publish" });
+  expect((submitted as Record<string, unknown> | null)?.["reviewed_exact_content"]).toBeUndefined();
   expect(requests).toEqual([
     {url:"/api/publications/scheduled-auto-first-post",method:"GET",status:200},
     {url:"/api/publications/manual-live-requests",method:"POST",status:201},

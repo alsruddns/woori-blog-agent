@@ -9,10 +9,28 @@ import pytest
 from woori import automation_controls, external_policy, publication_operation
 from woori.publications import TrendsAutoPolicyInput
 from woori.trends_publication import (
+    assess_trends_article,
     claims_are_publish_verified,
     enqueue_trends_auto_jobs,
     search_description_is_publishable,
 )
+
+
+def test_trends_information_density_is_followup_when_core_evidence_is_present() -> None:
+    item = {
+        "title": "Rail timetable update", "category": "general-news",
+        "sources": [{"source_id": "S1", "rights_status": "quotation_review_required"}],
+        "claims": [{"claim_id": "C1", "source_ids": ["S1"],
+                    "verification_status": "source_span_verified", "factual_state": "approved"}],
+    }
+    body = ("The ministry published a timetable update for regional rail passengers. "
+            "[source:S1]\n\n") * 2
+    result = assess_trends_article(item, body)
+    assert result["reasons"] == []
+    assert len(result["followups"]) == 1
+    assert result["safe_html"]
+    item["claims"][0]["verification_status"] = "unverified"
+    assert "claims_or_sources_not_verified" in assess_trends_article(item, body)["reasons"]
 
 
 def test_all_unverified_japan_claims_block_trends_publication() -> None:
