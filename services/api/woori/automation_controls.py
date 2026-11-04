@@ -330,6 +330,15 @@ class PublicLiveApproval(BaseModel):
     confirm_public_live: bool
     confirm_billing_quota_reviewed: bool
 
+    @field_validator("approved_blog_ids", mode="before")
+    @classmethod
+    def parse_approved_blog_ids(cls, value: Any) -> Any:
+        # UUID identifiers arrive as JSON strings from the Dashboard. Keep
+        # strict validation for every other field while parsing that wire form.
+        if isinstance(value, list):
+            return [UUID(item) if isinstance(item, str) else item for item in value]
+        return value
+
     @field_validator("actor")
     @classmethod
     def normalize_actor(cls, value: str) -> str:

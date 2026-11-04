@@ -88,6 +88,15 @@ def test_scoped_public_live_approval_requires_explicit_dual_confirmation(center)
             confirm_public_live=True,
             confirm_billing_quota_reviewed=True,
         )
+    wire_request = PublicLiveApproval(
+        expected_revision=1,
+        actor="isolated operator",
+        reason="Explicitly scoped Blogger live approval",
+        approved_blog_ids=[str(uuid4()) for _ in range(6)],
+        confirm_public_live=True,
+        confirm_billing_quota_reviewed=True,
+    )
+    assert all(isinstance(value, UUID) for value in wire_request.approved_blog_ids)
     request = PublicLiveApproval(
         expected_revision=1,
         actor="isolated operator",
