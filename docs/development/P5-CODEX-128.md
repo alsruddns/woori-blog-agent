@@ -31,7 +31,7 @@ No database migration was added. Existing `post_publication_reviews`, review ite
 ## Verification
 
 - Focused publication/regression suite: 133 passed.
-- Full API suite before final test assertion refresh: 837 passed, 9 failed. One failure was an obsolete source assertion updated in this change; the remaining 8 are in unrelated existing taxonomy, localization fixture, worker return-shape, operational-readiness expectation, and readiness history tests. The complete suite has not been rerun after that assertion update.
+- Full API suite before final test assertion refresh: 837 passed, 9 failed. One failure was an obsolete source assertion updated in this change and later passed in the focused suite; 8 unrelated existing failures remain in taxonomy/schema expectations, a localized fixture, worker return-shape, readiness expectations, and readiness history tests. The full suite was not rerun after the source assertion update.
 - Ruff on all `services/api/woori`: passed.
 - Mypy on changed API modules: passed (5 modules).
 - Dashboard `npm run lint`: passed.
@@ -47,14 +47,18 @@ No database migration was added. Existing `post_publication_reviews`, review ite
 
 At inspection, Dashboard PID 19452 was on `fdc2add590bbbd9164dd4b3172f86d2549048f69`; API PID 26600 and Publication Worker PID 36012 were on `b77ace192d38937bcd437819a59070ab98982437`; Research Worker heartbeat was fresh on `fdc2add590bbbd9164dd4b3172f86d2549048f69`. The runtime reported `AutoMode=manual` and automatic policy inactive. These operator settings were not changed. Code reflection can update the services but cannot enable automatic publishing.
 
-The existing verified-reflection script requires a clean tracked tree and runs its own change-scoped tests/build before service replacement. The actual script result and service revisions are recorded below after the reflection attempt. No DB backup was required because no database mutation or migration was performed.
+The existing `scripts/apply-verified-changes.ps1 -Apply -Confirm:$false` procedure passed its changed-file Ruff/mypy/tests, wheel build, and isolated Dashboard production build. It gracefully stopped the old API and both Workers after confirming no active/uncertain non-simulation publication jobs and no pending Blogger writes, then started the new API and Workers. API health and Dashboard root both returned HTTP 200. Research and Publication Worker heartbeats are fresh.
+
+Applied service revisions: API, Research Worker heartbeat, and Publication Worker run commit `9e683b3324c2404c8f2c9462c2cbc0d18350df19`. Dashboard remains PID 19452 on `fdc2add590bbbd9164dd4b3172f86d2549048f69`; no Dashboard files changed in P128, and it returned HTTP 200. PostgreSQL schema remains 89. No DB backup was required because no schema/data mutation was performed other than the append-only agent audit event.
+
+The live operator setting currently reports `AutoMode=manual` and `AutoPolicyActive=False`; this work deliberately preserved it. The implementation is reflected in the runtime, but automatic public publishing is not operationally enabled under the current policy state.
 
 Known limitation: the evaluator does not turn unknown evidence into verified evidence. If supported content cannot be produced, or the HTML/body/rights/OAuth/target/policy checks fail, publication remains held. Manual sanitation is represented by the exact original version plus sanitized preview hashes and review/audit lineage; it does not overwrite an existing content version.
 
 ## Final record
 
-- End HEAD: pending commit.
-- Commit: pending.
+- End code HEAD: `9e683b3324c2404c8f2c9462c2cbc0d18350df19`.
+- Commit: `9e683b3324c2404c8f2c9462c2cbc0d18350df19` (`Fix : [Publication] Unify publication policy evaluation`).
 - Remote push: pending.
-- Reflection: pending.
+- Reflection: API, Research Worker, and Publication Worker applied; Dashboard unchanged and healthy.
 - Remaining issue: 8 unrelated full-suite failures listed above; automatic operation remains governed by current DB policy (manual mode/off).
