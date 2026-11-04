@@ -239,8 +239,8 @@ class EmergencyStopInput(BaseModel):
 class ScheduledAutoPolicyInput(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     action: Literal["enable", "disable"]
-    blog_ids: list[UUID] = Field(default_factory=list, min_length=0, max_length=4)
-    daily_limit: int = Field(default=1, ge=1, le=3)
+    blog_ids: list[UUID] = Field(default_factory=list, min_length=0, max_length=6)
+    daily_limit: int = Field(default=100, ge=1, le=100)
     actor_label: str = Field(min_length=2, max_length=120)
     reason: str = Field(min_length=10, max_length=2000)
     idempotency_key: str = Field(min_length=16, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
@@ -269,7 +269,7 @@ class ScheduledFirstPostApprovalInput(BaseModel):
 
 class ScheduledConnectionCheckInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    blog_ids: list[UUID] = Field(min_length=1, max_length=4)
+    blog_ids: list[UUID] = Field(min_length=1, max_length=6)
 
 
 class PostPublicationReviewUpdate(BaseModel):

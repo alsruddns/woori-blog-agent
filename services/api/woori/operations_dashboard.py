@@ -322,7 +322,7 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
     config_rows = [dict(row) for row in conn.execute("""SELECT scope_type,scope_key,configured_mode,daily_auto_limit,minimum_interval_minutes,emergency_stopped
         FROM publication_mode_settings""").fetchall()]
     global_config: dict[str, Any] = next((row for row in config_rows if row["scope_type"]=="global"),
-        {"configured_mode":"manual","emergency_stopped":False,"daily_auto_limit":1})
+        {"configured_mode":"manual","emergency_stopped":False,"daily_auto_limit":100})
     languages = {str(row["code"]):str(row["display_name"]) for row in conn.execute("SELECT code,display_name FROM languages ORDER BY code").fetchall()}
     blog_rows = conn.execute("""SELECT b.id,b.language_code,b.display_name,b.url,b.active,b.blog_id,b.connection_verified_at,b.last_checked_at,
         (b.connection_error IS NOT NULL) AS has_connection_error,
@@ -341,8 +341,8 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
             "read_scope":"https://www.googleapis.com/auth/blogger.readonly" in scopes or "https://www.googleapis.com/auth/blogger" in scopes,
             "write_scope":"https://www.googleapis.com/auth/blogger" in scopes,
             "last_access_verification_at":blog["last_checked_at"] or blog["connection_verified_at"],"has_connection_error":bool(blog["has_connection_error"]),
-            "configured_mode":selected.get("configured_mode","manual"),"daily_limit":selected.get("daily_auto_limit",1),"hourly_limit":None,
-            "minimum_interval_minutes":selected.get("minimum_interval_minutes",1440),"live_auto_enabled":False,"live_writes_enabled":False,
+            "configured_mode":selected.get("configured_mode","manual"),"daily_limit":selected.get("daily_auto_limit",100),"hourly_limit":None,
+            "minimum_interval_minutes":selected.get("minimum_interval_minutes",15),"live_auto_enabled":False,"live_writes_enabled":False,
             "recent_success_at":None,"recent_failure_reason":None,"last_mock_success_at":mock_state.get("last_success"),
             "last_mock_failure_at":mock_state.get("last_failure"),"last_mock_failure_reason":mock_state.get("failure_reason"),
             "recent_public_url":None,"public_url_note":"게시 URL이 실제 게시 기록에 저장되지 않아 표시할 수 없습니다."})
@@ -446,8 +446,8 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
             "language_daily": {**LANGUAGE_DAILY_LIMITS, "en": None},
             "language_hourly": LANGUAGE_HOURLY_LIMITS,
             "english_daily_policy": "remaining_global_capacity",
-            "configured_auto_daily": int(global_config.get("daily_auto_limit", 1)),
-            "configured_auto_minimum_interval_minutes": int(global_config.get("minimum_interval_minutes", 1440)),
+            "configured_auto_daily": int(global_config.get("daily_auto_limit", 100)),
+            "configured_auto_minimum_interval_minutes": int(global_config.get("minimum_interval_minutes", 15)),
         },
     }
     monitoring = {

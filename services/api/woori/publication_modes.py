@@ -18,8 +18,8 @@ class ModeSettingsInput(BaseModel):
     scope_type: Scope = "global"
     scope_key: str = Field(default="", max_length=100)
     configured_mode: Mode = "manual"
-    daily_auto_limit: int = Field(default=1, ge=0, le=3)
-    minimum_interval_minutes: int = Field(default=1440, ge=60, le=10080)
+    daily_auto_limit: int = Field(default=100, ge=0, le=100)
+    minimum_interval_minutes: int = Field(default=15, ge=15, le=10080)
     allowed_start_hour: int = Field(default=9, ge=0, le=23)
     allowed_end_hour: int = Field(default=17, ge=0, le=23)
     timezone: str = Field(default="Asia/Seoul", min_length=1, max_length=100)
@@ -113,7 +113,7 @@ def assess_auto_candidate(
     topic = str(evidence.get("topic") or "").casefold()
     if any(str(excluded).casefold() in topic for excluded in policy.get("excluded_topics", [])):
         content_reasons.append("topic_excluded")
-    daily_limit = int(policy.get("daily_auto_limit", 1))
+    daily_limit = int(policy.get("daily_auto_limit", 100))
     if daily_published_count is None:
         content_reasons.append("daily_publication_usage_not_verified")
     elif daily_published_count >= daily_limit:
@@ -126,7 +126,7 @@ def assess_auto_candidate(
         content_reasons.append("minimum_interval_not_verified")
     else:
         elapsed = ((now or datetime.now(UTC)) - last_published_at.astimezone(UTC)).total_seconds() / 60
-        if elapsed < int(policy.get("minimum_interval_minutes", 1440)):
+        if elapsed < int(policy.get("minimum_interval_minutes", 15)):
             content_reasons.append("minimum_publication_interval_not_met")
     current = now or datetime.now(UTC)
     if current.tzinfo is None or current.utcoffset() is None:
@@ -186,7 +186,7 @@ def resolve_mode(settings: list[dict[str, Any]], language_code: str, blog_id: st
     )
     return dict(selected) if selected else {
         "scope_type": "global", "scope_key": "", "configured_mode": "authoring_only",
-        "daily_auto_limit": 1, "minimum_interval_minutes": 1440,
+        "daily_auto_limit": 100, "minimum_interval_minutes": 15,
         "allowed_start_hour": 9, "allowed_end_hour": 17, "timezone": "Asia/Seoul",
         "allowed_categories": [], "excluded_topics": [], "max_source_age_hours": 24,
         "retry_limit": 0,

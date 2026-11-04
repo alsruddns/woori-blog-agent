@@ -171,7 +171,7 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
   const [scopeType,setScopeType]=useState<"global"|"language"|"blog">("global");
   const [scopeKey,setScopeKey]=useState("");
   const [selectedMode,setSelectedMode]=useState<"manual"|"auto">((initialGlobalMode?.configured_mode as "manual"|"auto")??"manual");
-  const [dailyLimit,setDailyLimit]=useState(initialGlobalMode?.daily_auto_limit??1); const [minimumInterval,setMinimumInterval]=useState(initialGlobalMode?.minimum_interval_minutes??1440);
+  const [dailyLimit,setDailyLimit]=useState(initialGlobalMode?.daily_auto_limit??100); const [minimumInterval,setMinimumInterval]=useState(initialGlobalMode?.minimum_interval_minutes??15);
   const [startHour,setStartHour]=useState(initialGlobalMode?.allowed_start_hour??9); const [endHour,setEndHour]=useState(initialGlobalMode?.allowed_end_hour??17);
   const [maxAge,setMaxAge]=useState(initialGlobalMode?.max_source_age_hours??24); const [retryLimit,setRetryLimit]=useState(initialGlobalMode?.retry_limit??0);
   const [categories,setCategories]=useState(initialGlobalMode?.allowed_categories?.join(", ")??""); const [excludedTopics,setExcludedTopics]=useState(initialGlobalMode?.excluded_topics?.join(", ")??"");
@@ -288,9 +288,9 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
     if(!window.confirm(`${action==="enable"?"선택한 블로그의 예약 원고 자동 공개 발행을 승인합니다.":"예약 원고 자동 발행을 중지합니다."}\n\n${confirmation}`))return;
     setScheduledBusy(true);setError("");setNotice("");
     try{
-      const response=await fetch("/api/publications/scheduled-auto-policy",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,blog_ids:scope,daily_limit:1,actor_label:scheduledActor,reason:action==="enable"?"Authenticated operator explicitly enabled scheduled-export-only publication.":"Authenticated operator disabled scheduled-export-only publication.",idempotency_key:`scheduled-auto-${action}-${crypto.randomUUID()}`,confirmation})});
+      const response=await fetch("/api/publications/scheduled-auto-policy",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,blog_ids:scope,daily_limit:100,actor_label:scheduledActor,reason:action==="enable"?"Authenticated operator explicitly enabled scheduled-export-only publication.":"Authenticated operator disabled scheduled-export-only publication.",idempotency_key:`scheduled-auto-${action}-${crypto.randomUUID()}`,confirmation})});
       const result=await response.json();if(!response.ok)throw new Error(String(result.detail??"예약 원고 자동 발행 설정을 저장하지 못했습니다."));
-      setNotice(action==="enable"?"정책 승인 기록을 저장했습니다. 실제 첫 공개 게시 전에는 원고·블로그별 최초 승인이 추가로 필요합니다.":"예약 원고 자동 발행을 중지했습니다.");
+      setNotice(action==="enable"?"예약 발행 범위와 일일 상한을 저장했습니다. 각 작업은 공통 Blogger 발행 정책과 중복 검사를 거칩니다.":"예약 원고 자동 발행을 중지했습니다.");
       await refresh();
     }catch(cause){setError(cause instanceof Error?cause.message:"예약 원고 정책 변경 실패");}
     finally{setScheduledBusy(false);}
@@ -309,8 +309,8 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
   function chooseScope(type:"global"|"language"|"blog",key=""){
     setScopeType(type);setScopeKey(key);
     const saved=data.mode_policy.settings.find(item=>item.scope_type===type&&item.scope_key===key);
-    setSelectedMode((saved?.configured_mode as "manual"|"auto")??"manual");setDailyLimit(saved?.daily_auto_limit??1);
-    setMinimumInterval(saved?.minimum_interval_minutes??1440);setStartHour(saved?.allowed_start_hour??9);setEndHour(saved?.allowed_end_hour??17);
+    setSelectedMode((saved?.configured_mode as "manual"|"auto")??"manual");setDailyLimit(saved?.daily_auto_limit??100);
+    setMinimumInterval(saved?.minimum_interval_minutes??15);setStartHour(saved?.allowed_start_hour??9);setEndHour(saved?.allowed_end_hour??17);
     setMaxAge(saved?.max_source_age_hours??24);setRetryLimit(saved?.retry_limit??0);
     setCategories(saved?.allowed_categories?.join(", ")??"");setExcludedTopics(saved?.excluded_topics?.join(", ")??"");
   }
@@ -359,7 +359,7 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
           <label>승인 기록 표시 이름<input value={scheduledActor} onChange={event=>setScheduledActor(event.target.value)} maxLength={120}/></label>
           <button className="secondary-button" disabled={scheduledConnectionBusy||scheduledBusy||scheduledBlogs.length===0} onClick={()=>void verifyScheduledConnections()}>{scheduledConnectionBusy?"연결 확인 중…":"선택 블로그 읽기 연결 확인"}</button>
         </article>
-        <article><h3>2. 예약 원고 Auto 정책</h3><p>초기 자체 상한은 하루 1건입니다. 품질·근거·권리·중복 검사를 통과하지 못한 원고는 자동 보류됩니다.</p>
+        <article><h3>2. 예약 원고 Auto 정책</h3><p>승인된 예약 Blogger 범위에만 적용합니다. 모든 활성 블로그는 KST 기준 하루 100건의 공통 LIVE 상한과 15분 글로벌 간격을 공유합니다.</p>
           <p>승인 범위: {(data.mode_policy.scheduled_auto_policy?.policy_event?.approved_blog_ids ?? []).map(id=>data.mode_policy.blogs.find(item=>item.id===id)?.display_name ?? id).join(", ") || "없음"}</p>
           <div className="scheduled-policy-actions">
             <button className="secondary-button" disabled={scheduledBusy||!data.mode_policy.scheduled_auto_policy?.enabled} onClick={()=>void setScheduledAuto("disable")}>{scheduledBusy?"기록 중…":"예약 원고 자동 게시 중지"}</button>
@@ -389,8 +389,8 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
         {scopeType==="language"&&<label>언어<select value={scopeKey} onChange={event=>chooseScope("language",event.target.value)}><option value="">선택</option>{data.mode_policy.languages.map(item=><option key={item.code} value={item.code}>{item.display_name||languageLabel(item.code)}</option>)}</select></label>}
         {scopeType==="blog"&&<label>블로그<select value={scopeKey} onChange={event=>chooseScope("blog",event.target.value)}><option value="">선택</option>{data.mode_policy.blogs.map(item=><option key={item.id} value={item.id}>{item.display_name}</option>)}</select></label>}
         <label>운영 모드<select value="authoring_only" disabled><option value="authoring_only">원고 작성 전용</option></select></label>
-        <label>운영 모드 일일 Auto 상한<input type="number" min={0} max={3} value={dailyLimit} onChange={event=>setDailyLimit(Number(event.target.value))}/></label>
-        <label>운영 모드 최소 간격(분)<input type="number" min={60} max={10080} value={minimumInterval} onChange={event=>setMinimumInterval(Number(event.target.value))}/></label>
+        <label>운영 모드 일일 Auto 상한<input type="number" min={0} max={100} value={dailyLimit} onChange={event=>setDailyLimit(Number(event.target.value))}/></label>
+        <label>운영 모드 최소 간격(분)<input type="number" min={15} max={10080} value={minimumInterval} onChange={event=>setMinimumInterval(Number(event.target.value))}/></label>
         <label>자료 최신성(시간)<input type="number" min={1} max={720} value={maxAge} onChange={event=>setMaxAge(Number(event.target.value))}/></label>
         <label>재시도 상한<input type="number" min={0} max={2} value={retryLimit} onChange={event=>setRetryLimit(Number(event.target.value))}/></label>
         <label>허용 분야(쉼표 구분)<input value={categories} onChange={event=>setCategories(event.target.value)}/></label>
@@ -399,7 +399,7 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
         <label>허용 종료 시각 KST<input type="number" min={0} max={23} value={endHour} onChange={event=>setEndHour(Number(event.target.value))}/></label>
         <button disabled={emergencyBusy||(scopeType!=="global"&&!scopeKey)} onClick={()=>void saveMode()}>{emergencyBusy?"저장 중…":"설정 저장"}</button>
       </div>
-      <h3>코드상 발행 안전 상한</h3><p>KST · 전체 {data.operational_limits?.global_daily??"—"}건/일 · 영어는 잔여량 우선 · 4개 블로그 공통 최소 간격 {data.operational_limits?.global_publish_min_interval_minutes??"—"}분</p>
+      <h3>코드상 발행 안전 상한</h3><p>KST · 전체 {data.operational_limits?.global_daily??"—"}건/일 · 영어는 잔여량 우선 · 활성 6개 블로그 공통 최소 간격 {data.operational_limits?.global_publish_min_interval_minutes??"—"}분</p>
       <ul>{Object.entries(data.operational_limits?.language_daily??{}).map(([code,limit])=><li key={code}>{languageLabel(code)} 일일 {limit??"전역 잔여량"}건 · 시간당 {data.operational_limits?.language_hourly[code]??"—"}건</li>)}</ul>
       <h3>저장된 범위별 설정</h3><ul>{data.mode_policy.settings.map(item=><li key={`${item.scope_type}-${item.scope_key}`}>{item.scope_type}:{item.scope_key||"global"} · {item.configured_mode} · {item.daily_auto_limit}건/일 · {item.minimum_interval_minutes}분</li>)}</ul>
       {notice&&<p role="status">{notice}</p>}

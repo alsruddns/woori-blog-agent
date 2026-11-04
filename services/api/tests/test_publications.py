@@ -627,9 +627,48 @@ def test_publication_mode_defaults_manual_and_auto_requires_allowlist() -> None:
     with pytest.raises(ValidationError, match="category_allowlist"):
         ModeSettingsInput(configured_mode="auto")
     auto = ModeSettingsInput(configured_mode="auto", allowed_categories=["policy"])
-    assert auto.daily_auto_limit == 1
-    assert auto.minimum_interval_minutes == 1440
+    assert auto.daily_auto_limit == 100
+    assert auto.minimum_interval_minutes == 15
     assert auto.retry_limit == 0
+    assert ModeSettingsInput(daily_auto_limit=100, minimum_interval_minutes=15)
+    with pytest.raises(ValidationError):
+        ModeSettingsInput(daily_auto_limit=101)
+    with pytest.raises(ValidationError):
+        ModeSettingsInput(minimum_interval_minutes=14)
+
+
+def test_scheduled_policy_accepts_six_blogs_and_daily_cap_100() -> None:
+    blog_ids = [uuid4() for _ in range(6)]
+    policy = publications.ScheduledAutoPolicyInput(
+        action="enable", blog_ids=blog_ids, daily_limit=100, actor_label="P5-CODEX-134",
+        reason="Owner requested the six active Blogger scope and 100 daily limit.",
+        idempotency_key="p5-codex-134-policy-0001",
+        confirmation="ENABLE SCHEDULED AUTO PUBLICATION",
+    )
+    assert len(policy.blog_ids) == 6
+    assert publications.ScheduledConnectionCheckInput(blog_ids=blog_ids).blog_ids == blog_ids
+    with pytest.raises(ValidationError):
+        publications.ScheduledAutoPolicyInput(
+            action="enable", blog_ids=[*blog_ids, uuid4()], daily_limit=100,
+            actor_label="P5-CODEX-134", reason="Owner requested the six active Blogger scope.",
+            idempotency_key="p5-codex-134-policy-0002",
+            confirmation="ENABLE SCHEDULED AUTO PUBLICATION",
+        )
+    with pytest.raises(ValidationError):
+        publications.ScheduledAutoPolicyInput(
+            action="enable", blog_ids=blog_ids, daily_limit=101,
+            actor_label="P5-CODEX-134", reason="Owner requested the six active Blogger scope.",
+            idempotency_key="p5-codex-134-policy-0003",
+            confirmation="ENABLE SCHEDULED AUTO PUBLICATION",
+        )
+
+
+def test_new_active_locales_obey_shared_global_writer_spacing() -> None:
+    from woori.publication_daily import LANGUAGE_HOURLY_LIMITS
+
+    assert {language: LANGUAGE_HOURLY_LIMITS[language] for language in ("de", "pt-BR", "vi")} == {
+        "de": 4, "pt-BR": 4, "vi": 4,
+    }
 
 
 def test_auto_mode_preferences_remain_blocked_under_authoring_only_policy() -> None:
