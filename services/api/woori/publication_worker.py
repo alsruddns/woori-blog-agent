@@ -1213,21 +1213,29 @@ def process_next_live_job(
     try:
         if operation == "create_draft":
             if lane == "trends_auto":
-                context = external_policy.trends_publication_context(str(blog_id))
-            elif lane == "scheduled_auto":
-                context = external_policy.scheduled_publication_context(str(blog_id))
+                from .automation_auto import job_context
+
+                with job_context(job_id), external_policy.trends_publication_context(str(blog_id)):
+                    result = publisher.create_draft(
+                        write_key, blog_id, str(candidate.get("editorial_title") or candidate["title"]),
+                        str(candidate["html_body"]), list(candidate.get("blogger_labels") or []),
+                        enforce_volume_caps=publication_count_limits_apply(lane),
+                    )
             else:
-                assert manual_approval is not None and snapshot is not None
-                context = external_policy.manual_publication_context(
-                    str(job_id), str(blog_id), str(version_id),
-                    str(snapshot['title_sha256']), str(snapshot['body_sha256']), str(snapshot['html_sha256'])
-                )
-            with context:
-                result = publisher.create_draft(
-                    write_key, blog_id, str(candidate.get("editorial_title") or candidate["title"]),
-                    str(candidate["html_body"]), list(candidate.get("blogger_labels") or []),
-                    enforce_volume_caps=publication_count_limits_apply(lane),
-                )
+                if lane == "scheduled_auto":
+                    context = external_policy.scheduled_publication_context(str(blog_id))
+                else:
+                    assert manual_approval is not None and snapshot is not None
+                    context = external_policy.manual_publication_context(
+                        str(job_id), str(blog_id), str(version_id),
+                        str(snapshot['title_sha256']), str(snapshot['body_sha256']), str(snapshot['html_sha256'])
+                    )
+                with context:
+                    result = publisher.create_draft(
+                        write_key, blog_id, str(candidate.get("editorial_title") or candidate["title"]),
+                        str(candidate["html_body"]), list(candidate.get("blogger_labels") or []),
+                        enforce_volume_caps=publication_count_limits_apply(lane),
+                    )
             return save_verified_draft(job_id, blog_id, version_id, result)
         if operation == "create_live":
             if lane == "scheduled_auto":
@@ -1238,7 +1246,9 @@ def process_next_live_job(
                         enforce_volume_caps=publication_count_limits_apply(lane),
                     )
             elif lane == "trends_auto":
-                with external_policy.trends_publication_context(str(blog_id)):
+                from .automation_auto import job_context
+
+                with job_context(job_id), external_policy.trends_publication_context(str(blog_id)):
                     result = publisher.create_live(
                         write_key, blog_id, str(candidate.get("editorial_title") or candidate["title"]),
                         str(candidate["html_body"]), list(candidate.get("blogger_labels") or []),
@@ -1263,7 +1273,9 @@ def process_next_live_job(
                     source_draft_key="pubjob-" + str(job_id) + "-draft",
                 )
         elif lane == "trends_auto":
-            with external_policy.trends_publication_context(str(blog_id)):
+            from .automation_auto import job_context
+
+            with job_context(job_id), external_policy.trends_publication_context(str(blog_id)):
                 result = publisher.publish_draft(
                     write_key, blog_id, str(claimed["remote_post_id"]),
                     source_draft_key="pubjob-" + str(job_id) + "-draft",

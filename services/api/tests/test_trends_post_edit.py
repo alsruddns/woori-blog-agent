@@ -287,15 +287,21 @@ def test_isolated_import_enqueue_worker_and_live_receipt(lab, monkeypatch, mode,
             ('live:pubjob-'+str(bound['id'])+'-draft','a'*64,Jsonb(ledger)))
         conn.execute("UPDATE publishing_jobs SET status='running',lease_until=now()-interval '1 second' WHERE id=%s",(bound['id'],))
         monkeypatch.setattr(blogger_service,'post',lambda *_:{'id':'456','blog':{'id':'1234567890'},'status':'DRAFT','content':'User edited this draft'})
+    def assert_trends_wire_context():
+        from woori.automation_auto import AUTO_JOB
+        assert AUTO_JOB.get() == str(bound['id'])
     class Publisher:
         def create_draft(self,*args,**kwargs):
+            assert_trends_wire_context()
             assert not recover, 'recovery must never POST again'
             return {'post_id':'456','http_status':200,'post_verified':True,'status':'DRAFT'}
         def create_live(self,*args,**kwargs):
+            assert_trends_wire_context()
             assert mode == 'publish' and not recover
             return {'post_id':'456','url':'https://isolated.blogspot.com/article.html','status':'LIVE',
                     'readback_verified':True,'http_status':200,'published_at':slot}
         def publish_draft(self,*args,**kwargs):
+            assert_trends_wire_context()
             assert mode == 'publish', 'a later public policy must never publish an existing Draft Job'
             return {'post_id':'456','url':'https://isolated.blogspot.com/article.html','status':'LIVE',
                     'readback_verified':True,'http_status':200,'published_at':slot}
