@@ -41,3 +41,14 @@
 - 시작 당시 tracked worktree는 clean이었으며, 기존 untracked 파일·stash·OAuth·예약 작업·게시 이력은 변경하거나 삭제하지 않았다.
 - 최종 커밋, 푸시 결과, 실제 Worker 반영 및 신규 회차 검증 결과는 마감 후 아래에 연결한다.
 - 남은 제한: P5-088의 기존 시간당 작성 상한은 유지된다. 상한이 수집 슬롯보다 오래 포화되면 해당 후보는 슬롯 내 대기 후 기존 만료 정책대로 종료될 수 있다. 이번 변경은 자동 과거 재처리를 금지한다. 다음 신규 슬롯에 적격 후보가 없으면 실데이터 자동 요청은 후속 회차에서 계속 관찰해야 한다.
+
+## 운영 반영 및 신규 회차 관찰 (2026-11-04 KST)
+
+- `scripts/apply-verified-changes.ps1 -Apply -Confirm:$false` 변경 검증은 집중 테스트 75건, Ruff, mypy, Dashboard lint/typecheck/build, isolated wheel build를 통과했다. 첫 검증 두 번은 각 Ruff 1건, 세 번째는 mypy Optional row 1건을 지적해 서비스 종료 전에 중단했다. 수정 후 전체 검증은 통과했다.
+- 반영 script는 API를 graceful stop했지만 Dashboard에 열린 connection을 감지해 Dashboard 종료를 두 번 거부했다. 강제 종료는 하지 않았다. 중단된 API는 `scripts/start.ps1 -Service api`로 즉시 새 커밋에서 복구했고 HTTP 200을 확인했다. API PID 22648, 적용 SHA `3cbe656c33e999e0cdc10f66ffe2b7b92d31ce1b`.
+- 실행 stage/job 및 Trends queued request가 0임을 확인한 후 기존 `stop.ps1`의 graceful request로 Research Worker PID 33368을 정상 종료하고 `start.ps1`로 PID 33360을 재시작했다. heartbeat fresh, applied SHA `3cbe656c33e999e0cdc10f66ffe2b7b92d31ce1b`. 강제 종료 0.
+- Dashboard와 Publication Worker는 기존 사용자 연결 때문에 해당 script의 전체 반영 단계에서 교체되지 않았다. Dashboard는 SHA `11853f175f46016e1f449f6c253fb0485155b16b`로 남아 UI 문구 변경은 운영 화면에 아직 미반영이다. Publication Worker도 동일 SHA이며 P135에서 수정한 실행 경로는 아니다. `AutoMode=manual`, `AutoPolicyActive=false`; publication setting을 바꾸거나 Blogger 쓰기를 하지 않았다.
+- 새 21:30 KST 회차는 14개 지역을 수집하고 topic evaluation을 완료했다. 검색량 기준 5,000 이상 6개 (BR/DE/GB/IN/US) 모두 `authoring_hourly_capacity_reached` 상태로 중복 검사를 통과했지만 요청 생성은 0이었다. stage result는 `created=0`, `hourly_capacity=4`, `capacity_waiting=6`; 직전 네 요청은 21:00:42에 생성되어 21:30 회차 시각에는 여전히 최근 1시간 내였다. 21:30 신규 후보를 대기 상태로 보존하고 과거 회차를 다시 돌리지 않았다.
+- 따라서 실제 신규 회차 관찰 결과는 코드의 capacity 사유 기록을 검증했지만, “중복만 통과하면 작성 요청”이라는 최종 조건은 기존 4건/시간 상한 때문에 운영에서 충족되지 않았다. 상한 유지와 임계값 전용 우회 중 어느 정책이 우선인지 후속 결정이 필요하다. 우회 승인이 없으면 이 작업은 부분 반영 상태다.
+- 운영 확인 당시 Trends 기준 5,000, automation revision 22, 활성 Blogger 6, `zh-CN` 비활성, 활성 geo authoring mappings 12, IN→Trend Journal EN 활성, Publication Worker queued/due 0이었다. 이번 작업의 Blogger POST/PATCH/DELETE/초안 작성 0건.
+- 시작 HEAD: `221b5aad43553a78627d872e024f7f176e75849a`. 코드 commit: `3cbe656c33e999e0cdc10f66ffe2b7b92d31ce1b`. P5-CODEX-135 기록 반영 및 푸시 결과는 이후 문서 커밋과 Git history에 연결한다.
