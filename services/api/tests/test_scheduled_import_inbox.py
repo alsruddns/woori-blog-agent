@@ -18,6 +18,8 @@ from woori.content_imports import ScheduledImportEnvelope, ScheduledImportOrigin
 from woori.db import connection
 from woori.main import app
 from woori.scheduled_import_inbox import (
+    _safe_directories,
+    _save_import_receipt,
     process_inbox_once,
     retry_quarantined_file,
     validate_envelope,
@@ -444,12 +446,52 @@ def test_inbox_imports_explicit_manual_automation_with_manual_provenance_only(tm
     assert outcome["automation_id"] == "automation-8"
     assert outcome["automation_run_id"] == manual_run_id
     assert outcome["audit_event_id"] == "audit-manual-1"
+    receipt_path = Path(outcome["import_receipt"])
+    assert receipt_path.parent == (tmp_path / "import_receipts")
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    assert receipt["schema"] == "woori-research-import-receipt/1.0"
+    assert receipt["status"] == "imported"
+    assert receipt["execution_mode"] == "manual"
+    assert receipt["automation_run_id"] == manual_run_id
+    assert receipt["import_id"] == outcome["import_id"]
+    assert receipt["blogger_write_performed"] is False
     assert outcome["publish_ready"] is False and outcome["blogger_write_performed"] is False
     assert result["blogger_writes"] == 0
     assert [call.method for call in calls] == ["POST", "POST", "GET", "POST"]
     assert not any(call.url.path.endswith("/scheduled-origin") for call in calls)
     assert not (ready / source.name).exists()
     assert list((tmp_path / "processed").glob("*.processing.json"))
+
+
+def test_import_receipt_is_immutable_and_idempotent(tmp_path: Path) -> None:
+    payload = scheduled_payload()
+    payload["schema_version"] = "woori-manual-automation-content-import/1.0"
+    payload["item"]["generation_method"] = "manual_codex_import"  # type: ignore[index]
+    payload.pop("scheduled_origin")
+    payload["manual_origin"] = {
+        "execution_mode": "manual", "automation_id": "automation-8",
+        "manual_run_id": f"codex-manual:automation-8:{uuid4()}",
+        "session_id": str(uuid4()), "turn_trigger": "automation_cron_run_now",
+        "invoked_at": "2026-11-04T12:00:00+09:00",
+    }
+    envelope = validate_envelope(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
+    directories = _safe_directories(tmp_path)
+    kwargs = {
+        "file_key": "a" * 16,
+        "file_sha256": "b" * 64,
+        "envelope": envelope,
+        "import_id": str(uuid4()),
+        "audit_event_id": 123,
+        "duplicate": False,
+        "machine_assessment_passed": False,
+        "independent_source_verification": False,
+    }
+    first = _save_import_receipt(directories, **kwargs)
+    same = _save_import_receipt(directories, **kwargs)
+    assert same == first
+    assert json.loads(first.read_text(encoding="utf-8"))["status"] == "imported"
+    with pytest.raises(OSError, match="identity_conflict"):
+        _save_import_receipt(directories, **{**kwargs, "import_id": str(uuid4())})
 
 
 def test_inbox_quarantines_invalid_and_ignores_incomplete_files(tmp_path: Path) -> None:
@@ -759,6 +801,93 @@ def test_local_inbox_import_and_duplicate_use_isolated_database(tmp_path: Path, 
             ).fetchone()
             assert imports["count"] == 1
             assert origins["count"] == 2
+
+
+def test_run_now_file_handoff_import_receipt_against_isolated_api_database(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with connection() as conn, conn.transaction(force_rollback=True):
+        @contextmanager
+        def shared():
+            with conn.transaction():
+                yield conn
+
+        monkeypatch.setattr(content_imports, "connection", shared)
+        blog = conn.execute(
+            """INSERT INTO blogger_blogs(language_code,url,display_name,blog_id)
+            VALUES ('en','https://run-now-import-test.blogspot.com','Run now import test blog','9991230000000000002')
+            RETURNING blog_id,url"""
+        ).fetchone()
+        assert blog
+        payload = scheduled_payload()
+        payload["schema_version"] = "woori-manual-automation-content-import/1.0"
+        payload["item"].update({  # type: ignore[union-attr]
+            "content_id": f"p133-run-now-{uuid4()}",
+            "event_group_id": f"p133-run-now-{uuid4().hex[:12]}",
+            "language_code": "en",
+            "target_audiences": [{
+                "language_code": "en", "target_region": "US",
+                "reader_relevance_reason": "The documented update is relevant to English language readers.",
+            }],
+            "generation_method": "manual_codex_import",
+            "model_name": "Codex Desktop",
+            "blogger_labels": [],
+        })
+        payload.pop("scheduled_origin")
+        manual_run_id = f"codex-manual:automation-15:{uuid4()}"
+        payload["manual_origin"] = {
+            "execution_mode": "manual", "automation_id": "automation-15",
+            "manual_run_id": manual_run_id, "session_id": str(uuid4()),
+            "turn_trigger": "automation_cron_run_now",
+            "invoked_at": "2026-11-04T12:00:00+09:00",
+        }
+        root = tmp_path / ".local" / "gpt-scheduled-import"
+        incoming = root / "incoming" / "p133-run-now.part"
+        incoming.parent.mkdir(parents=True)
+        incoming.write_bytes(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
+        (root / "ready").mkdir(parents=True)
+        incoming.replace(root / "ready" / "p133-run-now.ready.json")
+
+        with TestClient(app) as client:
+            def app_transport(request: httpx.Request) -> httpx.Response:
+                response = client.request(
+                    request.method,
+                    request.url.path + ("?" + request.url.query.decode() if request.url.query else ""),
+                    headers={key: request.headers[key] for key in ("authorization", "content-type") if key in request.headers},
+                    content=request.content,
+                )
+                return httpx.Response(response.status_code, headers=response.headers, content=response.content)
+
+            result = process_inbox_once(
+                root,
+                "http://127.0.0.1:18100",
+                settings().admin_token,
+                transport=httpx.MockTransport(app_transport),
+            )
+
+        outcome = result["results"][0]
+        assert outcome["status"] == "imported", outcome
+        assert outcome["execution_mode"] == "manual"
+        assert outcome["automation_run_id"] == manual_run_id
+        assert outcome["blogger_write_performed"] is False
+        receipt = json.loads(Path(outcome["import_receipt"]).read_text(encoding="utf-8"))
+        assert receipt["import_id"] == outcome["import_id"]
+        assert receipt["content_id"] == payload["item"]["content_id"]  # type: ignore[index]
+        assert receipt["automation_run_id"] == manual_run_id
+        assert receipt["blogger_write_performed"] is False
+        imported = conn.execute(
+            "SELECT count(*)::int AS count FROM external_content_imports WHERE external_content_id=%s",
+            (payload["item"]["content_id"],),  # type: ignore[index]
+        ).fetchone()
+        origin = conn.execute(
+            """SELECT count(*)::int AS count FROM audit_events
+            WHERE event_type='content.import.manual_automation_origin_recorded'
+              AND payload->>'manual_run_id'=%s""",
+            (manual_run_id,),
+        ).fetchone()
+        assert imported and imported["count"] == 1
+        assert origin and origin["count"] == 1
+        assert result["blogger_writes"] == 0
 
 
 def test_worker_inbox_tick_records_sanitized_file_outcome(monkeypatch: pytest.MonkeyPatch) -> None:

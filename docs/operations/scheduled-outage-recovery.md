@@ -62,6 +62,13 @@ the draft flag is true and remote status is only `not_checked`.
    envelope and eligible local duplicate result, then exclusively publishes the
    file into `ready/` without overwrite. It does not call an API or Blogger.
    Manual Run now receives no scheduled Auto authority from this handoff.
+   For `--stage generation`, retain the complete preflight JSON. Its
+   `automation_execution.invocation` and `automation_execution.contract` fields
+   bind the duplicate result to the same resolved turn and select the exact
+   scheduled or Run now envelope. If `contract` is null or has an error, stop;
+   do not infer a contract from prompt text. The Import Worker writes an
+   immutable minimal receipt under `import_receipts/` only after API Import,
+   origin audit, and assessment have succeeded.
 7. Research snapshot, article file, schema validation, ready handoff and Research
    Import are separate outcomes. Save an actual evidence-backed snapshot through
    `scripts/write-research-snapshot.py` before writing the envelope. If the

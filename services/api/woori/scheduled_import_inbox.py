@@ -111,7 +111,7 @@ def _safe_directories(root: Path) -> dict[str, Path]:
         raise ValueError("inbox_root_must_not_be_a_symlink")
     resolved_root = root.resolve(strict=True)
     directories: dict[str, Path] = {}
-    for name in ("incoming", "ready", "processing", "processed", "rejected", "failed", "quarantine", "pending", "pending_receipts", "pending_sources", "progress", "progress_receipts"):
+    for name in ("incoming", "ready", "processing", "processed", "rejected", "failed", "quarantine", "pending", "pending_receipts", "pending_sources", "progress", "progress_receipts", "import_receipts"):
         path = root / name
         path.mkdir(exist_ok=True)
         if _is_reparse_point(path) or path.resolve(strict=True).parent != resolved_root:
@@ -122,6 +122,60 @@ def _safe_directories(root: Path) -> dict[str, Path]:
 
 def _file_key(path: Path) -> str:
     return hashlib.sha256(path.name.encode("utf-8", errors="replace")).hexdigest()[:16]
+
+
+def _save_import_receipt(
+    directories: dict[str, Path],
+    *,
+    file_key: str,
+    file_sha256: str,
+    envelope: ImportEnvelope,
+    import_id: str,
+    audit_event_id: Any,
+    duplicate: bool,
+    machine_assessment_passed: bool,
+    independent_source_verification: bool,
+) -> Path:
+    """Persist an immutable minimal receipt after Research Import succeeds."""
+    from .scheduled_pending import _exclusive_json
+
+    scheduled = isinstance(envelope, ScheduledImportEnvelope)
+    if scheduled:
+        scheduled_envelope = cast(ScheduledImportEnvelope, envelope)
+        run_id = scheduled_envelope.scheduled_origin.occurrence_id
+        automation_id = scheduled_envelope.scheduled_origin.automation_id
+    else:
+        manual_envelope = cast(ManualAutomationImportEnvelope, envelope)
+        run_id = manual_envelope.manual_origin.manual_run_id
+        automation_id = manual_envelope.manual_origin.automation_id
+    payload = {
+        "schema": "woori-research-import-receipt/1.0",
+        "status": "imported",
+        "file_key": file_key,
+        "file_sha256": file_sha256,
+        "content_id": envelope.item.content_id,
+        "import_id": import_id,
+        "audit_event_id": audit_event_id,
+        "execution_mode": "scheduled" if scheduled else "manual",
+        "automation_id": automation_id,
+        "automation_run_id": run_id,
+        "duplicate": duplicate,
+        "machine_assessment_passed": machine_assessment_passed,
+        "independent_source_verification": independent_source_verification,
+        "blogger_write_performed": False,
+    }
+    receipt_key = hashlib.sha256(f"{file_key}:{file_sha256}".encode("ascii")).hexdigest()
+    path = directories["import_receipts"] / f"{receipt_key}.json"
+    if path.exists():
+        if _is_reparse_point(path) or json.loads(path.read_text(encoding="utf-8")) != payload:
+            raise OSError("import_receipt_identity_conflict")
+        return path
+    try:
+        _exclusive_json(path, payload)
+    except FileExistsError:
+        if _is_reparse_point(path) or json.loads(path.read_text(encoding="utf-8")) != payload:
+            raise OSError("import_receipt_identity_conflict") from None
+    return path
 
 
 def _is_reparse_point(path: Path) -> bool:
@@ -443,6 +497,19 @@ def process_inbox_once(
                                         "http_status": assessed.status_code, "api_error": _safe_api_error(assessed)})
                         continue
                     assessment = assessed.json()
+                receipt_path = _save_import_receipt(
+                    directories,
+                    file_key=file_key,
+                    file_sha256=file_sha256,
+                    envelope=envelope,
+                    import_id=import_id,
+                    audit_event_id=origin_audit_event_id,
+                    duplicate=bool(import_result.get("duplicate")),
+                    machine_assessment_passed=bool(assessment.get("machine_passed")),
+                    independent_source_verification=bool(
+                        assessment.get("independent_source_verification")
+                    ),
+                )
                 _move(processing, directories["processed"] / processing.name)
                 results.append({
                     "file_key": file_key,
@@ -450,6 +517,7 @@ def process_inbox_once(
                     "status": "imported",
                     "import_id": import_id,
                     "audit_event_id": origin_audit_event_id,
+                    "import_receipt": str(receipt_path),
                     "duplicate": bool(import_result.get("duplicate")),
                     "machine_assessment_passed": bool(assessment.get("machine_passed")),
                     "independent_source_verification": bool(assessment.get("independent_source_verification")),

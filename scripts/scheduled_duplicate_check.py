@@ -24,6 +24,27 @@ REQUEST_TIMEOUT_SECONDS = 4
 MAX_ATTEMPTS = 3
 
 
+def attach_execution_contract(result: dict[str, Any], invocation: dict[str, Any]) -> dict[str, Any]:
+    """Return the clear preflight alongside the exact mode-specific envelope contract."""
+    from woori.automation_authoring_contract import select_authoring_contract
+
+    try:
+        contract = select_authoring_contract(invocation)
+    except (TypeError, ValueError):
+        return {
+            **result,
+            "automation_execution": {
+                "invocation": invocation,
+                "contract": None,
+                "contract_error": "automation_authoring_contract_unavailable",
+            },
+        }
+    return {
+        **result,
+        "automation_execution": {"invocation": invocation, "contract": contract},
+    }
+
+
 class _NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, request, fp, code, message, headers, new_url):
         return None
@@ -308,6 +329,7 @@ def main(argv: list[str] | None = None) -> int:
         except (OSError, TypeError, ValueError):
             result = {**result, "status": "unknown", "draft_import_allowed": False,
                       "reason": "duplicate_check_completion_not_recorded"}
+        result = attach_execution_contract(result, invocation)
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     if args.stage == "generation" and result.get("draft_import_allowed") is True:
         return 0
