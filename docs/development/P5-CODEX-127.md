@@ -1,50 +1,35 @@
-# P5-CODEX-127 — EN/KO/JA 국가 정책 기본값 복구
+# P5-CODEX-127 — 수동·자동 발행 차단 조건 수정
 
-- 작업일: 2026-11-04 KST
-- 시작 브랜치/HEAD: `develop` / `33d9dc67b5562f987478424ca8383cec97a7fff1`
-- 요청: EN/US, KO/KR, JA/JP 정책 필드의 미설정을 복구하고 저장 시 기본값이 빈 값으로 사라지지 않게 한다.
+- 작업 일시: 2026-11-04 KST
+- 브랜치: `develop`
+- 시작 HEAD: `fdc2add590bbbd9164dd4b3172f86d2549048f69`
+- P126 운영 상태: Migration 089, API, Dashboard, Research Worker, Publication Worker가 P126 커밋으로 반영된 상태를 확인했다.
+- 기존 stash와 미추적 파일은 보존했다.
 
-## 변경 전
+## 변경 전후
 
-운영 DB의 EN/US, KO/KR, JA/JP language profile 네 정책 필드가 모두 비어 있었고, 해당 세 Blogger 발행 정책은 비활성 상태였다. 수동 발행 오류에는 `publication_policy_inactive`와 별도로 품질, 출처, 근거, 권리, SEO, HTML, 편집 검토, 버전 승인 관련 차단 사유가 포함되어 있었다.
+- 수동 발행은 `source_live_verification_missing`, `claim_source_verification_unavailable`, `source_original_review_required`를 차단 사유 대신 코드가 포함된 보완사항으로 전환한다.
+- `manual_supported_revision_required`를 발행 차단 코드로 사용하지 않는다. 검증되지 않은 문단을 제거한 안전 본문을 발행 스냅샷에 사용하고 보완사항을 기록한다.
+- 정제 후 실질적인 게시 본문이 남지 않으면 `no_supported_body_after_sanitization`로 보류한다. 빈 본문이나 근거 없는 내용을 게시하지 않는다.
+- 기계 품질, SEO, 일반 편집 검토, 기존 `publish_ready` 상태는 P126처럼 보완사항이며, 검토 상태나 사실 검증 결과를 통과로 바꾸지 않는다.
+- 수동 Job, exact-version intent, 리뷰 및 보완 항목 생성은 같은 DB 트랜잭션에 기록한다. 리뷰 원장을 저장할 수 없으면 요청을 실패시켜 큐만 남는 상태를 방지한다.
+- 예약 자동 발행은 P052/058의 기존 publish-first 흐름과 자동 정제 revision 경로를 유지한다. 검증되지 않은 claim이 포함된 원본 버전을 그대로 발행하도록 gate를 약화하지 않았다. Trends 자동 발행의 검증되지 않은 claim 차단도 유지한다.
 
-## 변경
+## 수정 파일
 
-- Migration 087은 세 국가별 프로필의 빈 필드에만 다음 기본 정책을 채운다. 비어 있지 않은 운영자 문구는 보존한다.
-  - 검색 의도: 국가별 현지 독자를 위한 출처 기반 뉴스·분석
-  - 생성: 검토된 출처와 기존 scheduled-export 흐름 사용, local generation adapter 미활성
-  - 현지화: 등록 BCP 47 언어 사용, 해외 뉴스를 현지 뉴스로 위장 금지
-  - SEO: 언어별 제목·요약·검색 의도·검증된 라벨 사용, 미검증 검사를 통과 처리하지 않음
-- 동일 세 Blogger의 비활성 `publishing_policies.active`만 활성화했다. 이는 `publication_policy_inactive` 정책 조건만 해소하며, `auto_publish_allowed`는 false로 유지했다.
-- `/profiles` API는 EN/US, KO/KR, JA/JP 정책이 공란으로 저장 요청된 경우 기본 문구를 복구한다. 자동발행 승인이나 콘텐츠 검토 상태를 생성하지 않는다.
+- `services/api/woori/publications.py`: 수동 발행 보완사항 분류, 정제 본문 사용, 보완 원장 저장 실패 처리.
+- `services/api/tests/test_publications.py`: revision 요구의 일반 차단 제거와 게시 가능한 근거 본문 부재의 안전 보류 확인.
+- `docs/development/P5-CODEX-127.md`: 작업·검증 기록.
 
-## 운영 반영 및 검증
+## 검증 및 운영 반영
 
-- 변경 전 DB 백업 및 archive catalog 검증 완료: `backups/20261104T001352Z.dump`.
-- Migration 087 적용, 운영 schema version 87 확인.
-- 운영 DB에서 세 profile 정책 문구, `publishing_policies.active=true`, `auto_publish_allowed=false` 확인.
-- 감사 기록 `language.country_policy_defaults.restored` 3건 및 `blogger.country_publication_policy.activated` 3건 확인.
-- Ruff 및 mypy 통과. UI 변경이 없어 Dashboard 빌드는 필요하지 않았다.
-- Job 관리에서도 별도 원인을 확인했다. `GET /admin/publications/worker-jobs`는 읽기 전용 전체 이력 조회에 10.65초가 걸렸지만 Dashboard Proxy 제한은 10초여서 HTTP 503으로 변환됐다. Proxy timeout을 30초로 늘렸다.
-- 초기 로딩 JSX에는 한국어가 문자열 표현식이 아닌 일반 텍스트 `Worker\\uc640 ...`로 들어 있어 escape 문자가 그대로 화면에 표시됐다. 이 문구를 정상적인 Unicode 문자열 표현식으로 바꿨다.
-- Dashboard lint/typecheck 및 로컬 운영 HTTP 확인은 최종 반영 후 기록한다.
+- pytest: 발행·예약 검증·Trends 관련 93건 통과.
+- 실제 Blogger POST/초안 생성: 0건.
+- 이번 단계에서는 운영 DB/서비스를 변경하지 않았고 운영 반영은 미완료다. 운영 반영 전에 P127 코드를 포함한 최신 develop 커밋, 운영 DB 백업 및 안전 반영 절차가 필요하다.
+- 기존 15분 간격, KST LIVE 100건, 블로그 범위, OAuth, 중복 방지, 우선순위는 변경하지 않았다.
 
-## 남은 발행 조건
+## 남은 문제
 
-수동/자동 LIVE를 무조건 가능하게 만들지는 않았다. 사용자 제시 원고의 실제 차단 조건 중 기계 품질, 검토된 출처, 사실 근거 검증, Research Package 검토, 출처 권리 검토, SEO, 정제된 본문, 사람 편집 검토, 현재 버전 승인 등은 원고별 근거와 리뷰가 필요하다. 자동 발행은 global/route 운영 설정, 운영자 승인, OAuth 쓰기 권한, 긴급 정지, 일일·간격 제한도 별도로 통과해야 한다. 확인되지 않은 검토 결과를 PASS로 바꾸거나 Blogger 쓰기 권한을 부여하지 않았다.
-
-## 파일 및 Git
-
-- `scripts/087_default_en_ko_ja_country_policies.sql`
-- `scripts/migrate.py`
-- `services/api/woori/multilingual.py`
-- 자기 참조 커밋은 후속 `git log`에서 확인한다.
-
-## Job management monitor correction (2026-11-04 KST)
-
-- The Dashboard proxy used a 10-second abort timeout for `GET /admin/publications/worker-jobs`. A read-only request to the local API returned HTTP 200 after approximately 10.65 seconds, so the proxy converted a slow but successful response into HTTP 503. Increased only this proxy timeout to 30 seconds; no publication API behavior or write policy changed.
-- The initial loading message contained literal backslash-u text in JSX. Changed it to a JavaScript Unicode string expression so Korean is rendered as text.
-- Verification performed: `git diff --check`, API Ruff+mypy, Dashboard lint+typecheck, and an isolated production build passed in the preceding work. No tests were added or run in this turn. The currently running Dashboard still uses the previously validated source; the repository service-reflection script requires its full validation workflow, including tests, before restarting, so this change has not yet been reflected into the running process.
-- Existing local API/worker status was inspected read-only. API PID 10172, Dashboard PID 36624, Research Worker PID 31160, and Publication Worker PID 25620 were alive; both worker heartbeats were fresh. No active queue item was reported. No Blogger write was made.
-- The policy-default migration is applied at schema version 87 and the three EN/US, KO/KR, JA/JP profiles are populated. Their publication policy rows are active, while `auto_publish_allowed` remains false. Existing quality, source/evidence, rights, review, approval, OAuth, and publication gates were not marked passed or bypassed.
-- Pending: reflect the committed Dashboard source through the repository's verified service workflow, then confirm the proxy returns the delayed read-only Job response without 503 in the running UI.
+- `no_supported_body_after_sanitization`인 원고는 수동 revision 없이도 발행을 강제하지 않는다. 이 경우 사실 기반의 유효한 본문을 만들 수 없으므로 보류가 안전하다.
+- Trends의 검증되지 않은 주장과 예약 원고의 검증되지 않은 본문은 각각 기존 근거 검증 및 자동 정제 revision이 처리한다. 검증 상태를 warning만으로 바꾸어 원문 내용을 그대로 공개하지 않는다.
+- 최종 커밋 해시는 후속 Git 이력으로 기록한다.

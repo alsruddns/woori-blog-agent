@@ -912,7 +912,11 @@ def test_manual_live_request_commits_approval_job_and_followups_atomically_in_is
     # Verify the real gate blocks it, then isolate the SQL/transaction assertions
     # below from editorial gate setup complexity.
     held = publications._manual_publication_blockers(conn, candidate, snapshot, blog_record_id)
-    assert {"claims_or_sources_missing", "manual_supported_revision_required"}.issubset(set(held))
+    assert "claims_or_sources_missing" in held
+    assert "manual_supported_revision_required" not in held
+    assert "no_supported_body_after_sanitization" in held
+    assert any("manual_supported_revision_required" in item["description"]
+               for item in snapshot["followups"])
     assert "machine_quality_not_passed" not in held
     assert "seo_check_not_passed" not in held
     monkeypatch.setattr(publications, "_manual_publication_blockers", lambda *_args, **_kwargs: [])

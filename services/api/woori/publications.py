@@ -806,6 +806,8 @@ def create_manual_live_request(request: ManualLiveRequestInput) -> dict[str, Any
             (inserted["id"], request.blog_id, request.content_version_id,
              snapshot["import_id"], snapshot.get("external_content_id")),
         ).fetchone()
+        if review is None:
+            raise HTTPException(503, "Manual publication remediation record was not persisted")
         review_id = review["id"] if review else None
         for index, item in enumerate(snapshot["followups"]):
             item_key = "manual-review-" + hashlib.sha256(
@@ -1332,12 +1334,37 @@ def _manual_publication_snapshot(conn: Any, row: dict[str, Any] | None) -> dict[
                 scheduled_publish_first=True, article_body=body,
                 expected_generation_method=method,
             )
-            blockers.extend(evidence["reasons"])
+            remediation_codes = {
+                "source_live_verification_missing": ("source", "원문 확인 증명이 아직 없어 발행 후 보완이 필요합니다."),
+                "claim_source_verification_unavailable": ("number", "일부 주장에 연결된 원문 검증 자료가 없어 보완이 필요합니다."),
+                "source_original_review_required": ("source", "출처 원문 검토가 미완료 상태로 보완 목록에 기록했습니다."),
+            }
+            for reason in evidence["reasons"]:
+                remediation = remediation_codes.get(reason)
+                if remediation:
+                    issue_type, description = remediation
+                    evidence_followups.append({"issue_type": issue_type, "severity": "medium",
+                                               "description": f"{reason}: {description}"})
+                else:
+                    blockers.append(reason)
             evidence_followups.extend(evidence["followups"])
             verified = verified_scheduled_claim_ids(evidence_import, proofs)
             sanitized = sanitize_scheduled_body(body, imported["claims"] or [], verified_claim_ids=verified)
-            if sanitized["changed"] or sanitized["substantive_blocks_remaining"] < 2:
-                blockers.append("manual_supported_revision_required")
+            if sanitized["changed"]:
+                evidence_followups.append({"issue_type": "source", "severity": "medium",
+                    "description": "manual_supported_revision_required: 검증되지 않은 문단을 제외한 안전한 본문으로 발행하며 원문 보완이 필요합니다."})
+                if sanitized["substantive_blocks_remaining"] >= 2:
+                    try:
+                        safe_html = markdown_to_blogger_html(sanitized["body_markdown"], post_title=title)
+                        safe_html, _plain_text = sanitize_editorial_html(safe_html, post_title=title)
+                        if not safe_html:
+                            blockers.append("sanitized_blogger_html_unavailable")
+                    except (ValueError, TypeError):
+                        blockers.append("sanitized_blogger_html_unavailable")
+                else:
+                    blockers.append("no_supported_body_after_sanitization")
+            elif sanitized["substantive_blocks_remaining"] < 2:
+                blockers.append("no_supported_body_after_sanitization")
 
     followups: list[dict[str, str]] = []
     def followup(issue_type: str, severity: str, description: str) -> None:
