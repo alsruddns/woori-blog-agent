@@ -86,3 +86,9 @@
 - 수정 파일: `docs/development/P5-CODEX-138.md`만.
 - 최종 Git 커밋/원격 push: 후속 Git 이력 및 completion audit event 참조.
 - 남은 문제: 공식 Desktop automation registry 확인 불가, 다음 신규 reservation/Run now의 실제 E2E 미검증, 전체 mypy의 기존 3개 오류.
+
+## 운영 관찰 후속 정정 (2026-11-05 07:18 KST)
+
+- 작업 종료 상태 확인 직전 Publication Worker가 기존 `trends_auto` Job `7f0698a0-d882-455c-af25-03391e88f8dd`를 `succeeded/published`로 완료했다. EN Blogger (`b9dc1202-8071-484a-a4f4-15d04e34a76c`), LIVE `2026-11-05 07:18:13 KST`, remote post ID `5930199176225314875`; `remote_verified_at`은 07:18:12 KST다.
+- 이는 이번 작업에서 만든 fixture, 테스트 Job 또는 테스트 게시가 아니며, 이미 활성화된 운영 Trends queue에서 처리된 실제 원고다. P138의 직접 Blogger 테스트 게시/초안 생성은 계속 0건이다. 따라서 최초 `agent.work.completed` payload의 `blogger_writes=0`은 P138이 시작한 테스트/변경으로 인한 쓰기만 가리키며, 전체 운영 시간대의 Blogger 쓰기 0건을 뜻하지 않는다. 이 구분은 후속 append-only 감사 이벤트에 기록했다.
+- 이 운영 LIVE는 Trends 경로의 기존 동작을 추가 확인하지만 Codex 예약 원고 E2E를 검증하지는 않는다. 예약 queue/import 상태는 변경하지 않았다.
