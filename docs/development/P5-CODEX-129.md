@@ -6,7 +6,7 @@
 - Start HEAD: `70140a7faf85d47cd992e93747cd18c9c809d764`
 - Reason: a manual request reported that a verified body could not be built and that source rights needed review, even though the manuscript had a substantive article body.
 - Related record: `docs/development/P5-CODEX-128.md`
-- Audit: append-only `agent.work.started` event 341815; completion event is recorded after service reflection.
+- Audit: append-only `agent.work.started` event 341815 and `agent.work.completed` event 342308.
 
 ## Runtime and operating state before changes
 
@@ -72,5 +72,5 @@ After reflection, the actual failed manuscript dry run still produced 4,216 char
 
 - End code HEAD: `67e9218c1fecafffab079da4e960fbd979642dbb` (code reflected in API and both Workers).
 - Service reflection: API and Research Worker healthy; Publication Worker revision applied but degraded by `InsufficientPrivilege`; Dashboard unaffected and left running on its prior revision.
-- Push: filled after verifying `origin/develop`.
+- Git: code commits `6e8f880a6515c85def162b727ac11687a13a0af6` and `67e9218c1fecafffab079da4e960fbd979642dbb`; final documentation commit `653db4c0e482e06bdbccd4681117f75ba9831ef0` is pushed and matched `origin/develop` at verification.
 - Remaining issue: the actual failed manuscript is discarded and requires an explicit, separate restore decision; no automatic restore or publish was performed.
