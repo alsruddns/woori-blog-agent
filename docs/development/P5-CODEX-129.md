@@ -72,5 +72,5 @@ After reflection, the actual failed manuscript dry run still produced 4,216 char
 
 - End code HEAD: `67e9218c1fecafffab079da4e960fbd979642dbb` (code reflected in API and both Workers).
 - Service reflection: API and Research Worker healthy; Publication Worker revision applied but degraded by `InsufficientPrivilege`; Dashboard unaffected and left running on its prior revision.
-- Git: code commits `6e8f880a6515c85def162b727ac11687a13a0af6` and `67e9218c1fecafffab079da4e960fbd979642dbb`; final documentation commit `653db4c0e482e06bdbccd4681117f75ba9831ef0` is pushed and matched `origin/develop` at verification.
+- Git: code commits `6e8f880a6515c85def162b727ac11687a13a0af6` and `67e9218c1fecafffab079da4e960fbd979642dbb`; runtime reflection report commit `653db4c0e482e06bdbccd4681117f75ba9831ef0`; final close-out commit `bbd0b079e98ba4c6f9b94c5a094e6d81fe07e001` is pushed and matched `origin/develop` at verification.
 - Remaining issue: the actual failed manuscript is discarded and requires an explicit, separate restore decision; no automatic restore or publish was performed.
