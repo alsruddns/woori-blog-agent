@@ -20,11 +20,19 @@ ROOT = Path(__file__).resolve().parents[1]
 MARKER = "P5-CODEX-131 VERIFIED AUTHORING RECOVERY"
 PRIORITY_MARKER = "P5-CODEX-131 EXECUTE THE AUTHORING RUN"
 SEARCH_MARKER = "P5-CODEX-140 CODEX CLI LIVE RESEARCH"
+TARGET_ID_HINTS = {
+    "automation-2": (
+        "For automation-2 (Japan market close, ja/JP), the current active Blogger mapping is "
+        "7562596540375659150. Use that numeric ID only while the active ja/JP mapping still "
+        "matches; if it changes, verify the current registered mapping before running."
+    ),
+}
 PRIORITY = fr"""{PRIORITY_MARKER} (highest-priority execution order):
 This turn must execute the current Automation, not only diagnose it. Automation memory is optional. If CODEX_HOME is unset, look only at `$env:USERPROFILE/.codex/automations/<this Automation ID>/memory.md` when it exists; a missing variable or file is never a reason to stop. Keep pre-work short and do not reread long policy documents.
 
 The first work command after reading this prompt MUST be one call to `scripts/automation-research-stage.py` using this Automation's exact ID, category, language, target country, registered Blogger ID, stable event-group ID, and exact topic. Example PowerShell shape:
 `& ./.venv/Scripts/python.exe ./scripts/automation-research-stage.py --automation-id "<ID>" --category "<politics|economy|technology|general>" --language-code "<BCP-47>" --target-country "<ISO>" --target-blog-id "<registered Blogger ID>" --event-group-id "<stable issue key>" --topic "<exact topic>"`
+The angle-bracket values above are examples only: replace every placeholder before running. `--target-blog-id` must be the exact registered Blogger numeric ID (5–32 digits) for this Automation's existing language/blog mapping; never pass the literal `<registered Blogger ID>`, a blog name, URL, or a guessed value. Confirm the ID from this Automation's existing saved task details or a prior successful Import for the same target. If the exact registered ID cannot be established, stop before the request and report `target_blog_id_unavailable`; do not attempt the preflight with a placeholder. The local CLI rejects nonnumeric IDs before sending an HTTP request.
 This fixed command performs the exact-trigger resolver, generation duplicate preflight, saves the exact eligible preflight response, and invokes the scheduled or manual ChatGPT-auth Codex research broker in the SAME Automation turn. Do not separately run the resolver or duplicate preflight first. Keep the returned process/session ID and poll that same command to its terminal JSON result. Do not stop after a clear preflight: continue only when the command returns `status=evidence_available`; then read its `research_package_path` and `preflight_json_path`, write the correctly typed envelope, validate it, and hand it off. If the stage returns blocked, report its exact reason and create no unsupported article. A `remote_status=not_checked` or overall `unknown` is preserved and remains a publication-time recheck; it does not block an eligible local draft. The scheduled and manual envelopes must retain their distinct resolver-issued identities. The broker creates evidence only; it does not create an article, Import, Publishing Job or Blogger write.
 
 """
@@ -176,6 +184,9 @@ def main() -> int:
             updated_prompt = updated_prompt[:prefix_start].rstrip() + SEARCH_CONTRACT
         else:
             updated_prompt = updated_prompt.rstrip() + SEARCH_CONTRACT
+        target_hint = TARGET_ID_HINTS.get(str(before.get("id")))
+        if target_hint and target_hint not in updated_prompt:
+            updated_prompt = updated_prompt.rstrip() + "\n\n" + target_hint
         if updated_prompt == prompt:
             continue
         after_raw = _replace_prompt(raw.decode("utf-8"), updated_prompt, timestamp).encode("utf-8")

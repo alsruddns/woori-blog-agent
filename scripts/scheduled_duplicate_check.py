@@ -58,6 +58,12 @@ def _language_code(value: str) -> str:
         raise argparse.ArgumentTypeError("must be a valid BCP 47 language tag") from exc
 
 
+def _target_blog_id(value: str) -> str:
+    if not value.isascii() or not value.isdigit() or not 5 <= len(value) <= 32:
+        raise argparse.ArgumentTypeError("must be the registered numeric Blogger ID")
+    return value
+
+
 def _open_local_proxy(request: Request, *, timeout: int):
     # This fixed loopback-only endpoint must never be routed through a machine proxy.
     return build_opener(ProxyHandler({}), _NoRedirect).open(request, timeout=timeout)
@@ -202,7 +208,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--language-code", required=True, type=_language_code)
     parser.add_argument("--target-country", required=True, help="Uppercase ISO country code")
-    parser.add_argument("--target-blog-id", required=True)
+    parser.add_argument("--target-blog-id", required=True, type=_target_blog_id)
     parser.add_argument("--trade-date", help="ISO date; omit for non-market-close work")
     parser.add_argument("--event-group-id", required=True)
     parser.add_argument("--topic", required=True)

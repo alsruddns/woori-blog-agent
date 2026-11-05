@@ -94,6 +94,23 @@ def test_manual_stage_runs_generation_preflight_then_manual_broker_and_preserves
     assert Path(result["preflight_json_path"]).read_text(encoding="utf-8") == exact_preflight
 
 
+def test_invalid_blogger_placeholder_is_rejected_before_preflight(tmp_path):
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        raise AssertionError("invalid Blogger ID must not reach preflight")
+
+    args = _args(tmp_path)
+    args["target_blog_id"] = "<registered Blogger ID>"
+    result, code = stage.run_stage(**args, command_runner=fake_run)
+
+    assert code == 2
+    assert result["status"] == "blocked"
+    assert result["reason"] == "target_blog_id_invalid"
+    assert calls == []
+
+
 def test_scheduled_stage_selects_only_scheduled_broker(tmp_path):
     exact_preflight = json.dumps(_preflight(mode="scheduled")) + "\n"
     package_path = tmp_path / "state" / "research-packages" / "automation-7-20261105T0900KST.research.json"

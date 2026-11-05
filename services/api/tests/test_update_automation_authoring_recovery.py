@@ -88,6 +88,8 @@ def test_prompt_updater_dry_run_then_apply_preserves_schedule_and_paused_task(tm
     assert "scripts/automation-research-stage.py" in after["prompt"]
     assert "a missing variable or file is never a reason to stop" in after["prompt"]
     assert "Do not separately run the resolver or duplicate preflight first" in after["prompt"]
+    assert "replace every placeholder before running" in after["prompt"]
+    assert "never pass the literal `<registered Blogger ID>`" in after["prompt"]
     assert after["prompt"].count("P5-CODEX-131 VERIFIED AUTHORING RECOVERY") == 1
     assert after["id"] == before_active["id"]
     assert after["rrule"] == before_active["rrule"]
@@ -152,3 +154,19 @@ def test_prompt_updater_refreshes_current_priority_without_legacy_boundary(tmp_p
     after = tomllib.loads((active / "automation.toml").read_text(encoding="utf-8"))
     assert "opened by the CLI research session" in after["prompt"]
     assert "The excerpt is a CLI-reported quote until the Import Worker retrieves the exact page" in after["prompt"]
+
+
+def test_japan_close_prompt_uses_verified_numeric_blog_mapping(tmp_path) -> None:
+    root = tmp_path / "automations"
+    active = root / "automation-2"
+    _write_automation(active, "automation-2", "ACTIVE", str(ROOT), "Japan close prompt")
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "--apply", "--automations-root", str(root),
+         "--backup-root", str(tmp_path / "backups")],
+        check=True, capture_output=True, text=True,
+    )
+    after = tomllib.loads((active / "automation.toml").read_text(encoding="utf-8"))
+    assert json.loads(result.stdout)["active_project_automation_count"] == 1
+    assert "automation-2 (Japan market close, ja/JP)" in after["prompt"]
+    assert "7562596540375659150" in after["prompt"]
+    assert "replace every placeholder before running" in after["prompt"]

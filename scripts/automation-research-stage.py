@@ -144,6 +144,8 @@ def run_stage(
                         ("target_blog_id", target_blog_id)):
         if not isinstance(value, str) or not value.strip():
             return _result(status="blocked", reason=f"{name}_missing"), 2
+    if not re.fullmatch(r"[0-9]{5,32}", target_blog_id):
+        return _result(status="blocked", reason="target_blog_id_invalid"), 2
 
     python = sys.executable
     duplicate_command = [

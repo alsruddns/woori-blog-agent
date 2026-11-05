@@ -169,6 +169,22 @@ def test_duplicate_preflight_cli_normalizes_bcp47_tag_and_rejects_invalid_tag(
     assert error.value.code == 2
 
 
+def test_duplicate_preflight_rejects_non_numeric_blog_id_before_http(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(
+        "scripts.scheduled_duplicate_check.check_duplicate",
+        lambda _payload: pytest.fail("invalid Blogger ID must not reach HTTP"),
+    )
+    with pytest.raises(SystemExit) as error:
+        main([
+            "--language-code", "ja", "--target-country", "JP",
+            "--target-blog-id", "<registered Blogger ID>",
+            "--event-group-id", "market-close-jp-20261105",
+            "--topic", "Japan market close",
+        ])
+    assert error.value.code == 2
+    assert "registered numeric Blogger ID" in capsys.readouterr().err
+
+
 def test_duplicate_preflight_reports_exact_safe_invocation_reason(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
 ) -> None:
