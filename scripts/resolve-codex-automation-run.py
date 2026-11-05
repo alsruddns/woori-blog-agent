@@ -34,6 +34,16 @@ def _safe_reason(exc: BaseException) -> str:
     return type(exc).__name__
 
 
+def _resolver_state(reason: str) -> str:
+    if "ambiguous" in reason or reason.endswith("_missing_or_ambiguous"):
+        return "AMBIGUOUS"
+    if "not_active" in reason or "outside_" in reason:
+        return "EXPIRED"
+    if "mismatch" in reason or "unrecognized" in reason or "not_codex_desktop" in reason:
+        return "REJECTED"
+    return "FAILED"
+
+
 def main(argv: list[str] | None = None) -> int:
     started = time.monotonic()
     parser = argparse.ArgumentParser(
@@ -67,17 +77,18 @@ def main(argv: list[str] | None = None) -> int:
             from woori.scheduled_slot_gate import wait_for_scheduled_slot
 
             slot_text = result.get("scheduled_slot")
-            expected_wait_seconds = None
+            seconds_until_slot = None
             if isinstance(slot_text, str):
                 slot = datetime.fromisoformat(slot_text)
-                expected_wait_seconds = max(
-                    0, round((slot.astimezone(UTC) - datetime.now(UTC)).total_seconds())
+                seconds_until_slot = round(
+                    (slot.astimezone(UTC) - datetime.now(UTC)).total_seconds()
                 )
             _diagnostic(
                 "scheduled_slot_gate_started",
                 started,
                 scheduled_slot=slot_text,
-                expected_wait_seconds=expected_wait_seconds,
+                seconds_until_slot=seconds_until_slot,
+                gate_policy="verified_trigger_continues_without_sleep_inside_bounded_window",
             )
             slot_gate = wait_for_scheduled_slot(
                 result, ROOT / ".local/gpt-scheduled-import"
@@ -91,11 +102,18 @@ def main(argv: list[str] | None = None) -> int:
             )
             result["slot_gate"] = slot_gate
             if slot_gate["state"] != "ready":
+                state = {
+                    "rejected": "REJECTED",
+                    "expired": "EXPIRED",
+                    "waiting_for_slot": "WAITING_FOR_SLOT",
+                    "deferred": "FAILED",
+                }.get(str(slot_gate["state"]), "FAILED")
                 print(
                     json.dumps(
                         {
                             "resolved": False,
                             "status": "deferred",
+                            "resolver_state": state,
                             "reason": slot_gate["reason"],
                             "invocation": result,
                             "diagnostics": {
@@ -131,6 +149,7 @@ def main(argv: list[str] | None = None) -> int:
                         {
                             "resolved": False,
                             "status": "policy_waiting",
+                            "resolver_state": "REJECTED",
                             "reason": policy.get("reason", "automatic_authoring_disabled"),
                             "invocation": result,
                             "policy": policy,
@@ -149,12 +168,14 @@ def main(argv: list[str] | None = None) -> int:
             result["automation_policy"] = policy
     except (OSError, TypeError, ValueError, json.JSONDecodeError, subprocess.TimeoutExpired) as exc:
         reason = _safe_reason(exc)
-        _diagnostic("resolver_failed", started, reason=reason)
+        state = _resolver_state(reason)
+        _diagnostic("resolver_failed", started, reason=reason, resolver_state=state)
         print(
             json.dumps(
                 {
                     "resolved": False,
                     "status": "blocked",
+                    "resolver_state": state,
                     "reason": reason,
                     "diagnostics": {
                         "pid": os.getpid(),
@@ -171,7 +192,7 @@ def main(argv: list[str] | None = None) -> int:
         "elapsed_ms": max(0, round((time.monotonic() - started) * 1000)),
     }
     _diagnostic("resolver_completed", started, execution_mode=result.get("execution_mode"))
-    print(json.dumps({"resolved": True, **result, "diagnostics": diagnostics}, ensure_ascii=True, sort_keys=True))
+    print(json.dumps({"resolved": True, "resolver_state": "RESOLVED", **result, "diagnostics": diagnostics}, ensure_ascii=True, sort_keys=True))
     return 0
 
 

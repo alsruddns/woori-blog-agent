@@ -47,13 +47,16 @@ def test_resolver_emits_flushed_stage_diagnostics_and_final_elapsed(
     assert diagnostics[0]["command"][-2:] == ["--automation-id", "automation-15"]
 
 
-def test_scheduled_wait_is_reported_before_the_bounded_gate(
+def test_scheduled_gate_reports_slot_delta_and_resolves_without_waiting(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     invocation = {
         "execution_mode": "scheduled",
         "automation_id": "automation-15",
         "session_id": "01a1a10f-5945-70a3-b4ee-793ec544c10e",
+        "trigger": "automation_cron_scheduled",
+        "evidence_source": "codex_desktop_local_session_record",
+        "provenance_self_reported": True,
         "scheduled_slot": "2026-11-03T20:00:00+09:00",
     }
     monkeypatch.setattr(cli, "resolve_current_invocation", lambda *_args, **_kwargs: invocation)
@@ -61,7 +64,8 @@ def test_scheduled_wait_is_reported_before_the_bounded_gate(
         "woori.scheduled_slot_gate.wait_for_scheduled_slot",
         lambda *_args, **_kwargs: {
             "state": "ready",
-            "wait_seconds": 40,
+            "wait_seconds": 0,
+            "reason": "verified_scheduled_trigger_before_slot",
             "scheduled_slot": invocation["scheduled_slot"],
         },
     )
@@ -78,11 +82,47 @@ def test_scheduled_wait_is_reported_before_the_bounded_gate(
     events = [json.loads(line) for line in captured.err.splitlines()]
     wait_event = next(item for item in events if item["event"] == "scheduled_slot_gate_started")
     assert wait_event["scheduled_slot"] == invocation["scheduled_slot"]
-    assert wait_event["expected_wait_seconds"] is not None
+    assert wait_event["seconds_until_slot"] is not None
+    assert wait_event["gate_policy"] == "verified_trigger_continues_without_sleep_inside_bounded_window"
     assert any(item["event"] == "scheduled_slot_gate_finished" for item in events)
     result = json.loads(captured.out)
     assert result["resolved"] is True
+    assert result["resolver_state"] == "RESOLVED"
     assert result["slot_gate"]["state"] == "ready"
+
+
+def test_waiting_for_slot_is_never_reported_as_resolved(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    invocation = {
+        "execution_mode": "scheduled",
+        "automation_id": "automation-15",
+        "session_id": "01a1a10f-5945-70a3-b4ee-793ec544c10e",
+        "trigger": "automation_cron_scheduled",
+        "evidence_source": "codex_desktop_local_session_record",
+        "provenance_self_reported": True,
+        "scheduled_slot": "2026-11-03T20:00:00+09:00",
+    }
+    monkeypatch.setattr(cli, "resolve_current_invocation", lambda *_args, **_kwargs: invocation)
+    monkeypatch.setattr(
+        "woori.scheduled_slot_gate.wait_for_scheduled_slot",
+        lambda *_args, **_kwargs: {
+            "state": "waiting_for_slot",
+            "wait_seconds": 40,
+            "reason": "slot_wait_pending",
+            "scheduled_slot": invocation["scheduled_slot"],
+        },
+    )
+    monkeypatch.setattr(
+        cli.subprocess,
+        "run",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("policy must not run")),
+    )
+
+    assert cli.main(["--automation-id", "automation-15"]) == 3
+    result = json.loads(capsys.readouterr().out)
+    assert result["resolved"] is False
+    assert result["resolver_state"] == "WAITING_FOR_SLOT"
 
 
 def test_unresolved_mode_timeout_is_blocked_without_rewriting_it_as_scheduled(
@@ -100,7 +140,34 @@ def test_unresolved_mode_timeout_is_blocked_without_rewriting_it_as_scheduled(
     events = [json.loads(line) for line in captured.err.splitlines()]
     assert result["resolved"] is False
     assert result["status"] == "blocked"
+    assert result["resolver_state"] == "FAILED"
     assert result["reason"] == "TimeoutExpired"
     assert "execution_mode" not in result
     assert events[-1]["event"] == "resolver_failed"
     assert events[-1]["reason"] == "TimeoutExpired"
+
+
+@pytest.mark.parametrize(
+    ("reason", "expected_state"),
+    [
+        ("current_automation_start_event_ambiguous", "AMBIGUOUS"),
+        ("current_session_automation_id_mismatch", "REJECTED"),
+        ("current_automation_run_not_active", "EXPIRED"),
+        ("policy_check_unavailable", "FAILED"),
+    ],
+)
+def test_resolver_errors_keep_distinct_terminal_states(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    reason: str,
+    expected_state: str,
+) -> None:
+    def fail(*_args: object, **_kwargs: object) -> None:
+        raise ValueError(reason)
+
+    monkeypatch.setattr(cli, "resolve_current_invocation", fail)
+
+    assert cli.main(["--automation-id", "automation-15"]) == 2
+    result = json.loads(capsys.readouterr().out)
+    assert result["resolved"] is False
+    assert result["resolver_state"] == expected_state
