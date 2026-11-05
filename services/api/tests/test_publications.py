@@ -172,6 +172,43 @@ def test_publication_read_model_uses_current_import_schema(lab: Any, monkeypatch
     assert {"queue", "review", "published", "held"} <= set(payload["summary"])
 
 
+def test_trend_search_volume_attaches_only_to_verified_trends_items() -> None:
+    request_id = str(uuid4())
+    rows = [{
+        "trend_request_id": request_id,
+        "trends_search_query": "sample trend query",
+        "trends_search_country": "IN",
+        "trends_search_volume_raw": "10K+",
+        "trends_search_volume_kind": "bucket_lower_bound; not internationally comparable",
+    }]
+
+    class Result:
+        def fetchall(self) -> list[dict[str, Any]]:
+            return rows
+
+    class Conn:
+        def execute(self, query: str, params: tuple[list[str]]) -> Result:
+            assert "FROM trend_generation_requests" in query
+            assert params == ([request_id],)
+            return Result()
+
+    items = [
+        {"view": view, "origin_kind": "google_trends", "trend_request_id": request_id}
+        for view in ("review", "published", "held", "auto_failure")
+    ]
+    manual = {"view": "review", "origin_kind": "manual", "trend_request_id": request_id}
+    items.append(manual)
+
+    publications._attach_trend_search_volume(Conn(), items)
+
+    for item in items[:4]:
+        assert item["trends_search_volume_raw"] == "10K+"
+        assert item["trends_search_country"] == "IN"
+        assert item["trends_search_query"] == "sample trend query"
+        assert "bucket_lower_bound" in item["trends_search_volume_kind"]
+    assert "trends_search_volume_raw" not in manual
+
+
 def test_manual_publication_requires_editorial_and_exact_version_approval() -> None:
     row = {
         "language_active": True, "blog_active": True, "version_language": "en",

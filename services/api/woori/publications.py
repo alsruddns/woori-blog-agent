@@ -1705,6 +1705,45 @@ def publication_list_flow(row: dict[str, Any]) -> str:
     return 'publishing' if row.get('active_job_status') == 'running' else 'queued'
 
 
+def _attach_trend_search_volume(conn: Any, items: list[dict[str, Any]]) -> None:
+    """Attach the source's original Trends bucket label to verified Trends rows."""
+    request_ids = list({
+        str(item["trend_request_id"])
+        for item in items
+        if item.get("origin_kind") == "google_trends" and item.get("trend_request_id")
+    })
+    if not request_ids:
+        return
+    rows = conn.execute(
+        """SELECT id::text AS trend_request_id,
+          contract->>'query' AS trends_search_query,
+          contract->>'source_country' AS trends_search_country,
+          contract->>'search_volume_raw' AS trends_search_volume_raw,
+          contract->>'volume_kind' AS trends_search_volume_kind
+        FROM trend_generation_requests WHERE id=ANY(%s::uuid[])""",
+        (request_ids,),
+    ).fetchall()
+    by_request = {str(row["trend_request_id"]): dict(row) for row in rows}
+    for item in items:
+        if item.get("origin_kind") != "google_trends":
+            continue
+        details = by_request.get(str(item.get("trend_request_id") or ""))
+        if details:
+            item.update({
+                key: details[key] for key in (
+                    "trends_search_query", "trends_search_country",
+                    "trends_search_volume_raw", "trends_search_volume_kind",
+                )
+            })
+        else:
+            item.update({
+                "trends_search_query": None,
+                "trends_search_country": None,
+                "trends_search_volume_raw": None,
+                "trends_search_volume_kind": None,
+            })
+
+
 class DiscardTarget(BaseModel):
     content_version_id: UUID
     blog_id: UUID
@@ -2251,6 +2290,7 @@ def list_publications(
         items = selected[start:start + page_size]
         for item in items:
             attach_origin(item)
+        _attach_trend_search_volume(conn, items)
         return {
             "candidates": [] if compact else [dict(row) for row in latest_candidates],
             "items": [dict(row) for row in items],

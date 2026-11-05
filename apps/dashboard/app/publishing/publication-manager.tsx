@@ -15,6 +15,8 @@ type Item = {
   remote_post_id?: string | null; remote_status?: string | null; remote_verified_at?: string | null;
   simulation_only?: boolean; adapter_type?: string; evaluation_id?: string | null;
   import_id?: string | null; generation_method?: string | null; google_trends_based?: boolean;
+  trends_search_query?: string | null; trends_search_country?: string | null;
+  trends_search_volume_raw?: string | null; trends_search_volume_kind?: string | null;
   auto_publication_failure?: boolean; failure_stage?: string | null; failure_reason_code?: string | null;
   manual_publication_available?: boolean; retry_count?: number;
   published_title?: string; published_content_version_id?: string;
@@ -364,6 +366,7 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
               : <span>{item.title || "제목 없음"}</span>}
             <small>현재 버전 {item.content_version_id.slice(0,8)} <span className={`publication-mobile-origin publication-origin publication-origin-${item.origin_kind??"unknown"}`}>{originLabels[item.origin_kind??"unknown"]}</span></small>
             {item.automation_id&&<small>Automation {item.automation_id} · {item.scheduled_slot??item.occurrence_id??"예약 슬롯 미확인"}</small>}{item.trend_request_id&&<small>Trends 회차 {item.trend_request_id}</small>}
+            {item.origin_kind==="google_trends"&&<small title="Google Trends 원본 구간 표기입니다. 정확한 검색 횟수가 아니라 하한값으로 확인하세요.">Trends 검색어 {item.trends_search_query||"정보 없음"} · 검색량 {item.trends_search_volume_raw||"정보 없음"}{item.trends_search_country?` · ${item.trends_search_country}`:""} · 원본 구간 표기</small>}
             {view==="discarded"&&<small>폐기 전 {item.previous_view??"미확인"} · {item.discard_actor??"작업자 미확인"} · {item.discard_reason??"사유 미확인"}</small>}
             {item.published_title && <small>게시 당시 제목: {item.published_title} · 게시 버전 {item.published_content_version_id?.slice(0,8)} · 현재 Blogger 제목은 별도 원격 확인이 필요합니다.</small>}</td>
            <td className="publication-desktop-origin"><span className={`publication-origin publication-origin-${item.origin_kind??"unknown"}`}>{originLabels[item.origin_kind??"unknown"]}</span></td><td>{languageLabel(item.language_code)}</td><td>{item.blog_name || item.url}</td>
