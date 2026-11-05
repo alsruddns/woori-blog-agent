@@ -3,7 +3,7 @@
 - 작업 일시: 2026-11-05 14:09 KST 시작, 종료 시각은 최종 감사 이벤트 기준
 - 작업 브랜치: `develop`
 - 시작 HEAD: `5e6ff180780c74838b61de655fe07ad5049be32d`
-- 작업 시작 감사 이벤트: PostgreSQL `audit_events` ID `373189` (실행 전 기록으로 전달됨)
+- 작업 시작 감사 이벤트: PostgreSQL `audit_events` ID `373189` (`agent.work.started`)
 - 변경 사유: 발행 실패 화면에 `automatic_quality_or_policy_blocked` 같은 내부 코드만 표시되어 사용자가 원인과 해결 방법을 알기 어려웠음. KO Trends 원고의 수동 발행 차단 사례도 `source_verbatim_excerpt_present`를 반환했으나 문구가 사용자 조치로 번역되지 않았음.
 - 변경 전: 여러 화면에서 서로 다른 짧은 코드 사전 또는 snake_case 코드가 노출됨. 자동 발행 적격성 실패는 일반 카테고리만 저장되어 세부 차단 사유를 실패 화면에서 복구할 수 없었음.
 - 변경 후: 공통 한국어 원인·다음 조치 메시지를 사용하고, 기술 코드는 상세 정보로 남김. 자동 발행 차단 시 기존 실패 카테고리와 함께 실제 차단 사유 코드를 `publishing_jobs.block_reasons`에 저장하고, 모니터 API에서 이를 전달함.
@@ -44,6 +44,7 @@
 
 ## 남은 점과 커밋
 
-- 실행 시각의 세부 기록, 최종 HEAD/커밋, 원격 푸시 결과는 후속 커밋 및 감사 완료 이벤트와 연결한다. 자기 참조 커밋은 `git log`로 확인한다.
+- 작업 완료 감사 이벤트: PostgreSQL `audit_events` ID `373626` (`development.task.completed`), 2026-11-05 14:10:56 KST.
+- 구현 커밋: `2653263` (`Fix : [Publishing] Explain publication failures in Korean`). 개발 기록의 후속 기록 커밋과 최종 브랜치 상태는 `git log -- docs/development/P5-CODEX-144.md` 및 `git status`로 확인한다.
 - 기존 실패 Job 중 과거에 세부 차단 사유를 저장하지 않은 건은 새 상태 조회에서 일반 오류만 보일 수 있음. 과거 Job이나 발행 이력은 소급 수정하지 않는다.
 - 수정된 코드가 실제 운영 화면과 Publication Worker에 반영됐는지는 운영 배포·정상 재기동 뒤 별도로 확인해야 한다.
