@@ -46,9 +46,14 @@ Run now의 `CODEX_HOME` 오류는 잘못된 중단 사유였다. 프로세스 �
 
 ## 운영 반영 계획 및 남은 확인
 
-- 코드/테스트/기록을 develop에 커밋·푸시한 뒤 `scripts/apply-verified-changes.ps1 -Apply -Confirm:$false`로 공식 검증·반영을 실행한다.
-- 사용자 요청에 따라 변경 적용 후 FastAPI, Dashboard, Research Worker, Publication Worker를 공식 스크립트로 정상 종료·재기동하고 HTTP 상태, PID, heartbeat, 정책을 재검증한다. 강제 종료 및 Blogger 쓰기는 하지 않는다.
-- 로컬 Automation prompt 파일 반영은 확인됐지만 실제 Desktop 예약에서 새 stage를 실행한 E2E는 아직 미검증이며 다음 새 공식 Run now/예약 실행에서 확인해야 한다.
+- 코드 commit `94cf2032eb2ccf6b35b3d0104747d5ed3e6c58a0`을 `origin/develop`에 푸시했다.
+- 공식 `scripts/apply-verified-changes.ps1 -Apply -Confirm:$false`가 변경된 API 테스트 9개, Ruff, py_compile, isolated wheel build, Dashboard production build를 통과하고 validated source를 commit `94cf2032eb2ccf6b35b3d0104747d5ed3e6c58a0`으로 갱신했다. 첫 호출은 Windows 공유 pytest temp 정리 권한 오류로 실패 처리됐고, 프로젝트 내부 고유 basetemp/cache 경로로 다시 실행해 성공했다.
+- 사용자 요청대로 공식 `scripts/restart-services.ps1 -TimeoutSeconds 180`로 네 서비스를 모두 현재 동기 작업 종료 후 정상 중지·재기동했다. 강제 종료는 없었다.
+- 재기동 전 PID: API 4952, Dashboard 9600, Research Worker 21732, Publication Worker 20068. 재기동 후 PID: API 20824, Dashboard 35092, Research Worker 4888, Publication Worker 4732. API `/health`와 Dashboard `/research` 모두 HTTP 200; 두 Worker heartbeat fresh; 네 서비스 applied commit 모두 `94cf2032eb2ccf6b35b3d0104747d5ed3e6c58a0`이다.
+- 재기동 후 AutoMode `auto`, AutoPolicyActive `true`, minimum interval 15분, daily limit 100, 승인 블로그 6개, publication execution mode `operations-scheduled-auto-and-manual-and-trends`를 확인했다. schema 92와 settings revision 23은 변경하지 않았다.
+- 재기동 동안 신규 Blogger write 0건, 새 원고/Import 0건, 활성 Research Job 0건. 기존 보류/대기 상태는 그대로 보존했다.
+- 완료 감사: append-only `agent.work.completed` ID `375728`, 시작 이벤트 ID `375105`에 연결. 감사 행 수정/삭제 없음.
+- 남은 검증: 로컬 TOML 변경은 확인했지만 Desktop UI에서 prompt가 실제 로드된 상태와 새 공식 예약/Run now가 research package→원고 파일→Import Receipt까지 성공한 사실은 확인하지 못했다. 과거 실패 슬롯은 실행하지 않았다. 따라서 코드/로컬 설정 반영 및 서비스 재기동은 완료됐지만 실제 Desktop end-to-end 원고 생성·Import는 미검증이다.
 
 ## 변경 파일 및 커밋
 
@@ -57,4 +62,5 @@ Run now의 `CODEX_HOME` 오류는 잘못된 중단 사유였다. 프로세스 �
 - `services/api/tests/test_automation_research_stage_cli.py`
 - `services/api/tests/test_update_automation_authoring_recovery.py`
 - `docs/development/P5-CODEX-147.md`
-- 구현/운영 반영 commit 및 완료 감사 이벤트는 반영 후 이 기록의 후속 항목으로 추가한다.
+- 코드 commit: `94cf2032eb2ccf6b35b3d0104747d5ed3e6c58a0`; 후속 개발 기록 commit은 `git log -- docs/development/P5-CODEX-147.md`에서 확인한다.
+- 최종 Git 정책: `develop` 유지, `origin/develop` 푸시 완료. 코드 및 후속 기록 이외의 변경은 포함하지 않았다.
