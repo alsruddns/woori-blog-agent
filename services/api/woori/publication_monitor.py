@@ -184,6 +184,7 @@ def snapshot(view: str, page: int, page_size: int) -> dict[str, Any]:
                     lease_overdue=bool(item['status']=='running' and item['lease_until'] and item['lease_until']<datetime.now(UTC)),
                     failure_stage='eligibility' if item['block_reasons'] else item['failure_operation'] or 'publication_worker',
                     failure_reason=item['last_error_category'] or item.get('remote_check_error') or next(iter(item['block_reasons'] or []),None),
+                    failure_reason_codes=list(item.get('block_reasons') or []),
                     retry_possible=state=='failed' and item['status'] in {'failed','blocked'} and item['retry_count']<item['max_retries'],
                     remote_url=item['remote_url'] if state=='published' else None)
         items.append(item)

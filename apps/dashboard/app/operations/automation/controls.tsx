@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import styles from "./controls.module.css";
+import { publicationReasonText } from "../../publishing/publication-messages";
 
 type MainKey = "trends_collection_enabled" | "auto_manuscript_enabled" | "auto_publishing_enabled" | "manual_publishing_enabled";
 type Key = MainKey | "trends_auto_publishing_enabled" | "scheduled_auto_publishing_enabled" | "automatic_publication_operator_approved";
@@ -137,7 +138,7 @@ export default function Controls() {
       <p>발행 방식 {state.auto_mode === "publish" ? "LIVE" : "Draft"} · 글로벌 간격 {state.global_publish_min_interval_minutes}분 · 일일 LIVE 상한 {state.global_daily_live_publish_limit}건</p>
       <p>긴급 정지 {state.emergency_stop ? "ON" : "OFF"} · Blogger API 제한 {state.blogger_api_restricted ? "감지됨" : "감지되지 않음"} · 대기 자동 Job {approval.pending_auto_jobs}건</p>
       <p>외부 0원 비용 승인 {approval.external_cost_policy_approved ? "확인됨" : "미확인"} · 외부 공개 쓰기 승인 {approval.external_public_write_approved ? "확인됨" : "미확인"} · 쓰기 모드 {approval.blogger_write_mode}</p>
-      {approval.blockers.length > 0 && <p className={styles.help}>차단 사유: {approval.blockers.join(", ")}</p>}
+      {approval.blockers.length > 0 && <p className={styles.help}>차단 사유: {approval.blockers.map(publicationReasonText).join(" / ")}</p>}
       <p>마지막 변경: {approval.actor ?? "기록 없음"} · {stamp(approval.changed_at)}</p>
       <p className={styles.help}>운영 승인은 자동 발행의 추가 관리 조건입니다. OAuth, 외부 쓰기 승인, 0원 정책, 긴급 정지, 적격성, 간격 및 일일 상한 검사를 변경하거나 우회하지 않습니다. OFF여도 수동 발행 설정은 별도로 유지됩니다.</p>
     </article>

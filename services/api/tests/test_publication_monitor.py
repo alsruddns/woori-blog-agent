@@ -43,6 +43,10 @@ def test_real_job_states_and_pre_job_failures_are_distinct_and_read_only(lab,mon
         if status=='succeeded':
             conn.execute("""INSERT INTO publishing_records(job_id,blog_id,content_version_id,remote_post_id,published_at,remote_url,remote_status,remote_verified_at)
                 VALUES (%s,%s,%s,%s,now(),'https://example.blogspot.com/test','LIVE',now())""",(job,policy['blog_id'],version,str(uuid4().int)))
+    conn.execute(
+        "UPDATE publishing_jobs SET block_reasons=%s WHERE id=%s",
+        (Jsonb(["source_verbatim_excerpt_present", "claim_source_verification_unavailable"]), ids["failed"]),
+    )
     imported=conn.execute('SELECT import_id,content_version_id FROM external_content_import_content_links LIMIT 1').fetchone()
     conn.execute("INSERT INTO audit_events(event_type,payload) VALUES ('publication.auto_failure.recorded',%s)",
                  (Jsonb({'import_id':str(imported['import_id']),'content_version_id':str(imported['content_version_id']),
@@ -56,6 +60,10 @@ def test_real_job_states_and_pre_job_failures_are_distinct_and_read_only(lab,mon
     assert set(states)==set(ids.values())
     assert states[ids['succeeded']]=='published'
     assert states[ids['failed']]=='failed'
+    failed_job=next(item for item in data['items'] if item.get('job_id')==ids['failed'])
+    assert failed_job['failure_reason_codes']==[
+        'source_verbatim_excerpt_present', 'claim_source_verification_unavailable'
+    ]
     assert states[ids['queued']] in {'queued','auto_paused'}
     assert states[ids['running']] in {'running','auto_paused'}
     job_states=('queued','running','published','draft_saved','failed','auto_paused','manual_action_required','resolved')

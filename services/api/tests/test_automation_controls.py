@@ -610,6 +610,45 @@ def test_unknown_remote_duplicate_never_writes_and_never_retries(center, monkeyp
     assert automation_auto.tick(publisher=object()) is None
 
 
+def test_automatic_block_stores_specific_reason_codes(center, monkeypatch):
+    conn, _, _ = center
+    job, blog, version = make_job(center, "scheduled_auto", "draft")
+    assert update(
+        center,
+        auto_publishing_enabled=True,
+        trends_auto_publishing_enabled=True,
+        automatic_publication_operator_approved=True,
+        auto_blog_ids=[str(blog)],
+        auto_mode="draft",
+        confirm_auto=True,
+        confirm_operator_auto_approval=True,
+        google_account_available=True,
+        emergency_stop=False,
+        confirm_emergency_release=True,
+    ).status_code == 200
+    link_trends(conn, version, blog)
+    origin_grant(conn, job, version, controls.read(conn), blog, "draft")
+    monkeypatch.setattr(automation_auto, "enqueue", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(automation_auto, "context_allowed", lambda *args, **kwargs: True)
+    reasons = ["source_verbatim_excerpt_present", "claim_source_verification_unavailable"]
+    monkeypatch.setattr(automation_auto, "readiness", lambda *args: ({}, {}, reasons))
+    conn.execute(
+        "UPDATE publishing_jobs SET status='queued',publication_state='publication_queued' WHERE id=%s",
+        (job,),
+    )
+
+    result = automation_auto.tick(publisher=object())
+
+    assert result == {"job_id": str(job), "status": "blocked", "reasons": reasons}
+    stored = conn.execute(
+        "SELECT status,last_error_category,block_reasons FROM publishing_jobs WHERE id=%s",
+        (job,),
+    ).fetchone()
+    assert stored["status"] == "blocked"
+    assert stored["last_error_category"] == "automatic_quality_or_policy_blocked"
+    assert stored["block_reasons"] == sorted(reasons)
+
+
 def test_wire_guard_serializes_with_other_policy_writers(monkeypatch):
     from woori.db import connection
 

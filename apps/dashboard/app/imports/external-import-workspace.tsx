@@ -4,6 +4,7 @@ import ManuscriptCopy from "./manuscript-copy";
 import EditorialQuality from "../manuscripts/editorial-quality";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
+import { publicationReasonText, publicationApiErrorText } from "../publishing/publication-messages";
 
 type Row = Record<string, unknown>;
 type Details = {
@@ -31,44 +32,6 @@ const importReviewLabel = (item: Row) => {
   if (review === "changes_requested") return "수정 요청";
   if (item.machine_passed !== true) return "기계 검사 필요";
   return "편집 검토 대기";
-};
-const publicationBlockerNames: Record<string, string> = {
-  not_a_codex_scheduled_export: "Codex 예약 Export 원고가 아닙니다.",
-  scheduled_version_not_promoted: "최신 예약 원고 버전이 운영 콘텐츠 버전과 연결되지 않았습니다.",
-  latest_version_machine_assessment_not_passed: "최신 버전의 기계 검사가 통과하지 않았습니다.",
-  editorial_review_not_passed: "이 정확한 원고 버전의 편집 검토 통과 및 출처·주장·권리 확인이 필요합니다.",
-  scheduled_evidence_assessment_not_passed: "출처·주장 증거 평가가 통과하지 않았습니다.",
-  scheduled_auto_policy_inactive: "예약 원고 Auto 정책이 활성화되지 않았습니다.",
-  publication_emergency_stop_active: "긴급 발행 정지가 활성 상태입니다.",
-  blog_not_in_active_scheduled_scope: "대상 블로그가 활성 예약 Auto 범위에 없습니다.",
-  blogger_write_oauth_not_verified: "대상 블로그의 Blogger 쓰기 연결이 확인되지 않았습니다.",
-  scheduled_live_write_policy_not_available: "예약 Blogger 쓰기 정책이 허용되지 않습니다.",
-  remote_publication_already_recorded: "이 콘텐츠 버전의 원격 게시 기록이 있어 중복 발행을 차단했습니다.",
-};
-const manualBlockerNames: Record<string, string> = {
-  manual_codex_import_origin_required: "출처가 manual_codex_import인 수동 원고만 이 경로를 사용할 수 있습니다.",
-  stale_import_version: "최신 Import 버전이 아닙니다. 원고 상세를 새로고침하세요.",
-  publication_title_missing: "게시 제목이 없습니다.", publication_body_missing: "게시 본문이 없습니다.",
-  sanitized_blogger_html_unavailable: "안전하게 정제된 Blogger HTML을 만들 수 없습니다.",
-  blogger_labels_invalid: "Blogger 라벨을 확인해야 합니다.",
-  language_inactive: "원고 언어가 비활성 상태입니다.", blog_inactive: "대상 Blogger가 비활성 상태입니다.",
-  blog_language_mismatch: "원고 언어와 Blogger 언어가 일치하지 않습니다.",
-  blog_connection_unverified: "대상 블로그 ID와 연결 확인이 필요합니다.",
-  blogger_write_oauth_not_verified: "대상 블로그에 Blogger 쓰기 OAuth 연결이 필요합니다.",
-  publication_policy_missing: "대상 블로그의 발행 정책 기록이 없습니다.",
-  blogger_zero_cost_policy_required: "Blogger 비용·권한 운영 확인 기록이 없습니다. 기존 운영 확인을 완료해야 합니다.",
-  publication_modes_unavailable: "발행 설정을 확인할 수 없습니다.",
-  registered_blog_unavailable: "등록된 대상 Blogger를 확인할 수 없습니다.",
-  target_uses_auto_mode: "이 Blogger는 일반 Auto 모드입니다. 수동 발행 경로를 사용할 수 없습니다.",
-  publication_emergency_stop_active: "긴급 발행 정지가 활성 상태입니다.",
-  separate_public_blogger_write_policy_required: "Blogger 공개 쓰기 운영 정책 승인이 필요합니다.",
-  write_scope_required: "OAuth 쓰기 권한이 없습니다. Blogger 연결 관리에서 쓰기 권한을 연결하세요.",
-  oauth_not_connected: "Blogger 쓰기 OAuth 연결이 끊겼습니다.",
-  write_oauth_not_mapped_to_blog: "쓰기 OAuth가 대상 블로그에 연결되지 않았습니다.",
-  blog_not_active: "대상 Blogger가 비활성 상태입니다.",
-  stale_content_version: "최신 콘텐츠 버전이 아닙니다. 최신 원고를 다시 여세요.",
-  manual_live_job_already_exists: "이 원고·블로그의 공개 발행 Job이 이미 있습니다.",
-  remote_publication_already_recorded: "이 원고는 이미 원격 게시 기록이 있습니다.",
 };
 const MANUAL_PUBLICATION_REASON_MIN_LENGTH = 3;
 const fmt = (value: unknown) => {
@@ -381,7 +344,7 @@ export default function ExternalImportWorkspace({ embedded = false, detailReques
     ...(selectedManual?.eligible !== true
       ? ((selectedManual?.blockers as string[] | undefined)
         ?? [String(detail?.publication?.status_error ?? "수동 발행 자격 결과가 응답에 없습니다. 원고 상세를 새로고침하세요.")])
-        .map(reason => manualBlockerNames[reason] ?? reason)
+        .map(reason => publicationReasonText(reason))
       : []),
   ];
   const submitManualPublication = async () => {
@@ -402,8 +365,11 @@ export default function ExternalImportWorkspace({ embedded = false, detailReques
           confirmation: manualMode === "draft" ? "SAVE THIS EXACT MANUSCRIPT AS DRAFT" : "PUBLISH THIS EXACT MANUSCRIPT PUBLICLY",
           idempotency_key: `manual-${manualMode}-${versionKey}-${String(manual.body_sha256).slice(0,24)}` }) });
       const result = await response.json() as Row;
-      if (!response.ok) throw new Error(`HTTP ${response.status} · ${String(result.error_code ?? "manual_publication_request_failed")} · ${String(result.detail ?? result.error ?? "공개 발행 요청을 처리하지 못했습니다.")}`);
-      if (result.recorded === false) throw new Error(`발행이 차단되었습니다: ${Array.isArray(result.reasons) ? result.reasons.map(reason => manualBlockerNames[String(reason)] ?? String(reason)).join(" · ") : "필수 조건 미충족"}`);
+      if (!response.ok) {
+        const apiDetail = typeof result.detail === "string" ? result.detail : typeof result.error === "string" ? result.error : String(result.error_code ?? "manual_publication_request_failed");
+        throw new Error(`${publicationApiErrorText(apiDetail)} (HTTP ${response.status})`);
+      }
+      if (result.recorded === false) throw new Error(`발행이 차단되었습니다: ${Array.isArray(result.reasons) ? result.reasons.map(reason => publicationReasonText(String(reason))).join(" · ") : "필수 조건 미충족"}`);
       setNotice(`공개 발행 Job ${String(result.id ?? "")}을 등록했습니다. 게시 후 보완 ${String(result.followup_count ?? 0)}건을 준비했습니다. 실제 Blogger 결과는 Worker 처리 후 표시됩니다.`);
       onPublicationRequested?.(String(result.id ?? ""));
       await openDetail(selectedId); setDetailTab("distribution");
@@ -517,8 +483,8 @@ export default function ExternalImportWorkspace({ embedded = false, detailReques
                   {Array.isArray(manual?.followups) && manual.followups.length > 0 && <div><strong>게시 전후 보완사항 {manual.followups.length}건</strong><ul>{(manual.followups as Row[]).map((item, index) => <li key={`${String(item.issue_type)}-${index}`}>{String(item.description)}</li>)}</ul></div>}
                 </div>
                 {manual?.eligible === true ? <p className="quality-ok" role="status">게시 가능 · 품질·출처·SEO 등 미완료 항목은 게시 후 보완 목록에 연결됩니다.</p>
-                  : <div className="quality-held" role="status"><strong>현재 게시 요청 불가 · 다음 조건</strong><ul>{blockers.length ? blockers.map(reason => <li key={reason}>{manualBlockerNames[reason] ?? reason}</li>) : <li>수동 발행 상태를 확인할 수 없습니다.</li>}</ul></div>}
-                {jobs.map(job => <article className="history-card" key={String(job.id)}><strong>{String(job.status)} · {String(job.publication_state)}</strong><p>Job {String(job.id)} · {job.simulation_only ? "Mock" : "실제 Blogger 경로"} · 오류 {String(job.last_error_category ?? "없음")}</p>{job.remote_post_id != null && <p>Blogger postId: {String(job.remote_post_id)}</p>}{job.remote_url != null && job.remote_verified_at != null && <p><a href={String(job.remote_url)} target="_blank" rel="noopener noreferrer">실제 Blogger 공개 URL 열기</a></p>}</article>)}
+                  : <div className="quality-held" role="status"><strong>현재 게시 요청 불가 · 다음 조건</strong><ul>{blockers.length ? blockers.map(reason => <li key={reason}>{publicationReasonText(reason)}</li>) : <li>수동 발행 상태를 확인할 수 없습니다.</li>}</ul></div>}
+                {jobs.map(job => <article className="history-card" key={String(job.id)}><strong>{String(job.status)} · {String(job.publication_state)}</strong><p>Job {String(job.id)} · {job.simulation_only ? "Mock" : "실제 Blogger 경로"} · 오류 {job.last_error_category ? publicationReasonText(String(job.last_error_category)) : "없음"}</p>{Array.isArray(job.block_reasons) && job.block_reasons.length > 0 && <ul>{job.block_reasons.map((reason, index) => <li key={index}>{publicationReasonText(String(reason))}</li>)}</ul>}{job.remote_post_id != null && <p>Blogger postId: {String(job.remote_post_id)}</p>}{job.remote_url != null && job.remote_verified_at != null && <p><a href={String(job.remote_url)} target="_blank" rel="noopener noreferrer">실제 Blogger 공개 URL 열기</a></p>}</article>)}
               </>;
             })()}
             <label>게시 승인자 표시 이름<input value={approvalActor} onChange={event => setApprovalActor(event.target.value)} minLength={2} maxLength={120} /></label>
@@ -567,8 +533,8 @@ function ScheduledBloggerPublication({ detail, selectedTargetId, setSelectedTarg
       </select></label>}
       {target ? <>
         <p>연결: {target.active ? "활성" : "비활성"} · OAuth {String(target.oauth_status ?? "확인 불가")} · 예약 Auto 범위 {target.in_scheduled_scope ? "포함" : "제외"} · 쓰기 정책 {target.remote_write_policy_available ? "사용 가능" : "사용 불가"}</p>
-        {blockers.length > 0 && <div className="quality-held" role="status"><strong>현재 발행 차단 사유</strong><ul>{blockers.map(blocker => <li key={blocker}>{publicationBlockerNames[blocker] ?? blocker}</li>)}</ul></div>}
-        {jobs.length > 0 && <div><h4>발행 작업</h4>{jobs.map(job => <article className="history-card" key={String(job.id)}><p>Job {String(job.id)} · {String(job.publication_state)} · {String(job.status)} · {job.simulation_only ? "Mock 작업" : "실제 발행 작업"}</p>{job.remote_post_id != null && <p>Blogger postId: {String(job.remote_post_id)}</p>}{Boolean(job.remote_status === "LIVE" && job.remote_verified_at && job.remote_url) && <p><a href={String(job.remote_url)} target="_blank" rel="noopener noreferrer">실제 Blogger 공개 URL 열기</a></p>}{Boolean(job.remote_verified_at) && <p>원격 확인: {fmt(job.remote_verified_at)}</p>}{job.published_at != null && <p>게시 시각: {fmt(job.published_at)}</p>}</article>)}</div>}
+        {blockers.length > 0 && <div className="quality-held" role="status"><strong>현재 발행 차단 사유</strong><ul>{blockers.map(blocker => <li key={blocker}>{publicationReasonText(blocker)}</li>)}</ul></div>}
+        {jobs.length > 0 && <div><h4>발행 작업</h4>{jobs.map(job => <article className="history-card" key={String(job.id)}><p>Job {String(job.id)} · {String(job.publication_state)} · {String(job.status)} · {job.simulation_only ? "Mock 작업" : "실제 발행 작업"}</p>{Array.isArray(job.block_reasons) && job.block_reasons.length > 0 && <ul>{job.block_reasons.map((reason, index) => <li key={index}>{publicationReasonText(String(reason))}</li>)}</ul>}{job.remote_post_id != null && <p>Blogger postId: {String(job.remote_post_id)}</p>}{Boolean(job.remote_status === "LIVE" && job.remote_verified_at && job.remote_url) && <p><a href={String(job.remote_url)} target="_blank" rel="noopener noreferrer">실제 Blogger 공개 URL 열기</a></p>}{Boolean(job.remote_verified_at) && <p>원격 확인: {fmt(job.remote_verified_at)}</p>}{job.published_at != null && <p>게시 시각: {fmt(job.published_at)}</p>}</article>)}</div>}
         {isPublished && <p className="quality-ok">Blogger에서 공개 상태를 확인했습니다.</p>}
       </> : <p className="empty-state">선택한 Blogger의 예약 발행 정보를 확인할 수 없습니다.</p>}
       <p>예약 Auto가 활성화되고 필수 정책 검사를 통과하면 Publication Worker가 처리합니다. 실제 Blogger 게시 후에는 검증된 postId와 URL을 표시합니다.</p>

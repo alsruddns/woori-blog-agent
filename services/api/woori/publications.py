@@ -605,7 +605,8 @@ def scheduled_first_post_status(import_id: Annotated[UUID, Query()]) -> dict[str
             blog_id = str(blog["id"])
             in_scope = blog_id in approved_blog_ids
             jobs = conn.execute(
-                """SELECT j.id,j.status,j.publication_state,j.scheduled_at,j.updated_at,
+                """SELECT j.id,j.status,j.publication_state,j.last_error_category,j.block_reasons,
+                    j.scheduled_at,j.updated_at,
                     j.simulation_only,j.adapter_type,r.remote_post_id,r.remote_url,r.remote_status,
                     r.remote_verified_at,r.published_at
                 FROM publishing_jobs j LEFT JOIN publishing_records r ON r.job_id=j.id

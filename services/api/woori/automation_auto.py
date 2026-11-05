@@ -312,8 +312,11 @@ def tick(*, publisher: Any = None, origin_filter: str | None = None) -> dict[str
             reasons.append("automation_policy_changed")
         if reasons or row is None:
             conn.execute(
-                "UPDATE publishing_jobs SET status='blocked',last_error_category='automatic_quality_or_policy_blocked',updated_at=now() WHERE id=%s",
-                (job["id"],),
+                """UPDATE publishing_jobs
+                SET status='blocked',last_error_category='automatic_quality_or_policy_blocked',
+                    block_reasons=%s,updated_at=now()
+                WHERE id=%s""",
+                (Jsonb(sorted(set(reasons or ["automatic_publication_not_completed"]))), job["id"]),
             )
             return {"job_id": str(job["id"]), "status": "blocked", "reasons": reasons}
         conn.execute(

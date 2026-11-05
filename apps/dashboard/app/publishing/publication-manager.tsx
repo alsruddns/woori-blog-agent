@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import ExternalImportWorkspace from "../imports/external-import-workspace";
 import PostPublicationReviewPanel from "./post-publication-review-panel";
 import PublicationWorkerPanel from "./publication-worker-panel";
+import { publicationReasonText, publicationReasonsText, publicationApiErrorText } from "./publication-messages";
 
 type Item = {
   id: string; content_version_id: string; group_id?: string; title: string; language_code: string;
@@ -49,68 +50,6 @@ const tabs = [["queue", "발행 대기"], ["review", "검토 필요"], ["publish
 const originLabels = { google_trends: "Google Trends", scheduled: "Codex 예약", manual: "수동 작성", unknown: "출처 미확인" } as const;
 const languageLabel = (code: string) => ({ko:"한국어",en:"영어",ja:"일본어","zh-CN":"중국어 간체",de:"독일어","pt-BR":"브라질 포르투갈어",vi:"베트남어"}[code] ?? code);
 const statusLabel = (status: string) => ({review_needed:"검토 필요",queueable:"발행 자격 충족 · Job 없음",queued:"Worker 처리 대기",auto_paused:"자동 발행 중지로 보류",manual_action_required:"수동 요청 확인 필요 · 실행 차단",draft_saved:"Blogger 비공개 초안 저장 완료",publishing:"게시 중",published:"게시 완료",quality_held:"품질 보류",publication_blocked:"게시 차단",failed:"실패",uncertain:"결과 확인 필요",auto_publication_failed:"자동발행실패"}[status] ?? status);
-const reasonLabel = (reason: string) => ({
-  quality_evaluation_missing:"품질 검사 기록 없음", quality_not_passed:"품질 검사 통과 필요",
-  editorial_source_rights_and_publication_review_required:"근거·권리·승인 확인 필요",
-  automatic_publication_policy_inactive:"자동 발행 정책 비활성",
-  remote_duplicate_found:"같은 Blogger 게시물 확인됨", remote_duplicate_check_unknown:"중복 여부 확인 필요",
-  not_a_scheduled_export:"예약 Export 원고가 아님", scheduled_sanitized_revision_required:"원고 본문 보정 필요",
-  no_supported_body_after_sanitization:"검증된 본문을 구성할 수 없음", scheduled_origin_target_mismatch:"예약 작업의 대상 블로그와 다름",
-  blog_or_oauth_not_verified:"Blogger 연결 또는 OAuth 확인 필요", scheduled_language_blog_mismatch:"원고 언어와 Blogger 언어가 다름",
-  same_event_already_queued_or_published:"같은 사건이 이미 대기 또는 게시됨", scheduled_import_not_found:"예약 원고 Import 기록 없음",
-  source_evidence_missing:"출처 근거 확인 필요", claim_evidence_mismatch:"주장과 근거 연결 확인 필요",
-  scheduled_version_hash_invalid:"원고 버전 해시 확인 필요", claims_or_sources_missing:"주장 또는 출처 자료 부족",
-  source_live_verification_missing:"출처 원문 확인 필요", source_live_verification_mismatch:"출처 원문과 등록 정보 불일치",
-  source_evidence_spans_missing:"출처 근거 구간 부족", claim_schema_invalid:"주장 근거 형식 오류",
-  claim_evidence_incomplete:"주장별 근거 연결 미완료", claim_span_not_found_in_live_source_evidence:"주장 근거가 확인된 원문에 없음",
-  claim_contains_unsupported_number_or_unit:"검증되지 않은 수치 또는 단위 포함", independent_corroboration_missing:"독립 교차 확인 필요",
-  semantic_claim_review_required:"핵심 주장 의미 확인 필요", source_rights_not_machine_verified:"출처 이용 권리 확인 필요",
-  uncited_paragraph:"출처 연결이 없는 본문 문단", source_has_unverified_claim:"출처에서 확인되지 않은 주장 포함",
-  source_excerpt_copy_removed:"원문과 유사한 문장을 제외하고 보정 필요", embedded_image_removed:"이미지 제외 후 확인 필요",
-  direct_quote_removed:"직접 인용 제외 후 확인 필요",
-  machine_quality_not_passed:"기계 품질 검사를 통과하지 못했습니다. 품질 평가를 다시 확인하세요.",
-  reviewed_source_missing:"검토된 출처가 없습니다. 출처 원문과 신뢰성을 확인하세요.",
-  evidence_fact_verification_missing:"주장과 연결된 검증 근거가 부족합니다.",
-  research_package_not_reviewed:"조사 자료 검토가 완료되지 않았습니다.",
-  source_rights_review_missing:"출처 이용 권리 검토가 완료되지 않았습니다.",
-  seo_check_not_passed:"SEO 검사가 통과되지 않았습니다.",
-  sanitized_blogger_html_missing:"안전하게 정제된 Blogger 본문이 없습니다.",
-  human_review_pending:"사람의 편집 검토가 완료되지 않았습니다.",
-  publication_approval_missing_or_stale:"현재 원고 버전에 대한 발행 승인이 없습니다.",
-  publish_ready_disabled:"현재 원고 버전이 공개 발행 적격 상태가 아닙니다.",
-  publication_policy_inactive:"대상 Blogger의 발행 정책이 비활성 상태입니다.",
-  blogger_api_restricted_manual_only:"운영 정책에서 수동 Blogger 발행이 현재 제한되어 있습니다.",
-  publication_modes_unavailable:"발행 운영 설정을 확인할 수 없습니다.",
-  publication_emergency_stop_active:"긴급 정지가 켜져 있어 발행할 수 없습니다.",
-  blogger_zero_cost_policy_required:"Blogger 쓰기 비용·정책 승인이 확인되지 않았습니다.",
-  blogger_write_oauth_not_verified:"Blogger 쓰기 OAuth 권한을 확인할 수 없습니다.",
-  write_oauth_not_mapped_to_blog:"연결된 Blogger 쓰기 OAuth가 이 블로그에 매핑되지 않았습니다.",
-  blog_connection_unverified:"대상 Blogger 연결 검증이 필요합니다.",
-  target_uses_auto_mode:"대상 블로그가 수동 발행 모드가 아닙니다.",
-  registered_blog_unavailable:"등록된 대상 Blogger를 찾을 수 없습니다.",
-  content_or_blog_not_found:"원고 버전 또는 대상 Blogger를 찾을 수 없습니다.",
-  language_inactive:"원고 언어가 비활성 상태입니다.",
-  blog_inactive:"대상 Blogger가 비활성 상태입니다.",
-  blog_language_mismatch:"원고 언어와 Blogger 언어 매핑이 다릅니다.",
-  stale_content_version:"최신 원고 버전이 아닙니다. 목록을 새로고침하세요.",
-  manual_live_job_already_exists:"같은 버전의 수동 발행 Job이 이미 있습니다.",
-  remote_publication_already_recorded:"같은 원고의 게시 기록이 이미 있습니다.",
-  manuscript_discarded:"폐기된 원고는 발행할 수 없습니다.",
-  content_import_link_required:"원고와 Research Import 연결을 확인할 수 없습니다.",
-  stale_import_version:"Research Import의 최신 버전과 일치하지 않습니다.",
-  publication_title_missing:"게시 제목이 없습니다.",
-  publication_body_missing:"게시 본문이 없습니다.",
-  sanitized_blogger_html_unavailable:"안전한 Blogger 본문을 만들 수 없습니다.",
-  blogger_labels_invalid:"Blogger Labels 형식이 올바르지 않습니다.",
-  daily_publication_limit:"오늘 발행 한도 도달", publication_policy_missing:"발행 대상 정책 없음",
-  scheduled_auto_policy_not_active_for_blog:"대상 블로그의 예약 Auto 범위 밖",
-  blog_oauth_mapping_changed:"Blogger 연결이 변경됨",
-  separate_public_publish_operations_approval_required:"실제 Blogger 쓰기 운영 승인 필요",
-  global_emergency_stop_or_policy_missing:"긴급 정지 또는 운영 정책 확인 필요",
-  published_readback_mismatch:"게시 후 Blogger 확인 불일치", published_record_conflict:"게시 기록 충돌",
-  blogger_write_scope_required:"Blogger 쓰기 권한 없음", invalid_grant:"Google 인증 갱신 필요",
-  transport_error:"Blogger 연결 오류", timeout:"Blogger 응답 시간 초과",
-}[reason] ?? reason.replaceAll("_", " "));
 const kst = (value?: string | null) => value ? new Intl.DateTimeFormat("ko-KR", { timeZone:"Asia/Seoul", dateStyle:"medium", timeStyle:"short" }).format(new Date(value)) + " KST" : "기록 없음";
 
 export default function PublicationManager({ initial,initialFilters={} }: { initial: PublicationData;initialFilters?:Record<string,string> }) {
@@ -150,7 +89,7 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
             if(job.state==="published"&&job.remote_status==="LIVE"&&job.remote_post_id&&job.remote_url){setNotice(`Blogger에 공개 게시가 완료되었습니다. postId ${job.remote_post_id} · ${job.remote_url}`);setPendingManualJobId(null);setMonitorRefresh(value=>value+1);return;}
             if(job.state==="draft_saved"&&job.remote_status==="DRAFT"&&job.remote_post_id){setNotice(`Blogger 비공개 초안으로 저장되었습니다. postId ${job.remote_post_id}`);setPendingManualJobId(null);setMonitorRefresh(value=>value+1);return;}
             if(["failed","auto_paused","manual_action_required","uncertain"].includes(job.state??"")){
-              const why=job.failure_reason?reasonLabel(job.failure_reason):"Job 관리에서 상세 상태를 확인하세요.";
+              const why=job.failure_reason?publicationReasonText(job.failure_reason):"Job 관리에서 상세 상태를 확인하세요.";
               setNotice(`${job.state==="failed"?"Blogger 게시에 실패했습니다.":"발행 요청이 보류되었습니다."} ${why} (Job ${pendingManualJobId})`);setPendingManualJobId(null);setMonitorRefresh(value=>value+1);return;
             }
           }
@@ -214,15 +153,15 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
       const previewUrl=`/api/publications/scheduled-auto-first-post?import_id=${encodeURIComponent(item.import_id)}`;
       const previewResponse=await fetch(previewUrl,{cache:"no-store"});
       const preview=await previewResponse.json().catch(()=>({})) as {targets?:Array<{id?:string;manual_publication?:ManualPreview}>;detail?:string;error?:string;code?:string};
-      if(!previewResponse.ok)throw new Error(preview.detail??preview.error??`최신 발행 조건을 확인하지 못했습니다 (HTTP ${previewResponse.status}${preview.code?`, ${preview.code}`:""}).`);
+      if(!previewResponse.ok)throw new Error(preview.detail?publicationApiErrorText(preview.detail):preview.error??`최신 발행 조건을 확인하지 못했습니다 (HTTP ${previewResponse.status}${preview.code?`, ${preview.code}`:""}).`);
       const target=preview.targets?.find(candidate=>candidate.id===item.blog_id);
       const manual=target?.manual_publication;
       if(!target)throw new Error("해당 언어의 활성 Blogger 목록에서 대상 블로그를 찾지 못했습니다. Blogger 언어 매핑을 확인하세요.");
       if(!manual)throw new Error("서버가 대상 Blogger의 수동 발행 상태를 반환하지 않았습니다. API와 Blogger 연결 상태를 확인하세요.");
       if(manual.content_version_id!==item.content_version_id)throw new Error("목록의 원고 버전이 최신 버전과 다릅니다. 목록을 새로고침한 뒤 다시 요청하세요.");
       if(manual.eligible!==true){
-        const reasons=(manual.blockers??[]).map(reasonLabel);
-        throw new Error(`현재 발행할 수 없습니다${reasons.length?`: ${reasons.join(" · ")}`:"."}`);
+        const reasons=manual.blockers??[];
+        throw new Error(`\ud604\uc7ac \ubc1c\ud589\ud560 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4. ${publicationReasonsText(reasons)||"\ubc1c\ud589 \uac00\ub2a5 \uc0c1\ud0dc\ub97c \ud655\uc778\ud558\uc9c0 \ubabb\ud588\uc2b5\ub2c8\ub2e4. \uc6d0\uace0\ub97c \uc0c8\ub85c\uace0\uce68\ud574 \ub2e4\uc2dc \ud655\uc778\ud558\uc138\uc694."}`);
       }
       if(!manual.title_sha256||!manual.body_sha256||!manual.html_sha256)throw new Error("최신 원고 해시가 없어 정확한 버전을 발행 요청에 연결할 수 없습니다.");
       const versionKey=item.content_version_id.replaceAll("-","");
@@ -234,8 +173,8 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
         idempotency_key:`manual-publish-${versionKey}-${manual.body_sha256.slice(0,24)}`,
       })});
       const result=await response.json().catch(()=>({})) as {id?:string;recorded?:boolean;duplicate?:boolean;state?:string;reasons?:string[];detail?:string;code?:string;request_id?:string;followup_count?:number};
-      if(!response.ok)throw new Error(result.detail??`발행 요청에 실패했습니다 (HTTP ${response.status}${result.code?`, ${result.code}`:""}${result.request_id?`, 요청 ID ${result.request_id}`:""}).`);
-      if(result.recorded===false)throw new Error(`발행이 차단됐습니다. ${(result.reasons??[]).map(reasonLabel).join(" · ")||"필수 조건을 충족하지 못했습니다."}`);
+      if(!response.ok)throw new Error(result.detail?publicationApiErrorText(result.detail):`발행 요청에 실패했습니다 (HTTP ${response.status}${result.code?`, ${result.code}`:""}${result.request_id?`, 요청 ID ${result.request_id}`:""}).`);
+      if(result.recorded===false)throw new Error(`\ubc1c\ud589\uc774 \ucc28\ub2e8\ub410\uc2b5\ub2c8\ub2e4. ${publicationReasonsText(result.reasons??[])||"\ud544\uc218 \uc870\uac74\uc744 \ucda9\uc871\ud558\uc9c0 \ubabb\ud588\uc2b5\ub2c8\ub2e4."}`);
       setNotice(result.duplicate?`기존 발행 요청을 확인했습니다. Job ${result.id??""} · 중복 게시 요청은 생성하지 않았습니다.`:`발행 큐에 등록했습니다. Job ${result.id??""} · 보완사항 ${result.followup_count??0}건 · 실제 Blogger 게시 결과는 Job 관리에서 확인하세요.`);
       if(result.id)setPendingManualJobId(result.id);
       setSelection([]);setMonitorRefresh(value=>value+1);await refresh(1,view);
@@ -254,7 +193,7 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
         body:JSON.stringify({actor:discardActor.trim(),reason:discardReason.trim(),targets:discardTargets.map(item=>({content_version_id:item.content_version_id,blog_id:item.blog_id,previous_view:restoring?(item.previous_view??"review"):view}))}),
       });
       const result=await response.json() as {success_count?:number;failure_count?:number;failures?:{reason:string}[];detail?:string};
-      if(!response.ok)throw new Error(result.detail??`요청 실패 (HTTP ${response.status})`);
+      if(!response.ok)throw new Error(result.detail?publicationApiErrorText(result.detail):`요청 실패 (HTTP ${response.status})`);
       const succeeded=result.success_count??0;const failed=result.failure_count??0;
       setNotice(`${restoring?"복원":"폐기"} ${succeeded}건 완료${failed?` · ${failed}건 실패 (${(result.failures??[]).map(item=>item.reason).join(", ")})`:""}`);
       setDiscardTargets([]);setSelection([]);setMonitorRefresh(value=>value+1);
@@ -289,7 +228,7 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
     setScheduledBusy(true);setError("");setNotice("");
     try{
       const response=await fetch("/api/publications/scheduled-auto-policy",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,blog_ids:scope,daily_limit:100,actor_label:scheduledActor,reason:action==="enable"?"Authenticated operator explicitly enabled scheduled-export-only publication.":"Authenticated operator disabled scheduled-export-only publication.",idempotency_key:`scheduled-auto-${action}-${crypto.randomUUID()}`,confirmation})});
-      const result=await response.json();if(!response.ok)throw new Error(String(result.detail??"예약 원고 자동 발행 설정을 저장하지 못했습니다."));
+      const result=await response.json();if(!response.ok)throw new Error(String(result.detail?publicationApiErrorText(result.detail):"예약 원고 자동 발행 설정을 저장하지 못했습니다."));
       setNotice(action==="enable"?"예약 발행 범위와 일일 상한을 저장했습니다. 각 작업은 공통 Blogger 발행 정책과 중복 검사를 거칩니다.":"예약 원고 자동 발행을 중지했습니다.");
       await refresh();
     }catch(cause){setError(cause instanceof Error?cause.message:"예약 원고 정책 변경 실패");}
@@ -300,7 +239,7 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
     setScheduledConnectionBusy(true);setError("");setNotice("");
     try{
       const response=await fetch("/api/publications/scheduled-auto/verify-connections",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({blog_ids:scheduledBlogs})});
-      const result=await response.json();if(!response.ok)throw new Error(String(result.detail??"Blogger 연결을 확인하지 못했습니다."));
+      const result=await response.json();if(!response.ok)throw new Error(String(result.detail?publicationApiErrorText(result.detail):"Blogger 연결을 확인하지 못했습니다."));
       setNotice(result.all_verified?"선택한 블로그의 Blogger 읽기 연결과 ID를 확인했습니다. 이 확인은 글을 작성하거나 공개하지 않습니다.":"일부 Blogger 연결을 확인하지 못했습니다. 상세 상태를 점검한 뒤 다시 시도하세요.");
       await refresh();
     }catch(cause){setError(cause instanceof Error?cause.message:"Blogger 연결 확인 실패");}
@@ -318,7 +257,7 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
     if(selectedMode==="auto"&&!window.confirm("Auto 정책 설정을 저장합니다. 실제 공개 발행은 별도 운영 게이트가 열리기 전까지 차단됩니다. 저장할까요?"))return;
     setEmergencyBusy(true);setNotice("");setError("");
     try{const response=await fetch("/api/publications/mode-settings",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({scope_type:scopeType,scope_key:scopeKey,configured_mode:"authoring_only",daily_auto_limit:dailyLimit,minimum_interval_minutes:minimumInterval,allowed_start_hour:startHour,allowed_end_hour:endHour,timezone:"Asia/Seoul",allowed_categories:categories.split(",").map(x=>x.trim()).filter(Boolean),excluded_topics:excludedTopics.split(",").map(x=>x.trim()).filter(Boolean),max_source_age_hours:maxAge,retry_limit:retryLimit})});
-      const result=await response.json();if(!response.ok)throw new Error(String(result.detail??"설정 저장에 실패했습니다."));
+      const result=await response.json();if(!response.ok)throw new Error(String(result.detail?publicationApiErrorText(result.detail):"설정 저장에 실패했습니다."));
       setNotice("설정을 저장했습니다. Blogger 실제 쓰기 및 Auto 게시 활성화는 별도 게이트에 의해 계속 차단됩니다.");
       const params=new URLSearchParams({view,q:query,language_code:language,blog_id:blog,page:String(page),page_size:"25"});const refreshResponse=await fetch(`/api/publications?${params}`,{cache:"no-store"});if(refreshResponse.ok)setData(await refreshResponse.json() as PublicationData);
     }catch(cause){setError(cause instanceof Error?cause.message:"설정 저장 실패");}finally{setEmergencyBusy(false);}
@@ -429,7 +368,7 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
             {item.published_title && <small>게시 당시 제목: {item.published_title} · 게시 버전 {item.published_content_version_id?.slice(0,8)} · 현재 Blogger 제목은 별도 원격 확인이 필요합니다.</small>}</td>
            <td className="publication-desktop-origin"><span className={`publication-origin publication-origin-${item.origin_kind??"unknown"}`}>{originLabels[item.origin_kind??"unknown"]}</span></td><td>{languageLabel(item.language_code)}</td><td>{item.blog_name || item.url}</td>
           <td>{item.topic || item.source_names || "주제·출처 정보 없음"}</td>
-          <td>{statusLabel(item.status)}{item.failure_reason_code && <small>실패 단계 {item.failure_stage ?? "미확인"} · {reasonLabel(item.failure_reason_code)}</small>}{item.retry_count !== undefined && <small>재시도 {item.retry_count}회</small>}{item.eligibility_reasons?.length ? <small>{item.eligibility_reasons.slice(0,2).map(reasonLabel).join(" · ")}</small> : null}{item.simulation_only && <small>모의 작업</small>}</td>
+          <td>{statusLabel(item.status)}{item.failure_reason_code && <small>실패 단계 {item.failure_stage ?? "미확인"} · {publicationReasonText(item.failure_reason_code)}</small>}{item.retry_count !== undefined && <small>재시도 {item.retry_count}회</small>}{item.eligibility_reasons?.length ? <small>{publicationReasonsText(item.eligibility_reasons)}</small> : null}{item.simulation_only && <small>모의 작업</small>}</td>
           <td>{kst(item.next_publish_at || item.created_at)}</td>
           {view==="published"&&<td>{item.remote_url&&item.remote_status==="LIVE"&&item.remote_verified_at?<a href={item.remote_url} target="_blank" rel="noreferrer">게시물 열기</a>:"원격 게시 확인 없음"}{item.remote_post_id&&<small>postId {item.remote_post_id}</small>}</td>}
             <td>{view==="published"?"이력 보존":<div className="publication-row-actions">{view!=="discarded"&&item.import_id&&(item.manual_publication_available||view==="auto_failure"||view==="review"||view==="held")&&<button type="button" className="secondary-button" disabled={quickPublishLoading||quickPublishBusy} onClick={()=>void openQuickPublish(item)}>{quickPublishLoading?"발행 요청 중…":"수동 발행"}</button>}<button type="button" className="secondary-button" onClick={()=>openDiscard([item])}>{view==="discarded"?"복원":"폐기"}</button></div>}</td>
