@@ -27,6 +27,17 @@ TARGET_ID_HINTS = {
         "matches; if it changes, verify the current registered mapping before running."
     ),
 }
+UNRESOLVED_TOPIC_HINTS = {
+    "automation-16": (
+        "The most recent automation-16 preflight (2026-11-04 20:20 KST) passed local duplicate "
+        "checks for the still-unfinished topic `Brazil fiscal framework and inflation-interest "
+        "rate outlook`, with event-group ID `br-economy-2026-11-04`; it created no research "
+        "package, manuscript or Import. When continuing that exact unresolved topic, pass that "
+        "topic and event-group ID unchanged to the research-stage command, then verify it with "
+        "current sources before drafting. Do not replace the ID with a new slot/date ID. If a "
+        "new, distinct topic is explicitly selected, give it its own stable issue-based ID."
+    ),
+}
 PRIORITY = fr"""{PRIORITY_MARKER} (highest-priority execution order):
 This turn must execute the current Automation, not only diagnose it. Automation memory is optional. If CODEX_HOME is unset, look only at `$env:USERPROFILE/.codex/automations/<this Automation ID>/memory.md` when it exists; a missing variable or file is never a reason to stop. Keep pre-work short and do not reread long policy documents.
 
@@ -187,6 +198,9 @@ def main() -> int:
         target_hint = TARGET_ID_HINTS.get(str(before.get("id")))
         if target_hint and target_hint not in updated_prompt:
             updated_prompt = updated_prompt.rstrip() + "\n\n" + target_hint
+        topic_hint = UNRESOLVED_TOPIC_HINTS.get(str(before.get("id")))
+        if topic_hint and topic_hint not in updated_prompt:
+            updated_prompt = updated_prompt.rstrip() + "\n\n" + topic_hint
         if updated_prompt == prompt:
             continue
         after_raw = _replace_prompt(raw.decode("utf-8"), updated_prompt, timestamp).encode("utf-8")

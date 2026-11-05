@@ -170,3 +170,19 @@ def test_japan_close_prompt_uses_verified_numeric_blog_mapping(tmp_path) -> None
     assert "automation-2 (Japan market close, ja/JP)" in after["prompt"]
     assert "7562596540375659150" in after["prompt"]
     assert "replace every placeholder before running" in after["prompt"]
+
+
+def test_brazil_economy_prompt_reuses_exact_unfinished_topic_and_event_id(tmp_path) -> None:
+    root = tmp_path / "automations"
+    active = root / "automation-16"
+    _write_automation(active, "automation-16", "ACTIVE", str(ROOT), "Brazil economy prompt")
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "--apply", "--automations-root", str(root),
+         "--backup-root", str(tmp_path / "backups")],
+        check=True, capture_output=True, text=True,
+    )
+    after = tomllib.loads((active / "automation.toml").read_text(encoding="utf-8"))
+    assert json.loads(result.stdout)["active_project_automation_count"] == 1
+    assert "Brazil fiscal framework and inflation-interest rate outlook" in after["prompt"]
+    assert "br-economy-2026-11-04" in after["prompt"]
+    assert "created no research package, manuscript or Import" in after["prompt"]
