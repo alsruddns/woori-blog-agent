@@ -17,6 +17,7 @@ from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from uuid import uuid4
 
 import psycopg
@@ -172,6 +173,19 @@ def _fresh_publication_date(value: str, *, now: datetime) -> str | None:
     return instant.isoformat()
 
 
+def _research_url_key(value: str) -> str:
+    """Match a source URL to the opened page while dropping known tracking parameters."""
+    parsed = urlsplit(value)
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+        return ""
+    query = [
+        (key, item) for key, item in parse_qsl(parsed.query, keep_blank_values=True)
+        if not key.casefold().startswith("utm_")
+        and key.casefold() not in {"trk", "fbclid", "gclid", "mc_cid", "mc_eid"}
+    ]
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), urlencode(query), ""))
+
+
 def _parse_feed(raw: bytes, *, now: datetime) -> list[dict[str, Any]]:
     if b"<!DOCTYPE" in raw.upper() or b"<!ENTITY" in raw.upper():
         raise ValueError("scheduled_research_unsafe_feed")
@@ -302,8 +316,8 @@ def _gather_with_codex_search(
     """Use the installed ChatGPT-auth Codex CLI search tool and retain its evidence.
 
     Search results are matched back to the CLI's emitted web_search result set.
-    The excerpt is kept as a search-result excerpt, not represented as a verified
-    full-page quotation or semantic fact review.
+    A source is eligible only when that exact result URL was also opened by the
+    CLI and the quoted evidence matches the returned page/search excerpt.
     """
     from . import codex_runner
 
@@ -323,9 +337,11 @@ def _gather_with_codex_search(
     prompt = (
         "Research this article topic using live web search: " + topic.strip() + "\n"
         "Category: " + category + ". Prefer current primary sources, then reputable news sources. "
-        "Return at most three sources actually present in your live web search results. "
-        "For each, give the exact result title, publisher, canonical result URL, publication date as ISO-8601, "
-        "event date if stated, and a 30-300 character evidence excerpt copied exactly from that search result's snippet. "
+        "Open the source pages before selecting them. Return at most three sources that you actually opened "
+        "and that are present in your live web search results. For each, give the exact result title, publisher, "
+        "canonical result URL, publication date as ISO-8601, event date if stated, and a 30-300 character "
+        "evidence excerpt copied exactly from the opened source page. Do not select a search result whose "
+        "page you did not open, and do not claim that the excerpt was independently verified. "
         "Do not invent a source, date, URL, or excerpt. Exclude results whose publication date is unclear or older than 14 days. "
         "If no current supported source exists, return an empty sources array. This is evidence collection only; "
         "do not draft an article and do not claim semantic or rights review."
@@ -337,7 +353,7 @@ def _gather_with_codex_search(
         lambda *_args: None,
         lambda: False,
         timeout=180,
-        require_opened_sources=False,
+        require_opened_sources=True,
         require_web_research=True,
         enable_search=True,
     )
@@ -345,14 +361,24 @@ def _gather_with_codex_search(
     for result in evidence.get("searched_sources", []):
         url = str(result.get("url", ""))
         if url:
-            observed[url] = result
+            observed[_research_url_key(url)] = result
     sources: list[dict[str, Any]] = []
     failures: list[dict[str, str]] = []
+    opened_urls = {
+        _research_url_key(url): str(opened_at)
+        for url, opened_at in (evidence.get("opened_urls") or {}).items()
+        if isinstance(url, str) and isinstance(opened_at, str)
+    }
     for candidate in data.get("sources", []):
         url = str(candidate.get("url", "")).rstrip("/")
-        found = observed.get(url)
+        source_key = _research_url_key(url)
+        found = observed.get(source_key)
         if not found:
             failures.append({"provider": "codex_cli_chatgpt_search", "reason": "source_not_in_search_results"})
+            continue
+        opened_at = opened_urls.get(source_key)
+        if not opened_at:
+            failures.append({"provider": "codex_cli_chatgpt_search", "reason": "source_page_not_opened"})
             continue
         if " ".join(str(candidate.get("title", "")).split()).casefold() != " ".join(str(found.get("title", "")).split()).casefold():
             failures.append({"provider": "codex_cli_chatgpt_search", "reason": "source_title_not_in_search_results"})
@@ -361,6 +387,9 @@ def _gather_with_codex_search(
         snippet = " ".join(str(found.get("snippet", "")).split())
         if len(snippet) < 30:
             failures.append({"provider": "codex_cli_chatgpt_search", "reason": "search_result_evidence_too_short"})
+            continue
+        if len(excerpt) < 30:
+            failures.append({"provider": "codex_cli_chatgpt_search", "reason": "opened_source_evidence_too_short"})
             continue
         published = _fresh_publication_date(str(candidate.get("published_at", "")), now=captured_at)
         if published is None:
@@ -373,11 +402,12 @@ def _gather_with_codex_search(
             "published_at": published,
             "event_date": candidate.get("event_date"),
             "collected_at": captured_at.isoformat(),
-            "evidence_excerpt": snippet[:700],
-            "model_excerpt_matches_search_snippet": bool(excerpt and excerpt.casefold() in snippet.casefold()),
+            "evidence_excerpt": excerpt[:700],
+            "model_excerpt_matches_search_snippet": excerpt.casefold() in snippet.casefold(),
             "search_result_snippet": snippet[:1200],
             "search_result_domain": str(found.get("domain", ""))[:160],
-            "source_evidence_method": "codex_cli_chatgpt_web_search_result",
+            "source_opened_at": opened_at,
+            "source_evidence_method": "codex_cli_chatgpt_opened_page_model_excerpt",
             "source_date_basis": "codex_cli_reported_not_independently_verified",
             "publisher_basis": "codex_cli_reported",
             "semantic_review": "required",
@@ -401,8 +431,9 @@ def _gather_with_codex_search(
         "collection_failures": failures,
         "limitations": [
             "Source metadata and date are reported by the authenticated Codex search session.",
-            "The retained evidence excerpt must match a returned web-search result snippet.",
-            "Search-result evidence does not complete semantic fact, rights, or publication review.",
+            "The authenticated Codex research session reports opening each retained URL; returned excerpts are not independently verified here.",
+            "Research Import must retrieve each source page and verify claim excerpts before publication eligibility.",
+            "Source opening does not complete semantic fact, rights, or publication review.",
         ],
     }
 

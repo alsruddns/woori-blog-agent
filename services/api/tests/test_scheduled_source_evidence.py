@@ -3,6 +3,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 import httpx
+import pytest
 import woori.scheduled_source_evidence as source_evidence
 from woori import external_policy
 
@@ -24,6 +25,42 @@ def test_reviewed_fed_statement_catalog_is_resource_bound_not_import_id_bound() 
     assert source_evidence._catalog_entry(url)['provider'] == 'federal_reserve'
     assert source_evidence._catalog_entry(url + '?redirect=1') is None
     assert source_evidence._catalog_entry(url.replace('www.federalreserve.gov','evil.example')) is None
+
+
+@pytest.mark.parametrize(
+    ("url", "provider"),
+    [
+        ("https://www.bls.gov/news.release/archives/cpi_10142026.htm", "bls_public_rss"),
+        ("https://www.whitehouse.gov/briefings-statements/2026/11/a-public-notice/",
+         "whitehouse_public_news"),
+        ("https://www.nist.gov/blogs/cybersecurity-insights/example-post", "nist_public_rss"),
+    ],
+)
+def test_existing_zero_cost_provider_pages_can_be_captured_for_scheduled_claim_checks(url, provider):
+    entry = source_evidence._catalog_entry(url)
+    assert entry["provider"] == provider
+    assert entry["source_path"] == source_evidence.urlsplit(url).path
+    assert external_policy.PROVIDERS[provider]["zero_cost_reviewed"] is True
+    assert source_evidence._catalog_entry(url + "?next=https://evil.example") is None
+
+
+def test_destatis_release_catalog_is_exact_and_uses_the_reviewed_free_provider() -> None:
+    url = "https://www.destatis.de/EN/Press/2026/10/PE26_382_611.html"
+    entry = source_evidence._catalog_entry(url)
+    assert entry["provider"] == "destatis_public_statistics"
+    assert entry["source_path"] == "/EN/Press/2026/10/PE26_382_611.html"
+    provider = external_policy.PROVIDERS[entry["provider"]]
+    assert provider["hosts"] == {"www.destatis.de"}
+    assert provider["methods"] == {"GET"}
+    assert provider["operations"] == {"source_collection"}
+    assert provider["zero_cost_reviewed"] is True
+    for changed in (
+        url + "?redirect=1",
+        url.replace("www.destatis.de", "evil.example"),
+        "https://www.destatis.de/EN/Press/index.html",
+        "https://www.destatis.de/EN/Press/2026/10/PD26_382_611.html",
+    ):
+        assert source_evidence._catalog_entry(changed) is None
 
 
 def test_ons_source_catalog_is_exact_and_reuse_terms_are_host_bound() -> None:
@@ -195,3 +232,29 @@ def test_external_policy_allows_only_reviewed_ons_source_and_terms_paths(monkeyp
             pass
         else:
             raise AssertionError("unreviewed ONS path or query must be blocked")
+
+
+def test_external_policy_allows_only_dated_destatis_press_release_paths(monkeypatch) -> None:
+    monkeypatch.setattr(external_policy, "billing_credential_names", list)
+    monkeypatch.setattr(external_policy, "_audit", lambda *args, **kwargs: None)
+    for url in (
+        "https://www.destatis.de/EN/Press/2026/10/PE26_382_611.html",
+        "https://www.destatis.de/DE/Presse/Pressemitteilungen/2026/10/PD26_382_611.html",
+    ):
+        external_policy._authorize(
+            "destatis_public_statistics", "source_collection", httpx.Request("GET", url)
+        )
+    for url in (
+        "https://www.destatis.de/EN/Press/2026/10/PE26_382_611.html?next=https://example.org",
+        "https://www.destatis.de/EN/Press/2026/10/PE26_382_611.pdf",
+        "https://other.destatis.de/EN/Press/2026/10/PE26_382_611.html",
+        "http://www.destatis.de/EN/Press/2026/10/PE26_382_611.html",
+    ):
+        try:
+            external_policy._authorize(
+                "destatis_public_statistics", "source_collection", httpx.Request("GET", url)
+            )
+        except external_policy.ExternalCallBlocked:
+            pass
+        else:
+            raise AssertionError("unreviewed Destatis destination must be blocked")

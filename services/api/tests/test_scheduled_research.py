@@ -140,14 +140,16 @@ def test_codex_search_package_requires_real_search_url_exact_excerpt_and_fresh_d
 
     def fake_execute(*_args, **kwargs):
         assert kwargs["require_web_research"] is True
-        assert kwargs["require_opened_sources"] is False
+        assert kwargs["require_opened_sources"] is True
         return {
             "sources": [{
                 "title": search_result["title"], "publisher": "Example Agency",
                 "url": search_result["url"], "published_at": "2026-11-04",
                 "event_date": "2026-11-04", "evidence_excerpt": excerpt,
             }]
-        }, {"model": "gpt-6-luna", "web_search_count": 1, "execution_id": "cli-run-1", "searched_sources": [search_result]}
+        }, {"model": "gpt-6-luna", "web_search_count": 1, "execution_id": "cli-run-1",
+            "opened_urls": {search_result["url"] + "?trk=article-ssr": "2026-11-05T00:59:00+00:00"},
+            "searched_sources": [search_result]}
 
     monkeypatch.setattr(codex_runner, "execute", fake_execute)
     package = scheduled_research.gather_with_codex_search(
@@ -157,8 +159,10 @@ def test_codex_search_package_requires_real_search_url_exact_excerpt_and_fresh_d
     assert package["research_engine"] == "codex_cli_chatgpt_search"
     assert package["sources"][0]["url"] == search_result["url"]
     assert package["sources"][0]["published_at"] == "2026-11-04"
-    assert package["sources"][0]["evidence_excerpt"] == search_result["snippet"]
+    assert package["sources"][0]["evidence_excerpt"] == excerpt
     assert package["sources"][0]["model_excerpt_matches_search_snippet"] is True
+    assert package["sources"][0]["source_opened_at"] == "2026-11-05T00:59:00+00:00"
+    assert package["sources"][0]["source_evidence_method"] == "codex_cli_chatgpt_opened_page_model_excerpt"
 
 
 def test_codex_search_package_rejects_unobserved_urls_and_nonmatching_excerpt(monkeypatch):
@@ -167,7 +171,8 @@ def test_codex_search_package_rejects_unobserved_urls_and_nonmatching_excerpt(mo
     monkeypatch.setattr(codex_runner, "execute", lambda *_args, **_kwargs: (
         {"sources": [{"title": "Agency report", "publisher": "Agency", "url": "https://fake.gov/x",
                       "published_at": "2026-11-04", "evidence_excerpt": "A fabricated evidence excerpt with enough characters."}]},
-        {"model": "gpt-6-luna", "web_search_count": 1, "execution_id": "cli-run-2", "searched_sources": [
+        {"model": "gpt-6-luna", "web_search_count": 1, "execution_id": "cli-run-2",
+         "opened_urls": {}, "searched_sources": [
             {"url": "https://example.gov/report", "title": "Real", "domain": "example.gov", "snippet": "A real search snippet."}
         ]},
     ))
@@ -177,6 +182,36 @@ def test_codex_search_package_rejects_unobserved_urls_and_nonmatching_excerpt(mo
     assert package["status"] == "evidence_unavailable"
     assert package["failure_class"] == "source_validation_failed"
     assert {item["reason"] for item in package["collection_failures"]} == {"source_not_in_search_results"}
+
+
+def test_codex_search_package_requires_opened_source_and_marks_unverified_excerpt(monkeypatch):
+    from woori import codex_runner
+
+    url = "https://example.gov/report"
+    snippet = "The agency published the report on November 4 and described its findings."
+    result = {"title": "Agency report", "publisher": "Agency", "url": url,
+              "published_at": "2026-11-04", "event_date": None,
+              "evidence_excerpt": "The agency published the report on November 4 and described its findings."}
+    evidence = {"model": "gpt-6-luna", "web_search_count": 1, "execution_id": "cli-run-3",
+                "searched_sources": [{"url": url, "title": "Agency report", "domain": "example.gov",
+                                      "snippet": snippet}], "opened_urls": {}}
+    monkeypatch.setattr(codex_runner, "execute", lambda *_args, **_kwargs: ({"sources": [result]}, evidence))
+    package = scheduled_research.gather_with_codex_search(
+        "general", "agency report", occurrence_id=_occurrence(),
+        now=datetime(2026, 11, 5, 1, tzinfo=UTC),
+    )
+    assert package["status"] == "evidence_unavailable"
+    assert package["collection_failures"][0]["reason"] == "source_page_not_opened"
+
+    evidence["opened_urls"] = {url: "2026-11-05T00:59:00+00:00"}
+    result["evidence_excerpt"] = "The report contains findings about the agency."
+    package = scheduled_research.gather_with_codex_search(
+        "general", "agency report", occurrence_id=_occurrence(),
+        now=datetime(2026, 11, 5, 1, tzinfo=UTC),
+    )
+    assert package["status"] == "evidence_available"
+    assert package["sources"][0]["model_excerpt_matches_search_snippet"] is False
+    assert "not independently verified" in " ".join(package["limitations"])
 
 
 def test_scheduled_broker_writes_codex_sources_into_snapshot_package(monkeypatch, tmp_path):
@@ -200,6 +235,7 @@ def test_scheduled_broker_writes_codex_sources_into_snapshot_package(monkeypatch
     monkeypatch.setattr(codex_runner, "execute", lambda *_args, **_kwargs: (
         {"sources": [result]},
         {"model": "gpt-6-luna", "web_search_count": 1, "execution_id": "scheduled-cli-run",
+         "opened_urls": {result["url"]: "2026-11-05T00:59:00+00:00"},
          "searched_sources": [{"url": result["url"], "title": result["title"], "domain": "example.gov", "snippet": snippet}]},
     ))
     events = []
@@ -230,7 +266,7 @@ def test_scheduled_broker_writes_codex_sources_into_snapshot_package(monkeypatch
     assert snapshot["research_engine"] == "codex_cli_chatgpt_search"
     assert snapshot["sources"][0]["url"] == result["url"]
     assert snapshot["sources"][0]["published_at"] == "2026-11-04"
-    assert snapshot["sources"][0]["evidence_excerpt"] == snippet
+    assert snapshot["sources"][0]["evidence_excerpt"] == result["evidence_excerpt"]
     assert snapshot["sources"][0]["semantic_review"] == "required"
     assert events[0][1][0] == "research.scheduled_package.saved"
 
@@ -254,6 +290,7 @@ def test_manual_codex_search_package_is_bound_to_manual_run_id(monkeypatch):
         assert kwargs["require_web_research"] is True
         return {"sources": [result]}, {
             "model": "gpt-6-luna", "web_search_count": 1, "execution_id": "manual-search-1",
+            "opened_urls": {result["url"]: "2026-11-05T00:59:00+00:00"},
             "searched_sources": [{"url": result["url"], "title": result["title"],
                                   "domain": "example.gov", "snippet": snippet}],
         }
@@ -268,7 +305,7 @@ def test_manual_codex_search_package_is_bound_to_manual_run_id(monkeypatch):
     assert "occurrence_id" not in package
     assert package["status"] == "evidence_available"
     assert package["sources"][0]["url"] == result["url"]
-    assert package["sources"][0]["evidence_excerpt"] == snippet
+    assert package["sources"][0]["evidence_excerpt"] == result["evidence_excerpt"]
 
 
 def test_fixed_rss_fallback_supports_manual_run_identity(monkeypatch):

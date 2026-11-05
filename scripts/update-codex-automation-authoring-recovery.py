@@ -37,7 +37,7 @@ Use current evidence from the returned package. Never invent sources, dates, exc
 SEARCH_CONTRACT = f"""\n\n{SEARCH_MARKER} (mandatory live-research stage):
 The fixed research command is available in this repository. Do not wait for a browser search tool or report the CLI unavailable without running `scripts/automation-research-stage.py`. It invokes the official installed Codex CLI with `--search` using the existing ChatGPT login through the fixed isolated broker. No API key, metered API, paid credit, arbitrary HTTP client, alternate provider or guessed browser command is permitted.
 Select `politics` only for U.S. policy topics relevant to the White House feed, `economy` only for U.S. BLS/Federal Reserve topics, `technology` only for U.S. NIST cybersecurity topics, and `general` otherwise. The stage chooses `scripts/scheduled-research-broker.py` only for its resolver-confirmed scheduled trigger and `scripts/manual-research-broker.py` only for the exact official Desktop Run now trigger. It preserves the exact execution identity and the preflight's original remote/overall statuses.
-Continue in the SAME turn after `status=evidence_available`. Use the returned immutable Research Package, `preflight_json_path`, and actual `research_engine`. Require source URLs, dates and excerpts matched to actual search results. If the CLI reports an account usage limit, authentication, capacity or timeout failure, stop with its concrete reason; do not retry automatically, switch to RSS except where the existing broker explicitly returns an approved fallback, use an API key, purchase credits or disguise the failure. Package creation is not article creation, Import, review approval or publication. Manual Run now remains review-held and creates no Publishing Job or Blogger write. Preserve all IDs, schedules, topic, language, target and policy; never replay an old occurrence.
+Continue in the SAME turn after `status=evidence_available`. Use the returned immutable Research Package, `preflight_json_path`, and actual `research_engine`. Every selected source URL must have been opened by the CLI research session. The excerpt is a CLI-reported quote until the Import Worker retrieves the exact page and verifies it; do not label it independently verified before that check. Do not stop after research: finish the article envelope, validation, exclusive handoff and confirm Import Receipt. The Publication Worker separately evaluates eligible new scheduled Imports and may publish them under the active scoped policy; never create a Publishing Job or call Blogger from this Desktop task. If the CLI reports an account usage limit, authentication, capacity or timeout failure, stop with its concrete reason; do not retry automatically, switch to RSS except where the existing broker explicitly returns an approved fallback, use an API key, purchase credits or disguise the failure. Preserve all IDs, schedules, topic, language, target and policy; never replay an old occurrence.
 """
 
 
@@ -128,9 +128,18 @@ def main() -> int:
                 "Don't claim success without verifying files and Import receipt."
             )
             if old_priority_end < 0:
-                raise ValueError(f"automation_priority_boundary_missing:{path.parent.name}")
-            old_priority_end += len("Don't claim success without verifying files and Import receipt.")
-            updated_prompt = PRIORITY + updated_prompt[old_priority_end:].lstrip("\r\n")
+                # Newer prompt revisions may already have replaced the older
+                # fixed prose boundary. Use the next explicit contract marker
+                # so the authoring priority can still be refreshed safely.
+                contract_boundary = updated_prompt.find("\n\n" + MARKER)
+                if contract_boundary < 0:
+                    contract_boundary = updated_prompt.find("\n\n" + SEARCH_MARKER)
+                if contract_boundary < 0:
+                    raise ValueError(f"automation_priority_boundary_missing:{path.parent.name}")
+                updated_prompt = PRIORITY + updated_prompt[contract_boundary + 2 :]
+            else:
+                old_priority_end += len("Don't claim success without verifying files and Import receipt.")
+                updated_prompt = PRIORITY + updated_prompt[old_priority_end:].lstrip("\r\n")
         elif updated_prompt.startswith("P5-CODEX-139 RUN THROUGH THE AUTHORING HANDOFF"):
             p131_start = updated_prompt.find(PRIORITY_MARKER)
             if p131_start >= 0:

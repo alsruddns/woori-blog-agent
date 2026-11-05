@@ -198,9 +198,28 @@ def _claim_fact_check(claim: dict[str, Any], paragraphs: list[str]) -> tuple[lis
 
 
 def _catalog_entry(url: str) -> dict[str, str] | None:
-    if re.fullmatch(r'https://www\.federalreserve\.gov/newsevents/pressreleases/monetary[0-9]{8}a\.htm', url):
-        return {'provider': 'federal_reserve', 'source_host': 'www.federalreserve.gov',
-                'source_path': urlsplit(url).path, 'organization': 'Federal Reserve Board'}
+    reviewed_pages = (
+        (r'https://www\.federalreserve\.gov/newsevents/pressreleases/[a-z0-9]+\.htm',
+         'federal_reserve', 'www.federalreserve.gov', 'Federal Reserve Board'),
+        (r'https://www\.bls\.gov/(?:news\.release|opub)/[a-z0-9_./-]{1,220}',
+         'bls_public_rss', 'www.bls.gov', 'U.S. Bureau of Labor Statistics'),
+        ((r'https://www\.whitehouse\.gov/(?:releases|briefings-statements|presidential-actions)/'
+          r'20\d{2}/\d{2}/[a-z0-9][a-z0-9-]{1,180}/?'),
+         'whitehouse_public_news', 'www.whitehouse.gov', 'The White House'),
+        (r'https://www\.nist\.gov/blogs/cybersecurity-insights/[a-z0-9-]{1,180}/?',
+         'nist_public_rss', 'www.nist.gov', 'National Institute of Standards and Technology'),
+    )
+    for pattern, provider, host, organization in reviewed_pages:
+        if re.fullmatch(pattern, url):
+            return {'provider': provider, 'source_host': host,
+                    'source_path': urlsplit(url).path, 'organization': organization}
+    destatis = re.fullmatch(
+        r'https://www\.destatis\.de/(?:EN/Press/20\d{2}/\d{2}/PE\d{2}_\d+_\d+\.html|'
+        r'DE/Presse/Pressemitteilungen/20\d{2}/\d{2}/PD\d{2}_\d+_\d+\.html)', url
+    )
+    if destatis:
+        return {'provider': 'destatis_public_statistics', 'source_host': 'www.destatis.de',
+                'source_path': urlsplit(url).path, 'organization': 'German Federal Statistical Office (Destatis)'}
     return _CATALOG.get(url)
 
 

@@ -119,6 +119,19 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "terms_review_due": "2027-02-05",
         "zero_cost_reviewed": True,
     },
+    "destatis_public_statistics": {
+        "hosts": {"www.destatis.de"},
+        "methods": {"GET"},
+        "rpm": 3,
+        "rph": 12,
+        "operations": {"source_collection"},
+        "paths": ("/EN/Press/", "/DE/Presse/Pressemitteilungen/"),
+        "cost": "Public Destatis press-release HTML; no account, API key, or per-request fee identified",
+        "commercial_use": "Destatis documents open reuse for statistical data under DL-DE/by-2.0; press-page text reuse terms can differ, so source rights remain unknown unless the page states otherwise. Retrieve for factual claim verification, attribute, and do not copy source wording.",
+        "terms_reviewed_at": "2026-11-05",
+        "terms_review_due": "2027-02-05",
+        "zero_cost_reviewed": True,
+    },
     "sec_edgar": {
         "hosts": {"data.sec.gov"},
         "methods": {"GET"},
@@ -733,6 +746,17 @@ def _authorize(provider: str, operation: str, request: httpx.Request) -> None:
         operation_path_allowed = (
             parsed.host == "www.ons.gov.uk"
             and parsed.path in rule["paths_by_host"]["www.ons.gov.uk"]
+            and not parsed.query
+            and not parsed.fragment
+        )
+    if provider == "destatis_public_statistics":
+        operation_path_allowed = bool(
+            parsed.host == "www.destatis.de"
+            and re.fullmatch(
+                r"/(?:EN/Press/20\d{2}/\d{2}/PE\d{2}_\d+_\d+\.html|"
+                r"DE/Presse/Pressemitteilungen/20\d{2}/\d{2}/PD\d{2}_\d+_\d+\.html)",
+                parsed.path,
+            )
             and not parsed.query
             and not parsed.fragment
         )

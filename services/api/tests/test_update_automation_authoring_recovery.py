@@ -128,3 +128,27 @@ def test_prompt_updater_replaces_old_priority_instead_of_leaving_conflicting_ste
     assert "automation-research-stage.py" in after["prompt"]
     assert after["rrule"] == "RRULE:FREQ=DAILY;BYHOUR=9;BYMINUTE=0"
     assert json.loads(applied.stdout)["active_project_automation_count"] == 1
+
+
+def test_prompt_updater_refreshes_current_priority_without_legacy_boundary(tmp_path) -> None:
+    root = tmp_path / "automations"
+    active = root / "automation-14"
+    prompt = (
+        "P5-CODEX-131 EXECUTE THE AUTHORING RUN (highest-priority execution order):\n"
+        "Current priority text with no legacy success sentence.\n\n"
+        "P5-CODEX-131 VERIFIED AUTHORING RECOVERY (authoritative): old contract.\n\n"
+        "P5-CODEX-140 CODEX CLI LIVE RESEARCH (mandatory): old search directions.\n"
+    )
+    _write_automation(active, "automation-14", "ACTIVE", str(ROOT), prompt)
+    result = subprocess.run(
+        [
+            sys.executable, str(SCRIPT), "--apply", "--automations-root", str(root),
+            "--backup-root", str(tmp_path / "backups"),
+        ],
+        check=True, capture_output=True, text=True,
+    )
+    report = json.loads(result.stdout)
+    assert report["active_project_automation_count"] == 1
+    after = tomllib.loads((active / "automation.toml").read_text(encoding="utf-8"))
+    assert "opened by the CLI research session" in after["prompt"]
+    assert "The excerpt is a CLI-reported quote until the Import Worker retrieves the exact page" in after["prompt"]
