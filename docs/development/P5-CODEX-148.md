@@ -6,6 +6,7 @@
 - Branch: develop
 - Start HEAD and origin/develop: `742596f9c0d29ca5747caf3a35295fe6f787d373`
 - Append-only start audit: `agent.work.started`, ID `376290`
+- Append-only completion audit: `agent.work.completed`, ID `376425`
 - Operations schema/settings revision: 92 / 23
 
 ## Root cause and data action
