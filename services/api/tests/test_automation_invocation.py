@@ -64,6 +64,13 @@ def _append_turn(
         output.write("".join(json.dumps(row) + "\n" for row in records))
 
 
+def _complete_turn(path: Path, turn_id: str) -> None:
+    with path.open("a", encoding="utf-8") as output:
+        output.write(json.dumps({"type": "event_msg", "payload": {
+            "type": "task_complete", "turn_id": turn_id,
+        }}) + "\n")
+
+
 def test_explicit_manual_trigger_gets_stable_manual_id_and_known_quota_recovery(tmp_path: Path) -> None:
     project = tmp_path / "project"
     project.mkdir()
@@ -170,6 +177,26 @@ def test_reused_desktop_thread_resolves_latest_official_run_now_turn(tmp_path: P
     assert result["execution_mode"] == "manual"
     assert result["trigger"] == "automation_cron_run_now"
     assert result["session_id"] == session_id
+    retry = resolve_current_invocation(
+        "automation-8", project_root=project,
+        environ={"CODEX_THREAD_ID": session_id, "CODEX_HOME": str(codex),
+                 "CODEX_TURN_ID": current_turn_id},
+    )
+    assert retry["manual_run_id"] == result["manual_run_id"]
+
+    _complete_turn(session, current_turn_id)
+    next_turn_id = str(uuid4())
+    _append_turn(
+        session, turn_id=next_turn_id,
+        started_at=datetime(2026, 10, 30, 15, 17, 22, tzinfo=UTC),
+        trigger="automation_cron_run_now",
+    )
+    next_run = resolve_current_invocation(
+        "automation-8", project_root=project,
+        environ={"CODEX_THREAD_ID": session_id, "CODEX_HOME": str(codex),
+                 "CODEX_TURN_ID": next_turn_id},
+    )
+    assert next_run["manual_run_id"] != result["manual_run_id"]
 
 
 def test_latest_completed_event_cannot_be_reused_as_current_invocation(tmp_path: Path) -> None:

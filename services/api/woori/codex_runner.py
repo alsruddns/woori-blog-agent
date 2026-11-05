@@ -113,8 +113,9 @@ def execute(work: Path, prompt: str, schema: dict[str, Any], callback: Callable[
     (work/'output-schema.json').write_text(json.dumps(schema),encoding='utf-8')
     (work/'request.txt').write_text(prompt,encoding='utf-8')
     output=work/'article.json'
-    # `--search` is global and must precede `exec`. It is enabled only for the
-    # explicitly approved scheduled research path, without changing other CLI lanes.
+    # `--search` is global and must precede `exec`. Fixed scheduled/manual
+    # Automation research brokers may enable it after revalidating the exact
+    # Desktop identity and clear local duplicate preflight.
     args=[str(executable())]+(['--search'] if enable_search else [])+['exec','--ignore-user-config','--strict-config','--ephemeral','--skip-git-repo-check',
           '--sandbox','read-only','-C',str(work),'-m',MODEL,'--json','--output-schema',str(work/'output-schema.json'),'-o',str(output)]
     for config in [*CONFIG,'developer_instructions='+json.dumps(DEVELOPER)]:

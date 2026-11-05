@@ -201,7 +201,7 @@ def _parse_feed(raw: bytes, *, now: datetime) -> list[dict[str, Any]]:
 
 
 def _fetch(provider: str, url: str, *, run_id: str) -> bytes:
-    with external_run(run_id), external_client(provider, "source_collection", timeout=15, headers={"User-Agent": "WooriBlogAgent/0.3.5 (bounded scheduled research)"}) as client:
+    with external_run(run_id), external_client(provider, "source_collection", timeout=15, headers={"User-Agent": "WooriBlogAgent/0.3.5 (bounded Automation research)"}) as client:
         return collection.fetch(client, url)
 
 
@@ -218,7 +218,8 @@ def gather(
     category: str,
     topic: str,
     *,
-    occurrence_id: str,
+    occurrence_id: str | None = None,
+    manual_run_id: str | None = None,
     audit_run_id: str | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
@@ -226,8 +227,20 @@ def gather(
         raise ValueError("scheduled_research_category_not_supported")
     if not isinstance(topic, str) or not topic.strip() or len(topic) > MAX_TOPIC_CHARS:
         raise ValueError("scheduled_research_topic_invalid")
-    if not re.fullmatch(r"codex-slot:[A-Za-z0-9_-]{1,80}:\d{8}T\d{4}KST", occurrence_id):
-        raise ValueError("scheduled_research_occurrence_invalid")
+    if isinstance(occurrence_id, str) and manual_run_id is None:
+        if not re.fullmatch(r"codex-slot:[A-Za-z0-9_-]{1,80}:\d{8}T\d{4}KST", occurrence_id):
+            raise ValueError("scheduled_research_occurrence_invalid")
+        identity_field, identity, schema_version = (
+            "occurrence_id", occurrence_id, "scheduled-research-package/1.0"
+        )
+    elif isinstance(manual_run_id, str) and occurrence_id is None:
+        if not re.fullmatch(r"codex-manual:[A-Za-z0-9_-]{1,80}:[0-9a-fA-F-]{36}", manual_run_id):
+            raise ValueError("manual_research_run_id_invalid")
+        identity_field, identity, schema_version = (
+            "manual_run_id", manual_run_id, "manual-research-package/1.0"
+        )
+    else:
+        raise ValueError("research_package_identity_invalid")
     trace_id = audit_run_id or "research-source-" + uuid4().hex
     captured_at = (now or datetime.now(UTC)).astimezone(UTC)
     package_sources: list[dict[str, Any]] = []
@@ -264,8 +277,8 @@ def gather(
             })
     package_sources.sort(key=lambda item: item["published_at"], reverse=True)
     package = {
-        "schema_version": "scheduled-research-package/1.0",
-        "occurrence_id": occurrence_id,
+        "schema_version": schema_version,
+        identity_field: identity,
         "category": category,
         "topic": topic.strip(),
         "captured_at": captured_at.isoformat(),
@@ -281,8 +294,9 @@ def gather(
     return package
 
 
-def gather_with_codex_search(
-    category: str, topic: str, *, occurrence_id: str, audit_run_id: str | None = None,
+def _gather_with_codex_search(
+    category: str, topic: str, *, run_id: str, identity_field: str,
+    package_schema: str, audit_run_id: str | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """Use the installed ChatGPT-auth Codex CLI search tool and retain its evidence.
@@ -294,14 +308,20 @@ def gather_with_codex_search(
     from . import codex_runner
 
     if category not in {"politics", "economy", "technology", "general"}:
-        raise ValueError("scheduled_research_category_not_supported")
+        raise ValueError("research_category_not_supported")
     if not isinstance(topic, str) or not topic.strip() or len(topic) > MAX_TOPIC_CHARS:
-        raise ValueError("scheduled_research_topic_invalid")
-    if not re.fullmatch(r"codex-slot:[A-Za-z0-9_-]{1,80}:\d{8}T\d{4}KST", occurrence_id):
-        raise ValueError("scheduled_research_occurrence_invalid")
+        raise ValueError("research_topic_invalid")
+    if identity_field == "occurrence_id":
+        if not re.fullmatch(r"codex-slot:[A-Za-z0-9_-]{1,80}:\d{8}T\d{4}KST", run_id):
+            raise ValueError("scheduled_research_occurrence_invalid")
+    elif identity_field == "manual_run_id":
+        if not re.fullmatch(r"codex-manual:[A-Za-z0-9_-]{1,80}:[0-9a-fA-F-]{36}", run_id):
+            raise ValueError("manual_research_run_id_invalid")
+    else:
+        raise ValueError("research_identity_field_invalid")
     captured_at = (now or datetime.now(UTC)).astimezone(UTC)
     prompt = (
-        "Research this scheduled article topic using live web search: " + topic.strip() + "\n"
+        "Research this article topic using live web search: " + topic.strip() + "\n"
         "Category: " + category + ". Prefer current primary sources, then reputable news sources. "
         "Return at most three sources actually present in your live web search results. "
         "For each, give the exact result title, publisher, canonical result URL, publication date as ISO-8601, "
@@ -311,7 +331,7 @@ def gather_with_codex_search(
         "do not draft an article and do not claim semantic or rights review."
     )
     data, evidence = codex_runner.execute(
-        Path(tempfile.gettempdir()) / "woori-scheduled-research" / uuid4().hex,
+        Path(tempfile.gettempdir()) / "woori-automation-research" / uuid4().hex,
         prompt,
         CODEX_RESEARCH_SCHEMA,
         lambda *_args: None,
@@ -365,8 +385,8 @@ def gather_with_codex_search(
         })
     sources.sort(key=lambda item: item["published_at"], reverse=True)
     return {
-        "schema_version": "scheduled-research-package/1.0",
-        "occurrence_id": occurrence_id,
+        "schema_version": package_schema,
+        identity_field: run_id,
         "category": category,
         "topic": topic.strip(),
         "captured_at": captured_at.isoformat(),
@@ -385,6 +405,29 @@ def gather_with_codex_search(
             "Search-result evidence does not complete semantic fact, rights, or publication review.",
         ],
     }
+
+
+def gather_with_codex_search(
+    category: str, topic: str, *, occurrence_id: str, audit_run_id: str | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Gather live web-search evidence for a scheduled slot."""
+    return _gather_with_codex_search(
+        category, topic, run_id=occurrence_id, identity_field="occurrence_id",
+        package_schema="scheduled-research-package/1.0",
+        audit_run_id=audit_run_id or "scheduled:" + occurrence_id, now=now,
+    )
+
+
+def gather_manual_with_codex_search(
+    category: str, topic: str, *, manual_run_id: str, now: datetime | None = None,
+) -> dict[str, Any]:
+    """Gather live evidence for one resolver-confirmed manual Run now."""
+    return _gather_with_codex_search(
+        category, topic, run_id=manual_run_id, identity_field="manual_run_id",
+        package_schema="manual-research-package/1.0",
+        audit_run_id="manual:" + manual_run_id, now=now,
+    )
 
 
 def run_authorized_research(
@@ -463,18 +506,86 @@ def run_authorized_research(
     }
 
 
-def _record_codex_search_failure(automation_id: str, occurrence_id: str, reason: str) -> None:
+def run_manual_authorized_research(
+    *, automation_id: str, category: str, topic: str, preflight: dict[str, Any]
+) -> dict[str, Any]:
+    """Research only for the exact current manual Run now and its clear preflight."""
+    from .automation_authoring_contract import select_authoring_contract
+    from .automation_invocation import resolve_current_invocation
+    from .automation_ready_handoff import preflight_allows_import
+
+    invocation = resolve_current_invocation(automation_id, project_root=ROOT)
+    if invocation.get("execution_mode") != "manual" or invocation.get("trigger") != "automation_cron_run_now":
+        raise ValueError("manual_research_requires_run_now_trigger")
+    execution = preflight.get("automation_execution")
+    recorded_invocation = execution.get("invocation") if isinstance(execution, dict) else None
+    contract = execution.get("contract") if isinstance(execution, dict) else None
+    if recorded_invocation != invocation:
+        raise ValueError("manual_research_preflight_invocation_mismatch")
+    if contract != select_authoring_contract(invocation):
+        raise ValueError("manual_research_authoring_contract_mismatch")
+    if not preflight_allows_import(preflight):
+        raise ValueError("manual_research_local_duplicate_preflight_not_clear")
+
+    manual_run_id = str(invocation["manual_run_id"])
+    try:
+        package = gather_manual_with_codex_search(category, topic, manual_run_id=manual_run_id)
+    except (RuntimeError, OSError, ValueError) as exc:
+        reason = str(exc) if isinstance(exc, ValueError) else type(exc).__name__
+        _record_codex_search_failure(automation_id, manual_run_id, reason, manual=True)
+        if any(marker in reason for marker in (
+            "usage_limit", "capacity", "auth", "timeout", "billable_credentials"
+        )):
+            raise ValueError("manual_codex_search_blocked:" + reason[:100]) from None
+        if reason not in {
+            "codex_not_installed", "web_research_not_observed", "codex_execution_failed"
+        } or category not in FEEDS:
+            raise ValueError("manual_codex_search_unavailable:" + reason[:100]) from None
+        package = gather(
+            category, topic, manual_run_id=manual_run_id,
+            audit_run_id="manual:" + manual_run_id,
+        )
+        package["research_engine"] = "fixed_rss_fallback"
+        package["codex_search_failure"] = reason[:120]
+    if (
+        package.get("status") != "evidence_available"
+        and package.get("failure_class") in {"no_current_sources", "source_validation_failed"}
+        and category in FEEDS
+    ):
+        search_failure = str(package.get("failure_class"))
+        package = gather(
+            category, topic, manual_run_id=manual_run_id,
+            audit_run_id="manual:" + manual_run_id,
+        )
+        package["research_engine"] = "fixed_rss_fallback"
+        package["codex_search_failure"] = search_failure
+    result = write_package(package, automation_id=automation_id)
+    return {
+        **result,
+        "execution_mode": "manual",
+        "manual_run_id": manual_run_id,
+        "remote_status": preflight.get("remote_status", "not_checked"),
+        "overall_status": preflight.get("status", "unknown"),
+    }
+
+
+def _record_codex_search_failure(
+    automation_id: str, run_identity: str, reason: str, *, manual: bool = False
+) -> None:
     """Append a safe execution result; never persist prompts, sources or credentials here."""
     try:
         with connection() as conn:
             conn.execute(
                 "INSERT INTO audit_events(event_type,payload) VALUES (%s,%s)",
-                ("research.scheduled_codex_search.failed", Jsonb({
+                (
+                    "research.manual_codex_search.failed" if manual else "research.scheduled_codex_search.failed",
+                    Jsonb({
                     "automation_id": automation_id,
-                    "occurrence_id": occurrence_id,
+                    "manual_run_id" if manual else "occurrence_id": run_identity,
                     "reason_code": reason[:120],
                     "api_key_fallback": False,
-                })),
+                    }),
+                ),
             )
     except (OSError, psycopg.Error):
         raise ValueError("scheduled_research_audit_failed") from None
@@ -483,11 +594,24 @@ def _record_codex_search_failure(automation_id: str, occurrence_id: str, reason:
 def write_package(package: dict[str, Any], *, automation_id: str) -> dict[str, Any]:
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", automation_id):
         raise ValueError("scheduled_research_automation_id_invalid")
-    occurrence = str(package.get("occurrence_id", ""))
-    if not re.fullmatch(r"codex-slot:[A-Za-z0-9_-]{1,80}:\d{8}T\d{4}KST", occurrence):
-        raise ValueError("scheduled_research_occurrence_invalid")
+    occurrence = package.get("occurrence_id")
+    manual_run_id = package.get("manual_run_id")
+    if isinstance(occurrence, str) and not manual_run_id:
+        if not re.fullmatch(r"codex-slot:[A-Za-z0-9_-]{1,80}:\d{8}T\d{4}KST", occurrence):
+            raise ValueError("scheduled_research_occurrence_invalid")
+        run_identity = occurrence
+        slug = occurrence.rsplit(":", 1)[1]
+        event_prefix = "scheduled"
+    elif isinstance(manual_run_id, str) and not occurrence:
+        match = re.fullmatch(r"codex-manual:([A-Za-z0-9_-]{1,80}):([0-9a-fA-F-]{36})", manual_run_id)
+        if match is None or match.group(1) != automation_id:
+            raise ValueError("manual_research_run_id_invalid")
+        run_identity = manual_run_id
+        slug = "manual-" + match.group(2).lower()
+        event_prefix = "manual"
+    else:
+        raise ValueError("research_package_identity_invalid")
     PACKAGE_DIR.mkdir(parents=True, exist_ok=True)
-    slug = occurrence.rsplit(":", 1)[1]
     destination = PACKAGE_DIR / f"{automation_id}-{slug}.research.json"
     raw = (json.dumps(package, ensure_ascii=False, allow_nan=False, indent=2) + "\n").encode("utf-8")
     digest = hashlib.sha256(raw).hexdigest()
@@ -506,13 +630,24 @@ def write_package(package: dict[str, Any], *, automation_id: str) -> dict[str, A
         existing = destination.read_bytes()
         saved_digest = hashlib.sha256(existing).hexdigest()
         if saved_digest != digest:
-            raise ValueError("scheduled_research_package_conflict") from None
+            raise ValueError(f"{event_prefix}_research_package_conflict") from None
     try:
         with connection() as conn:
-            event = "research.scheduled_package.saved" if package.get("status") == "evidence_available" else "research.scheduled_package.unavailable"
+            event = (
+                f"research.{event_prefix}_package.saved"
+                if package.get("status") == "evidence_available"
+                else f"research.{event_prefix}_package.unavailable"
+            )
             conn.execute(
                 "INSERT INTO audit_events(event_type,payload) VALUES (%s,%s)",
-                (event, Jsonb({"automation_id": automation_id, "occurrence_id": occurrence, "category": package.get("category"), "source_count": len(package.get("sources", [])), "failure_class": package.get("failure_class"), "sha256": saved_digest})),
+                (event, Jsonb({
+                    "automation_id": automation_id,
+                    "manual_run_id" if event_prefix == "manual" else "occurrence_id": run_identity,
+                    "category": package.get("category"),
+                    "source_count": len(package.get("sources", [])),
+                    "failure_class": package.get("failure_class"),
+                    "sha256": saved_digest,
+                })),
             )
     except (OSError, psycopg.Error):
         raise ValueError("scheduled_research_audit_failed") from None

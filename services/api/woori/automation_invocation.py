@@ -423,7 +423,7 @@ def resolve_current_invocation(
     if Path(str(session_meta.get("cwd", ""))).resolve(strict=True) != project_root.resolve(strict=True):
         raise ValueError("current_automation_checkout_mismatch")
     turn_id = env.get("CODEX_TURN_ID") or env.get("CODEX_CURRENT_TURN_ID")
-    _resolved_id, start_event = _read_current_automation_start(
+    _, start_event = _read_current_automation_start(
         matches[0], automation_id=automation_id, current_turn_id=turn_id or None,
     )
     attribution = start_event.get("turn_attribution")
@@ -448,7 +448,12 @@ def resolve_current_invocation(
             automation_id=automation_id, scheduled_slot=slot,
         )})
         return common
-    manual_uuid = uuid5(NAMESPACE_URL, f"woori-blog-agent:{automation_id}:{thread_id}")
+    current_turn = start_event.get("turn_id")
+    if not isinstance(current_turn, str) and isinstance(attribution, dict):
+        current_turn = attribution.get("turn_id")
+    if not isinstance(current_turn, str) or not re.fullmatch(r"[0-9a-fA-F-]{36}", current_turn):
+        raise ValueError("current_automation_turn_identity_missing")
+    manual_uuid = uuid5(NAMESPACE_URL, f"woori-blog-agent:{automation_id}:{current_turn}")
     manual_run_id = f"codex-manual:{automation_id}:{manual_uuid}"
     common.update({
         "execution_mode": "manual",

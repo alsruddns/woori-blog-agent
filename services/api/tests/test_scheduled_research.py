@@ -233,3 +233,143 @@ def test_scheduled_broker_writes_codex_sources_into_snapshot_package(monkeypatch
     assert snapshot["sources"][0]["evidence_excerpt"] == snippet
     assert snapshot["sources"][0]["semantic_review"] == "required"
     assert events[0][1][0] == "research.scheduled_package.saved"
+
+
+def test_manual_codex_search_package_is_bound_to_manual_run_id(monkeypatch):
+    from woori import codex_runner
+
+    manual_run_id = "codex-manual:automation-8:12345678-1234-5678-1234-567812345678"
+    result = {
+        "title": "Agency notice on the filing deadline",
+        "publisher": "Example Agency",
+        "url": "https://example.gov/news/deadline",
+        "published_at": "2026-11-04",
+        "event_date": None,
+        "evidence_excerpt": "The agency published a notice about the filing deadline.",
+    }
+    snippet = "Published November 4, 2026. The agency published a notice about the filing deadline."
+
+    def fake_execute(*_args, **kwargs):
+        assert kwargs["enable_search"] is True
+        assert kwargs["require_web_research"] is True
+        return {"sources": [result]}, {
+            "model": "gpt-6-luna", "web_search_count": 1, "execution_id": "manual-search-1",
+            "searched_sources": [{"url": result["url"], "title": result["title"],
+                                  "domain": "example.gov", "snippet": snippet}],
+        }
+
+    monkeypatch.setattr(codex_runner, "execute", fake_execute)
+    package = scheduled_research.gather_manual_with_codex_search(
+        "general", "the filing deadline", manual_run_id=manual_run_id,
+        now=datetime(2026, 11, 5, 1, tzinfo=UTC),
+    )
+    assert package["schema_version"] == "manual-research-package/1.0"
+    assert package["manual_run_id"] == manual_run_id
+    assert "occurrence_id" not in package
+    assert package["status"] == "evidence_available"
+    assert package["sources"][0]["url"] == result["url"]
+    assert package["sources"][0]["evidence_excerpt"] == snippet
+
+
+def test_fixed_rss_fallback_supports_manual_run_identity(monkeypatch):
+    now = datetime(2026, 11, 5, 1, tzinfo=UTC)
+    published = (now - timedelta(hours=1)).strftime("%a, %d %b %Y %H:%M:%S GMT")
+    feed = (
+        f"<rss><channel><item><title>Congressional policy notice</title>"
+        f"<link>https://www.whitehouse.gov/releases/2026/11/congressional-policy-notice/</link>"
+        f"<pubDate>{published}</pubDate><description>Notice summary</description></item></channel></rss>"
+    ).encode()
+    body = b"<html><main><h1>Congressional policy notice</h1><p>" + (
+        b"The notice describes the documented measure and its stated timing. " * 4
+    ) + b"</p></main></html>"
+    monkeypatch.setattr(
+        scheduled_research, "_fetch",
+        lambda _provider, url, **_kwargs: feed if url.endswith("/news/feed/") else body,
+    )
+    manual_run_id = "codex-manual:automation-8:12345678-1234-5678-1234-567812345678"
+    package = scheduled_research.gather(
+        "politics", "the latest White House notice", manual_run_id=manual_run_id, now=now,
+    )
+    assert package["schema_version"] == "manual-research-package/1.0"
+    assert package["manual_run_id"] == manual_run_id
+    assert "occurrence_id" not in package
+    assert package["status"] == "evidence_available"
+    assert package["sources"][0]["semantic_review"] == "required"
+
+
+def test_manual_research_requires_exact_run_now_preflight_and_preserves_remote_unknown(monkeypatch):
+    from uuid import uuid4
+
+    from woori import automation_authoring_contract
+
+    session_id = str(uuid4())
+    manual_run_id = f"codex-manual:automation-8:{uuid4()}"
+    invocation = {
+        "automation_id": "automation-8", "execution_mode": "manual",
+        "trigger": "automation_cron_run_now", "session_id": session_id,
+        "manual_run_id": manual_run_id,
+        "manual_origin": {
+            "execution_mode": "manual", "automation_id": "automation-8",
+            "manual_run_id": manual_run_id, "session_id": session_id,
+            "turn_trigger": "automation_cron_run_now", "invoked_at": "2026-11-05T10:00:00+09:00",
+        },
+    }
+    contract = automation_authoring_contract.select_authoring_contract(invocation)
+    monkeypatch.setattr(automation_invocation, "resolve_current_invocation", lambda *_args, **_kwargs: invocation)
+    monkeypatch.setattr(scheduled_research, "gather_manual_with_codex_search", lambda *_args, **kwargs: {
+        "status": "evidence_available", "manual_run_id": kwargs["manual_run_id"], "sources": [{"url": "fixed"}],
+    })
+    monkeypatch.setattr(scheduled_research, "write_package", lambda package, *, automation_id: {
+        "status": package["status"], "path": "fixture", "source_count": 1,
+    })
+    preflight = {
+        "status": "unknown", "overall_status": "unknown", "remote_status": "not_checked",
+        "local_status": "not_found", "draft_import_allowed": True,
+        "automation_execution": {"invocation": invocation, "contract": contract},
+    }
+
+    result = scheduled_research.run_manual_authorized_research(
+        automation_id="automation-8", category="general", topic="the verified filing update",
+        preflight=preflight,
+    )
+    assert result["execution_mode"] == "manual"
+    assert result["manual_run_id"] == manual_run_id
+    assert result["overall_status"] == "unknown"
+    assert result["remote_status"] == "not_checked"
+    with pytest.raises(ValueError, match="local_duplicate_preflight_not_clear"):
+        scheduled_research.run_manual_authorized_research(
+            automation_id="automation-8", category="general", topic="the verified filing update",
+            preflight={**preflight, "local_status": "unknown", "draft_import_allowed": False},
+        )
+    with pytest.raises(ValueError, match="preflight_invocation_mismatch"):
+        scheduled_research.run_manual_authorized_research(
+            automation_id="automation-8", category="general", topic="the verified filing update",
+            preflight={**preflight, "automation_execution": {"invocation": {**invocation, "manual_run_id": "wrong"}, "contract": contract}},
+        )
+
+
+def test_manual_research_package_is_immutable_and_audited(monkeypatch, tmp_path):
+    events = []
+
+    class FakeConnection:
+        def execute(self, query, params):
+            events.append((query, params))
+
+    @contextmanager
+    def fake_connection():
+        yield FakeConnection()
+
+    monkeypatch.setattr(scheduled_research, "connection", fake_connection)
+    monkeypatch.setattr(scheduled_research, "PACKAGE_DIR", tmp_path)
+    manual_run_id = "codex-manual:automation-8:12345678-1234-5678-1234-567812345678"
+    package = {"schema_version": "manual-research-package/1.0", "manual_run_id": manual_run_id,
+               "category": "general", "status": "evidence_available", "sources": [{"title": "A"}]}
+    result = scheduled_research.write_package(package, automation_id="automation-8")
+    path = tmp_path / "automation-8-manual-12345678-1234-5678-1234-567812345678.research.json"
+    original = path.read_bytes()
+    assert result["sha256"] == hashlib.sha256(original).hexdigest()
+    assert events[0][1][0] == "research.manual_package.saved"
+    assert scheduled_research.write_package(package, automation_id="automation-8")["sha256"] == result["sha256"]
+    with pytest.raises(ValueError, match="manual_research_package_conflict"):
+        scheduled_research.write_package({**package, "topic": "different"}, automation_id="automation-8")
+    assert path.read_bytes() == original
