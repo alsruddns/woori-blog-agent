@@ -303,9 +303,12 @@ def current_automation_id(
 def _configured_slot_near(timestamp: datetime, automation_id: str, config: dict[str, Any],
                           automations_root: Path, project_root: Path) -> datetime:
     local = timestamp.astimezone(_KST)
+    # RRULE slots have minute precision. Compare against the same precision;
+    # otherwise 12:05:02 is incorrectly treated as 302 seconds from 12:00.
+    slot_reference = local.replace(second=0, microsecond=0)
     candidates: list[datetime] = []
     for offset in range(-5, 6):
-        candidate = local.replace(second=0, microsecond=0) + timedelta(minutes=offset)
+        candidate = slot_reference + timedelta(minutes=offset)
         try:
             verify_configured_slot(
                 automation_id=automation_id, scheduled_slot=candidate,
@@ -313,7 +316,7 @@ def _configured_slot_near(timestamp: datetime, automation_id: str, config: dict[
             )
         except (OSError, ValueError):
             continue
-        if abs((candidate - local).total_seconds()) <= 300:
+        if abs((candidate - slot_reference).total_seconds()) <= 300:
             candidates.append(candidate)
     if len(candidates) != 1:
         raise ValueError("scheduled_slot_not_unambiguously_near_actual_invocation")

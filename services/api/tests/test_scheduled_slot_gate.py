@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
 
 from woori.scheduled_slot_gate import wait_for_scheduled_slot
@@ -38,7 +37,6 @@ def test_verified_scheduled_invocation_257_seconds_early_resolves_without_sleep(
     result = wait_for_scheduled_slot(
         invocation(),
         tmp_path,
-        now=lambda: datetime.fromisoformat("2026-11-03T08:55:43+09:00"),
         sleep=lambda _: (_ for _ in ()).throw(AssertionError("must not wait for slot")),
         record=record,
     )
@@ -56,7 +54,6 @@ def test_exactly_five_minutes_before_is_accepted_without_sleep(tmp_path: Path) -
     result = wait_for_scheduled_slot(
         invocation("2026-11-03T08:55:00+09:00"),
         tmp_path,
-        now=lambda: datetime.fromisoformat("2026-11-03T08:55:00+09:00"),
         sleep=lambda _: (_ for _ in ()).throw(AssertionError("must not wait for slot")),
         record=lambda *_args: {},
     )
@@ -68,7 +65,6 @@ def test_one_second_before_slot_is_ready(tmp_path: Path) -> None:
     result = wait_for_scheduled_slot(
         invocation("2026-11-03T08:59:59+09:00"),
         tmp_path,
-        now=lambda: datetime.fromisoformat("2026-11-03T08:59:59+09:00"),
         sleep=lambda _: (_ for _ in ()).throw(AssertionError("must not wait for slot")),
         record=lambda *_args: {},
     )
@@ -78,13 +74,12 @@ def test_one_second_before_slot_is_ready(tmp_path: Path) -> None:
 
 def test_at_slot_and_after_slot_run_without_sleep(tmp_path: Path) -> None:
     at_slot = wait_for_scheduled_slot(
-        invocation(SLOT), tmp_path, now=lambda: datetime.fromisoformat(SLOT),
+        invocation(SLOT), tmp_path,
         sleep=lambda _: (_ for _ in ()).throw(AssertionError("unexpected wait")),
         record=lambda *_args: {},
     )
     after_slot = wait_for_scheduled_slot(
         invocation("2026-11-03T09:04:00+09:00"), tmp_path,
-        now=lambda: datetime.fromisoformat("2026-11-03T09:04:00+09:00"),
         sleep=lambda _: (_ for _ in ()).throw(AssertionError("unexpected wait")),
         record=lambda *_args: {},
     )
@@ -96,7 +91,6 @@ def test_beyond_five_minute_early_window_expires(tmp_path: Path) -> None:
     result = wait_for_scheduled_slot(
         invocation("2026-11-03T08:54:59+09:00"),
         tmp_path,
-        now=lambda: datetime.fromisoformat("2026-11-03T08:54:59+09:00"),
         sleep=lambda _: (_ for _ in ()).throw(AssertionError("must not wait indefinitely")),
         record=lambda *_args: {},
     )
@@ -106,9 +100,8 @@ def test_beyond_five_minute_early_window_expires(tmp_path: Path) -> None:
 
 def test_beyond_five_minute_late_window_expires(tmp_path: Path) -> None:
     result = wait_for_scheduled_slot(
-        invocation("2026-11-03T09:05:01+09:00"),
+        invocation("2026-11-03T09:06:00+09:00"),
         tmp_path,
-        now=lambda: datetime.fromisoformat("2026-11-03T09:05:01+09:00"),
         record=lambda *_args: {},
     )
     assert result["state"] == "expired"
@@ -121,7 +114,6 @@ def test_scheduled_mode_without_verified_trigger_is_rejected(tmp_path: Path) -> 
     result = wait_for_scheduled_slot(
         unverified,
         tmp_path,
-        now=lambda: datetime.fromisoformat("2026-11-03T08:55:43+09:00"),
         record=lambda *_args: {},
     )
     assert result["state"] == "rejected"
@@ -137,7 +129,6 @@ def test_wrong_trigger_and_wrong_occurrence_are_rejected(tmp_path: Path) -> None
         result = wait_for_scheduled_slot(
             candidate,
             tmp_path,
-            now=lambda: datetime.fromisoformat("2026-11-03T08:55:43+09:00"),
             record=lambda *_args: {},
         )
         assert result["state"] == "rejected"
@@ -147,7 +138,6 @@ def test_manual_invocation_does_not_wait_or_gain_scheduled_provenance(tmp_path: 
     result = wait_for_scheduled_slot(
         {"execution_mode": "manual"},
         tmp_path,
-        now=lambda: datetime.fromisoformat("2026-11-03T08:55:00+09:00"),
         sleep=lambda _: (_ for _ in ()).throw(AssertionError("unexpected wait")),
     )
     assert result == {"state": "ready", "wait_seconds": 0, "scheduled_slot": None}
@@ -157,8 +147,20 @@ def test_progress_failure_does_not_resolve_invocation(tmp_path: Path) -> None:
     result = wait_for_scheduled_slot(
         invocation(),
         tmp_path,
-        now=lambda: datetime.fromisoformat("2026-11-03T08:55:43+09:00"),
         record=lambda *_args: (_ for _ in ()).throw(OSError("disk unavailable")),
     )
     assert result["state"] == "deferred"
     assert result["reason"] == "slot_ready_progress_unavailable"
+
+
+def test_turn_minute_controls_slot_window_without_client_wall_clock(tmp_path: Path) -> None:
+    candidate = invocation("2026-11-03T12:05:02+09:00")
+    candidate["scheduled_slot"] = "2026-11-03T12:00:00+09:00"
+    candidate["occurrence_id"] = "codex-slot:automation-7:20261103T1200KST"
+    result = wait_for_scheduled_slot(
+        candidate,
+        tmp_path,
+        record=lambda *_args: {},
+    )
+    assert result["state"] == "ready"
+    assert result["reason"] == "scheduled_slot_due_or_within_late_window"

@@ -21,7 +21,7 @@ MAX_EARLY_SECONDS = 300
 MAX_LATE_SECONDS = 300
 
 
-def _verified_scheduled_identity(invocation: dict[str, Any], slot: datetime) -> bool:
+def _verified_scheduled_identity(invocation: dict[str, Any], slot: datetime) -> datetime | None:
     """Require the identity produced by the current Desktop trigger resolver."""
     if (
         invocation.get("trigger") != "automation_cron_scheduled"
@@ -36,7 +36,7 @@ def _verified_scheduled_identity(invocation: dict[str, Any], slot: datetime) -> 
         or not isinstance(invocation.get("session_id"), str)
         or not isinstance(invocation.get("executed_at"), str)
     ):
-        return False
+        return None
     try:
         UUID(invocation["session_id"])
         validate_occurrence_metadata(
@@ -48,17 +48,16 @@ def _verified_scheduled_identity(invocation: dict[str, Any], slot: datetime) -> 
         )
         executed_at = datetime.fromisoformat(invocation["executed_at"])
         if executed_at.tzinfo is None or executed_at.utcoffset() is None:
-            return False
+            return None
     except (ValueError, TypeError, KeyError):
-        return False
-    return True
+        return None
+    return executed_at
 
 
 def wait_for_scheduled_slot(
     invocation: dict[str, Any],
     progress_root: Path,
     *,
-    now: Callable[[], datetime] | None = None,
     sleep: Callable[[float], None] | None = None,
     record: Callable[[Path, dict[str, Any], str, str | None], dict[str, Any]] = record_progress,
 ) -> dict[str, Any]:
@@ -68,8 +67,10 @@ def wait_for_scheduled_slot(
     trigger can arrive up to five minutes before its configured slot; blocking
     the local resolver until that slot strands its final result after the
     model turn ends. The trigger, session, occurrence and configured slot are
-    mandatory, and the wall clock only rejects an invocation outside the
-    already-verified early/late window; it never authorizes a run by itself.
+    mandatory. Slot comparison uses the official Desktop turn's recorded
+    execution timestamp at the minute precision of the configured RRULE, so
+    CLI startup latency and sub-minute timestamp precision cannot change the
+    verified slot identity.
     """
     mode = invocation.get("execution_mode")
     if mode == "manual":
@@ -90,16 +91,13 @@ def wait_for_scheduled_slot(
     if slot.tzinfo is None or slot.utcoffset() is None:
         return {"state": "rejected", "reason": "scheduled_slot_requires_timezone",
                 "wait_seconds": 0, "scheduled_slot": slot_text}
-    if not _verified_scheduled_identity(invocation, slot):
+    executed_at = _verified_scheduled_identity(invocation, slot)
+    if executed_at is None:
         return {"state": "rejected", "reason": "scheduled_trigger_identity_unverified",
                 "wait_seconds": 0, "scheduled_slot": slot_text}
 
-    clock = now or (lambda: datetime.now(UTC))
-    current = clock()
-    if current.tzinfo is None or current.utcoffset() is None:
-        return {"state": "rejected", "reason": "system_clock_timezone_missing",
-                "wait_seconds": 0, "scheduled_slot": slot_text}
-    seconds_until_slot = (slot.astimezone(UTC) - current.astimezone(UTC)).total_seconds()
+    execution_minute = executed_at.replace(second=0, microsecond=0)
+    seconds_until_slot = (slot.astimezone(UTC) - execution_minute.astimezone(UTC)).total_seconds()
     if seconds_until_slot > MAX_EARLY_SECONDS:
         return {"state": "expired", "reason": "scheduled_slot_too_far_in_future",
                 "wait_seconds": 0, "scheduled_slot": slot_text}

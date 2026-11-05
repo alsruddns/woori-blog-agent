@@ -16,12 +16,12 @@ from woori.automation_invocation import (
 from woori.scheduled_import_inbox import validate_envelope
 
 
-def _write_automation(root: Path, project: Path) -> Path:
+def _write_automation(root: Path, project: Path, *, rrule: str | None = None) -> Path:
     folder = root / "automation-8"
     folder.mkdir(parents=True)
     (folder / "automation.toml").write_text(
         'id = "automation-8"\nkind = "cron"\nstatus = "ACTIVE"\n'
-        'rrule = "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=20;BYMINUTE=0"\n'
+        f'rrule = "{rrule or "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=20;BYMINUTE=0"}"\n'
         f'cwds = ["{project.as_posix()}"]\n',
         encoding="utf-8",
     )
@@ -113,6 +113,34 @@ def test_scheduled_trigger_keeps_existing_deterministic_occurrence(tmp_path: Pat
     assert result["scheduled_slot"] == "2026-10-30T20:00:00+09:00"
     assert result["occurrence_id"] == "codex-slot:automation-8:20261030T2000KST"
     assert result["scheduler_occurrence_id"] is None
+
+
+def test_weekday_noon_slot_matches_official_trigger_at_120502(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    automations = tmp_path / ".codex" / "automations"
+    _write_automation(
+        automations,
+        project,
+        rrule="RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=12;BYMINUTE=0",
+    )
+    sessions = tmp_path / ".codex" / "sessions"
+    sessions.mkdir(parents=True)
+    session_id = str(uuid4())
+    _session(
+        sessions / f"rollout-{session_id}.jsonl",
+        session_id=session_id,
+        project=project,
+        started_at=datetime(2026, 11, 5, 3, 5, 2, tzinfo=UTC),
+        trigger="automation_cron_scheduled",
+    )
+    result = resolve_current_invocation(
+        "automation-8",
+        project_root=project,
+        environ={"CODEX_THREAD_ID": session_id, "CODEX_HOME": str(tmp_path / ".codex")},
+    )
+    assert result["scheduled_slot"] == "2026-11-05T12:00:00+09:00"
+    assert result["occurrence_id"] == "codex-slot:automation-8:20261105T1200KST"
 
 
 def test_reused_desktop_thread_resolves_latest_official_run_now_turn(tmp_path: Path) -> None:

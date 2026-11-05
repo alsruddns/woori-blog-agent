@@ -78,10 +78,12 @@ def main(argv: list[str] | None = None) -> int:
 
             slot_text = result.get("scheduled_slot")
             seconds_until_slot = None
-            if isinstance(slot_text, str):
+            executed_at_text = result.get("executed_at")
+            if isinstance(slot_text, str) and isinstance(executed_at_text, str):
                 slot = datetime.fromisoformat(slot_text)
+                executed_at = datetime.fromisoformat(executed_at_text)
                 seconds_until_slot = round(
-                    (slot.astimezone(UTC) - datetime.now(UTC)).total_seconds()
+                    (slot.astimezone(UTC) - executed_at.replace(second=0, microsecond=0).astimezone(UTC)).total_seconds()
                 )
             _diagnostic(
                 "scheduled_slot_gate_started",
