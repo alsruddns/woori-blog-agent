@@ -85,9 +85,46 @@ def test_prompt_updater_dry_run_then_apply_preserves_schedule_and_paused_task(tm
     after = tomllib.loads(active_path.read_text(encoding="utf-8"))
     assert report["active_project_automation_count"] == 1
     assert after["prompt"].startswith("P5-CODEX-131 EXECUTE THE AUTHORING RUN")
+    assert "scripts/automation-research-stage.py" in after["prompt"]
+    assert "a missing variable or file is never a reason to stop" in after["prompt"]
+    assert "Do not separately run the resolver or duplicate preflight first" in after["prompt"]
     assert after["prompt"].count("P5-CODEX-131 VERIFIED AUTHORING RECOVERY") == 1
     assert after["id"] == before_active["id"]
     assert after["rrule"] == before_active["rrule"]
     assert after["status"] == before_active["status"]
     assert paused_path.read_bytes() == before_paused
     assert Path(report["backup_directory"], "automation-8.automation.toml").exists()
+
+
+def test_prompt_updater_replaces_old_priority_instead_of_leaving_conflicting_steps(tmp_path) -> None:
+    root = tmp_path / "automations"
+    active = root / "automation-6"
+    old_priority = (
+        "P5-CODEX-139 RUN THROUGH THE AUTHORING HANDOFF (highest priority):\n"
+        "First command: resolve the invocation. Second command: run preflight.\n\n"
+        "Task code: market close\n"
+    )
+    _write_automation(active, "automation-6", "ACTIVE", str(ROOT), old_priority)
+    backup_root = tmp_path / "backups"
+
+    applied = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--apply",
+            "--automations-root",
+            str(root),
+            "--backup-root",
+            str(backup_root),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    after = tomllib.loads((active / "automation.toml").read_text(encoding="utf-8"))
+
+    assert after["prompt"].startswith("P5-CODEX-131 EXECUTE THE AUTHORING RUN")
+    assert "First command: resolve the invocation" not in after["prompt"]
+    assert "automation-research-stage.py" in after["prompt"]
+    assert after["rrule"] == "RRULE:FREQ=DAILY;BYHOUR=9;BYMINUTE=0"
+    assert json.loads(applied.stdout)["active_project_automation_count"] == 1

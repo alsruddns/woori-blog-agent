@@ -20,23 +20,24 @@ ROOT = Path(__file__).resolve().parents[1]
 MARKER = "P5-CODEX-131 VERIFIED AUTHORING RECOVERY"
 PRIORITY_MARKER = "P5-CODEX-131 EXECUTE THE AUTHORING RUN"
 SEARCH_MARKER = "P5-CODEX-140 CODEX CLI LIVE RESEARCH"
-PRIORITY = f"""{PRIORITY_MARKER} (highest-priority execution order):
-This Automation turn must perform the work, not only diagnose or restate policy. Keep the initial inspection short: read this task prompt, memory.md if present, and only the specific schema/contract section needed. Do not print or reread whole long policy documents; this prompt and docs/operations/scheduled-outage-recovery.md already define the required safeguards. Resolve the exact run once, run generation duplicate preflight once, then use the rest of the available run to open current sources, write the research snapshot and article envelope, validate, and hand off to ready. The scheduled resolver's automation_policy.allowed=true is the pre-research policy check; perform the existing policy recheck once immediately before writing. Do not stop merely because preflight's overall status is unknown when its local status is not_found/failed_only, draft_import_allowed=true, and remote status is not_checked. Do stop for unclear local duplicate status, unsupported evidence, a real usage limit, unresolved identity, or an actual command failure. Don't claim success without verifying files and Import receipt.\n\n"""
+PRIORITY = fr"""{PRIORITY_MARKER} (highest-priority execution order):
+This turn must execute the current Automation, not only diagnose it. Automation memory is optional. If CODEX_HOME is unset, look only at `$env:USERPROFILE/.codex/automations/<this Automation ID>/memory.md` when it exists; a missing variable or file is never a reason to stop. Keep pre-work short and do not reread long policy documents.
+
+The first work command after reading this prompt MUST be one call to `scripts/automation-research-stage.py` using this Automation's exact ID, category, language, target country, registered Blogger ID, stable event-group ID, and exact topic. Example PowerShell shape:
+`& ./.venv/Scripts/python.exe ./scripts/automation-research-stage.py --automation-id "<ID>" --category "<politics|economy|technology|general>" --language-code "<BCP-47>" --target-country "<ISO>" --target-blog-id "<registered Blogger ID>" --event-group-id "<stable issue key>" --topic "<exact topic>"`
+This fixed command performs the exact-trigger resolver, generation duplicate preflight, saves the exact eligible preflight response, and invokes the scheduled or manual ChatGPT-auth Codex research broker in the SAME Automation turn. Do not separately run the resolver or duplicate preflight first. Keep the returned process/session ID and poll that same command to its terminal JSON result. Do not stop after a clear preflight: continue only when the command returns `status=evidence_available`; then read its `research_package_path` and `preflight_json_path`, write the correctly typed envelope, validate it, and hand it off. If the stage returns blocked, report its exact reason and create no unsupported article. A `remote_status=not_checked` or overall `unknown` is preserved and remains a publication-time recheck; it does not block an eligible local draft. The scheduled and manual envelopes must retain their distinct resolver-issued identities. The broker creates evidence only; it does not create an article, Import, Publishing Job or Blogger write.
+
+"""
 CONTRACT = f"""\n\n{MARKER} (authoritative for this invocation):
-Read docs/operations/scheduled-outage-recovery.md and follow its evidence, source-rights, idempotency and no-Blogger rules. First run scripts/resolve-codex-automation-run.py with this task's exact Automation ID; proceed only on resolved=true. Accepted triggers are only the resolver-confirmed automation_cron_scheduled and official Desktop Run now automation_cron_run_now. A composer/development turn, old session or claimed trigger is not an Automation run. Scheduled mode uses the returned scheduled occurrence and chatgpt_scheduled_export envelope. Run now uses the exact returned manual_origin, generation_method=manual_codex_import and woori-manual-automation-content-import/1.0; it has no scheduled slot/provenance. The existing scripts/validate-scheduled-import.py validates BOTH envelope types; do not stop because its filename says scheduled.
-Run scripts/scheduled_duplicate_check.py --stage generation for the exact target/language/topic. Only local_status=not_found or failed_only AND draft_import_allowed=true permits a new Import. local_status=unknown, a duplicate, disallowed draft, unresolved run identity or a live matching run blocks. Preserve remote_status=not_checked; it is not proof of remote uniqueness and the normal publication-time check remains mandatory. Do not use the outage pending saver for a clear, eligible preflight.
-Use current, directly reviewed web sources; never fabricate evidence, facts, source excerpts, research snapshots or claims. If research is insufficient, record a blocked/skipped result and create no article envelope. Save the evidence metadata/excerpts and claim links in a fresh staging JSON, then run scripts/write-research-snapshot.py <staging.json> <unique-name>.research.json. Stop if it fails; never overwrite a snapshot.
-Only after a successful snapshot, write the complete UTF-8 envelope to a new incoming/<unique-name>.part. For a retry, inspect the exact invocation and all existing artifacts first; do not overwrite files, replay old slots or create a second original. Run scripts/validate-scheduled-import.py on the .part and require valid=true. Save the exact generation-preflight JSON response as a temporary local file and run scripts/handoff-automation-manuscript.py <incoming.part> --preflight-json <preflight.json>. This helper rechecks the current Desktop invocation, the complete Pydantic envelope, clear local preflight and exclusive ready handoff; it never calls an API/Blogger or creates a Publishing Job. A successful result means file handoff only. Research Worker Import receipt, quality/review state, publication queue and Blogger publication are distinct later outcomes. Record the real path/hash and each completed stage; never report completion for an unsaved or invalid article. Preserve this task's existing Automation ID, prompt topic, language, target, RRULE, model and operating policy. Do not create, delete, pause or reschedule any Automation.
+First use the one-command research stage above; it internally runs `scripts/resolve-codex-automation-run.py` through the generation preflight and chooses the matching fixed broker. Only the exact current resolver-confirmed `automation_cron_scheduled` or official Desktop `automation_cron_run_now` is valid. A composer/development turn, old session or claimed trigger is not an Automation run. Scheduled mode retains the exact occurrence and uses `chatgpt_scheduled_export`; Run now retains the exact `manual_origin` and uses `manual_codex_import` with `woori-manual-automation-content-import/1.0`, never a scheduled slot. The common `scripts/validate-scheduled-import.py` validates both envelope types.
+Only local `not_found` or `failed_only` with `draft_import_allowed=true` permits a new draft. Preserve `remote_status=not_checked` and overall `unknown`; remote uniqueness is not established and must be rechecked before publication. Do not use the historical pending saver for a new article. If an exact same-run research package already exists, the fixed stage reuses it without invoking Codex again. Existing same-run preflight artifacts are immutable; never overwrite them.
+Use current evidence from the returned package. Never invent sources, dates, excerpts, facts or claims. If no useful verified facts remain, do not create an article. Otherwise write the complete UTF-8 envelope with source metadata and claim links to a unique `incoming/<name>.part`, validate it with `scripts/validate-scheduled-import.py`, and invoke `scripts/handoff-automation-manuscript.py <incoming.part> --preflight-json <returned preflight_json_path>`. The handoff rechecks the current invocation and exclusive ready delivery. A ready file is not Research Import; verify its Import receipt separately. Do not overwrite files, replay old slots, create a second original, make a Publishing Job or call Blogger. Preserve this task's ID, topic, language, target, RRULE, model and operating policy; do not create, delete, pause or reschedule any Automation.
 """
 
-SEARCH_CONTRACT = f"""\n\n{SEARCH_MARKER} (required after a clear generation preflight):
-The task environment's own tool list is not assumed to contain web search. Use the installed ChatGPT-auth Codex CLI live web search through the fixed broker for the exact resolver-confirmed invocation; do not switch to API keys, metered endpoints, paid credits, arbitrary HTTP clients or guessed browser tools. Use politics only for U.S. policy where the White House feed is relevant, economy only for U.S. BLS/Federal Reserve topics, technology only for U.S. NIST cybersecurity topics, and general for all other topics.
-
-For execution_mode=scheduled, save the exact generation-preflight JSON and pass it on stdin to scripts/scheduled-research-broker.py with this Automation ID, exact topic and category. It rechecks the current scheduled identity and authoring policy, requires clear local duplicate eligibility, calls `codex --search exec` using the current ChatGPT login, and saves an immutable scheduled Research Snapshot.
-
-For execution_mode=manual from the official Desktop Run now trigger, preserve the exact `manual_origin` and `manual_run_id`; do not invent scheduled fields or call the scheduled broker. Save the exact generation-preflight JSON and pass it on stdin to scripts/manual-research-broker.py with this Automation ID, exact topic and category. It rechecks the current manual trigger and the matching manual_codex_import contract, requires local_status=not_found or failed_only with draft_import_allowed=true, and preserves remote_status=not_checked. It calls the same isolated `codex --search exec` with the current ChatGPT login and saves an immutable manual Research Snapshot keyed to that manual_run_id.
-
-For either mode, require evidence_available with source URLs, publication dates and excerpts matched to actual web-search results before drafting. Read the saved package and use its retained evidence in the article snapshot and claim links. Do not fabricate a package, date, source or claim. If the CLI reports account usage limit, authentication, capacity or timeout failure, stop this run; do not use an API key, metered API, purchase credits or disguise the failure. Never treat package creation as article creation, Import, review approval or publication. Continue the same invocation through the matching envelope, validation and exclusive handoff, and report each stage separately. Manual Run now remains manual_codex_import and review-held; it receives no Scheduled Auto authority and creates no Publishing Job or Blogger write. Preserve Automation ID, schedule, topic, language, target, operation policy and all previous idempotency checks. Do not create or replay an occurrence.
+SEARCH_CONTRACT = f"""\n\n{SEARCH_MARKER} (mandatory live-research stage):
+The fixed research command is available in this repository. Do not wait for a browser search tool or report the CLI unavailable without running `scripts/automation-research-stage.py`. It invokes the official installed Codex CLI with `--search` using the existing ChatGPT login through the fixed isolated broker. No API key, metered API, paid credit, arbitrary HTTP client, alternate provider or guessed browser command is permitted.
+Select `politics` only for U.S. policy topics relevant to the White House feed, `economy` only for U.S. BLS/Federal Reserve topics, `technology` only for U.S. NIST cybersecurity topics, and `general` otherwise. The stage chooses `scripts/scheduled-research-broker.py` only for its resolver-confirmed scheduled trigger and `scripts/manual-research-broker.py` only for the exact official Desktop Run now trigger. It preserves the exact execution identity and the preflight's original remote/overall statuses.
+Continue in the SAME turn after `status=evidence_available`. Use the returned immutable Research Package, `preflight_json_path`, and actual `research_engine`. Require source URLs, dates and excerpts matched to actual search results. If the CLI reports an account usage limit, authentication, capacity or timeout failure, stop with its concrete reason; do not retry automatically, switch to RSS except where the existing broker explicitly returns an approved fallback, use an API key, purchase credits or disguise the failure. Package creation is not article creation, Import, review approval or publication. Manual Run now remains review-held and creates no Publishing Job or Blogger write. Preserve all IDs, schedules, topic, language, target and policy; never replay an old occurrence.
 """
 
 
@@ -122,12 +123,48 @@ def main() -> int:
         if prompt.count(SEARCH_MARKER) > 1:
             raise ValueError(f"automation_search_marker_duplicate:{path.parent.name}")
         updated_prompt = prompt
-        if MARKER not in updated_prompt:
-            updated_prompt = updated_prompt.rstrip() + CONTRACT
-        if PRIORITY_MARKER not in updated_prompt:
+        if updated_prompt.startswith(PRIORITY_MARKER):
+            old_priority_end = updated_prompt.find(
+                "Don't claim success without verifying files and Import receipt."
+            )
+            if old_priority_end < 0:
+                raise ValueError(f"automation_priority_boundary_missing:{path.parent.name}")
+            old_priority_end += len("Don't claim success without verifying files and Import receipt.")
+            updated_prompt = PRIORITY + updated_prompt[old_priority_end:].lstrip("\r\n")
+        elif updated_prompt.startswith("P5-CODEX-139 RUN THROUGH THE AUTHORING HANDOFF"):
+            p131_start = updated_prompt.find(PRIORITY_MARKER)
+            if p131_start >= 0:
+                old_priority_end = updated_prompt.find(
+                    "Don't claim success without verifying files and Import receipt.", p131_start
+                )
+                if old_priority_end < 0:
+                    raise ValueError(f"automation_priority_boundary_missing:{path.parent.name}")
+                old_priority_end += len("Don't claim success without verifying files and Import receipt.")
+                updated_prompt = PRIORITY + updated_prompt[old_priority_end:].lstrip("\r\n")
+            else:
+                task_start = updated_prompt.find("\n\nTask code:")
+                if task_start < 0:
+                    task_start = updated_prompt.find("\n\nYou are a Codex desktop Scheduled task")
+                if task_start < 0:
+                    raise ValueError(f"automation_priority_boundary_missing:{path.parent.name}")
+                updated_prompt = PRIORITY + updated_prompt[task_start + 2 :]
+        elif PRIORITY_MARKER not in updated_prompt:
             updated_prompt = PRIORITY + updated_prompt
+
+        if MARKER in updated_prompt:
+            contract_start = updated_prompt.index(MARKER)
+            search_start = updated_prompt.find(SEARCH_MARKER, contract_start)
+            if search_start < 0:
+                raise ValueError(f"automation_search_contract_missing:{path.parent.name}")
+            prefix_start = contract_start - 2 if updated_prompt[max(0, contract_start - 2) : contract_start] == "\n\n" else contract_start
+            updated_prompt = updated_prompt[:prefix_start] + CONTRACT + updated_prompt[search_start:]
+        else:
+            updated_prompt = updated_prompt.rstrip() + CONTRACT
+
         if SEARCH_MARKER in updated_prompt:
-            updated_prompt = updated_prompt.split(SEARCH_MARKER, 1)[0].rstrip() + SEARCH_CONTRACT
+            search_start = updated_prompt.index(SEARCH_MARKER)
+            prefix_start = search_start - 2 if updated_prompt[max(0, search_start - 2) : search_start] == "\n\n" else search_start
+            updated_prompt = updated_prompt[:prefix_start].rstrip() + SEARCH_CONTRACT
         else:
             updated_prompt = updated_prompt.rstrip() + SEARCH_CONTRACT
         if updated_prompt == prompt:
@@ -149,10 +186,10 @@ def main() -> int:
             )
         )
 
-    backup = args.backup_root / f"P5-CODEX-140-RETRY-{datetime.now(UTC):%Y%m%dT%H%M%SZ}"
+    backup = args.backup_root / f"P5-CODEX-147-{datetime.now(UTC):%Y%m%dT%H%M%SZ}"
     item_results: list[dict[str, object]] = []
     report: dict[str, object] = {
-        "work_id": "P5-CODEX-140-RETRY",
+        "work_id": "P5-CODEX-147",
         "applied": args.apply,
         "automation_ui_crosscheck": "unavailable_native_control_pipe",
         "items": item_results,
@@ -161,7 +198,7 @@ def main() -> int:
         backup.mkdir(parents=True, exist_ok=False)
         for path, raw, before, after_raw, before_hash, after_hash in planned:
             shutil.copy2(path, backup / f"{path.parent.name}.automation.toml")
-            staged = path.with_name(path.name + ".p140.tmp")
+            staged = path.with_name(path.name + ".p147.tmp")
             with staged.open("xb") as out:
                 out.write(after_raw)
                 out.flush()
