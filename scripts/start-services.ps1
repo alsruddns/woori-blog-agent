@@ -1,6 +1,7 @@
 param(
   [ValidateRange(30,900)][int]$DatabaseTimeoutSeconds = 300,
   [ValidateRange(1,10)][int]$ServiceAttempts = 3,
+  [ValidateSet('mock-only','scheduled-auto','manual-confirmed','scheduled-auto-manual','scheduled-auto-manual-trends')][string]$PublicationMode = 'manual-confirmed',
   [switch]$ExplicitUserStart,
   [switch]$FunctionsOnly
 )
@@ -160,18 +161,25 @@ function Get-PublicationStartupStatus {
   return @{ exit=$exit; value=$status }
 }
 
-function Ensure-PublicationWorker {
+function Ensure-PublicationWorker([string]$Mode = $PublicationMode) {
+  $expectedSwitch = switch ($Mode) {
+    'scheduled-auto' { '--operations-scheduled-auto' }
+    'manual-confirmed' { '--operations-manual-confirmed' }
+    'scheduled-auto-manual' { '--operations-scheduled-auto-and-manual' }
+    'scheduled-auto-manual-trends' { '--operations-scheduled-auto-and-manual-and-trends' }
+    default { '--operations-mock-only' }
+  }
   $probe = Get-PublicationStartupStatus
   $status = $probe.value
   if ($probe.exit -eq 0 -and $status -and $status.heartbeat_fresh -and $status.heartbeat.process_id) {
     $table = Get-ProcessTable
     $worker = $table | Where-Object Id -eq ([int]$status.heartbeat.process_id) | Select-Object -First 1
     if ($worker -and (Test-ExactCheckoutServiceProcess $worker 'publication_worker')) {
-      if ([string]$worker.CommandLine -match '--operations-manual-confirmed(?:\s|$)') {
-        Write-LifecycleLog 'publication_worker' 'already_ready' "pid=$($worker.Id) mode=manual-confirmed"
+      if ([string]$worker.CommandLine -match ([regex]::Escape($expectedSwitch) + '(?:\s|$)')) {
+        Write-LifecycleLog 'publication_worker' 'already_ready' "pid=$($worker.Id) mode=$Mode"
         return
       }
-      Write-LifecycleLog 'publication_worker' 'mode_mismatch' "pid=$($worker.Id) required=manual-confirmed"
+      Write-LifecycleLog 'publication_worker' 'mode_mismatch' "pid=$($worker.Id) required=$Mode"
       throw "Publication Worker is already running in a different mode. It was left running; review with scripts/status.ps1 before any safe mode transition."
     }
   }
@@ -186,12 +194,12 @@ function Ensure-PublicationWorker {
       if ($attempt -gt 1 -and @(Get-CheckoutServiceProcesses (Get-ProcessTable) 'publication_worker').Count) {
         throw 'Publication Worker process appeared after an earlier attempt; no duplicate was started.'
       }
-      Invoke-StartupChild @('-Service','publication_worker','-PublicationMode','manual-confirmed')
+      Invoke-StartupChild @('-Service','publication_worker','-PublicationMode',$Mode)
       return
     } catch { Write-LifecycleLog 'publication_worker' 'start_attempt_failed' "attempt=$attempt error_type=$($_.Exception.GetType().Name)" }
     if ($attempt -lt $ServiceAttempts) { Start-Sleep -Seconds ([Math]::Min(5 * $attempt,20)) }
   }
-  throw "Publication Worker failed to start in manual-confirmed mode after $ServiceAttempts attempts."
+  throw "Publication Worker failed to start in $Mode mode after $ServiceAttempts attempts."
 }
 
 if ($FunctionsOnly) { return }
@@ -231,7 +239,7 @@ try {
   Ensure-HttpService 'api' 8100 'http://127.0.0.1:8100/health'
   Ensure-HttpService 'dashboard' 3100 'http://127.0.0.1:3100/research'
   Ensure-ResearchWorker
-  Ensure-PublicationWorker
+  Ensure-PublicationWorker $PublicationMode
   Write-LifecycleLog 'startup' 'complete' 'services=dashboard,api,research_worker,publication_worker'
 } catch {
   Write-LifecycleLog 'startup' 'failed' "error_type=$($_.Exception.GetType().Name)"

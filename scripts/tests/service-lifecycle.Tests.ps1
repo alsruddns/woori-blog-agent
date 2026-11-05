@@ -96,9 +96,16 @@ Describe 'Windows service lifecycle ownership and startup policy' {
 
   It 'keeps login startup in the current manual-confirmed worker mode' {
     $bootstrap = Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\start-services.ps1') -Raw
-    $bootstrap | Should Match 'operations-manual-confirmed'
-    $bootstrap | Should Match "'-PublicationMode','manual-confirmed'"
-    $bootstrap | Should Not Match 'operations-scheduled-auto|PublicationMode scheduled-auto'
+    $bootstrap | Should Match "PublicationMode = 'manual-confirmed'"
+    $bootstrap | Should Match 'Ensure-PublicationWorker \$PublicationMode'
+  }
+
+  It 'lets an explicit all-service restart preserve the approved publication mode' {
+    $bootstrap = Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\start-services.ps1') -Raw
+    $restarter = Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\restart-services.ps1') -Raw
+    $bootstrap | Should Match "PublicationMode = 'manual-confirmed'"
+    $bootstrap | Should Match 'Ensure-PublicationWorker \$PublicationMode'
+    $restarter | Should Match 'start-services\.ps1.*PublicationMode scheduled-auto-manual-trends'
   }
 
   It 'defines the eight project desktop shortcuts and hides the PowerShell launcher' {

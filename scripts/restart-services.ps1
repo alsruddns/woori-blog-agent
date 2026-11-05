@@ -37,7 +37,7 @@ try {
   if (-not $dbReady) { throw 'Restart aborted: PostgreSQL project database did not become ready within 300 seconds.' }
   Write-LifecycleLog 'database' 'ready_before_restart_start' "request_id=$requestId database=woori_blog_agent"
 
-  & (Join-Path $PSScriptRoot 'start-services.ps1') -ExplicitUserStart
+  & (Join-Path $PSScriptRoot 'start-services.ps1') -ExplicitUserStart -PublicationMode scheduled-auto-manual-trends
   if (-not (Test-LoopbackHttp 'http://127.0.0.1:8100/health' 10)) { throw 'API health check did not return HTTP 200.' }
   if (-not (Test-LoopbackHttp 'http://127.0.0.1:3100/research' 10)) { throw 'Dashboard health check did not return HTTP 200.' }
   $after=Get-CurrentServicePids

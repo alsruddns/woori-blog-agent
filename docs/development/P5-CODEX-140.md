@@ -129,3 +129,18 @@ The code and local prompt changes are ready for operational reflection. The next
 - Commit: pending.
 - Origin push: pending.
 - Final PostgreSQL completion audit: pending.
+
+## Follow-up: service reflection and publication mode correction
+
+- Follow-up date: 2026-11-05 (Asia/Seoul).
+- The verified `e8fd1d17e24fd5fd6904ff853a852d3b72349a57` P140 code was reflected into all four services using the approved lifecycle workflow. The first start attempt stopped cleanly but was blocked because the current HEAD lacked a verified-source marker; after isolated validation with a repository-local pytest basetemp, all four services started. No process was force-killed.
+- The default login startup correctly remains `manual-confirmed`. The restart script had not passed the already-approved explicit publication lane, so Publication Worker initially came up in manual-confirmed mode. Queue inspection showed zero queued/due publication jobs. The Worker was gracefully stopped and started through the existing explicit mode argument; it now runs `operations-scheduled-auto-and-manual-and-trends` with a fresh heartbeat. API, Dashboard, and Research Worker remained healthy during that scoped Worker mode correction.
+- Runtime observed after correction: `configured_mode=auto`, `AutoPolicyActive=true`, `operations_auto_approved=true`, `blogger_write_mode=public_write_approved`, global interval 15 minutes, global daily limit 100, scheduled policy enabled for six approved Blogger records, Trends lane enabled, and no queued/due Publication Jobs. Existing last publication remained the independent Trends LIVE Job `ca03e656-9570-4d82-a662-8f4fc8d133a0`; no P140 test post or draft was created.
+- Lifecycle scripts were corrected so normal/login startup retains its manual-confirmed default, while an explicit full restart passes `scheduled-auto-manual-trends`. This avoids dropping approved lanes on a future full restart without broadening ordinary startup behavior.
+- Added lifecycle regression coverage. `scripts/tests/service-lifecycle.Tests.ps1`: 18 passed, 0 failed. PowerShell parser checks passed for the changed scripts.
+- `scripts/apply-verified-changes.ps1` initially passed its checks but its post-validation `ShouldProcess` path raised a null-reference after writing the verified marker. The repository validation was rerun with an isolated pytest basetemp and passed; the current service reflection and health evidence are recorded here. No service was force-stopped.
+- Current service PIDs after the full reflection and safe Worker mode correction: Dashboard 5528 (HTTP 200), API 17936 (HTTP 200), Research Worker 32500 (fresh heartbeat), Publication Worker 32328 (fresh heartbeat, approved combined mode). Runtime applied commit for the full service reflection: `e8fd1d17e24fd5fd6904ff853a852d3b72349a57`.
+- No official Desktop execution after the prompt update has yet been observed. Local TOML prompt updates are verified; Desktop reload, new scheduled package, manuscript, Import Receipt, and Publication Queue entry remain unverified. The historical automation-7 09:00 slot was not replayed.
+- No P140-driven Blogger write occurred. One ordinary Trends LIVE publication occurred before service reflection; it remains separately identified above.
+- Follow-up lifecycle tests and implementation changes: `scripts/start-services.ps1`, `scripts/restart-services.ps1`, and `scripts/tests/service-lifecycle.Tests.ps1`.
+- Follow-up commit and final Git/audit metadata: recorded after commit below.
