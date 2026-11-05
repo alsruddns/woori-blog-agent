@@ -52,4 +52,13 @@
 - Local prompt backup: `C:\Users\achie\.codex\automation-backups\P5-CODEX-140-RETRY-20261105T041006Z`.
 - 종료 감사, 커밋, push 및 최종 Git 상태는 후속 개발 기록/`git log`로 연결한다.
 
+## Manual Run now 후속 실행 진단 — 2026-11-05
+
+- 실제 Desktop 세션 `01a1a9f7-7e39-7091-9bc4-3dbbc95b5934`, turn `01a1a9f7-8078-7573-a23b-d16846861eee`, Automation `automation-3`, trigger `automation_cron_run_now`를 읽기 전용으로 확인했다. 실행은 13:28:52 KST경 시작해 13:29:13 KST경 끝났고, 보고된 지속 시간은 21.485초다.
+- 해당 실행 prompt에는 `manual-research-broker.py`와 `scheduled-research-broker.py` 경로가 모두 포함돼 있었다. Tool trace에는 Resolver와 `scheduled_duplicate_check.py`만 있고 manual broker/Codex 검색 호출은 없다. Desktop은 명시적 실행 오류 없이 턴을 정상 완료했다.
+- 따라서 현재 관찰된 실패는 API/Research Worker/Publication Worker의 오래된 코드나 heartbeat가 아니라, preflight 후 같은 Desktop turn에서 broker를 호출하지 않고 끝난 실행 흐름이다. 서비스 재기동은 broker 호출을 발생시키지 않으므로 필요하지 않으며 수행하지 않았다.
+- Preflight 결과는 사용자가 제공한 대로 `local_status=not_found`, `draft_import_allowed=true`, `remote_status=not_checked`, `overall_status=unknown`으로 유지한다. 이번 run에서 웹 조사, Snapshot, 원고/ready 파일, Import Receipt, Publication Queue 결과는 확인되지 않았다. Blogger 쓰기는 0건이다.
+- 이 관찰은 broker의 실제 Desktop E2E 성공을 입증하지 않는다. 같은 완료된 turn을 재실행하거나 과거 run을 재사용하지 않았다. 후속 신규 Run now에서 broker 호출과 그 이후의 Snapshot → 원고 → Import Receipt를 별도로 확인해야 한다.
+- 후속 진단 완료 감사: append-only `agent.work.completed` ID `373089`. 문서 커밋 해시는 `git log`의 후속 문서 기록으로 연결한다.
+
 - ?? ??: append-only `agent.work.completed` ID `372526`; manual Desktop E2E? Desktop UI prompt load? ????? ????. ?? ?? `95934ce`; ? ?? ??? ?? ?? `5af2d4f`. ?? ?? ?? ??? `git log`?? ????.
