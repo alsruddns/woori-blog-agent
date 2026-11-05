@@ -41,4 +41,5 @@
 - 통과: `git diff --check`
 - 운영 Read-only smoke: `list_publications`의 `review`, `published`, `held`, `auto_failure` 네 응답에서 실제 Trends 원본 검색량 라벨을 확인했다.
 - 서비스 재기동 및 운영 배포는 하지 않았다. 코드 변경은 커밋·푸시 후 로컬 실행 서비스에 자동 반영되는지 별도로 확인하지 않았으므로 런타임 반영은 미확인이다.
-- 최종 커밋/완료 감사 이벤트는 작업 마감 뒤 연결한다. 자기 참조 커밋은 `git log -- docs/development/P5-CODEX-146.md`에서 확인한다.
+- 구현 커밋: `8e104d2a5c05a10b816e0dc095d555eda922a434` (`Feat : [Publishing] Show Trends volume in publication lists`). 완료 감사 이벤트: PostgreSQL `agent.work.completed`, ID `374308`, 2026-11-05 14:48:24 KST.
+- 개발 기록 후속 커밋 및 최종 브랜치 상태는 `git log -- docs/development/P5-CODEX-146.md`와 `git status`에서 확인한다.
