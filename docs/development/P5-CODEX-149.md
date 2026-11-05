@@ -25,6 +25,14 @@
 - prompt updater는 예전 고정 문구 대신 계약 marker를 경계로 삼아 현재 프롬프트도 안전하게 갱신한다. active local Automation 20개의 조사 및 Import 완료 지침을 갱신했다.
 - Automation ID, 상태, RRULE, 모델, target, project path 및 기타 불변 설정은 변경하지 않았다. local TOML 백업: `C:\Users\achie\.codex\automation-backups\P5-CODEX-147-20261105T083342Z`.
 
+## 배포 전 운영 상태
+
+- Schema 92, 설정 revision 23. `AutoMode=auto`, `AutoPolicyActive=true`, Scheduled Auto enabled, `operations_auto_approved=true`, `blogger_write_mode=public_write_approved`.
+- 자동 발행 간격 15분, KST 일일 제한 100건, 승인된 활성 Blogger 6개 EN/KO/JA/DE/pt-BR/VI. zh-CN은 범위 밖이다.
+- Research 진행 Job 0, Publication running/uncertain 0, scheduled-auto queued/due 0. 기존 24개 예약 Import는 전부 `awaiting_human_review`.
+- Trends Job 1건은 `available_at=2026-11-06 00:00 KST`; queue row를 보존했다.
+- 기존 발행 실패·차단 Job과 게시 이력은 변경하지 않았다.
+
 ## 검증
 
 - `test_scheduled_research.py`, `test_scheduled_source_evidence.py`, `test_update_automation_authoring_recovery.py`, `test_publications.py`: **87 passed**.
@@ -34,14 +42,19 @@
 - 실제 ChatGPT-auth Codex CLI 격리 검색 probe: `gpt-6-luna`, 검색 2건, BLS 원문 URL 열린 이벤트 확인. tracking query가 붙은 열린 URL과 query 없는 canonical source URL을 동일한 경로로 정규화했다. 이 probe는 조사 검증만 했고 원고·Import·Publication Job을 만들지 않았다.
 - CLI fixed runner는 ChatGPT 로그인 사용, API-key fallback 비활성 상태로 실행됐다. 별도 OpenAI API 사용 없음.
 - 20개 local TOML prompt 갱신 및 백업 검증 완료. 공식 Codex Desktop UI의 프롬프트 재로드 상태는 확인하지 못했다.
+- 공식 `apply-verified-changes.ps1` 첫 검증은 pytest 34개 통과 후 Windows 전역 pytest temp ACL 정리에서 종료됐다. 서비스는 중지되지 않았다. 프로젝트 전용 `PYTEST_ADDOPTS=--basetemp=.runtime\\p149-official-test`로 다시 실행한 공식 검증은 34 passed; Ruff, mypy, isolated wheel, Dashboard lint/typecheck/production build도 통과했다.
 
-## 운영 결과 및 남은 검증
+## 운영 반영 및 남은 검증
 
-- 서비스 반영/재기동: 이번 기록 시점에는 미실시. 변경 코드는 아직 운영 API/Worker 런타임에 적용되지 않았다.
-- 실제 새 Desktop 예약 실행: 미검증. 과거 automation-4/14 occurrence는 재실행하지 않았다.
-- 실제 Research Snapshot, 원고 파일, Import Receipt, Publication Queue, Blogger LIVE: 이번 작업에서 생성·검증하지 않았다.
-- 기존 AutoMode, Scheduled Auto scope, Blogger OAuth, 큐, 게시 이력은 수정하지 않았다. Blogger 테스트 게시/초안 0건.
-- 다음 신규 Desktop 예약 실행에서 opened-source package → 원고 envelope → Import Receipt → live source capture → Scheduled Auto queue 및 실제 LIVE 결과를 각각 확인해야 한다. 기존 안전·중복·권리·일일 상한·간격 gate는 계속 적용된다.
+- `scripts/apply-verified-changes.ps1 -Apply -Confirm:$false`가 변경 코드 검증 및 isolated Dashboard build 후 전체 4개 서비스를 정상 종료·재기동했다. 강제 종료는 없었다.
+- 기존 PID → 새 PID: API 20824 → 9832, Dashboard 20028 → 15372, Research Worker 4888 → 26920, Publication Worker 4732 → 34872.
+- API `/health` 및 Dashboard `/research` HTTP 200. Research/Publication Worker heartbeat fresh. 네 서비스 적용 revision 모두 `34ac9eef9d73619e90cc3a27445a5634dc54e99d`.
+- 재기동 후 schema 92, revision 23, `AutoMode=auto`, `AutoPolicyActive=true`, Scheduled Auto enabled, 15분 간격, KST 100건 한도, 승인된 Blogger 6개와 `operations-scheduled-auto-and-manual-and-trends` worker mode 확인.
+- 기존 24개 scheduled Import는 모두 `awaiting_human_review`, scheduled-auto Job은 과거 성공 1건, 신규 scheduled queue 0건. Trends의 기존 queued Job 1건은 그대로 유지했다.
+- 재기동 이후 10분 이내 Blogger write attempt 0건. 테스트 게시/초안 0건.
+- 공식 Desktop UI에서 프롬프트 재로드 및 다음 신규 예약 실행은 미검증이다. 새 Snapshot, 원고 파일, Import Receipt, 신규 Publication Queue와 LIVE 결과는 아직 없다. automation-4/14 과거 occurrence는 재실행하지 않았다.
+- Source capture는 기존에 검토된 Federal Reserve/BLS/White House/NIST/ONS/Japan energy 경로와 이번에 추가한 Destatis만 허용한다. 이 목록 밖의 Vietnam/Brazil/Japan/Korea/crypto 등 출처는 추가 검토·allowlist 없이는 fail closed이며, 따라서 local prompt 20개 갱신만으로 모든 주제의 자동 LIVE를 보장하지 않는다.
+- 다음 신규 공식 Desktop 예약에서 opened-source package → 원고 envelope → Import Receipt → live source capture → Scheduled Auto queue → 실제 LIVE를 단계별 확인해야 한다. 적격 자료와 기존 중복·권리·품질·한도 정책이 통과해야 게시된다.
 
 ## 수정 파일
 
@@ -57,5 +70,14 @@
 
 ## 커밋
 
-- Feature 및 개발 기록 커밋: `30724e7`; 문서의 커밋 자기 참조는 후속 Git 기록으로 확인.
-- 운영 반영 및 다음 신규 예약의 종단 간 결과는 별도 follow-up으로 기록한다.
+- Feature commit: `30724e7`; 이 운영 결과 기록의 후속 문서 commit은 Git history에서 확인한다.
+- `origin/develop` 반영 완료. 신규 예약의 실제 종단 간 결과는 Desktop 실행 후 별도 append-only follow-up으로 기록한다.
+
+## 운영 안정화 후속 기록
+
+- 운영자 우선순위 확인: Codex 예약 원고 작성 및 적격 원고 발행은 제품의 핵심 경로다. 이번 변경은 검색 결과만으로 evidence를 인정하던 결함과 Destatis source-capture 누락을 수정하고, 기존 Scheduled Auto lane을 실제 Worker에 반영했다.
+- 최종 코드/runtime revision: `34ac9eef9d73619e90cc3a27445a5634dc54e99d`; API, Dashboard, Research Worker, Publication Worker가 모두 이 revision으로 재기동됐다. 데스크톱 PC 전체 재부팅은 필요하지 않았다.
+- 현재 검증 수준: 배포와 서비스 상태는 확인했지만, 변경 후 신규 공식 Desktop 예약으로 Snapshot → 원고 → Import Receipt → Publication Queue → LIVE가 이어지는 실증은 아직 없다. 기존 24건의 review-held Import 및 과거 예약 occurrence는 보존했고 재실행하지 않았다.
+- 적용 범위 한계: source capture는 기존 reviewed catalog 및 이번에 추가한 Destatis 경로만 수용한다. catalog 밖 출처는 fail-closed이므로 모든 20개 Automation의 주제에서 LIVE까지 보장됐다고 보고하지 않는다. 해당 기능 완료 판정에는 각 신규 실행의 실제 출처 패키지와 publication eligibility를 확인해야 한다.
+- Blogger 테스트 게시/초안 및 별도 유료 API 호출은 0건. AutoMode, Scheduled Auto 승인, 15분 간격, KST 일일 100건 제한, 활성 Blogger 6개 설정은 유지됐다.
+- 이 후속 기록은 기존 작업 로그를 덮어쓰지 않고 배포 후 확인 사항을 추가한다. 최종 문서 커밋은 Git history 및 PostgreSQL 완료 감사 이벤트에서 연결한다.
