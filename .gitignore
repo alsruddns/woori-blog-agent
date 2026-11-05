@@ -17,3 +17,11 @@ apps/dashboard/test-results/
 apps/dashboard/playwright-report/
 .local/
 .runtime/
+
+# Local Codex/browser inspection artifacts and isolated pytest result folders.
+**/.playwright-mcp/
+**/.pytest-*/
+/UsersachieAppDataLocalTemppytest-*/
+/Usersachiegitwoori-blog-agent.*/
+/services/api/UsersachieAppDataLocalTemppytest-*/
+/docs/development/assets/P5-CODEX-112-*.png
