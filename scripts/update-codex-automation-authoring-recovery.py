@@ -1,4 +1,4 @@
-"""Append the P131 recovery contract to existing active project Automation prompts.
+"""Append the P131/P140 recovery contracts to active project Automation prompts.
 
 Dry-run is the default. This edits prompt text only; it never registers a task
 or changes its ID, schedule, model, target, status, or working directory.
@@ -19,6 +19,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MARKER = "P5-CODEX-131 VERIFIED AUTHORING RECOVERY"
 PRIORITY_MARKER = "P5-CODEX-131 EXECUTE THE AUTHORING RUN"
+SEARCH_MARKER = "P5-CODEX-140 CODEX CLI LIVE RESEARCH"
 PRIORITY = f"""{PRIORITY_MARKER} (highest-priority execution order):
 This Automation turn must perform the work, not only diagnose or restate policy. Keep the initial inspection short: read this task prompt, memory.md if present, and only the specific schema/contract section needed. Do not print or reread whole long policy documents; this prompt and docs/operations/scheduled-outage-recovery.md already define the required safeguards. Resolve the exact run once, run generation duplicate preflight once, then use the rest of the available run to open current sources, write the research snapshot and article envelope, validate, and hand off to ready. The scheduled resolver's automation_policy.allowed=true is the pre-research policy check; perform the existing policy recheck once immediately before writing. Do not stop merely because preflight's overall status is unknown when its local status is not_found/failed_only, draft_import_allowed=true, and remote status is not_checked. Do stop for unclear local duplicate status, unsupported evidence, a real usage limit, unresolved identity, or an actual command failure. Don't claim success without verifying files and Import receipt.\n\n"""
 CONTRACT = f"""\n\n{MARKER} (authoritative for this invocation):
@@ -26,6 +27,11 @@ Read docs/operations/scheduled-outage-recovery.md and follow its evidence, sourc
 Run scripts/scheduled_duplicate_check.py --stage generation for the exact target/language/topic. Only local_status=not_found or failed_only AND draft_import_allowed=true permits a new Import. local_status=unknown, a duplicate, disallowed draft, unresolved run identity or a live matching run blocks. Preserve remote_status=not_checked; it is not proof of remote uniqueness and the normal publication-time check remains mandatory. Do not use the outage pending saver for a clear, eligible preflight.
 Use current, directly reviewed web sources; never fabricate evidence, facts, source excerpts, research snapshots or claims. If research is insufficient, record a blocked/skipped result and create no article envelope. Save the evidence metadata/excerpts and claim links in a fresh staging JSON, then run scripts/write-research-snapshot.py <staging.json> <unique-name>.research.json. Stop if it fails; never overwrite a snapshot.
 Only after a successful snapshot, write the complete UTF-8 envelope to a new incoming/<unique-name>.part. For a retry, inspect the exact invocation and all existing artifacts first; do not overwrite files, replay old slots or create a second original. Run scripts/validate-scheduled-import.py on the .part and require valid=true. Save the exact generation-preflight JSON response as a temporary local file and run scripts/handoff-automation-manuscript.py <incoming.part> --preflight-json <preflight.json>. This helper rechecks the current Desktop invocation, the complete Pydantic envelope, clear local preflight and exclusive ready handoff; it never calls an API/Blogger or creates a Publishing Job. A successful result means file handoff only. Research Worker Import receipt, quality/review state, publication queue and Blogger publication are distinct later outcomes. Record the real path/hash and each completed stage; never report completion for an unsaved or invalid article. Preserve this task's existing Automation ID, prompt topic, language, target, RRULE, model and operating policy. Do not create, delete, pause or reschedule any Automation.
+"""
+
+SEARCH_CONTRACT = f"""\n\n{SEARCH_MARKER} (required after a clear generation preflight):
+Only for a resolver-confirmed scheduled execution, use the broker described below. For an official Desktop Run now returning execution_mode=manual, do not call the scheduled broker or relabel the run as scheduled; follow the P131 manual_codex_import contract and exact manual authorization. Use a live search method only if that manual execution actually exposes it; otherwise keep the existing evidence rules and record the limitation.
+Use the installed Codex CLI live web search through the fixed local broker; the scheduled session's own tool list is not assumed to contain web search. Save the exact generation-preflight JSON returned for this run, then pass it on stdin to scripts/scheduled-research-broker.py with this Automation ID, the exact topic, and the matching category. Use politics only for U.S. policy where the White House feed is relevant, economy only for U.S. BLS/Federal Reserve topics, technology only for U.S. NIST cybersecurity topics, and general for all other topics. The broker rechecks this exact scheduled invocation and authoring policy, verifies local duplicate clearance, calls `codex --search exec` using the current ChatGPT login, and writes an immutable Research Snapshot package. It must return evidence_available with source URLs, publication dates and excerpts matched to actual web-search results before you draft. Read that package and use its retained evidence in the article snapshot and claim links. Do not fabricate a package or date. If the CLI reports account usage limit, authentication, capacity or timeout failure, stop this run; do not use an API key, metered API, purchase credits, or disguise the failure. For other search/source gaps, the broker's fixed RSS fallback is available only for its supported categories. Never treat local research-package creation as article creation, Import, review approval or publication; continue the same run through envelope, validation, handoff and report each distinct result. Preserve Automation ID, schedule, topic, language, target, operation policy and all previous idempotency checks. Do not create or replay an occurrence.
 """
 
 
@@ -104,20 +110,29 @@ def main() -> int:
         prompt = before.get("prompt")
         if not isinstance(prompt, str):
             raise TypeError(f"automation_prompt_missing:{path.parent.name}")
-        if PRIORITY_MARKER in prompt:
-            if prompt.count(PRIORITY_MARKER) != 1:
-                raise ValueError(f"automation_priority_marker_duplicate:{path.parent.name}")
-            continue
-        if MARKER in prompt and prompt.count(MARKER) != 1:
+        if prompt.count(PRIORITY_MARKER) > 1:
+            raise ValueError(f"automation_priority_marker_duplicate:{path.parent.name}")
+        if prompt.count(MARKER) > 1:
             raise ValueError(f"automation_contract_marker_duplicate:{path.parent.name}")
-        updated_prompt = prompt if MARKER in prompt else prompt.rstrip() + CONTRACT
-        updated_prompt = PRIORITY + updated_prompt
+        if prompt.count(SEARCH_MARKER) > 1:
+            raise ValueError(f"automation_search_marker_duplicate:{path.parent.name}")
+        updated_prompt = prompt
+        if MARKER not in updated_prompt:
+            updated_prompt = updated_prompt.rstrip() + CONTRACT
+        if PRIORITY_MARKER not in updated_prompt:
+            updated_prompt = PRIORITY + updated_prompt
+        if SEARCH_MARKER in updated_prompt:
+            updated_prompt = updated_prompt.split(SEARCH_MARKER, 1)[0].rstrip() + SEARCH_CONTRACT
+        else:
+            updated_prompt = updated_prompt.rstrip() + SEARCH_CONTRACT
+        if updated_prompt == prompt:
+            continue
         after_raw = _replace_prompt(raw.decode("utf-8"), updated_prompt, timestamp).encode("utf-8")
         after = tomllib.loads(after_raw.decode("utf-8"))
         if any(after.get(key) != before.get(key) for key in immutable_fields):
             raise ValueError(f"automation_non_prompt_setting_changed:{path.parent.name}")
-        if after.get("prompt", "").count(MARKER) != 1:
-            raise ValueError(f"automation_contract_marker_invalid:{path.parent.name}")
+        if after.get("prompt", "").count(SEARCH_MARKER) != 1:
+            raise ValueError(f"automation_search_contract_invalid:{path.parent.name}")
         planned.append(
             (
                 path,
@@ -129,10 +144,10 @@ def main() -> int:
             )
         )
 
-    backup = args.backup_root / f"P5-CODEX-131-{datetime.now(UTC):%Y%m%dT%H%M%SZ}"
+    backup = args.backup_root / f"P5-CODEX-140-RETRY-{datetime.now(UTC):%Y%m%dT%H%M%SZ}"
     item_results: list[dict[str, object]] = []
     report: dict[str, object] = {
-        "work_id": "P5-CODEX-131",
+        "work_id": "P5-CODEX-140-RETRY",
         "applied": args.apply,
         "automation_ui_crosscheck": "unavailable_native_control_pipe",
         "items": item_results,
@@ -141,7 +156,7 @@ def main() -> int:
         backup.mkdir(parents=True, exist_ok=False)
         for path, raw, before, after_raw, before_hash, after_hash in planned:
             shutil.copy2(path, backup / f"{path.parent.name}.automation.toml")
-            staged = path.with_name(path.name + ".p131.tmp")
+            staged = path.with_name(path.name + ".p140.tmp")
             with staged.open("xb") as out:
                 out.write(after_raw)
                 out.flush()

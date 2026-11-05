@@ -287,6 +287,7 @@ def test_runner_bounded_execution_no_shell_or_api_key(monkeypatch,tmp_path,mode)
         pid=123
         def __init__(self,args,**kwargs):
             self.stdin=io.StringIO();self.stdout=io.StringIO('\n'.join(json.dumps(e) for e in events)+'\n');self.done=False
+            assert args[1:3]==['--search','exec']
             assert '--ignore-user-config' in args and '--sandbox' in args
             assert args[args.index('--sandbox')+1]=='read-only'
             assert '--dangerously-bypass-approvals-and-sandbox' not in args
@@ -302,12 +303,12 @@ def test_runner_bounded_execution_no_shell_or_api_key(monkeypatch,tmp_path,mode)
     monkeypatch.setattr(codex_runner.subprocess,'Popen',Proc)
     monkeypatch.setattr(codex_runner,'ProcessBoundary',Boundary)
     if mode=='success':
-        data,evidence=codex_runner.execute(tmp_path/'work','untrusted task',{},lambda *_:None,lambda:False)
+        data,evidence=codex_runner.execute(tmp_path/'work','untrusted task',{},lambda *_:None,lambda:False,enable_search=True)
         assert data['test'] and evidence['execution_id']=='test-thread'
     else:
         expected={'cancel':'cancelled','timeout':'codex_timeout','limit':'codex_usage_limit'}[mode]
         with pytest.raises(codex_runner.CodexFailure,match=expected):
-            codex_runner.execute(tmp_path/'work','untrusted task',{},lambda *_:None,lambda:mode=='cancel',timeout=0 if mode=='timeout' else 10)
+            codex_runner.execute(tmp_path/'work','untrusted task',{},lambda *_:None,lambda:mode=='cancel',timeout=0 if mode=='timeout' else 10,enable_search=True)
     assert closed or mode=='cancel'
 
 

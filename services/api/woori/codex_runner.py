@@ -104,7 +104,7 @@ def canonical_url(value: str) -> str:
 
 def execute(work: Path, prompt: str, schema: dict[str, Any], callback: Callable[[str,dict[str,Any]],None],
             cancelled: Callable[[],bool], timeout: float=600, *, require_opened_sources: bool=True,
-            require_web_research: bool=True) -> tuple[dict[str,Any],dict[str,Any]]:
+            require_web_research: bool=True, enable_search: bool=False) -> tuple[dict[str,Any],dict[str,Any]]:
     status=engine_status()
     if not status['available']:
         raise CodexFailure(status['error_code'])
@@ -113,7 +113,9 @@ def execute(work: Path, prompt: str, schema: dict[str, Any], callback: Callable[
     (work/'output-schema.json').write_text(json.dumps(schema),encoding='utf-8')
     (work/'request.txt').write_text(prompt,encoding='utf-8')
     output=work/'article.json'
-    args=[str(executable()),'exec','--ignore-user-config','--strict-config','--ephemeral','--skip-git-repo-check',
+    # `--search` is global and must precede `exec`. It is enabled only for the
+    # explicitly approved scheduled research path, without changing other CLI lanes.
+    args=[str(executable())]+(['--search'] if enable_search else [])+['exec','--ignore-user-config','--strict-config','--ephemeral','--skip-git-repo-check',
           '--sandbox','read-only','-C',str(work),'-m',MODEL,'--json','--output-schema',str(work/'output-schema.json'),'-o',str(output)]
     for config in [*CONFIG,'developer_instructions='+json.dumps(DEVELOPER)]:
         args+=['-c',config]
@@ -129,7 +131,7 @@ def execute(work: Path, prompt: str, schema: dict[str, Any], callback: Callable[
             events.put(line)
         events.put(None)
     threading.Thread(target=read,daemon=True).start()
-    evidence:dict[str,Any]={'opened_urls':{},'web_search_count':0,'execution_id':None,'model':MODEL}
+    evidence:dict[str,Any]={'opened_urls':{},'searched_sources':[],'web_search_count':0,'execution_id':None,'model':MODEL}
     failure='codex_execution_failed';started=time.monotonic()
     try:
         callback('researching',{'process_id':proc.pid})
@@ -161,9 +163,16 @@ def execute(work: Path, prompt: str, schema: dict[str, Any], callback: Callable[
             if event.get('type')=='item.completed' and item.get('type')=='web_search':
                 evidence['web_search_count']+=1
                 for result in item.get('results') or []:
-                    if 'view' in str(result.get('ref_id','')) and not any(x in str(result.get('snippet','')).lower() for x in ('failed to fetch','internal error')):
-                        url=canonical_url(str(result.get('url','')))
-                        if url:evidence['opened_urls'][url]=datetime.now(UTC).isoformat()
+                    url=canonical_url(str(result.get('url','')))
+                    if url:
+                        evidence['searched_sources'].append({
+                            'url':url,
+                            'title':str(result.get('title',''))[:300],
+                            'domain':str(result.get('domain',''))[:160],
+                            'snippet':str(result.get('snippet',''))[:1200],
+                        })
+                    if 'view' in str(result.get('ref_id','')) and url and not any(x in str(result.get('snippet','')).lower() for x in ('failed to fetch','internal error')):
+                        evidence['opened_urls'][url]=datetime.now(UTC).isoformat()
             if item.get('type')=='agent_message': callback('writing',{})
         if proc.wait(timeout=5)!=0 or not output.exists():
             raise CodexFailure(failure)
