@@ -61,6 +61,8 @@ def _package(path: Path, *, mode: str = "manual") -> None:
         data["manual_run_id"] = "codex-manual:automation-7:123e4567-e89b-12d3-a456-426614174000"
     else:
         data["occurrence_id"] = "codex-slot:automation-7:20261105T0900KST"
+        data["category"] = "general"
+        data["topic"] = "K-pop current artist activity for Korean readers"
     path.write_text(json.dumps(data), encoding="utf-8")
 
 
@@ -121,7 +123,9 @@ def test_scheduled_stage_selects_only_scheduled_broker(tmp_path):
         if command[1].endswith("scheduled_duplicate_check.py"):
             return SimpleNamespace(returncode=0, stdout=exact_preflight, stderr="")
         assert command[1].endswith("scheduled-research-broker.py")
-        assert kwargs["input"] == exact_preflight
+        broker_preflight = json.loads(kwargs["input"])
+        assert broker_preflight["automation_execution"] == _preflight(mode="scheduled")["automation_execution"]
+        assert broker_preflight["scheduled_request"]["event_group_id"] == "kpop-issue-2026-11-05"
         _package(package_path, mode="scheduled")
         return SimpleNamespace(returncode=0, stdout=json.dumps({
             "status": "evidence_available", "path": str(package_path), "source_count": 1,
@@ -134,6 +138,59 @@ def test_scheduled_stage_selects_only_scheduled_broker(tmp_path):
     assert code == 0
     assert result["execution_mode"] == "scheduled"
     assert commands[-1].endswith("scheduled-research-broker.py")
+    saved_preflight = json.loads(Path(result["preflight_json_path"]).read_text(encoding="utf-8"))
+    assert saved_preflight["scheduled_request"] == {
+        "automation_id": "automation-7",
+        "category": "general",
+        "language_code": "ko",
+        "target_country": "KR",
+        "target_blog_id": "3321654108096579717",
+        "event_group_id": "kpop-issue-2026-11-05",
+        "topic": "K-pop current artist activity for Korean readers",
+    }
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "reason"),
+    [
+        ("topic", "Different issue for the same slot", "existing_research_package_request_mismatch"),
+        ("category", "economy", "existing_research_package_request_mismatch"),
+        ("target_country", "JP", "saved_preflight_request_mismatch"),
+        ("target_blog_id", "9991230000000000002", "saved_preflight_request_mismatch"),
+        ("event_group_id", "different-event-group", "saved_preflight_request_mismatch"),
+    ],
+)
+def test_scheduled_retry_rejects_changed_request_for_same_occurrence(tmp_path, field, value, reason):
+    package_dir = tmp_path / "state" / "research-packages"
+    package_path = package_dir / "automation-7-20261105T0900KST.research.json"
+    _package(package_path, mode="scheduled")
+    args = _args(tmp_path, package=package_dir)
+    request = {
+        "automation_id": args["automation_id"], "category": args["category"],
+        "language_code": args["language_code"], "target_country": args["target_country"],
+        "target_blog_id": args["target_blog_id"], "event_group_id": args["event_group_id"],
+        "topic": args["topic"],
+    }
+    preflight = _preflight(mode="scheduled")
+    preflight["scheduled_request"] = request
+    preflight_path = stage._preflight_path(
+        "scheduled", "codex-slot:automation-7:20261105T0900KST",
+        directory=args["preflight_dir"],
+    )
+    preflight_path.parent.mkdir(parents=True, exist_ok=True)
+    preflight_path.write_text(json.dumps(preflight), encoding="utf-8")
+    args[field] = value
+
+    def fake_run(_command, **_kwargs):
+        return SimpleNamespace(returncode=0, stdout=json.dumps(_preflight(mode="scheduled")), stderr="")
+
+    result, code = stage.run_stage(**args, command_runner=fake_run)
+
+    assert code == 3
+    assert result["status"] == "blocked"
+    assert result["reason"] == reason
+    assert result["article_created"] is False
+    assert result["imported"] is False
 
 
 @pytest.mark.parametrize("local_status", ["unknown", "already_imported", "already_published"])

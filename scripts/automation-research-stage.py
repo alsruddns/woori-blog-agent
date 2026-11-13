@@ -174,6 +174,20 @@ def run_stage(
                 preflight=preflight,
             ), 3
         mode, identity, _invocation = _identity(preflight, automation_id)
+        if mode == "scheduled":
+            # Bind this occurrence to every resolved task input used by the
+            # generation preflight. A retry may reuse evidence only for the
+            # exact same scheduled request.
+            preflight["scheduled_request"] = {
+                "automation_id": automation_id,
+                "category": category,
+                "language_code": language_code,
+                "target_country": target_country,
+                "target_blog_id": target_blog_id,
+                "event_group_id": event_group_id,
+                "topic": topic,
+            }
+            preflight_text = json.dumps(preflight, ensure_ascii=True, sort_keys=True)
     except subprocess.TimeoutExpired:
         return _result(status="blocked", reason="generation_preflight_timeout"), 3
     except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError) as exc:
@@ -197,6 +211,10 @@ def run_stage(
             package_identity = package.get("occurrence_id" if mode == "scheduled" else "manual_run_id")
             if package_identity != identity or not isinstance(package.get("sources"), list):
                 raise ValueError("research_package_identity_mismatch")
+            if mode == "scheduled" and (
+                package.get("category") != category or package.get("topic") != topic
+            ):
+                raise ValueError("existing_research_package_request_mismatch")
             if package.get("status") != "evidence_available":
                 raise ValueError("existing_research_package_has_no_evidence")
             if not preflight_path.exists():
@@ -209,6 +227,8 @@ def run_stage(
             saved_mode, saved_identity, _ = _identity(saved_preflight, automation_id)
             if (saved_mode, saved_identity) != (mode, identity):
                 raise ValueError("saved_preflight_identity_mismatch")
+            if mode == "scheduled" and saved_preflight.get("scheduled_request") != preflight.get("scheduled_request"):
+                raise ValueError("saved_preflight_request_mismatch")
             return _result(status="evidence_available", mode=mode, identity=identity,
                            preflight=saved_preflight, preflight_path=preflight_path,
                            research_path=package_path, source_count=len(package["sources"])), 0

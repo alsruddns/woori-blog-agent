@@ -500,33 +500,17 @@ def run_authorized_research(
     except (RuntimeError, OSError, ValueError) as exc:
         reason = str(exc) if isinstance(exc, ValueError) else type(exc).__name__
         _record_codex_search_failure(automation_id, occurrence_id, reason)
-        # Do not switch sources after an account usage/quota, authentication,
-        # capacity, or timeout failure. RSS is only a bounded fallback for
-        # unavailable/empty web-search results and known fixed categories.
+        # A category feed cannot establish country/topic relevance. Scheduled
+        # Codex research therefore fails closed on every live-search error;
+        # unlike a completed source-validation result, retain the exception as
+        # a blocked operational outcome rather than a research package.
         if any(marker in reason for marker in ("usage_limit", "capacity", "auth", "timeout", "billable_credentials")):
             raise ValueError("scheduled_codex_search_blocked:" + reason[:100]) from None
-        if reason not in {"codex_not_installed", "web_research_not_observed", "codex_execution_failed"} or category not in FEEDS:
-            raise ValueError("scheduled_codex_search_unavailable:" + reason[:100]) from None
-        package = gather(
-            category,
-            topic,
-            occurrence_id=occurrence_id,
-            audit_run_id="scheduled:" + occurrence_id,
-        )
-        package["research_engine"] = "fixed_rss_fallback"
-        package["codex_search_failure"] = reason[:120]
-    if (
-        package.get("status") != "evidence_available"
-        and package.get("failure_class") in {"no_current_sources", "source_validation_failed"}
-        and category in FEEDS
-    ):
-        search_failure = str(package.get("failure_class"))
-        package = gather(
-            category, topic, occurrence_id=occurrence_id,
-            audit_run_id="scheduled:" + occurrence_id,
-        )
-        package["research_engine"] = "fixed_rss_fallback"
-        package["codex_search_failure"] = search_failure
+        raise ValueError("scheduled_codex_search_unavailable:" + reason[:100]) from None
+    # A completed live search that found no usable source is not a transport
+    # outage. Falling back by category alone can attach a U.S. feed item to an
+    # unrelated country/topic and incorrectly turn failed validation into
+    # evidence_available. Preserve the Codex failure package as-is.
     result = write_package(package, automation_id=automation_id)
     return {
         **result,

@@ -271,6 +271,94 @@ def test_scheduled_broker_writes_codex_sources_into_snapshot_package(monkeypatch
     assert events[0][1][0] == "research.scheduled_package.saved"
 
 
+@pytest.mark.parametrize("failure_class", ["source_validation_failed", "no_current_sources"])
+def test_scheduled_search_failure_does_not_fall_back_to_category_feed(
+    monkeypatch, tmp_path, failure_class,
+):
+    invocation = {
+        "automation_id": "automation-8", "execution_mode": "scheduled",
+        "occurrence_id": "codex-slot:automation-8:20261105T2000KST",
+        "scheduled_slot": "2026-11-05T20:00:00+09:00",
+    }
+    monkeypatch.setattr(automation_invocation, "resolve_current_invocation", lambda *_args, **_kwargs: invocation)
+    monkeypatch.setattr(automation_controls, "authoring_permission", lambda: {"allowed": True})
+    package = {
+        "schema_version": "scheduled-research-package/1.0",
+        "occurrence_id": invocation["occurrence_id"],
+        "category": "economy",
+        "topic": "Vietnam's recent economic developments",
+        "research_engine": "codex_cli_chatgpt_search",
+        "status": "evidence_unavailable",
+        "failure_class": failure_class,
+        "sources": [],
+    }
+    monkeypatch.setattr(scheduled_research, "gather_with_codex_search", lambda *_args, **_kwargs: package)
+
+    def forbidden_fallback(*_args, **_kwargs):
+        pytest.fail("scheduled research must not replace failed live-search evidence with a category feed")
+
+    monkeypatch.setattr(scheduled_research, "gather", forbidden_fallback)
+    saved = {}
+
+    def capture_package(value, *, automation_id):
+        saved["package"] = value
+        saved["automation_id"] = automation_id
+        return {"status": value["status"], "path": str(tmp_path / "snapshot.json"), "source_count": 0}
+
+    monkeypatch.setattr(scheduled_research, "write_package", capture_package)
+    preflight = {
+        "status": "unknown", "remote_status": "not_checked", "local_status": "not_found",
+        "draft_import_allowed": True,
+        "automation_execution": {"invocation": invocation},
+    }
+
+    result = scheduled_research.run_authorized_research(
+        automation_id="automation-8", category="economy",
+        topic="Vietnam's recent economic developments", preflight=preflight,
+    )
+
+    assert result["status"] == "evidence_unavailable"
+    assert result["execution_mode"] == "scheduled"
+    assert result["occurrence_id"] == invocation["occurrence_id"]
+    assert saved["automation_id"] == "automation-8"
+    assert saved["package"]["research_engine"] == "codex_cli_chatgpt_search"
+    assert saved["package"]["failure_class"] == failure_class
+    assert saved["package"]["sources"] == []
+
+
+@pytest.mark.parametrize("search_error", [
+    "codex_not_installed", "web_research_not_observed", "codex_execution_failed",
+])
+def test_scheduled_search_infrastructure_errors_do_not_use_category_feed(monkeypatch, search_error):
+    invocation = {
+        "automation_id": "automation-8", "execution_mode": "scheduled",
+        "occurrence_id": "codex-slot:automation-8:20261105T2000KST",
+        "scheduled_slot": "2026-11-05T20:00:00+09:00",
+    }
+    monkeypatch.setattr(automation_invocation, "resolve_current_invocation", lambda *_args, **_kwargs: invocation)
+    monkeypatch.setattr(automation_controls, "authoring_permission", lambda: {"allowed": True})
+    monkeypatch.setattr(scheduled_research, "_record_codex_search_failure", lambda *_args, **_kwargs: None)
+
+    def fail_search(*_args, **_kwargs):
+        raise ValueError(search_error)
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("scheduled search failures must not be relabeled with category-feed evidence")
+
+    monkeypatch.setattr(scheduled_research, "gather_with_codex_search", fail_search)
+    monkeypatch.setattr(scheduled_research, "gather", forbidden)
+    preflight = {
+        "local_status": "not_found", "draft_import_allowed": True,
+        "automation_execution": {"invocation": invocation},
+    }
+
+    with pytest.raises(ValueError, match="scheduled_codex_search_unavailable"):
+        scheduled_research.run_authorized_research(
+            automation_id="automation-8", category="economy",
+            topic="Vietnam's recent economic developments", preflight=preflight,
+        )
+
+
 def test_manual_codex_search_package_is_bound_to_manual_run_id(monkeypatch):
     from woori import codex_runner
 

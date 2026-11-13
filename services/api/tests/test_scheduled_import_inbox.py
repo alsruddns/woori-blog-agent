@@ -13,6 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from woori import content_imports, worker
+from woori.automation_ready_handoff import handoff_incoming
 from woori.config import settings
 from woori.content_imports import ScheduledImportEnvelope, ScheduledImportOrigin
 from woori.db import connection
@@ -394,6 +395,86 @@ def test_inbox_posts_review_held_item_and_idempotent_origin_then_moves_file(tmp_
     assert not source.exists()
     assert list((tmp_path / "processed").glob("*.processing.json"))
     assert (tmp_path / "incoming").is_dir() and (tmp_path / "rejected").is_dir()
+
+
+def test_scheduled_handoff_through_import_receipt_without_blogger_write(tmp_path: Path) -> None:
+    root = tmp_path / "gpt-scheduled-import"
+    incoming = root / "incoming"
+    incoming.mkdir(parents=True)
+    occurrence_id = "codex-slot:automation-8:20261105T2000KST"
+    slot = "2026-11-05T20:00:00+09:00"
+    payload = scheduled_payload()
+    origin = payload["scheduled_origin"]
+    assert isinstance(origin, dict)
+    origin.update({
+        "task_type": "scheduled_article", "task_id": "automation-8",
+        "automation_id": "automation-8", "occurrence_id": occurrence_id,
+        "occurrence_id_source": "project_derived_kst_slot", "scheduler_occurrence_id": None,
+        "scheduled_slot": slot, "executed_at": slot,
+        "local_duplicate_status": "not_found", "remote_duplicate_status": "not_checked",
+        "draft_import_allowed": True, "publication_recheck_required": True,
+        "publication_retry_status": "required_before_publication",
+    })
+    source = incoming / "automation-8-20261105T2000KST.part"
+    source.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    invocation = {
+        "execution_mode": "scheduled", "trigger": "automation_cron_scheduled",
+        "automation_id": "automation-8", "occurrence_id": occurrence_id,
+        "scheduled_slot": slot,
+    }
+    preflight = {"local_status": "not_found", "draft_import_allowed": True,
+                 "remote_status": "not_checked"}
+
+    handoff = handoff_incoming(
+        root, source, invocation=invocation, preflight=preflight,
+    )
+    ready_file = Path(handoff["ready_file"])
+    assert ready_file.exists() and not source.exists()
+    assert json.loads(ready_file.read_text(encoding="utf-8"))["scheduled_origin"]["occurrence_id"] == occurrence_id
+
+    import_id = str(uuid4())
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        if request.url.path.endswith("/scheduled-origin"):
+            body = json.loads(request.content)
+            assert body["occurrence_id"] == occurrence_id
+            return httpx.Response(201, json={"audit_event_id": 801, "duplicate": False,
+                "provenance_verified": False, "auto_publication_enabled": False})
+        if request.url.path.endswith("/live-source-evidence"):
+            return httpx.Response(201, json={"outcomes": [{"status": "not_in_reviewed_catalog"}],
+                "blogger_write_performed": False, "auto_eligible": False})
+        if request.method == "GET":
+            return httpx.Response(200, json={"latest_version": {"id": "scheduled-version-1"}, "assessments": []})
+        if request.url.path.endswith("/assessment"):
+            return httpx.Response(201, json={"version_id": "scheduled-version-1", "machine_passed": False,
+                "independent_source_verification": False, "generation_ready": False, "publish_ready": False})
+        body = json.loads(request.content)
+        assert body["item"]["generation_method"] == "chatgpt_scheduled_export"
+        return httpx.Response(201, json={"import_id": import_id, "duplicate": False,
+            "state": "awaiting_human_review", "publish_ready": False})
+
+    result = process_inbox_once(
+        root, "http://127.0.0.1:18100", "x" * 32,
+        transport=httpx.MockTransport(handler),
+    )
+    outcome = result["results"][0]
+    assert outcome["status"] == "imported"
+    assert outcome["execution_mode"] == "scheduled"
+    assert outcome["automation_id"] == "automation-8"
+    assert outcome["automation_run_id"] == occurrence_id
+    assert outcome["import_id"] == import_id
+    assert outcome["publish_ready"] is False
+    assert outcome["blogger_write_performed"] is False
+    receipt = json.loads(Path(outcome["import_receipt"]).read_text(encoding="utf-8"))
+    assert receipt["schema"] == "woori-research-import-receipt/1.0"
+    assert receipt["execution_mode"] == "scheduled"
+    assert receipt["automation_run_id"] == occurrence_id
+    assert receipt["import_id"] == import_id
+    assert receipt["blogger_write_performed"] is False
+    assert result["blogger_writes"] == 0
+    assert [request.method for request in calls] == ["POST", "POST", "POST", "GET", "POST"]
 
 
 def test_inbox_imports_explicit_manual_automation_with_manual_provenance_only(tmp_path: Path) -> None:
