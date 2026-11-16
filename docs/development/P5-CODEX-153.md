@@ -30,18 +30,20 @@
 - Dashboard TypeScript typecheck: passed.
 - Isolated Next.js production build: passed.
 - `git diff --check`: passed.
-- The first Playwright invocation could not connect because the configured isolated test port 13100 was stopped; rerunning against the isolated local test server passed. The production bundle was built but its isolated `next start` smoke could not be launched by the command safety review; production UI verification remains pending until managed Dashboard restart.
+- The first Playwright invocation could not connect because the configured isolated test port 13100 was stopped; rerunning against the isolated local test server passed.
+- `scripts/apply-verified-changes.ps1 -Apply -Confirm:$false` passed Dashboard lint, typecheck, and isolated production build; the managed Dashboard stopped gracefully and restarted on port 3100 with applied commit `8ec83ef6931801ce2bec7a6da7ec2d0c1283eab2`.
+- Live production-browser check at `http://127.0.0.1:3100/operations/automation`: the page rendered, the latest audit row displayed all five `changed_fields`, and the generic error page was absent. API request returned HTTP 200. No JavaScript page error occurred. Console still reports the unrelated missing `/favicon.ico` (404) and CSS preload warnings.
 - No paid API or Blogger write was used by this fix.
 
 ## Audit and release
 
 - The API snapshot and browser request were read-only. No database settings or audit rows were modified. A generic agent-work audit append endpoint is not available; a direct DB insert was rejected by the tool safety review, so the PostgreSQL `agent.work.started/completed` events were not recorded.
 - Code commit: `a66ef4a9a1677d9032282b7fcae9cce7bde0d791`.
-- Documentation commit: follows this record in Git history.
+- Initial documentation commit: `8ec83ef6931801ce2bec7a6da7ec2d0c1283eab2`; final evidence update is recorded in the follow-up documentation commit in Git history.
 - Push/PR status: pending.
-- Main merge/deployment: not requested for this follow-up fix; do not merge to `main` without a new explicit request.
+- Main merge: not requested for this follow-up fix; do not merge to `main` without a new explicit request.
 
 ## Remaining
 
-- Apply the verified Dashboard build through the managed restart path and confirm `/operations/automation` renders against the live local response with no console error.
+- A missing `/favicon.ico` still returns 404; it did not affect the automation page. CSS preload warnings also remain unrelated to this fix.
 - Preserve the currently enabled scheduled-only publication policy; this UI fix does not change its scope or worker settings.
