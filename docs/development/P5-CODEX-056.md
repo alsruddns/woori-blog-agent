@@ -1,0 +1,34 @@
+# P5-CODEX-056 — 원고 관리·발행 관리 목록 정리
+
+- 작업 시각: 2026-10-30 (KST)
+- 브랜치: `develop`
+- 변경 사유: 대표 원고 목록에서 같은 원고 계열의 여러 버전이 반복되고, Import 목록 조회가 DB 컬럼 불일치로 실패할 수 있었음. 편집 검토 후 목록 상태가 갱신되지 않는 문제와 상세 닫기 직후 자동 재열림도 함께 확인함.
+- 변경 전: 원고 평가 목록은 Content Version별 최신 평가만 뽑아 서로 다른 버전 행을 모두 노출했음. Import 목록은 Import 행 단위였으며 `external_content_imports.google_trends_based`를 조회했지만 해당 컬럼은 저장소의 migration에 없음. 검토 저장 후 상세만 갱신하고 목록 요청은 다시 실행하지 않았음.
+- 변경 후: 동일 content group + 현지화의 최신 대표 버전만 목록에 노출함. 그룹 정보가 없는 경우에만 버전 계보 root를 사용하며, 제목 문자열만으로 원고를 합치지 않음. Import 계보도 content group 우선, parent lineage 보조 기준으로 한 건만 노출함. 상세 응답은 부모 Import/Content Version 이력을 제공하며 기존 버전·감사 데이터는 수정하지 않음.
+- UI: 원고 탭을 `원고 목록`과 `가져온 원고`로 명확히 하고 최신 대표 버전/변경 이력 설명을 추가함. 최신 대표 수정 시각, 두 줄 제목 표시, 상태명, 공통 버튼 크기·간격과 모바일 표 정보를 정리함. 편집 검토 저장 뒤 상세와 목록을 모두 다시 읽음. Import 상세 자동 복원 ID를 직접 열기에도 기록해 닫은 상세가 즉시 다시 열리는 현상을 방지함. 발행 관리의 기존 `return_to`와 `open_import_id` 상세 연결은 유지함.
+- 상태 반영: 최신 review event와 최신 assessment 기준으로 Import 목록 상태를 제공함. 편집 검토 완료 이벤트는 `편집 검토 완료`로 표시하고, 기계 검사 필요/편집 검토 대기와 구분함. `publish_ready` 등 기존 안전 상태는 변경하지 않음.
+- 수정 파일:
+  - `services/api/woori/research_routes.py`
+  - `services/api/woori/content_imports.py`
+  - `services/api/tests/test_dashboard_read_models.py`
+  - `services/api/tests/test_content_imports.py`
+  - `apps/dashboard/app/manuscripts/manager.tsx`
+  - `apps/dashboard/app/manuscripts/workspace.tsx`
+  - `apps/dashboard/app/imports/external-import-workspace.tsx`
+  - `apps/dashboard/app/style.css`
+  - `apps/dashboard/app/layout.tsx`
+  - `apps/dashboard/e2e/content-workspace.spec.ts`
+  - `apps/dashboard/e2e/content-import-pipeline.spec.ts`
+  - `apps/dashboard/e2e/P5-UI-003-navigation.spec.ts`
+- 검증:
+  - Ruff 변경 범위 검사 통과.
+  - 격리·롤백 DB API 테스트 4개 통과(대표 Import 계보, 최신 Import 목록, 원고 목록 read model, 상세 read-only).
+  - Dashboard ESLint 통과, TypeScript typecheck 통과.
+  - Playwright: 대표 버전/원고 목록 관련 desktop 2개, mobile 2개 통과; Import pipeline desktop 1개 및 mobile 1개 통과; Import 상세 직접 열기·반응형 desktop 1개 통과.
+  - 기존 전체 `content-workspace.spec.ts`는 14/16 통과. 나머지 2개는 Trends E2E fixture가 60건을 예상했으나 실행 API가 1,270건을 반환한 환경/fixture 불일치였음. 해당 E2E는 읽기만 수행했고 운영 데이터는 수정하지 않음.
+  - 전체 `P5-UI-003-navigation.spec.ts` 실행 시 발행 페이지의 기존 오류 문구 기대 테스트가 실패했으나, 이번 변경 경로인 원고 상세 열기 테스트는 통과함.
+  - 변경 테스트 과정의 screenshot 산출물은 기존 자산을 `git restore`로 복구했으며, `.playwright-mcp/` 디렉터리는 보존하고 staging 대상에서 제외함.
+- 런타임/데이터: 운영 DB, OAuth, Blogger API, Auto 정책은 쓰지 않음. 3100/8100 운영 서비스를 재시작하거나 배포하지 않음. 격리 Dashboard만 테스트에 사용 후 정상 종료함.
+- 남은 사항: Import 스키마에는 Trends 원고 여부 컬럼이 없어 API 목록은 해당 값에 `NULL`을 반환함. 이를 근거 없이 `false`로 추정하지 않음. 기존 전체 Trends E2E의 fixture 분리는 별도 수정 범위임.
+- 커밋: 이 문서를 포함한 변경의 최종 SHA는 `git log`의 P5-CODEX-056 커밋에서 확인.
+- 원격 푸시: 최종 커밋 후 `origin/develop` 결과를 작업 완료 보고에 기록.

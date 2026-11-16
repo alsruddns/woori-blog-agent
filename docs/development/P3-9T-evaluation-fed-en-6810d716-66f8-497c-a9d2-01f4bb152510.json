@@ -1,0 +1,381 @@
+{
+  "phase": "3.9-T",
+  "evaluation_run_id": "6810d716-66f8-497c-a9d2-01f4bb152510",
+  "recorded_at": "2026-10-26T15:05:57.425885+00:00",
+  "isolation": {
+    "database": "woori_blog_agent_eval",
+    "evaluation_only": true,
+    "operational_database_modified": false,
+    "blogger_write_rows_created": 0,
+    "publish_ready": false
+  },
+  "source": {
+    "source_id": "873093a8-085e-42b5-8bb2-657f62f8df94",
+    "title": "Federal Reserve Board press releases",
+    "url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20261013a.htm",
+    "collected_at": "2026-10-27 00:00:48.169598+09:00"
+  },
+  "language": "en",
+  "model": {
+    "name": "Qwen3-4B-Q4_K_M.gguf",
+    "engine": "llama.cpp b11889",
+    "backend": "Vulkan",
+    "gpu_layers": 20
+  },
+  "run": {
+    "id": "6810d716-66f8-497c-a9d2-01f4bb152510",
+    "status": "succeeded",
+    "attempts": 1,
+    "error_type": null,
+    "created_at": "2026-10-27 00:00:48.169598+09:00",
+    "updated_at": "2026-10-27 00:03:50.885729+09:00"
+  },
+  "quota": {
+    "language": "en",
+    "used": 1,
+    "limit": 2,
+    "all_language_limits": [
+      {
+        "language_code": "en",
+        "evaluation_daily_limit": 2
+      },
+      {
+        "language_code": "ja",
+        "evaluation_daily_limit": 2
+      },
+      {
+        "language_code": "ko",
+        "evaluation_daily_limit": 2
+      },
+      {
+        "language_code": "zh-CN",
+        "evaluation_daily_limit": 2
+      }
+    ],
+    "count_policy": "target counts at creation; retry reused same run; pre-worker configuration failure did not create a second target"
+  },
+  "draft": {
+    "version_id": "1aa1a9f1-5614-490f-aeb5-58a3973c75aa",
+    "title": "Verified source facts: Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026",
+    "body": "## Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026\n\n## 1\nMinutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026. [source:873093a8-085e-42b5-8bb2-657f62f8df94]\n\nThe Federal Reserve Board on Tuesday released the minutes from its recent meetings to review and determine the discount rates provided to depository institutions through the discount window. [source:873093a8-085e-42b5-8bb2-657f62f8df94]\n\n## 2\nToday's minutes cover the Board meetings that occurred on August 17, September 9, and September 16, 2026. [source:873093a8-085e-42b5-8bb2-657f62f8df94]\n\n## 3\nThe Board's process for setting the discount rate is distinct from the process the Federal Open Market Committee follows in setting the target range for the federal funds rate. [source:873093a8-085e-42b5-8bb2-657f62f8df94]\n\n## 4\nFor media inquiries, please email [email protected] or call 202-452-2955. [source:873093a8-085e-42b5-8bb2-657f62f8df94]\n\n2026-10-26",
+    "state": "quality_held",
+    "publish_ready": false
+  },
+  "quality": {
+    "machine_passed": false,
+    "structural_pass": true,
+    "grounding_rule_pass": false,
+    "failed_rule_checks": [
+      "no_mass_direct_quote"
+    ],
+    "longest_source_overlap_words": 30,
+    "direct_quote_check": false,
+    "human_review_required": true,
+    "publish_ready": false,
+    "reason": "direct quotation/source overlap check failed; semantic accuracy and naturalness remain human review"
+  },
+  "stages": [
+    {
+      "name": "source_collection",
+      "status": "succeeded",
+      "elapsed_ms": 78,
+      "error_category": null,
+      "validation": {
+        "passed": true,
+        "source_count": 1
+      }
+    },
+    {
+      "name": "evidence_extraction",
+      "status": "succeeded",
+      "elapsed_ms": 71,
+      "error_category": null,
+      "validation": {
+        "passed": true,
+        "fact_count": 5
+      }
+    },
+    {
+      "name": "fact_registry",
+      "status": "succeeded",
+      "elapsed_ms": 78,
+      "error_category": null,
+      "validation": {
+        "passed": true,
+        "fact_count": 5,
+        "source_span_verified": true
+      }
+    },
+    {
+      "name": "evidence_validation",
+      "status": "succeeded",
+      "elapsed_ms": 87,
+      "error_category": null,
+      "validation": {
+        "method": "exact_source_span",
+        "passed": true
+      }
+    },
+    {
+      "name": "content_outline",
+      "status": "succeeded",
+      "elapsed_ms": 113,
+      "error_category": null,
+      "validation": {
+        "method": "evidence_only_bounded_outline",
+        "passed": true
+      }
+    },
+    {
+      "name": "section_generation",
+      "status": "succeeded",
+      "elapsed_ms": 10378,
+      "error_category": null,
+      "validation": {
+        "checks": {
+          "citations_allowed": true,
+          "source_ids_allowed": true,
+          "no_repeated_sentences": true,
+          "numbers_from_evidence": true,
+          "proper_names_preserved": true,
+          "no_unsupported_proper_names": true
+        },
+        "passed": true,
+        "localization": {
+          "passed": true,
+          "ai_calls": 2,
+          "fact_checks": {
+            "aa68c18312f6972b6916": {
+              "status": "machine_passed",
+              "no_added_urls": true,
+              "citation_linked": true,
+              "language_matches": true,
+              "numbers_preserved": true,
+              "entities_preserved": true,
+              "no_repeated_sentences": true,
+              "no_unverified_entity_added": true,
+              "no_unapproved_translation_asserted": true
+            },
+            "f9ae6848c43ac7d43601": {
+              "status": "machine_passed",
+              "no_added_urls": true,
+              "citation_linked": true,
+              "language_matches": true,
+              "numbers_preserved": true,
+              "entities_preserved": true,
+              "no_repeated_sentences": true,
+              "no_unverified_entity_added": true,
+              "no_unapproved_translation_asserted": true
+            }
+          }
+        },
+        "missing_proper_names": [],
+        "unsupported_proper_names": []
+      }
+    },
+    {
+      "name": "section_generation",
+      "status": "succeeded",
+      "elapsed_ms": 4918,
+      "error_category": null,
+      "validation": {
+        "checks": {
+          "citations_allowed": true,
+          "source_ids_allowed": true,
+          "no_repeated_sentences": true,
+          "numbers_from_evidence": true,
+          "proper_names_preserved": true,
+          "no_unsupported_proper_names": true
+        },
+        "passed": true,
+        "localization": {
+          "passed": true,
+          "ai_calls": 1,
+          "fact_checks": {
+            "1bc600ffb89ca18f8823": {
+              "status": "machine_passed",
+              "no_added_urls": true,
+              "citation_linked": true,
+              "language_matches": true,
+              "numbers_preserved": true,
+              "entities_preserved": true,
+              "no_repeated_sentences": true,
+              "no_unverified_entity_added": true,
+              "no_unapproved_translation_asserted": true
+            }
+          }
+        },
+        "missing_proper_names": [],
+        "unsupported_proper_names": []
+      }
+    },
+    {
+      "name": "section_generation",
+      "status": "succeeded",
+      "elapsed_ms": 5037,
+      "error_category": null,
+      "validation": {
+        "checks": {
+          "citations_allowed": true,
+          "source_ids_allowed": true,
+          "no_repeated_sentences": true,
+          "numbers_from_evidence": true,
+          "proper_names_preserved": true,
+          "no_unsupported_proper_names": true
+        },
+        "passed": true,
+        "localization": {
+          "passed": true,
+          "ai_calls": 1,
+          "fact_checks": {
+            "08ea19ea53d7dc7734e4": {
+              "status": "machine_passed",
+              "no_added_urls": true,
+              "citation_linked": true,
+              "language_matches": true,
+              "numbers_preserved": true,
+              "entities_preserved": true,
+              "no_repeated_sentences": true,
+              "no_unverified_entity_added": true,
+              "no_unapproved_translation_asserted": true
+            }
+          }
+        },
+        "missing_proper_names": [],
+        "unsupported_proper_names": []
+      }
+    },
+    {
+      "name": "section_generation",
+      "status": "succeeded",
+      "elapsed_ms": 4165,
+      "error_category": null,
+      "validation": {
+        "checks": {
+          "citations_allowed": true,
+          "source_ids_allowed": true,
+          "no_repeated_sentences": true,
+          "numbers_from_evidence": true,
+          "proper_names_preserved": true,
+          "no_unsupported_proper_names": true
+        },
+        "passed": true,
+        "localization": {
+          "passed": true,
+          "ai_calls": 1,
+          "fact_checks": {
+            "4d9e353ff6a798986ea4": {
+              "status": "machine_passed",
+              "no_added_urls": true,
+              "citation_linked": true,
+              "language_matches": true,
+              "numbers_preserved": true,
+              "entities_preserved": true,
+              "no_repeated_sentences": true,
+              "no_unverified_entity_added": true,
+              "no_unapproved_translation_asserted": true
+            }
+          }
+        },
+        "missing_proper_names": [],
+        "unsupported_proper_names": []
+      }
+    },
+    {
+      "name": "claim_verification",
+      "status": "held",
+      "elapsed_ms": 82,
+      "error_category": null,
+      "validation": {
+        "passed": false
+      }
+    },
+    {
+      "name": "seo_quality",
+      "status": "held",
+      "elapsed_ms": 78,
+      "error_category": null,
+      "validation": {
+        "passed": false
+      }
+    },
+    {
+      "name": "draft_persistence",
+      "status": "succeeded",
+      "elapsed_ms": 72,
+      "error_category": null,
+      "validation": {
+        "passed": true
+      }
+    }
+  ],
+  "metrics": {
+    "model_calls": 5,
+    "completion_tokens": 206,
+    "prompt_tokens": 861,
+    "model_wall_seconds": 24.164,
+    "aggregate_completion_tokens_per_second": 8.53,
+    "max_rss_mib": 3380.21,
+    "cpu_peak_percent": 56.4,
+    "gpu_utilization_samples_percent": [
+      46.64,
+      50.13,
+      44.97,
+      50.63,
+      50.72
+    ],
+    "worker_rss_bytes": 56967168,
+    "stages_elapsed_ms": 25157
+  },
+  "audit_event_types": [
+    "research.evaluation.model.override",
+    "research.queued",
+    "research.started",
+    "research.generation.started",
+    "research.facts.checked",
+    "research.stage.started",
+    "research.stage.succeeded",
+    "research.stage.started",
+    "research.stage.succeeded",
+    "research.stage.started",
+    "research.stage.succeeded",
+    "research.stage.started",
+    "research.stage.succeeded",
+    "research.stage.started",
+    "research.stage.succeeded",
+    "research.stage.started",
+    "research.stage.succeeded",
+    "research.stage.started",
+    "research.stage.succeeded",
+    "research.stage.started",
+    "research.stage.succeeded",
+    "research.stage.started",
+    "research.stage.succeeded",
+    "research.planning.completed",
+    "research.stage.started",
+    "research.stage.held",
+    "research.stage.started",
+    "research.stage.held",
+    "research.generation.saved",
+    "research.seo.checked",
+    "research.stage.started",
+    "research.stage.succeeded",
+    "research.completed"
+  ],
+  "safety": {
+    "paid_api_calls": 0,
+    "external_data_calls_during_worker": 0,
+    "blogger_writes": 0,
+    "automatic_publishing": false,
+    "publish_ready": false
+  },
+  "human_review": {
+    "status": "pending",
+    "required_checks": [
+      "meaning accuracy",
+      "translation naturalness",
+      "reader value",
+      "quotation/copyright context"
+    ]
+  }
+}

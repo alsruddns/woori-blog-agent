@@ -1,0 +1,102 @@
+.publicationPreview {
+  min-width: 0;
+  max-width: 100%;
+  margin: 20px 0 28px;
+}
+
+.toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.toolbar h3 { margin: 0 0 5px; }
+.toolbar p, .limitation { margin: 0; color: #68766f; font-size: 12px; line-height: 1.6; }
+
+.trendLabelToggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #dce4df;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.trendLabelToggle input { width: auto; margin: 0; }
+
+.controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+.controls button[aria-pressed="true"] { border-color: #477b61; background: #eef5f0; color: #315c45; font-weight: 700; }
+
+.labels { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.labels span { max-width: 100%; padding: 4px 9px; border: 1px solid #dce4df; border-radius: 999px; background: #f6f8f6; font-size: 12px; overflow-wrap: anywhere; }
+
+.iframe {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  height: min(65vh, 760px);
+  border: 1px solid #dce4df;
+  border-radius: 9px;
+  background: white;
+}
+
+.htmlSource, .metadata pre {
+  max-width: 100%;
+  max-height: 520px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 14px;
+  border: 1px solid #dce4df;
+  border-radius: 9px;
+  background: #f7f8f7;
+  color: #28342d;
+  font: 12px/1.6 ui-monospace, Consolas, monospace;
+}
+
+.limitation { margin-top: 9px; }
+.metadata { max-width: 100%; margin: 14px 0; padding: 13px 15px; border: 1px solid #dce4df; border-radius: 9px; overflow-wrap: anywhere; }
+.metadata summary { cursor: pointer; font-weight: 700; }
+.metadata h4 { margin: 16px 0 6px; }
+.metadata a { overflow-wrap: anywhere; }
+
+.seoPanel { max-width: 760px; min-width: 0; margin: 12px auto; padding: 18px; border: 1px solid #dce4df; border-radius: 10px; background: #fff; color: #26342e; overflow-wrap: anywhere; }
+.seoPanel h4 { margin: 0 0 8px; font-size: 18px; }
+.seoPanel > p { color: #596a60; font-size: 13px; line-height: 1.65; }
+.seoPanel dl { display: grid; grid-template-columns: minmax(105px, 150px) minmax(0, 1fr); gap: 8px 12px; padding: 14px 0; border-block: 1px solid #e3e9e5; font-size: 13px; }
+.seoPanel dt { color: #68766f; }
+.seoPanel dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.seoChecks { margin: 0; padding: 0; list-style: none; }
+.seoChecks li { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 10px; align-items: start; padding: 10px 0; border-bottom: 1px solid #edf0ee; font-size: 13px; }
+.seoChecks li > span { color: #53645a; font-weight: 700; }
+.seoChecks li[data-status="review"] > span { color: #89561e; }
+.seoChecks li[data-status="not_measured"] > span { color: #69766e; }
+.seoChecks p { margin: 0; line-height: 1.55; }
+.gscNote { padding: 10px 12px; border-radius: 7px; background: #f3f6f4; }
+
+.targetSelector { display: grid; gap: 6px; max-width: 100%; margin: 10px 0; font-size: 13px; font-weight: 650; }
+.targetSelector select { width: min(100%, 620px); min-width: 0; }
+.packageView { max-width: 900px; min-width: 0; margin: 12px 0; padding: 18px; border: 1px solid #dce4df; border-radius: 10px; background: #fff; overflow-wrap: anywhere; }
+.packageView h4 { margin: 0 0 8px; font-size: 18px; }
+.packageView p { color: #58685f; font-size: 13px; line-height: 1.65; }
+.packageView dl { display: grid; grid-template-columns: minmax(115px, 170px) minmax(0, 1fr); gap: 8px 12px; padding: 12px 0; border-block: 1px solid #e3e9e5; font-size: 13px; }
+.packageView dt { color: #68766f; }
+.packageView dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.packageView button { margin-block: 8px; }
+.seoActions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+@media (max-width: 640px) {
+  .iframe { height: 62vh; }
+  .toolbar { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .seoPanel { padding: 14px; }
+  .seoPanel dl { grid-template-columns: minmax(82px, 105px) minmax(0, 1fr); }
+  .seoChecks li { grid-template-columns: 74px minmax(0, 1fr); }
+  .packageView { padding: 14px; }
+  .packageView dl { grid-template-columns: minmax(82px, 105px) minmax(0, 1fr); }
+}

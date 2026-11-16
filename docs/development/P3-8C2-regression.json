@@ -1,0 +1,424 @@
+{
+  "phase": "3.8-C2",
+  "kind": "append_only_deterministic_recheck",
+  "batch_id": "7bd0ffc5-8f52-43d3-9f54-9399e3651a0c",
+  "source_batch_id": "accda6bd-cf11-4cdc-8f35-801e0fbbbddc",
+  "created_at": "2026-10-26T09:13:19.170696+00:00",
+  "results": [
+    {
+      "source_evaluation_id": "cca5a045-c948-40c2-be55-65c1007ec08e",
+      "evaluation_id": "561f1caa-9174-4c20-b543-f50d54745e13",
+      "topic_key": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+      "language": "en",
+      "title": "Apple Inc. 10-Q Filing for 2026-07-31",
+      "source_content_version_id": "446cda2e-a880-40d6-bb55-62f8f202c4e7",
+      "status": "quality_held",
+      "error_category": null,
+      "checks": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": false,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "details": {
+        "proper_name_candidates": [
+          "Apple Inc",
+          "SEC Form"
+        ],
+        "missing_proper_names": [],
+        "unsupported_proper_names": [],
+        "unexpected_numbers": [],
+        "uncited_paragraphs": [],
+        "invalid_source_urls": []
+      },
+      "elapsed_ms": 70,
+      "ai_calls": 0,
+      "publish_ready": false
+    },
+    {
+      "source_evaluation_id": "edf9ee67-590e-4e41-a449-254c6f1622e5",
+      "evaluation_id": "7f3198f3-2ec0-427c-8503-fc7e1b8fa677",
+      "topic_key": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+      "language": "ja",
+      "title": "Apple Inc. 2026年7月31日に提出された10-Qフォーム",
+      "source_content_version_id": "20137e84-5335-4cf4-85dc-0a353401eb8a",
+      "status": "quality_held",
+      "error_category": null,
+      "checks": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": false,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": false,
+        "no_unsupported_proper_names": false,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "details": {
+        "proper_name_candidates": [
+          "Apple Inc",
+          "SEC Form"
+        ],
+        "missing_proper_names": [
+          "SEC Form"
+        ],
+        "unsupported_proper_names": [
+          "United States",
+          "United States Dollar"
+        ],
+        "unexpected_numbers": [],
+        "uncited_paragraphs": [
+          "この報告書には、2026年3月29日から2026年6月27日までの期間における収益と純利益が記載されています。収益は109,417,000,000 United States Dollar、純利益は29,789,000,000 United"
+        ],
+        "invalid_source_urls": []
+      },
+      "elapsed_ms": 69,
+      "ai_calls": 0,
+      "publish_ready": false
+    },
+    {
+      "source_evaluation_id": "09bed01a-ede5-46d4-a12f-b3d5930e893b",
+      "evaluation_id": "6155d409-3a69-42bb-bd1a-43de83039bfa",
+      "topic_key": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+      "language": "ko",
+      "title": "",
+      "source_content_version_id": "",
+      "status": "failed",
+      "error_category": "prior_generation_failed_not_replayable",
+      "checks": {
+        "recheck_possible": false,
+        "raw_model_response_available": false,
+        "reason": "C1 persisted the sanitized schema error but not its response body; original cannot be replayed",
+        "original_error_category": "local_model_output_schema_invalid"
+      },
+      "details": {},
+      "elapsed_ms": 0,
+      "ai_calls": 0,
+      "publish_ready": false
+    },
+    {
+      "source_evaluation_id": "40145b79-e3c4-4921-ac12-e14018454838",
+      "evaluation_id": "6680bd96-cede-41d7-9fed-6d1d6e5d8d83",
+      "topic_key": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+      "language": "zh-CN",
+      "title": "Apple Inc. 2026年7月31日提交的10-Q文件",
+      "source_content_version_id": "2dd4ec19-0837-4a8e-a21e-15fcb703dd22",
+      "status": "quality_held",
+      "error_category": null,
+      "checks": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": false,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": false,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "details": {
+        "proper_name_candidates": [
+          "Apple Inc",
+          "SEC Form"
+        ],
+        "missing_proper_names": [
+          "SEC Form"
+        ],
+        "unsupported_proper_names": [],
+        "unexpected_numbers": [],
+        "uncited_paragraphs": [
+          "Apple Inc. 于2026年7月31日提交了SEC Form 10-Q，报告期为2026年6月27日结束。该文件显示，2026年3月29日至2026年6月27日期间的收入为109417000000美元，净收入为29789000000美"
+        ],
+        "invalid_source_urls": []
+      },
+      "elapsed_ms": 65,
+      "ai_calls": 0,
+      "publish_ready": false
+    },
+    {
+      "source_evaluation_id": "287b4db9-006c-4eec-8da6-4e0091deb2a4",
+      "evaluation_id": "d9201236-a4b0-41dd-bd4f-12c556abe2db",
+      "topic_key": "873093a8-085e-42b5-8bb2-657f62f8df94",
+      "language": "en",
+      "title": "Minutes of the Board's Discount Rate Meetings on August 17, September 9, and September 16, 2026",
+      "source_content_version_id": "3caba1cb-4392-4612-a5a1-d8d6879e873c",
+      "status": "quality_held",
+      "error_category": null,
+      "checks": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": false
+      },
+      "details": {
+        "proper_name_candidates": [
+          "Federal Open Market Committee",
+          "Federal Reserve Board"
+        ],
+        "missing_proper_names": [],
+        "unsupported_proper_names": [],
+        "unexpected_numbers": [],
+        "uncited_paragraphs": [],
+        "invalid_source_urls": []
+      },
+      "elapsed_ms": 61,
+      "ai_calls": 0,
+      "publish_ready": false
+    },
+    {
+      "source_evaluation_id": "a4d21666-7886-4ad1-8f93-0ad2c54f748b",
+      "evaluation_id": "833fa287-b6ef-4c68-9359-069cb1caec72",
+      "topic_key": "873093a8-085e-42b5-8bb2-657f62f8df94",
+      "language": "ja",
+      "title": "2026年8月17日、9月9日および16日におけるボードのディスカウントレート会議の記録",
+      "source_content_version_id": "25f05a01-ee9b-4796-80a8-5aa9731462dd",
+      "status": "quality_held",
+      "error_category": null,
+      "checks": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": false,
+        "no_unverified_numbers": false,
+        "proper_names_preserved": false,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "details": {
+        "proper_name_candidates": [
+          "Federal Open Market Committee",
+          "Federal Reserve Board"
+        ],
+        "missing_proper_names": [
+          "Federal Open Market Committee",
+          "Federal Reserve Board"
+        ],
+        "unsupported_proper_names": [],
+        "unexpected_numbers": [
+          "16.0",
+          "DATE:2026-11-13"
+        ],
+        "uncited_paragraphs": [],
+        "invalid_source_urls": []
+      },
+      "elapsed_ms": 66,
+      "ai_calls": 0,
+      "publish_ready": false
+    },
+    {
+      "source_evaluation_id": "94b7b2d8-1900-455c-93f2-cfc87ddcd78d",
+      "evaluation_id": "77ec9e94-4ca8-4fb4-84bf-ec5413ce7961",
+      "topic_key": "873093a8-085e-42b5-8bb2-657f62f8df94",
+      "language": "ko",
+      "title": "2026년 8월 17일, 9월 9일 및 16일 Federal Reserve 보드의 할인율 회의 기록",
+      "source_content_version_id": "fc7c3874-7131-4968-a123-8c103e362be2",
+      "status": "quality_held",
+      "error_category": null,
+      "checks": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": false,
+        "no_unverified_numbers": false,
+        "proper_names_preserved": false,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": false,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": false,
+        "no_forbidden_foreign_script_mixing": false,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "details": {
+        "proper_name_candidates": [
+          "Federal Open Market Committee",
+          "Federal Reserve Board"
+        ],
+        "missing_proper_names": [
+          "Federal Open Market Committee",
+          "Federal Reserve Board"
+        ],
+        "unsupported_proper_names": [],
+        "unexpected_numbers": [
+          "16.0"
+        ],
+        "uncited_paragraphs": [
+          "Federal Reserve 보드는 2026년 10월 14일에 2026년 8월 17일, 9월 9일 및 16일에 개최된 할인율 회의 기록을 발표했습니다. 이 기록은 보드가 기관에 할인 윈도우를 통해 제공하는 할인율을 ",
+          "Federal Reserve 보드는 할인율을 설정하는 과정이 Federal Open Market Committee가 Федер럴 펀드 이자율 범위를 설정하는 과정과 구별된다는 점을 강조했습니다. 이 과정은 보드가 기",
+          "미디어 문의는 [email protected]로 이메일을 보내거나 202-452-2955로 전화할 수 있습니다."
+        ],
+        "invalid_source_urls": []
+      },
+      "elapsed_ms": 65,
+      "ai_calls": 0,
+      "publish_ready": false
+    },
+    {
+      "source_evaluation_id": "cbf134e5-b485-4557-91af-d1d8bf29b895",
+      "evaluation_id": "369b587c-bca8-4ab4-b405-dd6c0d796457",
+      "topic_key": "873093a8-085e-42b5-8bb2-657f62f8df94",
+      "language": "zh-CN",
+      "title": "美联储2026年8月17日、9月9日和9月16日贴现率会议纪要",
+      "source_content_version_id": "a9462d7b-0408-4c0c-945e-9ce79d7803c6",
+      "status": "quality_held",
+      "error_category": null,
+      "checks": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": false,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": false,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "details": {
+        "proper_name_candidates": [
+          "Federal Open Market Committee",
+          "Federal Reserve Board"
+        ],
+        "missing_proper_names": [
+          "Federal Open Market Committee",
+          "Federal Reserve Board"
+        ],
+        "unsupported_proper_names": [],
+        "unexpected_numbers": [],
+        "uncited_paragraphs": [
+          "会议纪要由美联储发布，内容仅限于会议记录，不包含任何额外信息或分析。如需进一步了解，可联系美联储媒体办公室，电话为202-452-2955，或发送电子邮件至[email protected]。"
+        ],
+        "invalid_source_urls": []
+      },
+      "elapsed_ms": 77,
+      "ai_calls": 0,
+      "publish_ready": false
+    }
+  ],
+  "summary": {
+    "rechecked": 8,
+    "machine_passed": 0,
+    "quality_held": 7,
+    "not_replayable": 1,
+    "all_publish_ready_false": true
+  }
+}

@@ -1,0 +1,388 @@
+{
+  "phase": "3.9-T",
+  "evaluation_id": "e78951ab-5d8e-4f38-a903-5e801d407f6a",
+  "created_at": "2026-10-26T21:44:16.726848+00:00",
+  "source": {
+    "adapter": "sec_edgar",
+    "source_id": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+    "source_name": "SEC EDGAR company submissions and XBRL facts",
+    "url": "https://www.sec.gov/Archives/edgar/data/320193/32019326000020/aapl-20260627.htm",
+    "keyword_id": "7da37a9c-529c-4935-b45d-23570584462b"
+  },
+  "language": "ko",
+  "model": {
+    "name": "Qwen3-4B-Q4_K_M.gguf",
+    "runtime": {
+      "pid": 28804,
+      "model": "Qwen3-4B-Q4_K_M.gguf",
+      "engine": "llama.cpp b11889",
+      "threads": 4,
+      "backend": "vulkan",
+      "engine_directory": "llama-b11889-vulkan",
+      "gpu_layers": 20
+    },
+    "sha256": "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5",
+    "license": "Apache-2.0",
+    "size_bytes": 2497280256
+  },
+  "isolation": {
+    "database": "woori_blog_agent_eval",
+    "evaluation_only": true,
+    "worker_exit_code": 0
+  },
+  "quota": {
+    "used_before": 1,
+    "used_after": 2,
+    "limit": 2,
+    "count_policy": "target counted at creation; failures and cancellation remain counted; retries reuse target"
+  },
+  "resources": {
+    "before": {
+      "cpu_percent": 26.7,
+      "memory_percent": 68.9,
+      "memory_available_bytes": 10638028800,
+      "disk_free_bytes": 202903601152,
+      "resource_gate_passed": true
+    },
+    "after": {
+      "cpu_percent": 32.5,
+      "memory_percent": 69.0,
+      "memory_available_bytes": 10631667712,
+      "disk_free_bytes": 202903511040,
+      "resource_gate_passed": true
+    },
+    "worker_max_rss_bytes_observed_in_job_events": 57090048,
+    "cpu_percent_during_run_sampled": 0.0,
+    "gpu_engine_percent": null
+  },
+  "run": {
+    "id": "b8635e8c-8999-4c08-8a15-e01f0290b61e",
+    "status": "failed",
+    "error_type": "source_version_missing",
+    "attempts": 1,
+    "created_at": "2026-10-27 06:44:14.279136+09:00",
+    "updated_at": "2026-10-27 06:44:16.525294+09:00"
+  },
+  "draft": null,
+  "checks": {
+    "machine_quality_passed": false,
+    "quality": {},
+    "grounding": {},
+    "human_review_required": true,
+    "publish_ready": false
+  },
+  "metrics": {
+    "elapsed_seconds": 2.43,
+    "model_metrics": {},
+    "model_call_count": 0,
+    "completion_tokens": 0,
+    "tokens_per_second_aggregate": null,
+    "rss_peak_mib": null,
+    "process_cpu_mean_percent_machine_samples": [],
+    "gpu_utilization_percent_samples": [],
+    "stage_runs": [
+      {
+        "stage_name": "source_collection",
+        "stage_attempt": 1,
+        "status": "succeeded",
+        "elapsed_ms": 77,
+        "error_category": null,
+        "validation": {
+          "passed": true,
+          "source_count": 1
+        },
+        "output_snapshot": [
+          {
+            "id": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+            "url": "https://www.sec.gov/Archives/edgar/data/320193/32019326000020/aapl-20260627.htm",
+            "revision": 1
+          }
+        ]
+      },
+      {
+        "stage_name": "evidence_extraction",
+        "stage_attempt": 1,
+        "status": "succeeded",
+        "elapsed_ms": 70,
+        "error_category": null,
+        "validation": {
+          "passed": true,
+          "fact_count": 4
+        },
+        "output_snapshot": [
+          {
+            "text": "Apple Inc.",
+            "fact_id": "37ec392c847b4023be5f",
+            "entities": [
+              "Apple Inc"
+            ],
+            "source_id": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+            "entity_ids": [
+              "1804504fae2bb2f3d455"
+            ],
+            "date_values": [],
+            "registry_id": "726d7444-a2ff-45de-b821-c31c2d1c069f",
+            "citation_ids": [
+              "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+            ],
+            "numeric_values": [],
+            "source_language": "en"
+          },
+          {
+            "text": "filed SEC Form 10-Q on 2026-07-31 for the period ended 2026-06-27.",
+            "fact_id": "e4abce8f39418f69032d",
+            "entities": [
+              "SEC Form"
+            ],
+            "source_id": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+            "entity_ids": [
+              "f89b4f7a2a0ae5973e30"
+            ],
+            "date_values": [
+              "DATE:2026-06-27",
+              "DATE:2026-07-31"
+            ],
+            "registry_id": "e16aad33-6a8c-4b5d-8e4f-9be42e768a23",
+            "citation_ids": [
+              "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+            ],
+            "numeric_values": [
+              "10.0",
+              "DATE:2026-06-27",
+              "DATE:2026-07-31"
+            ],
+            "source_language": "en"
+          },
+          {
+            "text": "revenue: 109417000000 USD for period 2026-03-29 to 2026-06-27; net income: 29789000000 USD for period 2026-03-29 to 2026-06-27.",
+            "fact_id": "d80fd6abeae9063202bd",
+            "entities": [],
+            "source_id": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+            "entity_ids": [],
+            "date_values": [
+              "DATE:2026-03-29",
+              "DATE:2026-06-27"
+            ],
+            "registry_id": "72fb57bf-8bb3-4c52-bd70-75c2782bf0f3",
+            "citation_ids": [
+              "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+            ],
+            "numeric_values": [
+              "109417000000.0",
+              "29789000000.0",
+              "DATE:2026-03-29",
+              "DATE:2026-06-27"
+            ],
+            "source_language": "en"
+          },
+          {
+            "text": "SEC accession number 0000320193-26-000020.",
+            "fact_id": "60ce35395975d27159eb",
+            "entities": [],
+            "source_id": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+            "entity_ids": [],
+            "date_values": [],
+            "registry_id": "97594ff5-5eca-4def-8ba8-4105d6b00e9e",
+            "citation_ids": [
+              "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+            ],
+            "numeric_values": [
+              "20.0",
+              "26.0",
+              "320193.0"
+            ],
+            "source_language": "en"
+          }
+        ]
+      },
+      {
+        "stage_name": "fact_registry",
+        "stage_attempt": 1,
+        "status": "succeeded",
+        "elapsed_ms": 78,
+        "error_category": null,
+        "validation": {
+          "passed": true,
+          "fact_count": 4,
+          "source_span_verified": true
+        },
+        "output_snapshot": [
+          {
+            "text": "Apple Inc.",
+            "fact_id": "37ec392c847b4023be5f",
+            "entities": [
+              "Apple Inc"
+            ],
+            "source_id": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+            "entity_ids": [
+              "1804504fae2bb2f3d455"
+            ],
+            "date_values": [],
+            "registry_id": "726d7444-a2ff-45de-b821-c31c2d1c069f",
+            "citation_ids": [
+              "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+            ],
+            "numeric_values": [],
+            "source_language": "en"
+          },
+          {
+            "text": "filed SEC Form 10-Q on 2026-07-31 for the period ended 2026-06-27.",
+            "fact_id": "e4abce8f39418f69032d",
+            "entities": [
+              "SEC Form"
+            ],
+            "source_id": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+            "entity_ids": [
+              "f89b4f7a2a0ae5973e30"
+            ],
+            "date_values": [
+              "DATE:2026-06-27",
+              "DATE:2026-07-31"
+            ],
+            "registry_id": "e16aad33-6a8c-4b5d-8e4f-9be42e768a23",
+            "citation_ids": [
+              "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+            ],
+            "numeric_values": [
+              "10.0",
+              "DATE:2026-06-27",
+              "DATE:2026-07-31"
+            ],
+            "source_language": "en"
+          },
+          {
+            "text": "revenue: 109417000000 USD for period 2026-03-29 to 2026-06-27; net income: 29789000000 USD for period 2026-03-29 to 2026-06-27.",
+            "fact_id": "d80fd6abeae9063202bd",
+            "entities": [],
+            "source_id": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+            "entity_ids": [],
+            "date_values": [
+              "DATE:2026-03-29",
+              "DATE:2026-06-27"
+            ],
+            "registry_id": "72fb57bf-8bb3-4c52-bd70-75c2782bf0f3",
+            "citation_ids": [
+              "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+            ],
+            "numeric_values": [
+              "109417000000.0",
+              "29789000000.0",
+              "DATE:2026-03-29",
+              "DATE:2026-06-27"
+            ],
+            "source_language": "en"
+          },
+          {
+            "text": "SEC accession number 0000320193-26-000020.",
+            "fact_id": "60ce35395975d27159eb",
+            "entities": [],
+            "source_id": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+            "entity_ids": [],
+            "date_values": [],
+            "registry_id": "97594ff5-5eca-4def-8ba8-4105d6b00e9e",
+            "citation_ids": [
+              "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+            ],
+            "numeric_values": [
+              "20.0",
+              "26.0",
+              "320193.0"
+            ],
+            "source_language": "en"
+          }
+        ]
+      },
+      {
+        "stage_name": "evidence_validation",
+        "stage_attempt": 1,
+        "status": "succeeded",
+        "elapsed_ms": 68,
+        "error_category": null,
+        "validation": {
+          "method": "exact_source_span",
+          "passed": true
+        },
+        "output_snapshot": {
+          "37ec392c847b4023be5f": true,
+          "60ce35395975d27159eb": true,
+          "d80fd6abeae9063202bd": true,
+          "e4abce8f39418f69032d": true
+        }
+      },
+      {
+        "stage_name": "content_outline",
+        "stage_attempt": 1,
+        "status": "succeeded",
+        "elapsed_ms": 72,
+        "error_category": null,
+        "validation": {
+          "method": "evidence_only_bounded_outline",
+          "passed": true
+        },
+        "output_snapshot": [
+          {
+            "heading": "Evidence 1",
+            "fact_ids": [
+              "37ec392c847b4023be5f"
+            ],
+            "source_ids": [
+              "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+            ]
+          },
+          {
+            "heading": "Evidence 2",
+            "fact_ids": [
+              "e4abce8f39418f69032d"
+            ],
+            "source_ids": [
+              "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+            ]
+          },
+          {
+            "heading": "Evidence 3",
+            "fact_ids": [
+              "d80fd6abeae9063202bd"
+            ],
+            "source_ids": [
+              "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+            ]
+          },
+          {
+            "heading": "Evidence 4",
+            "fact_ids": [
+              "60ce35395975d27159eb"
+            ],
+            "source_ids": [
+              "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+            ]
+          }
+        ]
+      }
+    ],
+    "audit_event_types": [
+      "research.evaluation.model.override",
+      "research.queued",
+      "research.started",
+      "research.generation.started",
+      "research.facts.checked",
+      "research.stage.started",
+      "research.stage.succeeded",
+      "research.stage.started",
+      "research.stage.succeeded",
+      "research.stage.started",
+      "research.stage.succeeded",
+      "research.stage.started",
+      "research.stage.succeeded",
+      "research.stage.started",
+      "research.stage.succeeded",
+      "research.failed"
+    ],
+    "worker_process_exit_code": 0
+  },
+  "safety": {
+    "paid_api_calls": 0,
+    "external_data_calls": 0,
+    "blogger_writes": 0,
+    "publish_ready": false
+  }
+}

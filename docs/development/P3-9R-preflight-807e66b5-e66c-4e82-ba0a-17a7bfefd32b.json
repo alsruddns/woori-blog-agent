@@ -1,0 +1,159 @@
+{
+  "phase": "3.9-R",
+  "kind": "preflight_and_safe_stop",
+  "batch_id": "807e66b5-e66c-4e82-ba0a-17a7bfefd32b",
+  "captured_at": "2026-10-26T11:52:40.630357+00:00",
+  "system": {
+    "ram_total_gib": 31.91,
+    "ram_available_gib": 13.57,
+    "ram_used_percent": 57.5,
+    "cpu_percent_sample": 19.8,
+    "disk_c_free_gib": 231.5,
+    "model_process_running": false,
+    "model_process_pre_stop_rss_gib": 7.93,
+    "model_stop_reason": "Confirmed project-local Vulkan llama.cpp process had only a loopback listener, no established clients, no queued/running work; stopped safely",
+    "ram_available_before_stop_gib": 5.45,
+    "ram_used_before_stop_percent": 82.9,
+    "ram_available_after_stop_gib": 12.56,
+    "ram_used_after_stop_percent": 60.6
+  },
+  "services": {
+    "dashboard_port_3100_http": 200,
+    "api_port_8100_health": 200,
+    "worker_process_running": false,
+    "worker_heartbeat_rows": 0
+  },
+  "database_day": {
+    "now": "2026-10-26T20:52:40.605997+09:00",
+    "day_start": "2026-10-26T00:00:00+09:00",
+    "timezone": "Asia/Seoul",
+    "quota_by_language": [
+      {
+        "language_code": "en",
+        "evaluation_targets": 5,
+        "operational_targets": 1,
+        "total_targets": 6,
+        "daily_limit": 5
+      },
+      {
+        "language_code": "ja",
+        "evaluation_targets": 5,
+        "operational_targets": 1,
+        "total_targets": 6,
+        "daily_limit": 5
+      },
+      {
+        "language_code": "ko",
+        "evaluation_targets": 5,
+        "operational_targets": 1,
+        "total_targets": 6,
+        "daily_limit": 5
+      },
+      {
+        "language_code": "zh-CN",
+        "evaluation_targets": 5,
+        "operational_targets": 1,
+        "total_targets": 6,
+        "daily_limit": 5
+      }
+    ],
+    "jobs_by_mode_and_state": [
+      {
+        "evaluation_only": false,
+        "status": "succeeded",
+        "paused": false,
+        "targets": 4
+      },
+      {
+        "evaluation_only": true,
+        "status": "failed",
+        "paused": false,
+        "targets": 8
+      },
+      {
+        "evaluation_only": true,
+        "status": "failed",
+        "paused": true,
+        "targets": 4
+      },
+      {
+        "evaluation_only": true,
+        "status": "succeeded",
+        "paused": false,
+        "targets": 8
+      }
+    ],
+    "all_queue_statuses": {
+      "queued": 0,
+      "running": 0
+    },
+    "c3_jobs": [
+      {
+        "status": "failed",
+        "error_type": "fact_render_contract_marker_invalid",
+        "attempts": 1,
+        "paused": false,
+        "saved_results": 1
+      },
+      {
+        "status": "failed",
+        "error_type": "daily_generation_limit",
+        "attempts": 0,
+        "paused": true,
+        "saved_results": 0
+      }
+    ],
+    "publish_ready_count": 0,
+    "blogger_write_operation_count": 0
+  },
+  "quota_analysis": {
+    "enforcement": "generation_targets created since DB date_trunc(day,now), grouped by profile; all statuses count, evaluation_only shares the same daily_limit",
+    "tests": "pytest fixtures roll back their DB transaction and are not counted as operational targets",
+    "duplicate_counting": "No duplicate targets: generation_targets has PRIMARY KEY(run_id,profile_id), one target per profile/job",
+    "per_language": "5 evaluation targets + 1 operational target = 6 against daily_limit 5",
+    "reset": "database timezone Asia/Seoul; next reset at 2026-10-27 00:00 Asia/Seoul",
+    "decision": "Do not bypass quota. Evaluation workload is not quota-isolated from operations."
+  },
+  "previous_saved_c1_recheck": {
+    "batch_id": "8d9a9bbc-a7db-4a76-a8f3-78a0bd9153f7",
+    "counts_by_language": {
+      "en": {
+        "machine_passed_review_required": 0,
+        "quality_held": 2,
+        "failed": 0
+      },
+      "ja": {
+        "machine_passed_review_required": 0,
+        "quality_held": 2,
+        "failed": 0
+      },
+      "ko": {
+        "machine_passed_review_required": 0,
+        "quality_held": 1,
+        "failed": 1
+      },
+      "zh-CN": {
+        "machine_passed_review_required": 0,
+        "quality_held": 2,
+        "failed": 0
+      }
+    },
+    "new_c3_post_redesign_outputs": 0
+  },
+  "run_decision": {
+    "actual_local_ai_inference": false,
+    "reason": [
+      "daily quota exhausted and full two-source batch lacks capacity",
+      "system CPU sampling reached 100 percent due to active non-project Vitest workers; existing CPU gate is 80 percent",
+      "Qwen3 4B server was stopped to restore memory and must pass the resource gate again after its safe CPU-mode start"
+    ],
+    "jobs_enqueued_by_preflight_probe": 0,
+    "paid_calls": 0,
+    "external_source_calls": 0,
+    "blogger_writes": 0,
+    "worker_continuous_run": false,
+    "publish_ready": false
+  },
+  "recheck_reference": "P3-9-quality-recheck-8d9a9bbc-a7db-4a76-a8f3-78a0bd9153f7.json",
+  "repository_head_before_phase39r_commit": "185c4bf48351006791a15caa09a14655726c7dd6"
+}

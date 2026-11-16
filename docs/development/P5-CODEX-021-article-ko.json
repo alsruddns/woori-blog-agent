@@ -1,0 +1,85 @@
+{
+  "schema_version": "1.0",
+  "content_id": "p5-codex-021-fed-rate-hold-ko-20261029",
+  "event_group_id": "fed-fomc-2026-10-28",
+  "research_package_id": "c0b6f2b2-7a74-4b3f-a4f1-f4219c12321d",
+  "parent_content_id": null,
+  "relation": "original",
+  "source_region": "US",
+  "language_code": "ko",
+  "target_audiences": [
+    {
+      "language_code": "ko",
+      "target_region": "KR",
+      "reader_relevance_reason": "미국 기준금리 결정은 글로벌 금융 여건과 한국 독자의 환율·금리 뉴스를 해석하는 데 직접적인 맥락을 제공합니다. 이 글은 그 영향을 단정하지 않고 연준 발표가 확인해 주는 범위만 설명합니다."
+    }
+  ],
+  "title": "미 연준 금리 동결, 인하 신호일까? FOMC 결정 읽기",
+  "body_markdown": "미 연준이 기준금리를 동결하면 곧 금리 인하가 시작된다는 뜻일까요? 2026년 10월 연방공개시장위원회(The Federal Open Market Committee, FOMC)는 연방기금금리 목표 범위를 3-3/4~4%로 유지했습니다. 이번 결정은 인하가 아니라 현 수준을 이어 간 결정입니다. 다만 이 한 번의 동결만으로 다음 회의의 방향까지 확정할 수는 없습니다. [source:fed-fomc-20261028]\n\n## 이번 결정에서 확인되는 것\n\n연준은 10월 FOMC 발표에서 위원회가 10대 2로 정책 결정을 내렸다고 밝혔습니다. 표결 결과는 결정 과정에 이견이 있었다는 사실을 보여 주지만, 공개된 이 자료에 담긴 문장만으로 각 위원의 경제 전망이나 이후 경로를 넓게 추정해서는 안 됩니다. 특히 저장된 수집 본문은 표결자 설명이 중간에서 잘려 있어 그 세부 내용은 이 글의 근거로 사용하지 않았습니다. [source:fed-fomc-20261028]\n\n## 연준이 제시한 경제 판단\n\n성명은 경제활동이 견조한 속도로 확장되고 있다고 평가하는 한편, 물가는 여전히 높은 수준이라고 설명했습니다. 고용 증가가 노동력 증가에 맞춰 이어졌고 실업률은 큰 변화를 보이지 않았다는 점도 함께 제시했습니다. 이는 연준이 성장과 고용의 흐름을 보면서도 물가 목표에 도달했다고 판단하지 않았음을 읽게 합니다. 다만 성명은 이 지표들만으로 향후 금리 결정의 시점이나 폭을 약속하지 않습니다. [source:fed-fomc-20261028]\n\n## 동결을 인하 예고로 읽지 말아야 하는 이유\n\n이번 성명은 추가 정보가 정책 기조를 결정하는 데 도움이 될 것이라고 밝혔습니다. 따라서 동결은 현재 판단을 유지했다는 사실이지, 다음 단계가 인하라고 미리 확인해 준 신호는 아닙니다. 이후 발표될 물가·고용 지표와 연준의 후속 성명을 함께 읽어야 하는 이유입니다. 무엇보다 이번 자료 한 건으로 한국의 대출금리나 환율이 어떻게 움직일지 단정할 수는 없습니다. 그 영향은 별도의 시장 자료와 국내 요인을 함께 확인해야 합니다. [source:fed-fomc-20261028]\n\n## 다음 발표에서 볼 점\n\n독자는 다음 FOMC 성명에서 목표금리 범위가 바뀌는지, 경제활동·고용·물가에 대한 표현이 달라지는지, 그리고 위원회가 판단에 필요한 정보를 어떻게 설명하는지 확인할 수 있습니다. 이번 자료가 직접 뒷받침하는 결론은 금리 동결과 연준의 현재 경제 진단까지입니다. 다음 결정의 방향이나 시장 반응은 아직 확인되지 않은 영역으로 남겨 두는 편이 정확합니다. [source:fed-fomc-20261028]\n\n이 글은 연준 공식 성명의 확인 가능한 문장을 바탕으로 한 정책 해설입니다. 투자 조언이나 향후 금리 전망이 아닙니다. [source:fed-fomc-20261028]",
+  "category": "finance",
+  "google_trends_based": true,
+  "source_ids": ["fed-fomc-20261028"],
+  "sources": [
+    {
+      "source_id": "fed-fomc-20261028",
+      "title": "Federal Reserve issues FOMC statement",
+      "organization": "Board of Governors of the Federal Reserve System",
+      "url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20261028a.htm",
+      "published_at": "2026-10-28T14:00:00-04:00",
+      "observed_at": "2026-10-29T10:18:58+09:00",
+      "language_code": "en",
+      "source_type": "government",
+      "rights_status": "quotation_review_required",
+      "rights_note": "저장된 패키지는 Board 작성 자료를 원칙적으로 public domain으로 설명하지만 제3자 자료 제외 및 출처별 권리 예외를 기록합니다. 이 수입 원고에서는 재사용 권리를 승인하지 않고 운영자 확인을 요구합니다."
+    }
+  ],
+  "claims": [
+    {
+      "claim_id": "fed-rate-range-and-vote",
+      "claim": "FOMC는 연방기금금리 목표 범위를 3.75~4.00%로 유지했으며 결정은 10대 2 표결로 이뤄졌다.",
+      "source_ids": ["fed-fomc-20261028"],
+      "evidence_excerpt": "The Federal Open Market Committee approved the following statement for release by a 10 – 2 vote: The Committee decided to maintain the target range for the federal funds rate at 3-3/4 to 4 percent",
+      "verification_status": "source_span_verified",
+      "factual_state": "enacted"
+    },
+    {
+      "claim_id": "fed-economic-assessment",
+      "claim": "연준 성명은 경제활동이 견조한 속도로 확대되고 있다고 평가했다.",
+      "source_ids": ["fed-fomc-20261028"],
+      "evidence_excerpt": "Economic activity is expanding at a strong pace.",
+      "verification_status": "source_span_verified",
+      "factual_state": "enacted"
+    },
+    {
+      "claim_id": "fed-jobs-and-inflation",
+      "claim": "연준은 고용 증가가 노동력 증가에 맞춰 이어졌고 실업률 변화는 작았으며 물가는 높은 상태라고 밝혔다.",
+      "source_ids": ["fed-fomc-20261028"],
+      "evidence_excerpt": "Job gains have kept pace with the workforce, and the unemployment rate has changed little. Inflation remains elevated.",
+      "verification_status": "source_span_verified",
+      "factual_state": "enacted"
+    },
+    {
+      "claim_id": "fed-more-information",
+      "claim": "연준은 추가 정보가 물가 목표 달성에 적절한 정책 기조를 결정하는 데 도움이 될 것이라고 밝혔다.",
+      "source_ids": ["fed-fomc-20261028"],
+      "evidence_excerpt": "The accumulation of more information will help the Committee determine the policy stance appropriate to ensure a timely return of inflation to the Committee's 2 percent goal.",
+      "verification_status": "source_span_verified",
+      "factual_state": "enacted"
+    }
+  ],
+  "fact_checked_at": "2026-10-29T02:00:51Z",
+  "seo": {
+    "search_intent": "미 연준의 2026년 10월 금리 동결 내용과 인하 신호 여부를 이해하려는 독자",
+    "primary_terms": ["미 연준 금리 동결", "FOMC 10월 금리"],
+    "related_terms": ["연방기금금리", "미국 기준금리", "연준 물가 판단"],
+    "seo_title": "미 연준 금리 동결, 인하 신호일까? FOMC 결정 해설",
+    "search_description": "2026년 10월 FOMC의 금리 동결과 표결, 연준의 물가·고용 진단을 공식 성명에 근거해 설명합니다.",
+    "core_question": "2026년 10월 미 연준의 금리 동결은 금리 인하를 예고한 것일까요?",
+    "core_answer": "연준은 목표 범위를 유지했지만 추가 정보가 필요하다고 밝혔으며, 이번 결정만으로 다음 회의의 금리 방향을 확정할 수 없습니다."
+  },
+  "blogger_labels": ["이슈", "금융"],
+  "generation_method": "manual_codex_import",
+  "model_name": "Codex interactive session; application model identity unavailable",
+  "generated_at": "2026-10-29T02:00:51Z",
+  "created_by": "Codex interactive session (manual authoring)"
+}

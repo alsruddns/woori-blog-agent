@@ -1,0 +1,25 @@
+# P5-CODEX-024 — ChatGPT Work scheduled import
+
+- Work date: 2026-10-29 (Asia/Seoul)
+- Work ID: P5-CODEX-024
+- Branch: `develop`
+- Reason: provide a safe local receiver for complete scheduled-work JSON files and connect it to the existing Content Import API without claiming that GPT task execution is verified.
+- Prior state: the existing one-shot inbox importer was not polled by the Research Worker; its state folders lacked `incoming` and `rejected`; scheduled-origin audit did not retain the received filename or checksum; Dashboard had no receipt view.
+- After: the existing Worker polls the fixed `.local/gpt-scheduled-import` inbox every 60 seconds, obtains a PostgreSQL advisory lock across the whole intake pass, atomically claims only `*.ready.json`, validates the established envelope, forwards it to the loopback Import API, records filename/checksum provenance, and appends a sanitized outcome event. Interrupted `processing` files are recovered only after five minutes without a file update, so another live Worker does not reclaim an active file. The import remains review-held, `publish_ready=false`, and cannot call Blogger. `trends_major_issue` is supported as an additional task type. The existing Import API idempotency and occurrence audit are reused.
+- Existing official product documentation describes local project access for scheduled tasks in the ChatGPT desktop app; the computer must remain on and online with the desktop app running. Web-only scheduled tasks do not access local folders. This documents product capability only. This account's scheduling/local-project permission and an actual unattended run were not exercised; no task was created or changed.
+- Changed files:
+  - `services/api/woori/content_imports.py`
+  - `services/api/woori/scheduled_import_inbox.py`
+  - `services/api/woori/worker.py`
+  - `services/api/woori/operations_dashboard.py`
+  - `services/api/tests/test_scheduled_import_inbox.py`
+  - `docs/schemas/woori-scheduled-content-import-1.0.schema.json`
+  - `docs/operations/P5-CODEX-024-gpt-work-prompts.md`
+  - `apps/dashboard/app/page.tsx`
+- Validation: scheduled inbox, content import, and dashboard read-model focused tests: 27 passed; Ruff passed; Dashboard ESLint passed; Next.js production build and TypeScript passed; `git diff --check` passed. The integration test used the isolated `.env.test` database with a forced rollback and verified first import, duplicate import, origin/checksum audit and no publish. Worker tests cover competing intake lock and stale-only recovery. No operations content was added by the test.
+- Runtime observation: PostgreSQL schema remained 48; scheduled-export imports: 0; publishing records: 0; Auto remains governed by the existing manual policy. Port 8100 was not listening at verification. Two Research Worker processes (PIDs 37512 and 46704) were observed from this checkout, both launched at 10:14 KST; heartbeat identifies PID 46704. They were not stopped because their owning terminals could not be verified. The new Worker code therefore has not been proven active in either live process. Do not start another worker until the operator reconciles these two terminals. After safely stopping both in their owning terminals, start one with `.\scripts\run-worker.ps1`; start API with `.\scripts\run-api.ps1` from its owning terminal.
+- Actual results: scheduled GPT runs 0 verified; no unattended JSON file delivery verified; scheduled-file operational imports 0; real Blogger public posts 0. The isolated local receiver test passed, but it is not a ChatGPT scheduled-run test.
+- Database migration: none; schema 48 retained. Existing manuscript versions, Research Packages, OAuth records and audit history were preserved.
+- Start audit: `job_runs` ID `07338dd9-7ad0-445e-aef4-7d06636f3565`; completion audit is appended when this work is committed.
+- Commit hash: see `git log` after commit (self-reference is recorded by Git history).
+- Remaining: operator must reconcile Worker PIDs, safely start one Worker plus API on loopback, create a new ChatGPT desktop local-project scheduled task without altering existing schedules, and inspect its first real execution and file receipt. GPT task/execution IDs in JSON are self-reported only, not cryptographically verified. No automatic public publishing is enabled.

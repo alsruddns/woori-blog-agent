@@ -1,0 +1,469 @@
+{
+  "phase": "3.8-C3",
+  "batch_id": "6bf912ea-45f0-4dce-85d3-1cd8299c379c",
+  "record_kind": "corrected_partial_pre_redesign_execution_and_safety_stop",
+  "correction_of": "P3-8C3-evaluation-6bf912ea-45f0-4dce-85d3-1cd8299c379c.json",
+  "correction_reason": "The first artifact joined runs to all source revisions and duplicated job rows. This corrected snapshot keys each job from its immutable idempotency key and source ID. Both files are retained.",
+  "created_at": "2026-10-26",
+  "model": {
+    "pid": 31064,
+    "model": "Qwen3-4B-Q4_K_M.gguf",
+    "engine": "llama.cpp b11889",
+    "threads": 4,
+    "backend": "vulkan",
+    "engine_directory": "llama-b11889-vulkan",
+    "gpu_layers": 20
+  },
+  "external_collection": false,
+  "paid_calls": 0,
+  "blogger_writes": 0,
+  "jobs": [
+    {
+      "run_id": "b0c6c553-1adf-4534-9e8a-90db8acf97e3",
+      "source_id": "873093a8-085e-42b5-8bb2-657f62f8df94",
+      "source_name": "Federal Reserve Board press releases",
+      "source_url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20261013a.htm",
+      "topic": "Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026",
+      "run_status": "failed",
+      "error_category": "fact_render_contract_marker_invalid",
+      "attempts": 1,
+      "paused": false,
+      "results": [
+        {
+          "language": "en",
+          "content_version_id": "4c0dc72e-1b03-447d-a356-e9a87a3b094d",
+          "title": "Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026",
+          "body_chars": 910,
+          "state": "quality_held",
+          "publish_ready": false,
+          "elapsed_ms": 112472,
+          "pre_redesign_structural_pass": true,
+          "pre_redesign_grounding_pass": true,
+          "metrics": [
+            {
+              "engine": "llama.cpp b11889",
+              "backend": "Vulkan GPU offload",
+              "gpu_layers": 20,
+              "rss_peak_mib": 7121.97,
+              "wall_seconds": 35.107,
+              "completion_tokens": 355,
+              "tokens_per_second_wall": 10.11,
+              "gpu_utilization_percent": 92.14,
+              "system_cpu_peak_percent": 55.4,
+              "process_cpu_mean_percent_machine": 26.48
+            },
+            {
+              "engine": "llama.cpp b11889",
+              "backend": "Vulkan GPU offload",
+              "gpu_layers": 20,
+              "rss_peak_mib": 7327.97,
+              "wall_seconds": 24.123,
+              "completion_tokens": 291,
+              "tokens_per_second_wall": 12.06,
+              "gpu_utilization_percent": 93.8,
+              "system_cpu_peak_percent": 51.1,
+              "process_cpu_mean_percent_machine": 26.59
+            },
+            {
+              "engine": "llama.cpp b11889",
+              "backend": "Vulkan GPU offload",
+              "gpu_layers": 20,
+              "rss_peak_mib": 7476.29,
+              "wall_seconds": 23.905,
+              "completion_tokens": 290,
+              "tokens_per_second_wall": 12.13,
+              "gpu_utilization_percent": 94.29,
+              "system_cpu_peak_percent": 54.1,
+              "process_cpu_mean_percent_machine": 26.41
+            },
+            {
+              "engine": "llama.cpp b11889",
+              "backend": "Vulkan GPU offload",
+              "gpu_layers": 20,
+              "rss_peak_mib": 7622.34,
+              "wall_seconds": 23.504,
+              "completion_tokens": 286,
+              "tokens_per_second_wall": 12.17,
+              "gpu_utilization_percent": 95.01,
+              "system_cpu_peak_percent": 50.9,
+              "process_cpu_mean_percent_machine": 26.61
+            }
+          ],
+          "pipeline_metrics": {
+            "stage_metrics": {
+              "model_time_ms": 111244,
+              "section_count": 4
+            },
+            "outline": [
+              {
+                "heading": "Evidence 1",
+                "fact_ids": [
+                  "aa68c18312f6972b6916",
+                  "f9ae6848c43ac7d43601"
+                ],
+                "source_ids": [
+                  "873093a8-085e-42b5-8bb2-657f62f8df94"
+                ]
+              },
+              {
+                "heading": "Evidence 2",
+                "fact_ids": [
+                  "1bc600ffb89ca18f8823"
+                ],
+                "source_ids": [
+                  "873093a8-085e-42b5-8bb2-657f62f8df94"
+                ]
+              },
+              {
+                "heading": "Evidence 3",
+                "fact_ids": [
+                  "08ea19ea53d7dc7734e4"
+                ],
+                "source_ids": [
+                  "873093a8-085e-42b5-8bb2-657f62f8df94"
+                ]
+              },
+              {
+                "heading": "Evidence 4",
+                "fact_ids": [
+                  "4d9e353ff6a798986ea4"
+                ],
+                "source_ids": [
+                  "873093a8-085e-42b5-8bb2-657f62f8df94"
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "stage_summary": [
+        {
+          "language": "en",
+          "stage": "source_collection",
+          "attempt": 1,
+          "status": "succeeded",
+          "error_category": null,
+          "elapsed_ms": 63,
+          "validation": {
+            "passed": true,
+            "source_count": 1
+          }
+        },
+        {
+          "language": "en",
+          "stage": "evidence_extraction",
+          "attempt": 1,
+          "status": "succeeded",
+          "error_category": null,
+          "elapsed_ms": 63,
+          "validation": {
+            "passed": true,
+            "fact_count": 5
+          }
+        },
+        {
+          "language": "en",
+          "stage": "fact_registry",
+          "attempt": 1,
+          "status": "succeeded",
+          "error_category": null,
+          "elapsed_ms": 64,
+          "validation": {
+            "passed": true,
+            "fact_count": 5,
+            "source_span_verified": true
+          }
+        },
+        {
+          "language": "en",
+          "stage": "evidence_validation",
+          "attempt": 1,
+          "status": "succeeded",
+          "error_category": null,
+          "elapsed_ms": 67,
+          "validation": {
+            "method": "exact_source_span",
+            "passed": true
+          }
+        },
+        {
+          "language": "en",
+          "stage": "content_outline",
+          "attempt": 1,
+          "status": "succeeded",
+          "error_category": null,
+          "elapsed_ms": 63,
+          "validation": {
+            "method": "evidence_only_bounded_outline",
+            "passed": true
+          }
+        },
+        {
+          "language": "en",
+          "stage": "section_generation",
+          "attempt": 1,
+          "status": "succeeded",
+          "error_category": null,
+          "elapsed_ms": 36174,
+          "validation": {
+            "checks": {
+              "citations_allowed": true,
+              "source_ids_allowed": true,
+              "no_repeated_sentences": true,
+              "numbers_from_evidence": true,
+              "proper_names_preserved": true,
+              "no_unsupported_proper_names": true
+            },
+            "passed": true,
+            "missing_proper_names": [],
+            "unsupported_proper_names": []
+          }
+        },
+        {
+          "language": "en",
+          "stage": "section_generation",
+          "attempt": 1,
+          "status": "succeeded",
+          "error_category": null,
+          "elapsed_ms": 25204,
+          "validation": {
+            "checks": {
+              "citations_allowed": true,
+              "source_ids_allowed": true,
+              "no_repeated_sentences": true,
+              "numbers_from_evidence": true,
+              "proper_names_preserved": true,
+              "no_unsupported_proper_names": true
+            },
+            "passed": true,
+            "missing_proper_names": [],
+            "unsupported_proper_names": []
+          }
+        },
+        {
+          "language": "en",
+          "stage": "section_generation",
+          "attempt": 1,
+          "status": "succeeded",
+          "error_category": null,
+          "elapsed_ms": 24986,
+          "validation": {
+            "checks": {
+              "citations_allowed": true,
+              "source_ids_allowed": true,
+              "no_repeated_sentences": true,
+              "numbers_from_evidence": true,
+              "proper_names_preserved": true,
+              "no_unsupported_proper_names": true
+            },
+            "passed": true,
+            "missing_proper_names": [],
+            "unsupported_proper_names": []
+          }
+        },
+        {
+          "language": "en",
+          "stage": "section_generation",
+          "attempt": 1,
+          "status": "succeeded",
+          "error_category": null,
+          "elapsed_ms": 24586,
+          "validation": {
+            "checks": {
+              "citations_allowed": true,
+              "source_ids_allowed": true,
+              "no_repeated_sentences": true,
+              "numbers_from_evidence": true,
+              "proper_names_preserved": true,
+              "no_unsupported_proper_names": true
+            },
+            "passed": true,
+            "missing_proper_names": [],
+            "unsupported_proper_names": []
+          }
+        },
+        {
+          "language": "en",
+          "stage": "claim_verification",
+          "attempt": 1,
+          "status": "succeeded",
+          "error_category": null,
+          "elapsed_ms": 74,
+          "validation": {
+            "passed": true
+          }
+        },
+        {
+          "language": "en",
+          "stage": "seo_quality",
+          "attempt": 1,
+          "status": "succeeded",
+          "error_category": null,
+          "elapsed_ms": 72,
+          "validation": {
+            "passed": true
+          }
+        },
+        {
+          "language": "en",
+          "stage": "draft_persistence",
+          "attempt": 1,
+          "status": "succeeded",
+          "error_category": null,
+          "elapsed_ms": 75,
+          "validation": {
+            "passed": true
+          }
+        },
+        {
+          "language": "ko",
+          "stage": "source_collection",
+          "attempt": 1,
+          "status": "succeeded",
+          "error_category": null,
+          "elapsed_ms": 78,
+          "validation": {
+            "passed": true,
+            "source_count": 1
+          }
+        },
+        {
+          "language": "ko",
+          "stage": "evidence_extraction",
+          "attempt": 1,
+          "status": "succeeded",
+          "error_category": null,
+          "elapsed_ms": 65,
+          "validation": {
+            "passed": true,
+            "fact_count": 5
+          }
+        },
+        {
+          "language": "ko",
+          "stage": "fact_registry",
+          "attempt": 1,
+          "status": "succeeded",
+          "error_category": null,
+          "elapsed_ms": 67,
+          "validation": {
+            "passed": true,
+            "fact_count": 5,
+            "source_span_verified": true
+          }
+        },
+        {
+          "language": "ko",
+          "stage": "evidence_validation",
+          "attempt": 1,
+          "status": "succeeded",
+          "error_category": null,
+          "elapsed_ms": 65,
+          "validation": {
+            "method": "exact_source_span",
+            "passed": true
+          }
+        },
+        {
+          "language": "ko",
+          "stage": "content_outline",
+          "attempt": 1,
+          "status": "succeeded",
+          "error_category": null,
+          "elapsed_ms": 64,
+          "validation": {
+            "method": "evidence_only_bounded_outline",
+            "passed": true
+          }
+        },
+        {
+          "language": "ko",
+          "stage": "localization",
+          "attempt": 1,
+          "status": "failed",
+          "error_category": "fact_render_contract_marker_invalid",
+          "elapsed_ms": 55141,
+          "validation": {
+            "passed": false,
+            "error_type": "EngineFailure"
+          }
+        },
+        {
+          "language": "ko",
+          "stage": "localization",
+          "attempt": 2,
+          "status": "held",
+          "error_category": null,
+          "elapsed_ms": 43872,
+          "validation": {
+            "checks": {
+              "citations_allowed": true,
+              "source_ids_allowed": true,
+              "no_repeated_sentences": true,
+              "numbers_from_evidence": false,
+              "proper_names_preserved": false,
+              "no_unsupported_proper_names": false
+            },
+            "passed": false,
+            "missing_proper_names": [
+              "Federal Reserve Board"
+            ],
+            "unsupported_proper_names": [
+              "Federal Reserve"
+            ]
+          }
+        },
+        {
+          "language": "ko",
+          "stage": "localization",
+          "attempt": 1,
+          "status": "failed",
+          "error_category": "fact_render_contract_marker_invalid",
+          "elapsed_ms": 34355,
+          "validation": {
+            "passed": false,
+            "error_type": "EngineFailure"
+          }
+        },
+        {
+          "language": "ko",
+          "stage": "localization",
+          "attempt": 2,
+          "status": "failed",
+          "error_category": "fact_render_contract_marker_invalid",
+          "elapsed_ms": 32750,
+          "validation": {
+            "passed": false,
+            "error_type": "EngineFailure"
+          }
+        }
+      ]
+    },
+    {
+      "run_id": "a84a7e69-bffd-484a-acdd-8b28f6a11207",
+      "source_id": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+      "source_name": "SEC EDGAR company submissions and XBRL facts",
+      "source_url": "https://www.sec.gov/Archives/edgar/data/320193/32019326000020/aapl-20260627.htm",
+      "topic": "Apple Inc. 10-Q filed 2026-07-31",
+      "run_status": "queued",
+      "error_category": null,
+      "attempts": 0,
+      "paused": true,
+      "results": [],
+      "stage_summary": []
+    }
+  ],
+  "summary": {
+    "expected_drafts": 8,
+    "saved_drafts_before_fact_first_revision": 1,
+    "new_fact_first_drafts": 0,
+    "languages_with_saved_output": [
+      "en"
+    ],
+    "quality_held_or_failed": 1,
+    "pending_job_count": 1,
+    "failed_job_count": 1,
+    "all_publish_ready_false": true,
+    "reason_for_stop": "The initial marker-based fact-render contract failed for localization. That output was retained. The replacement per-fact local translation implementation passed automated tests but was not run because free RAM was below 6 GiB and system RAM use exceeded the existing 80 percent gate."
+  }
+}

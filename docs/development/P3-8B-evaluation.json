@@ -1,0 +1,805 @@
+{
+  "task": "Phase 3.8-B same-source evaluation",
+  "created_at": "2026-10-26T08:06:31.292907+00:00",
+  "source": {
+    "id": "738c631a-d90e-4c7e-9787-165c892b99d6",
+    "url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20261013a.htm",
+    "source_name": "Federal Reserve Board press releases",
+    "source_language": "en",
+    "language_attribution": "evaluation-only; approved official source text is English; historical source row unchanged",
+    "evaluation_facts": [
+      {
+        "fact_id": "c2906f21-9ae3-4bc6-a191-89f20d32474b",
+        "fact_key": "b051f875ff50f112dfba",
+        "source_excerpt": "The Federal Reserve Board on Tuesday released the minutes from its recent meetings to review and determine the discount rates provided to depository institutions through the discount window.",
+        "sha256": "f5d64bcef6cafa06a1725b6b7eeb49da453b6508913fb4aa234a075fe5aa1326"
+      },
+      {
+        "fact_id": "e8ba1011-7f12-46be-9b63-339053443648",
+        "fact_key": "483bf7a582215d06371b",
+        "source_excerpt": "Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026.",
+        "sha256": "416f1e1f3e6b7b595195affa7a9cb954c7e17b4dba2cd071d3324968d66ac82c"
+      }
+    ]
+  },
+  "local_ai_runtime": {
+    "available": true,
+    "model": "Qwen3-4B-Q4_K_M.gguf",
+    "backend": "vulkan",
+    "gpu_layers": 20,
+    "threads": 4,
+    "evaluation_only": true
+  },
+  "localized_results": [
+    {
+      "text": "The Federal Reserve Board on Tuesday released the minutes from its recent meetings to review and determine the discount rates provided to depository institutions through the discount window.",
+      "source_language": "en",
+      "target_language": "en",
+      "source_ids": [
+        "738c631a-d90e-4c7e-9787-165c892b99d6"
+      ],
+      "fact_id": "b051f875ff50f112dfba",
+      "status": "machine_passed",
+      "checks": {
+        "language_matches": true,
+        "numbers_preserved": true,
+        "entities_preserved": true,
+        "no_unverified_entity_added": true,
+        "citation_linked": true,
+        "no_added_urls": true,
+        "no_unapproved_translation_asserted": true,
+        "no_repeated_sentences": true
+      },
+      "script_fraction": 1.0,
+      "ai_calls": 0,
+      "missing_entities": [],
+      "unverified_entities": [],
+      "elapsed_ms": 0,
+      "human_review_required": true,
+      "semantic_accuracy": "human_review_required",
+      "naturalness": "human_review_required",
+      "publish_ready": false,
+      "model": "none; deterministic source-span path",
+      "evaluation_id": "50f10d70-e7a3-4009-9b5d-23947e38aa9a",
+      "created_at": "2026-10-26T17:05:50.648841+09:00",
+      "resource_metrics": {
+        "model": "none; deterministic source-span path",
+        "ai_calls": 0,
+        "elapsed_ms": 0
+      }
+    },
+    {
+      "text": "월요일에 Federal Reserve Board은 최근 회의의 분임을 발표하여 대출 창구를 통한 기관에 제공된 할인율을 검토하고 결정하기 위해 사용했습니다.",
+      "source_language": "en",
+      "target_language": "ko",
+      "source_ids": [
+        "738c631a-d90e-4c7e-9787-165c892b99d6"
+      ],
+      "fact_id": "b051f875ff50f112dfba",
+      "status": "machine_passed",
+      "checks": {
+        "language_matches": true,
+        "numbers_preserved": true,
+        "entities_preserved": true,
+        "no_unverified_entity_added": true,
+        "citation_linked": true,
+        "no_added_urls": true,
+        "no_unapproved_translation_asserted": true,
+        "no_repeated_sentences": true
+      },
+      "script_fraction": 0.725,
+      "ai_calls": 1,
+      "missing_entities": [],
+      "unverified_entities": [],
+      "elapsed_ms": 7224,
+      "human_review_required": true,
+      "semantic_accuracy": "human_review_required",
+      "naturalness": "human_review_required",
+      "publish_ready": false,
+      "model": "Qwen3-4B-Q4_K_M.gguf",
+      "evaluation_id": "18ef716c-6762-4404-9085-44c57d5ed64c",
+      "created_at": "2026-10-26T17:05:50.648841+09:00",
+      "resource_metrics": {
+        "model": "Qwen3-4B-Q4_K_M.gguf",
+        "backend": "vulkan",
+        "ai_calls": 1,
+        "elapsed_ms": 7224,
+        "rss_after_mib": 3469.65,
+        "rss_before_mib": 3469.43,
+        "process_cpu_percent_machine": 27.99,
+        "gpu_utilization_percent_sample": 0.0
+      }
+    },
+    {
+      "text": "周二，Federal Reserve Board发布了最近会议的纪要，以审查并确定通过贴现窗口向存款机构提供的贴现率。",
+      "source_language": "en",
+      "target_language": "zh-CN",
+      "source_ids": [
+        "738c631a-d90e-4c7e-9787-165c892b99d6"
+      ],
+      "fact_id": "b051f875ff50f112dfba",
+      "status": "machine_passed",
+      "checks": {
+        "language_matches": true,
+        "numbers_preserved": true,
+        "entities_preserved": true,
+        "no_unverified_entity_added": true,
+        "citation_linked": true,
+        "no_added_urls": true,
+        "no_unapproved_translation_asserted": true,
+        "no_repeated_sentences": true
+      },
+      "script_fraction": 0.648,
+      "ai_calls": 1,
+      "missing_entities": [],
+      "unverified_entities": [],
+      "elapsed_ms": 6451,
+      "human_review_required": true,
+      "semantic_accuracy": "human_review_required",
+      "naturalness": "human_review_required",
+      "publish_ready": false,
+      "model": "Qwen3-4B-Q4_K_M.gguf",
+      "evaluation_id": "1ef269b1-85db-4df2-ad0c-1412b9550451",
+      "created_at": "2026-10-26T17:05:50.648841+09:00",
+      "resource_metrics": {
+        "model": "Qwen3-4B-Q4_K_M.gguf",
+        "backend": "vulkan",
+        "ai_calls": 1,
+        "elapsed_ms": 6451,
+        "rss_after_mib": 3469.58,
+        "rss_before_mib": 3469.65,
+        "process_cpu_percent_machine": 27.23,
+        "gpu_utilization_percent_sample": 0.0
+      }
+    },
+    {
+      "text": "火曜日にFederal Reserve Boardは、最近の会議の分類をレビューし、ディスカウントウィンドウを通じて預金機関に提供される割引率を決定するために分類を公開しました。",
+      "source_language": "en",
+      "target_language": "ja",
+      "source_ids": [
+        "738c631a-d90e-4c7e-9787-165c892b99d6"
+      ],
+      "fact_id": "b051f875ff50f112dfba",
+      "status": "machine_passed",
+      "checks": {
+        "language_matches": true,
+        "numbers_preserved": true,
+        "entities_preserved": true,
+        "no_unverified_entity_added": true,
+        "citation_linked": true,
+        "no_added_urls": true,
+        "no_unapproved_translation_asserted": true,
+        "no_repeated_sentences": true
+      },
+      "script_fraction": 0.774,
+      "ai_calls": 1,
+      "missing_entities": [],
+      "unverified_entities": [],
+      "elapsed_ms": 7757,
+      "human_review_required": true,
+      "semantic_accuracy": "human_review_required",
+      "naturalness": "human_review_required",
+      "publish_ready": false,
+      "model": "Qwen3-4B-Q4_K_M.gguf",
+      "evaluation_id": "4da854c3-1349-499b-81fb-b4ee50af8d8f",
+      "created_at": "2026-10-26T17:05:50.648841+09:00",
+      "resource_metrics": {
+        "model": "Qwen3-4B-Q4_K_M.gguf",
+        "backend": "vulkan",
+        "ai_calls": 1,
+        "elapsed_ms": 7757,
+        "rss_after_mib": 3500.24,
+        "rss_before_mib": 3469.58,
+        "process_cpu_percent_machine": 27.57,
+        "gpu_utilization_percent_sample": 0.0
+      }
+    },
+    {
+      "text": "Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026.",
+      "source_language": "en",
+      "target_language": "en",
+      "source_ids": [
+        "738c631a-d90e-4c7e-9787-165c892b99d6"
+      ],
+      "fact_id": "483bf7a582215d06371b",
+      "status": "machine_passed",
+      "checks": {
+        "language_matches": true,
+        "numbers_preserved": true,
+        "entities_preserved": true,
+        "no_unverified_entity_added": true,
+        "citation_linked": true,
+        "no_added_urls": true,
+        "no_unapproved_translation_asserted": true,
+        "no_repeated_sentences": true
+      },
+      "script_fraction": 1.0,
+      "ai_calls": 0,
+      "missing_entities": [],
+      "unverified_entities": [],
+      "elapsed_ms": 0,
+      "human_review_required": true,
+      "semantic_accuracy": "human_review_required",
+      "naturalness": "human_review_required",
+      "publish_ready": false,
+      "model": "none; deterministic source-span path",
+      "evaluation_id": "a0383af4-395b-44c2-981c-19c24e67682f",
+      "created_at": "2026-10-26T17:05:50.648841+09:00",
+      "resource_metrics": {
+        "model": "none; deterministic source-span path",
+        "ai_calls": 0,
+        "elapsed_ms": 0
+      }
+    },
+    {
+      "text": "2026년 8월 17일, 9월 9일 및 9월 16일 보드의 이자율 회의 논의록.",
+      "source_language": "en",
+      "target_language": "ko",
+      "source_ids": [
+        "738c631a-d90e-4c7e-9787-165c892b99d6"
+      ],
+      "fact_id": "483bf7a582215d06371b",
+      "status": "machine_passed",
+      "checks": {
+        "language_matches": true,
+        "numbers_preserved": true,
+        "entities_preserved": true,
+        "no_unverified_entity_added": true,
+        "citation_linked": true,
+        "no_added_urls": true,
+        "no_unapproved_translation_asserted": true,
+        "no_repeated_sentences": true
+      },
+      "script_fraction": 1.0,
+      "ai_calls": 1,
+      "missing_entities": [],
+      "unverified_entities": [],
+      "elapsed_ms": 6903,
+      "human_review_required": true,
+      "semantic_accuracy": "human_review_required",
+      "naturalness": "human_review_required",
+      "publish_ready": false,
+      "model": "Qwen3-4B-Q4_K_M.gguf",
+      "evaluation_id": "7bc67f52-853b-441c-9496-a6fd244c352c",
+      "created_at": "2026-10-26T17:05:50.648841+09:00",
+      "resource_metrics": {
+        "model": "Qwen3-4B-Q4_K_M.gguf",
+        "backend": "vulkan",
+        "ai_calls": 1,
+        "elapsed_ms": 6903,
+        "rss_after_mib": 3500.34,
+        "rss_before_mib": 3500.24,
+        "process_cpu_percent_machine": 27.8,
+        "gpu_utilization_percent_sample": 0.0
+      }
+    },
+    {
+      "text": "2026年8月17日、9月9日和9月16日董事会贴现率会议记录。",
+      "source_language": "en",
+      "target_language": "zh-CN",
+      "source_ids": [
+        "738c631a-d90e-4c7e-9787-165c892b99d6"
+      ],
+      "fact_id": "483bf7a582215d06371b",
+      "status": "machine_passed",
+      "checks": {
+        "language_matches": true,
+        "numbers_preserved": true,
+        "entities_preserved": true,
+        "no_unverified_entity_added": true,
+        "citation_linked": true,
+        "no_added_urls": true,
+        "no_unapproved_translation_asserted": true,
+        "no_repeated_sentences": true
+      },
+      "script_fraction": 1.0,
+      "ai_calls": 1,
+      "missing_entities": [],
+      "unverified_entities": [],
+      "elapsed_ms": 5798,
+      "human_review_required": true,
+      "semantic_accuracy": "human_review_required",
+      "naturalness": "human_review_required",
+      "publish_ready": false,
+      "model": "Qwen3-4B-Q4_K_M.gguf",
+      "evaluation_id": "ccd942e4-cdf8-44f1-ac1a-cf5b14c9c34d",
+      "created_at": "2026-10-26T17:05:50.648841+09:00",
+      "resource_metrics": {
+        "model": "Qwen3-4B-Q4_K_M.gguf",
+        "backend": "vulkan",
+        "ai_calls": 1,
+        "elapsed_ms": 5798,
+        "rss_after_mib": 3501.11,
+        "rss_before_mib": 3500.34,
+        "process_cpu_percent_machine": 27.02,
+        "gpu_utilization_percent_sample": 0.0
+      }
+    },
+    {
+      "text": "2026年8月17日、9月9日および9月16日のボードのディスカウントレート会議の議事録。",
+      "source_language": "en",
+      "target_language": "ja",
+      "source_ids": [
+        "738c631a-d90e-4c7e-9787-165c892b99d6"
+      ],
+      "fact_id": "483bf7a582215d06371b",
+      "status": "machine_passed",
+      "checks": {
+        "language_matches": true,
+        "numbers_preserved": true,
+        "entities_preserved": true,
+        "no_unverified_entity_added": true,
+        "citation_linked": true,
+        "no_added_urls": true,
+        "no_unapproved_translation_asserted": true,
+        "no_repeated_sentences": true
+      },
+      "script_fraction": 1.0,
+      "ai_calls": 1,
+      "missing_entities": [],
+      "unverified_entities": [],
+      "elapsed_ms": 6477,
+      "human_review_required": true,
+      "semantic_accuracy": "human_review_required",
+      "naturalness": "human_review_required",
+      "publish_ready": false,
+      "model": "Qwen3-4B-Q4_K_M.gguf",
+      "evaluation_id": "5a2a3ec7-36cd-4ccf-8f60-6faf43298e7b",
+      "created_at": "2026-10-26T17:05:50.648841+09:00",
+      "resource_metrics": {
+        "model": "Qwen3-4B-Q4_K_M.gguf",
+        "backend": "vulkan",
+        "ai_calls": 1,
+        "elapsed_ms": 6477,
+        "rss_after_mib": 3501.11,
+        "rss_before_mib": 3501.11,
+        "process_cpu_percent_machine": 27.18,
+        "gpu_utilization_percent_sample": 0.0
+      }
+    }
+  ],
+  "phase_3_8_a_comparison_rows": [
+    {
+      "language": "en",
+      "variant": "evidence_template",
+      "mechanical_gate_passed": true,
+      "metrics": {
+        "source": "deterministic evidence template; no AI calls",
+        "elapsed_ms": 1,
+        "fact_count": 4,
+        "model_calls": 0,
+        "json_schema_valid": true
+      },
+      "checks": {
+        "grounding": {
+          "rule_pass": true,
+          "naturalness": "human_review_required",
+          "rule_checks": {
+            "current_sources": true,
+            "rights_recorded": true,
+            "source_ids_valid": true,
+            "citation_ids_valid": true,
+            "no_fabricated_urls": true,
+            "no_repeated_sentences": true,
+            "no_unverified_numbers": true,
+            "no_repeated_paragraphs": true,
+            "proper_names_preserved": true,
+            "language_script_present": true,
+            "source_urls_well_formed": true,
+            "factual_paragraphs_cited": true,
+            "language_metadata_matches": true,
+            "no_obvious_high_risk_claims": true,
+            "no_unsupported_proper_names": true
+          },
+          "publish_ready": false,
+          "language_fields": {
+            "body": true,
+            "title": true,
+            "summary": true,
+            "keywords": true
+          },
+          "script_fraction": 1.0,
+          "repeated_sentences": [],
+          "uncited_paragraphs": [],
+          "unexpected_numbers": [],
+          "invalid_source_urls": [],
+          "repeated_paragraphs": [],
+          "missing_proper_names": [],
+          "proper_name_candidates": [
+            "Desist Order",
+            "Federal Reserve Board",
+            "Gardner Bancshares",
+            "Kansas Cease",
+            "Kansas Prompt Corrective Action",
+            "Small Business Bank"
+          ],
+          "unsupported_proper_names": [],
+          "semantic_fact_verification": "human_review_required",
+          "source_url_network_existence": "not_rechecked_by_quality_gate",
+          "model_self_score_used_for_approval": false
+        },
+        "structure": {
+          "mock": false,
+          "checks": {
+            "metadata": true,
+            "structure": true,
+            "as_of_date": true,
+            "source_ids_valid": true,
+            "limited_repetition": true,
+            "keyword_in_title_and_body": true,
+            "no_obvious_hype_or_fake_experience": true
+          },
+          "publish_ready": false,
+          "internal_score": 100,
+          "structural_pass": true,
+          "human_review_required": true,
+          "model_quality_verified": false
+        },
+        "section_failures": []
+      },
+      "created_at": "2026-10-26 16:19:43.001017+09:00"
+    },
+    {
+      "language": "en",
+      "variant": "existing_ai",
+      "mechanical_gate_passed": false,
+      "metrics": {
+        "source": "persisted Phase 3.7 execution",
+        "elapsed_ms": 149970,
+        "model_calls": 5,
+        "section_metrics": [
+          {},
+          {},
+          {},
+          {}
+        ],
+        "section_attempts": 5,
+        "json_schema_valid": true
+      },
+      "checks": {
+        "grounding": {
+          "rule_pass": false,
+          "naturalness": "human_review_required",
+          "rule_checks": {
+            "current_sources": true,
+            "rights_recorded": true,
+            "source_ids_valid": true,
+            "citation_ids_valid": true,
+            "no_fabricated_urls": true,
+            "no_repeated_sentences": false,
+            "no_unverified_numbers": true,
+            "no_repeated_paragraphs": true,
+            "proper_names_preserved": true,
+            "language_script_present": true,
+            "source_urls_well_formed": true,
+            "factual_paragraphs_cited": true,
+            "language_metadata_matches": true,
+            "no_obvious_high_risk_claims": true,
+            "no_unsupported_proper_names": true
+          },
+          "publish_ready": false,
+          "language_fields": {
+            "body": true,
+            "title": true,
+            "summary": true,
+            "keywords": true
+          },
+          "script_fraction": 1.0,
+          "repeated_sentences": [
+            "## the federal reserve board has announced the termination of enforcement actions with gardner bancshares, inc."
+          ],
+          "uncited_paragraphs": [],
+          "unexpected_numbers": [],
+          "invalid_source_urls": [],
+          "repeated_paragraphs": [],
+          "missing_proper_names": [],
+          "proper_name_candidates": [
+            "Desist Order",
+            "Federal Reserve Board",
+            "Gardner Bancshares",
+            "Kansas Cease",
+            "Kansas Prompt Corrective Action",
+            "Small Business Bank"
+          ],
+          "unsupported_proper_names": [],
+          "semantic_fact_verification": "human_review_required",
+          "source_url_network_existence": "not_rechecked_by_quality_gate",
+          "model_self_score_used_for_approval": false
+        },
+        "structure": {
+          "mock": false,
+          "checks": {
+            "metadata": true,
+            "structure": true,
+            "as_of_date": true,
+            "source_ids_valid": true,
+            "limited_repetition": true,
+            "keyword_in_title_and_body": false,
+            "no_obvious_hype_or_fake_experience": true
+          },
+          "publish_ready": false,
+          "internal_score": 86,
+          "structural_pass": false,
+          "human_review_required": true,
+          "model_quality_verified": false
+        },
+        "section_failures": [
+          {
+            "checks": {
+              "citations_allowed": true,
+              "source_ids_allowed": true,
+              "no_repeated_sentences": true,
+              "numbers_from_evidence": false,
+              "proper_names_preserved": true
+            },
+            "passed": false
+          }
+        ]
+      },
+      "created_at": "2026-10-26 16:19:42.917700+09:00"
+    },
+    {
+      "language": "ko",
+      "variant": "evidence_template",
+      "mechanical_gate_passed": false,
+      "metrics": {
+        "source": "deterministic evidence template; no AI calls",
+        "elapsed_ms": 2,
+        "fact_count": 4,
+        "model_calls": 0,
+        "json_schema_valid": true
+      },
+      "checks": {
+        "grounding": {
+          "rule_pass": false,
+          "naturalness": "human_review_required",
+          "rule_checks": {
+            "current_sources": true,
+            "rights_recorded": true,
+            "source_ids_valid": true,
+            "citation_ids_valid": true,
+            "no_fabricated_urls": true,
+            "no_repeated_sentences": true,
+            "no_unverified_numbers": true,
+            "no_repeated_paragraphs": true,
+            "proper_names_preserved": true,
+            "language_script_present": false,
+            "source_urls_well_formed": true,
+            "factual_paragraphs_cited": true,
+            "language_metadata_matches": false,
+            "no_obvious_high_risk_claims": true,
+            "no_unsupported_proper_names": true
+          },
+          "publish_ready": false,
+          "language_fields": {
+            "body": false,
+            "title": false,
+            "summary": true,
+            "keywords": false
+          },
+          "script_fraction": 0.016,
+          "repeated_sentences": [],
+          "uncited_paragraphs": [],
+          "unexpected_numbers": [],
+          "invalid_source_urls": [],
+          "repeated_paragraphs": [],
+          "missing_proper_names": [],
+          "proper_name_candidates": [
+            "Desist Order",
+            "Federal Reserve Board",
+            "Gardner Bancshares",
+            "Kansas Cease",
+            "Kansas Prompt Corrective Action",
+            "Small Business Bank"
+          ],
+          "unsupported_proper_names": [],
+          "semantic_fact_verification": "human_review_required",
+          "source_url_network_existence": "not_rechecked_by_quality_gate",
+          "model_self_score_used_for_approval": false
+        },
+        "structure": {
+          "mock": false,
+          "checks": {
+            "metadata": true,
+            "structure": true,
+            "as_of_date": true,
+            "source_ids_valid": true,
+            "limited_repetition": true,
+            "keyword_in_title_and_body": true,
+            "no_obvious_hype_or_fake_experience": true
+          },
+          "publish_ready": false,
+          "internal_score": 100,
+          "structural_pass": true,
+          "human_review_required": true,
+          "model_quality_verified": false
+        },
+        "section_failures": []
+      },
+      "created_at": "2026-10-26 16:19:43.368784+09:00"
+    },
+    {
+      "language": "ko",
+      "variant": "existing_ai",
+      "mechanical_gate_passed": false,
+      "metrics": {
+        "source": "persisted Phase 3.7 execution",
+        "elapsed_ms": 327995,
+        "model_calls": 6,
+        "section_metrics": [
+          {},
+          {},
+          {},
+          {}
+        ],
+        "section_attempts": 6,
+        "json_schema_valid": true
+      },
+      "checks": {
+        "grounding": {
+          "rule_pass": false,
+          "naturalness": "human_review_required",
+          "rule_checks": {
+            "current_sources": true,
+            "rights_recorded": true,
+            "source_ids_valid": true,
+            "citation_ids_valid": true,
+            "no_fabricated_urls": true,
+            "no_repeated_sentences": true,
+            "no_unverified_numbers": true,
+            "no_repeated_paragraphs": true,
+            "proper_names_preserved": false,
+            "language_script_present": true,
+            "source_urls_well_formed": true,
+            "factual_paragraphs_cited": true,
+            "language_metadata_matches": false,
+            "no_obvious_high_risk_claims": true,
+            "no_unsupported_proper_names": true
+          },
+          "publish_ready": false,
+          "language_fields": {
+            "body": true,
+            "title": false,
+            "summary": true,
+            "keywords": false
+          },
+          "script_fraction": 0.611,
+          "repeated_sentences": [],
+          "uncited_paragraphs": [],
+          "unexpected_numbers": [],
+          "invalid_source_urls": [],
+          "repeated_paragraphs": [],
+          "missing_proper_names": [
+            "Desist Order",
+            "Kansas Cease",
+            "Kansas Prompt Corrective Action"
+          ],
+          "proper_name_candidates": [
+            "Desist Order",
+            "Federal Reserve Board",
+            "Gardner Bancshares",
+            "Kansas Cease",
+            "Kansas Prompt Corrective Action",
+            "Small Business Bank"
+          ],
+          "unsupported_proper_names": [],
+          "semantic_fact_verification": "human_review_required",
+          "source_url_network_existence": "not_rechecked_by_quality_gate",
+          "model_self_score_used_for_approval": false
+        },
+        "structure": {
+          "mock": false,
+          "checks": {
+            "metadata": true,
+            "structure": true,
+            "as_of_date": true,
+            "source_ids_valid": true,
+            "limited_repetition": true,
+            "keyword_in_title_and_body": false,
+            "no_obvious_hype_or_fake_experience": true
+          },
+          "publish_ready": false,
+          "internal_score": 86,
+          "structural_pass": false,
+          "human_review_required": true,
+          "model_quality_verified": false
+        },
+        "section_failures": [
+          {
+            "checks": {
+              "citations_allowed": true,
+              "source_ids_allowed": true,
+              "no_repeated_sentences": true,
+              "numbers_from_evidence": false,
+              "proper_names_preserved": false
+            },
+            "passed": false
+          },
+          {
+            "checks": {
+              "citations_allowed": true,
+              "source_ids_allowed": true,
+              "no_repeated_sentences": true,
+              "numbers_from_evidence": false,
+              "proper_names_preserved": false
+            },
+            "passed": false
+          },
+          {
+            "checks": {
+              "citations_allowed": true,
+              "source_ids_allowed": true,
+              "no_repeated_sentences": true,
+              "numbers_from_evidence": false,
+              "proper_names_preserved": false
+            },
+            "passed": false
+          },
+          {
+            "checks": {
+              "citations_allowed": true,
+              "source_ids_allowed": true,
+              "no_repeated_sentences": true,
+              "numbers_from_evidence": false,
+              "proper_names_preserved": false
+            },
+            "passed": false
+          }
+        ]
+      },
+      "created_at": "2026-10-26 16:19:43.290256+09:00"
+    }
+  ],
+  "interpretation": {
+    "ai_calls": 6,
+    "ko_improvement_confirmed": true,
+    "why": "Fact-level deterministic checks are separate from semantic/naturalness human review. A failed or unsupported translation remains held; no language capability or publishing approval was changed.",
+    "human_review_required": true,
+    "publish_ready": false,
+    "ko_machine_gate_improved": true,
+    "editorial_quality_confirmed": false,
+    "zh_ja_evaluation_rationale": "Both Korean fact samples passed the machine gate after deterministic entity preservation and inherited-year date normalization; zh-CN and ja were then evaluated on the same two fact spans in evaluation-only mode.",
+    "comparability_note": "Phase 3.8-A evaluated full draft bodies; Phase 3.8-B evaluated two fact spans per language. Pass rates are not directly comparable across output size or semantic depth."
+  },
+  "aggregate_metrics": {
+    "by_language": {
+      "en": {
+        "facts": 2,
+        "machine_passed": 2,
+        "ai_calls": 0,
+        "total_elapsed_ms": 0,
+        "mean_elapsed_ms": 0,
+        "mean_rss_after_mib": null
+      },
+      "ko": {
+        "facts": 2,
+        "machine_passed": 2,
+        "ai_calls": 2,
+        "total_elapsed_ms": 14127,
+        "mean_elapsed_ms": 7064,
+        "mean_rss_after_mib": 3484.99
+      },
+      "zh-CN": {
+        "facts": 2,
+        "machine_passed": 2,
+        "ai_calls": 2,
+        "total_elapsed_ms": 12249,
+        "mean_elapsed_ms": 6124,
+        "mean_rss_after_mib": 3485.35
+      },
+      "ja": {
+        "facts": 2,
+        "machine_passed": 2,
+        "ai_calls": 2,
+        "total_elapsed_ms": 14234,
+        "mean_elapsed_ms": 7117,
+        "mean_rss_after_mib": 3500.68
+      }
+    },
+    "total_ai_calls": 6,
+    "machine_passed": 8,
+    "evaluations": 8,
+    "gpu_measurement_note": "Vulkan requested 20 offload layers; sampled Windows GPU Engine utilization was 0.0% for these short calls, so actual GPU utilization is not confirmed.",
+    "cpu_note": "Process CPU percent is a single post-call sample; it is not a per-token profile."
+  }
+}

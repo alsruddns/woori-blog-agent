@@ -1,0 +1,1 @@
+{"name":"woori-blog-agent","private":true,"scripts":{"lint":"npm --prefix apps/dashboard run lint","typecheck":"npm --prefix apps/dashboard run typecheck","build":"npm --prefix apps/dashboard run build"}}

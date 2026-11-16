@@ -1,0 +1,204 @@
+{
+  "phase": "4-C",
+  "assessment_run_id": "e0379cc7-7519-42b3-8cc6-a2ddae66b350",
+  "captured_at_utc": "2026-10-26T16:31:02.821992+00:00",
+  "evaluation_database": {
+    "name": "woori_blog_agent_eval",
+    "schema_version": 26,
+    "physically_isolated": true,
+    "evaluation_isolated_policy": true,
+    "quota_policy": "per-language daily target quota; failures and cancellations count; retries reuse targets; reset at KST midnight",
+    "quota": [
+      {
+        "language_code": "en",
+        "quota_limit": 2,
+        "quota_used": 2
+      },
+      {
+        "language_code": "ja",
+        "quota_limit": 2,
+        "quota_used": 1
+      },
+      {
+        "language_code": "ko",
+        "quota_limit": 2,
+        "quota_used": 1
+      },
+      {
+        "language_code": "zh-CN",
+        "quota_limit": 2,
+        "quota_used": 1
+      }
+    ]
+  },
+  "fed_existing_c3": {
+    "language_versions": [
+      {
+        "language_code": "en",
+        "versions": 2,
+        "machine_passed": 1
+      },
+      {
+        "language_code": "ja",
+        "versions": 1,
+        "machine_passed": 1
+      },
+      {
+        "language_code": "ko",
+        "versions": 1,
+        "machine_passed": 1
+      },
+      {
+        "language_code": "zh-CN",
+        "versions": 1,
+        "machine_passed": 1
+      }
+    ],
+    "human_review_count_before_phase": 0,
+    "actual_new_inference_in_phase": 0,
+    "human_review_required": true,
+    "publish_ready": false
+  },
+  "sec": {
+    "new_actual_inference": "blocked_quota_exhausted",
+    "blocked_reason": "English is first in required order and its evaluation quota is exhausted",
+    "model_started": false,
+    "existing_historical_quality_evaluations": [
+      {
+        "language_code": "en",
+        "status": "failed",
+        "count": 3
+      },
+      {
+        "language_code": "en",
+        "status": "machine_passed_review_required",
+        "count": 1
+      },
+      {
+        "language_code": "en",
+        "status": "quality_held",
+        "count": 5
+      },
+      {
+        "language_code": "ja",
+        "status": "failed",
+        "count": 1
+      },
+      {
+        "language_code": "ja",
+        "status": "quality_held",
+        "count": 4
+      },
+      {
+        "language_code": "ko",
+        "status": "failed",
+        "count": 4
+      },
+      {
+        "language_code": "zh-CN",
+        "status": "failed",
+        "count": 1
+      },
+      {
+        "language_code": "zh-CN",
+        "status": "quality_held",
+        "count": 3
+      }
+    ],
+    "historical_data_is_not_phase4c_inference": true
+  },
+  "blogger_readonly": {
+    "connected_accounts_with_readonly_scope": 1,
+    "registered_blogs": [
+      {
+        "language_code": "en",
+        "url": "https://trend-journal-en.blogspot.com",
+        "blog_id": "5240203250707821039",
+        "active": true,
+        "connection_verified_at": "2026-10-26 12:15:17.523528+09:00",
+        "last_checked_at": "2026-10-26 12:17:04.615648+09:00",
+        "connection_error": null,
+        "oauth_status": "connected",
+        "scopes": [
+          "https://www.googleapis.com/auth/blogger.readonly"
+        ],
+        "expected_url_matches": true,
+        "readonly_scope": true
+      },
+      {
+        "language_code": "ja",
+        "url": "https://trend-ja.blogspot.com",
+        "blog_id": "7562596540375659150",
+        "active": true,
+        "connection_verified_at": "2026-10-26 12:15:24.826944+09:00",
+        "last_checked_at": "2026-10-26 12:17:06.416207+09:00",
+        "connection_error": null,
+        "oauth_status": "connected",
+        "scopes": [
+          "https://www.googleapis.com/auth/blogger.readonly"
+        ],
+        "expected_url_matches": true,
+        "readonly_scope": true
+      },
+      {
+        "language_code": "ko",
+        "url": "https://trend-ko.blogspot.com",
+        "blog_id": "3321654108096579717",
+        "active": true,
+        "connection_verified_at": "2026-10-26 12:15:30.853707+09:00",
+        "last_checked_at": "2026-10-26 12:17:08.239660+09:00",
+        "connection_error": null,
+        "oauth_status": "connected",
+        "scopes": [
+          "https://www.googleapis.com/auth/blogger.readonly"
+        ],
+        "expected_url_matches": true,
+        "readonly_scope": true
+      },
+      {
+        "language_code": "zh-CN",
+        "url": "https://trend-zh.blogspot.com",
+        "blog_id": "1931836538202286191",
+        "active": true,
+        "connection_verified_at": "2026-10-26 12:15:36.709929+09:00",
+        "last_checked_at": "2026-10-26 12:17:09.227433+09:00",
+        "connection_error": null,
+        "oauth_status": "connected",
+        "scopes": [
+          "https://www.googleapis.com/auth/blogger.readonly"
+        ],
+        "expected_url_matches": true,
+        "readonly_scope": true
+      }
+    ],
+    "live_api_get_requests_this_phase": 0,
+    "live_sync_status": "blocked_before_network_by_zero_cost_provider_gate",
+    "provider_policy": {
+      "name": "google_blogger_read",
+      "cost": "readonly quota API; no per-call charge found; stop on provider quota",
+      "usage_limit": "local hard caps 30 calls/minute and 120 calls/hour; provider 429/quota stops immediately",
+      "commercial_use": "terms apply; review before monetized operation",
+      "calls_allowed": false,
+      "block_reason": "manual_zero_cost_review_required"
+    },
+    "blocked_attempts_by_policy": 1,
+    "pagination_and_detail_reads": "not_verified_this_phase"
+  },
+  "safety": {
+    "blogger_write_operations": 0,
+    "publishing_records": 0,
+    "publish_ready_evaluations": 0,
+    "auto_publish_policies": 0,
+    "audit_immutable": true,
+    "paid_api_calls": 0,
+    "external_data_calls_for_ai": 0,
+    "operating_posts_changed": 0,
+    "real_blogger_writes_in_this_phase": 0
+  },
+  "resources": {
+    "available_ram_bytes": 14864752640,
+    "cpu_percent_sample": 12.3,
+    "disk_free_bytes": 203572781056,
+    "model_run": false
+  }
+}

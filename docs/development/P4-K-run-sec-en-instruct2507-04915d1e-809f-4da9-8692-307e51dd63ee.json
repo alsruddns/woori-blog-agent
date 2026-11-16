@@ -1,0 +1,1459 @@
+{
+  "phase": "4-K",
+  "evaluation_id": "04915d1e-809f-4da9-8692-307e51dd63ee",
+  "created_at": "2026-10-27T02:21:20.465145+00:00",
+  "source": {
+    "adapter": "sec_edgar",
+    "source_id": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+    "source_name": "SEC EDGAR company submissions and XBRL facts",
+    "url": "https://www.sec.gov/Archives/edgar/data/320193/32019326000020/aapl-20260627.htm",
+    "keyword_id": "7da37a9c-529c-4935-b45d-23570584462b"
+  },
+  "comparison_key": "phase4k:sec_edgar:7da37a9c-529c-4935-b45d-23570584462b:en",
+  "language": "en",
+  "model": {
+    "name": "Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+    "runtime": {
+      "pid": 23276,
+      "model": "Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+      "engine": "llama.cpp b11889",
+      "threads": 4,
+      "backend": "vulkan",
+      "engine_directory": "llama-b11889-vulkan",
+      "gpu_layers": 20
+    },
+    "revision": "ae44f08e1392f39c0e474af10c3ff8355c8b6688",
+    "repo": "bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF",
+    "sha256": "2fde00ce69dd4899c70d020845e2638353015bba0fdf161b3eb965f2bca4464e",
+    "license": "Apache-2.0 (upstream Qwen weights; derivative quantization)",
+    "size_bytes": 2497280736,
+    "quantization": "Q4_K_M"
+  },
+  "isolation": {
+    "database": "woori_blog_agent_eval",
+    "evaluation_only": true,
+    "worker_exit_code": 0
+  },
+  "quota": {
+    "used_before": 5,
+    "used_after": 6,
+    "limit": 10,
+    "count_policy": "target counted at creation; failures and cancellation remain counted; retries reuse target"
+  },
+  "resources": {
+    "before": {
+      "cpu_percent": 34.7,
+      "memory_percent": 72.5,
+      "memory_available_bytes": 9417371648,
+      "disk_free_bytes": 198954549248,
+      "resource_gate_passed": true
+    },
+    "after": {
+      "cpu_percent": 36.3,
+      "memory_percent": 70.9,
+      "memory_available_bytes": 9952092160,
+      "disk_free_bytes": 198962745344,
+      "resource_gate_passed": true
+    },
+    "worker_max_rss_bytes_observed_in_job_events": 57249792,
+    "cpu_percent_during_run_sampled": 0.0,
+    "gpu_engine_percent": null
+  },
+  "run": {
+    "id": "c2edfa85-0b48-4302-a12d-97f040936f3a",
+    "status": "succeeded",
+    "error_type": null,
+    "attempts": 1,
+    "created_at": "2026-10-27 11:20:56.841022+09:00",
+    "updated_at": "2026-10-27 11:21:20.260432+09:00"
+  },
+  "draft": {
+    "version_id": "6844c74a-0888-4e50-82fc-5b343bcc0a64",
+    "title": "Verified source facts: Apple Inc. 10-Q filed 2026-07-31",
+    "body": "## Apple Inc. 10-Q filed 2026-07-31\n\n## 1\nApple Inc [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]\n\n## 2\nfiled SEC Form 10-Q on 2026-07-31 for the period ended 2026-06-27. [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]\n\n## 3\nRevenue: 109417000000 USD from March 29, 2026, to June 27, 2026; net income: 29789000000 USD from March 29, 2026, to June 27, 2026. [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]\n\n## 4\nSEC accession number 0000320193-26-000020. [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]\n\n2026-10-27",
+    "state": "quality_held",
+    "publish_ready": false
+  },
+  "checks": {
+    "machine_quality_passed": true,
+    "stage_quality_snapshot_available": true,
+    "persistence_succeeded": true,
+    "quality": {
+      "mock": false,
+      "checks": {
+        "metadata": true,
+        "structure": true,
+        "as_of_date": true,
+        "source_ids_valid": true,
+        "limited_repetition": true,
+        "keyword_in_title_and_body": true,
+        "no_obvious_hype_or_fake_experience": true
+      },
+      "grounding": {
+        "rule_pass": true,
+        "naturalness": "human_review_required",
+        "rule_checks": {
+          "current_sources": true,
+          "rights_recorded": true,
+          "source_ids_valid": true,
+          "citation_ids_valid": true,
+          "no_fabricated_urls": true,
+          "no_mass_direct_quote": true,
+          "no_repeated_sentences": true,
+          "no_unverified_numbers": true,
+          "no_repeated_paragraphs": true,
+          "proper_names_preserved": true,
+          "language_script_present": true,
+          "source_urls_well_formed": true,
+          "factual_paragraphs_cited": true,
+          "language_metadata_matches": true,
+          "no_obvious_high_risk_claims": true,
+          "no_unsupported_proper_names": true
+        },
+        "publish_ready": false,
+        "language_fields": {
+          "body": true,
+          "title": true,
+          "summary": true,
+          "keywords": true
+        },
+        "script_fraction": 1.0,
+        "repeated_sentences": [],
+        "uncited_paragraphs": [],
+        "unexpected_numbers": [],
+        "invalid_source_urls": [],
+        "repeated_paragraphs": [],
+        "missing_proper_names": [],
+        "no_mass_direct_quote": true,
+        "proper_name_candidates": [
+          "Apple Inc",
+          "SEC Form"
+        ],
+        "unsupported_proper_names": [],
+        "semantic_fact_verification": "human_review_required",
+        "longest_source_overlap_words": 16,
+        "source_url_network_existence": "not_rechecked_by_quality_gate",
+        "model_self_score_used_for_approval": false
+      },
+      "localization": {
+        "37ec392c847b4023be5f": {
+          "status": "machine_passed",
+          "no_added_urls": true,
+          "citation_linked": true,
+          "language_matches": true,
+          "numbers_preserved": true,
+          "entities_preserved": true,
+          "no_mass_direct_quote": true,
+          "no_repeated_sentences": true,
+          "no_unverified_entity_added": true,
+          "no_unapproved_translation_asserted": true
+        },
+        "60ce35395975d27159eb": {
+          "status": "machine_passed",
+          "no_added_urls": true,
+          "citation_linked": true,
+          "language_matches": true,
+          "numbers_preserved": true,
+          "entities_preserved": true,
+          "no_mass_direct_quote": true,
+          "no_repeated_sentences": true,
+          "no_unverified_entity_added": true,
+          "no_unapproved_translation_asserted": true
+        },
+        "d80fd6abeae9063202bd": {
+          "status": "machine_passed",
+          "no_added_urls": true,
+          "citation_linked": true,
+          "language_matches": true,
+          "numbers_preserved": true,
+          "entities_preserved": true,
+          "no_mass_direct_quote": true,
+          "no_repeated_sentences": true,
+          "no_unverified_entity_added": true,
+          "no_unapproved_translation_asserted": true
+        },
+        "e4abce8f39418f69032d": {
+          "status": "machine_passed",
+          "no_added_urls": true,
+          "citation_linked": true,
+          "language_matches": true,
+          "numbers_preserved": true,
+          "entities_preserved": true,
+          "no_mass_direct_quote": true,
+          "no_repeated_sentences": true,
+          "no_unverified_entity_added": true,
+          "no_unapproved_translation_asserted": true
+        }
+      },
+      "publish_ready": false,
+      "internal_score": 100,
+      "structural_pass": true,
+      "localization_pass": true,
+      "human_review_required": true,
+      "model_quality_verified": false
+    },
+    "grounding": {
+      "rule_pass": true,
+      "naturalness": "human_review_required",
+      "rule_checks": {
+        "current_sources": true,
+        "rights_recorded": true,
+        "source_ids_valid": true,
+        "citation_ids_valid": true,
+        "no_fabricated_urls": true,
+        "no_mass_direct_quote": true,
+        "no_repeated_sentences": true,
+        "no_unverified_numbers": true,
+        "no_repeated_paragraphs": true,
+        "proper_names_preserved": true,
+        "language_script_present": true,
+        "source_urls_well_formed": true,
+        "factual_paragraphs_cited": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "no_unsupported_proper_names": true
+      },
+      "publish_ready": false,
+      "language_fields": {
+        "body": true,
+        "title": true,
+        "summary": true,
+        "keywords": true
+      },
+      "script_fraction": 1.0,
+      "repeated_sentences": [],
+      "uncited_paragraphs": [],
+      "unexpected_numbers": [],
+      "invalid_source_urls": [],
+      "repeated_paragraphs": [],
+      "missing_proper_names": [],
+      "no_mass_direct_quote": true,
+      "proper_name_candidates": [
+        "Apple Inc",
+        "SEC Form"
+      ],
+      "unsupported_proper_names": [],
+      "semantic_fact_verification": "human_review_required",
+      "longest_source_overlap_words": 16,
+      "source_url_network_existence": "not_rechecked_by_quality_gate",
+      "model_self_score_used_for_approval": false
+    },
+    "human_review_required": true,
+    "publish_ready": false
+  },
+  "metrics": {
+    "elapsed_seconds": 23.68,
+    "model_metrics": {
+      "outline": [
+        {
+          "heading": "Evidence 1",
+          "fact_ids": [
+            "37ec392c847b4023be5f"
+          ],
+          "source_ids": [
+            "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+          ]
+        },
+        {
+          "heading": "Evidence 2",
+          "fact_ids": [
+            "e4abce8f39418f69032d"
+          ],
+          "source_ids": [
+            "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+          ]
+        },
+        {
+          "heading": "Evidence 3",
+          "fact_ids": [
+            "d80fd6abeae9063202bd"
+          ],
+          "source_ids": [
+            "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+          ]
+        },
+        {
+          "heading": "Evidence 4",
+          "fact_ids": [
+            "60ce35395975d27159eb"
+          ],
+          "source_ids": [
+            "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+          ]
+        }
+      ],
+      "section_map": [
+        {
+          "body": "Apple Inc [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]",
+          "heading": "1",
+          "fact_ids": [
+            "37ec392c847b4023be5f"
+          ],
+          "source_ids": [
+            "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+          ]
+        },
+        {
+          "body": "filed SEC Form 10-Q on 2026-07-31 for the period ended 2026-06-27. [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]",
+          "heading": "2",
+          "fact_ids": [
+            "e4abce8f39418f69032d"
+          ],
+          "source_ids": [
+            "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+          ]
+        },
+        {
+          "body": "Revenue: 109417000000 USD from March 29, 2026, to June 27, 2026; net income: 29789000000 USD from March 29, 2026, to June 27, 2026. [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]",
+          "heading": "3",
+          "fact_ids": [
+            "d80fd6abeae9063202bd"
+          ],
+          "source_ids": [
+            "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+          ]
+        },
+        {
+          "body": "SEC accession number 0000320193-26-000020. [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]",
+          "heading": "4",
+          "fact_ids": [
+            "60ce35395975d27159eb"
+          ],
+          "source_ids": [
+            "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+          ]
+        }
+      ],
+      "fact_registry": [
+        {
+          "text": "Apple Inc.",
+          "fact_id": "37ec392c847b4023be5f",
+          "entities": [
+            "Apple Inc"
+          ],
+          "source_id": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+          "entity_ids": [
+            "1804504fae2bb2f3d455"
+          ],
+          "date_values": [],
+          "registry_id": "726d7444-a2ff-45de-b821-c31c2d1c069f",
+          "citation_ids": [
+            "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+          ],
+          "numeric_values": [],
+          "source_language": "en"
+        },
+        {
+          "text": "filed SEC Form 10-Q on 2026-07-31 for the period ended 2026-06-27.",
+          "fact_id": "e4abce8f39418f69032d",
+          "entities": [
+            "SEC Form"
+          ],
+          "source_id": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+          "entity_ids": [
+            "f89b4f7a2a0ae5973e30"
+          ],
+          "date_values": [
+            "DATE:2026-06-27",
+            "DATE:2026-07-31"
+          ],
+          "registry_id": "e16aad33-6a8c-4b5d-8e4f-9be42e768a23",
+          "citation_ids": [
+            "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+          ],
+          "numeric_values": [
+            "10.0",
+            "DATE:2026-06-27",
+            "DATE:2026-07-31"
+          ],
+          "source_language": "en"
+        },
+        {
+          "text": "revenue: 109417000000 USD for period 2026-03-29 to 2026-06-27; net income: 29789000000 USD for period 2026-03-29 to 2026-06-27.",
+          "fact_id": "d80fd6abeae9063202bd",
+          "entities": [],
+          "source_id": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+          "entity_ids": [],
+          "date_values": [
+            "DATE:2026-03-29",
+            "DATE:2026-06-27"
+          ],
+          "registry_id": "72fb57bf-8bb3-4c52-bd70-75c2782bf0f3",
+          "citation_ids": [
+            "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+          ],
+          "numeric_values": [
+            "109417000000.0",
+            "29789000000.0",
+            "DATE:2026-03-29",
+            "DATE:2026-06-27"
+          ],
+          "source_language": "en"
+        },
+        {
+          "text": "SEC accession number 0000320193-26-000020.",
+          "fact_id": "60ce35395975d27159eb",
+          "entities": [],
+          "source_id": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+          "entity_ids": [],
+          "date_values": [],
+          "registry_id": "97594ff5-5eca-4def-8ba8-4105d6b00e9e",
+          "citation_ids": [
+            "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+          ],
+          "numeric_values": [
+            "20.0",
+            "26.0",
+            "320193.0"
+          ],
+          "source_language": "en"
+        }
+      ],
+      "stage_metrics": {
+        "model_time_ms": 20386,
+        "section_count": 4
+      },
+      "section_metrics": [
+        {
+          "elapsed_ms": 2579,
+          "model_calls": 1,
+          "naturalness": "human_review_required",
+          "inference_calls": [
+            {
+              "backend": "vulkan",
+              "succeeded": true,
+              "gpu_layers": 20,
+              "rss_peak_mib": 3479.36,
+              "wall_seconds": 2.572,
+              "prompt_tokens": 189,
+              "completion_tokens": 19,
+              "tokens_per_second_wall": 7.39,
+              "gpu_utilization_percent": 46.73,
+              "system_cpu_peak_percent": 0.0,
+              "process_cpu_mean_percent_machine": 0.0
+            }
+          ],
+          "semantic_accuracy": "human_review_required",
+          "localization_facts": 1,
+          "localization_checks": {
+            "37ec392c847b4023be5f": {
+              "status": "machine_passed",
+              "no_added_urls": true,
+              "citation_linked": true,
+              "language_matches": true,
+              "numbers_preserved": true,
+              "entities_preserved": true,
+              "no_mass_direct_quote": true,
+              "no_repeated_sentences": true,
+              "no_unverified_entity_added": true,
+              "no_unapproved_translation_asserted": true
+            }
+          },
+          "localization_adapter": "per_fact_local_json_translation",
+          "fact_localization_elapsed_ms": 2579
+        },
+        {
+          "elapsed_ms": 5043,
+          "model_calls": 1,
+          "naturalness": "human_review_required",
+          "inference_calls": [
+            {
+              "backend": "vulkan",
+              "succeeded": true,
+              "gpu_layers": 20,
+              "rss_peak_mib": 3479.0,
+              "wall_seconds": 5.038,
+              "prompt_tokens": 222,
+              "completion_tokens": 53,
+              "tokens_per_second_wall": 10.52,
+              "gpu_utilization_percent": 48.7,
+              "system_cpu_peak_percent": 55.1,
+              "process_cpu_mean_percent_machine": 13.32
+            }
+          ],
+          "semantic_accuracy": "human_review_required",
+          "localization_facts": 1,
+          "localization_checks": {
+            "e4abce8f39418f69032d": {
+              "status": "machine_passed",
+              "no_added_urls": true,
+              "citation_linked": true,
+              "language_matches": true,
+              "numbers_preserved": true,
+              "entities_preserved": true,
+              "no_mass_direct_quote": true,
+              "no_repeated_sentences": true,
+              "no_unverified_entity_added": true,
+              "no_unapproved_translation_asserted": true
+            }
+          },
+          "localization_adapter": "per_fact_local_json_translation",
+          "fact_localization_elapsed_ms": 5043
+        },
+        {
+          "elapsed_ms": 7875,
+          "model_calls": 1,
+          "naturalness": "human_review_required",
+          "inference_calls": [
+            {
+              "backend": "vulkan",
+              "succeeded": true,
+              "gpu_layers": 20,
+              "rss_peak_mib": 3479.56,
+              "wall_seconds": 7.873,
+              "prompt_tokens": 253,
+              "completion_tokens": 89,
+              "tokens_per_second_wall": 11.3,
+              "gpu_utilization_percent": 49.11,
+              "system_cpu_peak_percent": 60.7,
+              "process_cpu_mean_percent_machine": 18.8
+            }
+          ],
+          "semantic_accuracy": "human_review_required",
+          "localization_facts": 1,
+          "localization_checks": {
+            "d80fd6abeae9063202bd": {
+              "status": "machine_passed",
+              "no_added_urls": true,
+              "citation_linked": true,
+              "language_matches": true,
+              "numbers_preserved": true,
+              "entities_preserved": true,
+              "no_mass_direct_quote": true,
+              "no_repeated_sentences": true,
+              "no_unverified_entity_added": true,
+              "no_unapproved_translation_asserted": true
+            }
+          },
+          "localization_adapter": "per_fact_local_json_translation",
+          "fact_localization_elapsed_ms": 7875
+        },
+        {
+          "elapsed_ms": 4206,
+          "model_calls": 1,
+          "naturalness": "human_review_required",
+          "inference_calls": [
+            {
+              "backend": "vulkan",
+              "succeeded": true,
+              "gpu_layers": 20,
+              "rss_peak_mib": 3527.6,
+              "wall_seconds": 4.204,
+              "prompt_tokens": 193,
+              "completion_tokens": 32,
+              "tokens_per_second_wall": 7.61,
+              "gpu_utilization_percent": 49.33,
+              "system_cpu_peak_percent": 45.2,
+              "process_cpu_mean_percent_machine": 14.47
+            }
+          ],
+          "semantic_accuracy": "human_review_required",
+          "localization_facts": 1,
+          "localization_checks": {
+            "60ce35395975d27159eb": {
+              "status": "machine_passed",
+              "no_added_urls": true,
+              "citation_linked": true,
+              "language_matches": true,
+              "numbers_preserved": true,
+              "entities_preserved": true,
+              "no_mass_direct_quote": true,
+              "no_repeated_sentences": true,
+              "no_unverified_entity_added": true,
+              "no_unapproved_translation_asserted": true
+            }
+          },
+          "localization_adapter": "per_fact_local_json_translation",
+          "fact_localization_elapsed_ms": 4206
+        }
+      ]
+    },
+    "model_call_count": 4,
+    "completion_tokens": 193,
+    "tokens_per_second_aggregate": 9.8,
+    "rss_peak_mib": 3527.6,
+    "process_cpu_mean_percent_machine_samples": [
+      0.0,
+      13.32,
+      18.8,
+      14.47
+    ],
+    "gpu_utilization_percent_samples": [
+      46.73,
+      48.7,
+      49.11,
+      49.33
+    ],
+    "stage_runs": [
+      {
+        "stage_name": "source_collection",
+        "stage_attempt": 1,
+        "status": "succeeded",
+        "elapsed_ms": 79,
+        "error_category": null,
+        "validation": {
+          "passed": true,
+          "source_count": 1
+        },
+        "output_snapshot": [
+          {
+            "id": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+            "url": "https://www.sec.gov/Archives/edgar/data/320193/32019326000020/aapl-20260627.htm",
+            "revision": 1
+          }
+        ]
+      },
+      {
+        "stage_name": "evidence_extraction",
+        "stage_attempt": 1,
+        "status": "succeeded",
+        "elapsed_ms": 82,
+        "error_category": null,
+        "validation": {
+          "passed": true,
+          "fact_count": 4
+        },
+        "output_snapshot": [
+          {
+            "text": "Apple Inc.",
+            "fact_id": "37ec392c847b4023be5f",
+            "entities": [
+              "Apple Inc"
+            ],
+            "source_id": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+            "entity_ids": [
+              "1804504fae2bb2f3d455"
+            ],
+            "date_values": [],
+            "registry_id": "726d7444-a2ff-45de-b821-c31c2d1c069f",
+            "citation_ids": [
+              "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+            ],
+            "numeric_values": [],
+            "source_language": "en"
+          },
+          {
+            "text": "filed SEC Form 10-Q on 2026-07-31 for the period ended 2026-06-27.",
+            "fact_id": "e4abce8f39418f69032d",
+            "entities": [
+              "SEC Form"
+            ],
+            "source_id": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+            "entity_ids": [
+              "f89b4f7a2a0ae5973e30"
+            ],
+            "date_values": [
+              "DATE:2026-06-27",
+              "DATE:2026-07-31"
+            ],
+            "registry_id": "e16aad33-6a8c-4b5d-8e4f-9be42e768a23",
+            "citation_ids": [
+              "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+            ],
+            "numeric_values": [
+              "10.0",
+              "DATE:2026-06-27",
+              "DATE:2026-07-31"
+            ],
+            "source_language": "en"
+          },
+          {
+            "text": "revenue: 109417000000 USD for period 2026-03-29 to 2026-06-27; net income: 29789000000 USD for period 2026-03-29 to 2026-06-27.",
+            "fact_id": "d80fd6abeae9063202bd",
+            "entities": [],
+            "source_id": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+            "entity_ids": [],
+            "date_values": [
+              "DATE:2026-03-29",
+              "DATE:2026-06-27"
+            ],
+            "registry_id": "72fb57bf-8bb3-4c52-bd70-75c2782bf0f3",
+            "citation_ids": [
+              "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+            ],
+            "numeric_values": [
+              "109417000000.0",
+              "29789000000.0",
+              "DATE:2026-03-29",
+              "DATE:2026-06-27"
+            ],
+            "source_language": "en"
+          },
+          {
+            "text": "SEC accession number 0000320193-26-000020.",
+            "fact_id": "60ce35395975d27159eb",
+            "entities": [],
+            "source_id": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+            "entity_ids": [],
+            "date_values": [],
+            "registry_id": "97594ff5-5eca-4def-8ba8-4105d6b00e9e",
+            "citation_ids": [
+              "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+            ],
+            "numeric_values": [
+              "20.0",
+              "26.0",
+              "320193.0"
+            ],
+            "source_language": "en"
+          }
+        ]
+      },
+      {
+        "stage_name": "fact_registry",
+        "stage_attempt": 1,
+        "status": "succeeded",
+        "elapsed_ms": 75,
+        "error_category": null,
+        "validation": {
+          "passed": true,
+          "fact_count": 4,
+          "source_span_verified": true
+        },
+        "output_snapshot": [
+          {
+            "text": "Apple Inc.",
+            "fact_id": "37ec392c847b4023be5f",
+            "entities": [
+              "Apple Inc"
+            ],
+            "source_id": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+            "entity_ids": [
+              "1804504fae2bb2f3d455"
+            ],
+            "date_values": [],
+            "registry_id": "726d7444-a2ff-45de-b821-c31c2d1c069f",
+            "citation_ids": [
+              "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+            ],
+            "numeric_values": [],
+            "source_language": "en"
+          },
+          {
+            "text": "filed SEC Form 10-Q on 2026-07-31 for the period ended 2026-06-27.",
+            "fact_id": "e4abce8f39418f69032d",
+            "entities": [
+              "SEC Form"
+            ],
+            "source_id": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+            "entity_ids": [
+              "f89b4f7a2a0ae5973e30"
+            ],
+            "date_values": [
+              "DATE:2026-06-27",
+              "DATE:2026-07-31"
+            ],
+            "registry_id": "e16aad33-6a8c-4b5d-8e4f-9be42e768a23",
+            "citation_ids": [
+              "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+            ],
+            "numeric_values": [
+              "10.0",
+              "DATE:2026-06-27",
+              "DATE:2026-07-31"
+            ],
+            "source_language": "en"
+          },
+          {
+            "text": "revenue: 109417000000 USD for period 2026-03-29 to 2026-06-27; net income: 29789000000 USD for period 2026-03-29 to 2026-06-27.",
+            "fact_id": "d80fd6abeae9063202bd",
+            "entities": [],
+            "source_id": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+            "entity_ids": [],
+            "date_values": [
+              "DATE:2026-03-29",
+              "DATE:2026-06-27"
+            ],
+            "registry_id": "72fb57bf-8bb3-4c52-bd70-75c2782bf0f3",
+            "citation_ids": [
+              "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+            ],
+            "numeric_values": [
+              "109417000000.0",
+              "29789000000.0",
+              "DATE:2026-03-29",
+              "DATE:2026-06-27"
+            ],
+            "source_language": "en"
+          },
+          {
+            "text": "SEC accession number 0000320193-26-000020.",
+            "fact_id": "60ce35395975d27159eb",
+            "entities": [],
+            "source_id": "76c54502-ee6e-45b8-b078-24182fbe3ef3",
+            "entity_ids": [],
+            "date_values": [],
+            "registry_id": "97594ff5-5eca-4def-8ba8-4105d6b00e9e",
+            "citation_ids": [
+              "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+            ],
+            "numeric_values": [
+              "20.0",
+              "26.0",
+              "320193.0"
+            ],
+            "source_language": "en"
+          }
+        ]
+      },
+      {
+        "stage_name": "evidence_validation",
+        "stage_attempt": 1,
+        "status": "succeeded",
+        "elapsed_ms": 81,
+        "error_category": null,
+        "validation": {
+          "method": "exact_source_span",
+          "passed": true
+        },
+        "output_snapshot": {
+          "37ec392c847b4023be5f": true,
+          "60ce35395975d27159eb": true,
+          "d80fd6abeae9063202bd": true,
+          "e4abce8f39418f69032d": true
+        }
+      },
+      {
+        "stage_name": "content_outline",
+        "stage_attempt": 1,
+        "status": "succeeded",
+        "elapsed_ms": 75,
+        "error_category": null,
+        "validation": {
+          "method": "evidence_only_bounded_outline",
+          "passed": true
+        },
+        "output_snapshot": [
+          {
+            "heading": "Evidence 1",
+            "fact_ids": [
+              "37ec392c847b4023be5f"
+            ],
+            "source_ids": [
+              "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+            ]
+          },
+          {
+            "heading": "Evidence 2",
+            "fact_ids": [
+              "e4abce8f39418f69032d"
+            ],
+            "source_ids": [
+              "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+            ]
+          },
+          {
+            "heading": "Evidence 3",
+            "fact_ids": [
+              "d80fd6abeae9063202bd"
+            ],
+            "source_ids": [
+              "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+            ]
+          },
+          {
+            "heading": "Evidence 4",
+            "fact_ids": [
+              "60ce35395975d27159eb"
+            ],
+            "source_ids": [
+              "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+            ]
+          }
+        ]
+      },
+      {
+        "stage_name": "section_generation",
+        "stage_attempt": 1,
+        "status": "succeeded",
+        "elapsed_ms": 2654,
+        "error_category": null,
+        "validation": {
+          "checks": {
+            "citations_allowed": true,
+            "source_ids_allowed": true,
+            "no_repeated_sentences": true,
+            "numbers_from_evidence": true,
+            "proper_names_preserved": true,
+            "no_unsupported_proper_names": true
+          },
+          "passed": true,
+          "localization": {
+            "passed": true,
+            "ai_calls": 1,
+            "fact_checks": {
+              "37ec392c847b4023be5f": {
+                "status": "machine_passed",
+                "no_added_urls": true,
+                "citation_linked": true,
+                "language_matches": true,
+                "numbers_preserved": true,
+                "entities_preserved": true,
+                "no_mass_direct_quote": true,
+                "no_repeated_sentences": true,
+                "no_unverified_entity_added": true,
+                "no_unapproved_translation_asserted": true
+              }
+            }
+          },
+          "missing_proper_names": [],
+          "unsupported_proper_names": []
+        },
+        "output_snapshot": {
+          "draft": {
+            "body": "Apple Inc [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]",
+            "title": "Verified source facts: Apple Inc. 10-Q filed 2026-07-31",
+            "summary": "This review draft contains only statements tied to the cited official source.",
+            "keywords": [
+              "Apple Inc. 10-Q filed 2026-07-31"
+            ],
+            "source_ids": [
+              "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+            ]
+          },
+          "metrics": {
+            "elapsed_ms": 2579,
+            "model_calls": 1,
+            "naturalness": "human_review_required",
+            "inference_calls": [
+              {
+                "backend": "vulkan",
+                "succeeded": true,
+                "gpu_layers": 20,
+                "rss_peak_mib": 3479.36,
+                "wall_seconds": 2.572,
+                "prompt_tokens": 189,
+                "completion_tokens": 19,
+                "tokens_per_second_wall": 7.39,
+                "gpu_utilization_percent": 46.73,
+                "system_cpu_peak_percent": 0.0,
+                "process_cpu_mean_percent_machine": 0.0
+              }
+            ],
+            "semantic_accuracy": "human_review_required",
+            "localization_facts": 1,
+            "localization_checks": {
+              "37ec392c847b4023be5f": {
+                "status": "machine_passed",
+                "no_added_urls": true,
+                "citation_linked": true,
+                "language_matches": true,
+                "numbers_preserved": true,
+                "entities_preserved": true,
+                "no_mass_direct_quote": true,
+                "no_repeated_sentences": true,
+                "no_unverified_entity_added": true,
+                "no_unapproved_translation_asserted": true
+              }
+            },
+            "localization_adapter": "per_fact_local_json_translation",
+            "fact_localization_elapsed_ms": 2579
+          }
+        }
+      },
+      {
+        "stage_name": "section_generation",
+        "stage_attempt": 1,
+        "status": "succeeded",
+        "elapsed_ms": 5174,
+        "error_category": null,
+        "validation": {
+          "checks": {
+            "citations_allowed": true,
+            "source_ids_allowed": true,
+            "no_repeated_sentences": true,
+            "numbers_from_evidence": true,
+            "proper_names_preserved": true,
+            "no_unsupported_proper_names": true
+          },
+          "passed": true,
+          "localization": {
+            "passed": true,
+            "ai_calls": 1,
+            "fact_checks": {
+              "e4abce8f39418f69032d": {
+                "status": "machine_passed",
+                "no_added_urls": true,
+                "citation_linked": true,
+                "language_matches": true,
+                "numbers_preserved": true,
+                "entities_preserved": true,
+                "no_mass_direct_quote": true,
+                "no_repeated_sentences": true,
+                "no_unverified_entity_added": true,
+                "no_unapproved_translation_asserted": true
+              }
+            }
+          },
+          "missing_proper_names": [],
+          "unsupported_proper_names": []
+        },
+        "output_snapshot": {
+          "draft": {
+            "body": "filed SEC Form 10-Q on 2026-07-31 for the period ended 2026-06-27. [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]",
+            "title": "Verified source facts:",
+            "summary": "This review draft contains only statements tied to the cited official source.",
+            "keywords": [
+              "Apple Inc. 10-Q filed 2026-07-31"
+            ],
+            "source_ids": [
+              "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+            ]
+          },
+          "metrics": {
+            "elapsed_ms": 5043,
+            "model_calls": 1,
+            "naturalness": "human_review_required",
+            "inference_calls": [
+              {
+                "backend": "vulkan",
+                "succeeded": true,
+                "gpu_layers": 20,
+                "rss_peak_mib": 3479.0,
+                "wall_seconds": 5.038,
+                "prompt_tokens": 222,
+                "completion_tokens": 53,
+                "tokens_per_second_wall": 10.52,
+                "gpu_utilization_percent": 48.7,
+                "system_cpu_peak_percent": 55.1,
+                "process_cpu_mean_percent_machine": 13.32
+              }
+            ],
+            "semantic_accuracy": "human_review_required",
+            "localization_facts": 1,
+            "localization_checks": {
+              "e4abce8f39418f69032d": {
+                "status": "machine_passed",
+                "no_added_urls": true,
+                "citation_linked": true,
+                "language_matches": true,
+                "numbers_preserved": true,
+                "entities_preserved": true,
+                "no_mass_direct_quote": true,
+                "no_repeated_sentences": true,
+                "no_unverified_entity_added": true,
+                "no_unapproved_translation_asserted": true
+              }
+            },
+            "localization_adapter": "per_fact_local_json_translation",
+            "fact_localization_elapsed_ms": 5043
+          }
+        }
+      },
+      {
+        "stage_name": "section_generation",
+        "stage_attempt": 1,
+        "status": "succeeded",
+        "elapsed_ms": 7948,
+        "error_category": null,
+        "validation": {
+          "checks": {
+            "citations_allowed": true,
+            "source_ids_allowed": true,
+            "no_repeated_sentences": true,
+            "numbers_from_evidence": true,
+            "proper_names_preserved": true,
+            "no_unsupported_proper_names": true
+          },
+          "passed": true,
+          "localization": {
+            "passed": true,
+            "ai_calls": 1,
+            "fact_checks": {
+              "d80fd6abeae9063202bd": {
+                "status": "machine_passed",
+                "no_added_urls": true,
+                "citation_linked": true,
+                "language_matches": true,
+                "numbers_preserved": true,
+                "entities_preserved": true,
+                "no_mass_direct_quote": true,
+                "no_repeated_sentences": true,
+                "no_unverified_entity_added": true,
+                "no_unapproved_translation_asserted": true
+              }
+            }
+          },
+          "missing_proper_names": [],
+          "unsupported_proper_names": []
+        },
+        "output_snapshot": {
+          "draft": {
+            "body": "Revenue: 109417000000 USD from March 29, 2026, to June 27, 2026; net income: 29789000000 USD from March 29, 2026, to June 27, 2026. [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]",
+            "title": "Verified source facts:",
+            "summary": "This review draft contains only statements tied to the cited official source.",
+            "keywords": [
+              "Apple Inc. 10-Q filed 2026-07-31"
+            ],
+            "source_ids": [
+              "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+            ]
+          },
+          "metrics": {
+            "elapsed_ms": 7875,
+            "model_calls": 1,
+            "naturalness": "human_review_required",
+            "inference_calls": [
+              {
+                "backend": "vulkan",
+                "succeeded": true,
+                "gpu_layers": 20,
+                "rss_peak_mib": 3479.56,
+                "wall_seconds": 7.873,
+                "prompt_tokens": 253,
+                "completion_tokens": 89,
+                "tokens_per_second_wall": 11.3,
+                "gpu_utilization_percent": 49.11,
+                "system_cpu_peak_percent": 60.7,
+                "process_cpu_mean_percent_machine": 18.8
+              }
+            ],
+            "semantic_accuracy": "human_review_required",
+            "localization_facts": 1,
+            "localization_checks": {
+              "d80fd6abeae9063202bd": {
+                "status": "machine_passed",
+                "no_added_urls": true,
+                "citation_linked": true,
+                "language_matches": true,
+                "numbers_preserved": true,
+                "entities_preserved": true,
+                "no_mass_direct_quote": true,
+                "no_repeated_sentences": true,
+                "no_unverified_entity_added": true,
+                "no_unapproved_translation_asserted": true
+              }
+            },
+            "localization_adapter": "per_fact_local_json_translation",
+            "fact_localization_elapsed_ms": 7875
+          }
+        }
+      },
+      {
+        "stage_name": "section_generation",
+        "stage_attempt": 1,
+        "status": "succeeded",
+        "elapsed_ms": 4281,
+        "error_category": null,
+        "validation": {
+          "checks": {
+            "citations_allowed": true,
+            "source_ids_allowed": true,
+            "no_repeated_sentences": true,
+            "numbers_from_evidence": true,
+            "proper_names_preserved": true,
+            "no_unsupported_proper_names": true
+          },
+          "passed": true,
+          "localization": {
+            "passed": true,
+            "ai_calls": 1,
+            "fact_checks": {
+              "60ce35395975d27159eb": {
+                "status": "machine_passed",
+                "no_added_urls": true,
+                "citation_linked": true,
+                "language_matches": true,
+                "numbers_preserved": true,
+                "entities_preserved": true,
+                "no_mass_direct_quote": true,
+                "no_repeated_sentences": true,
+                "no_unverified_entity_added": true,
+                "no_unapproved_translation_asserted": true
+              }
+            }
+          },
+          "missing_proper_names": [],
+          "unsupported_proper_names": []
+        },
+        "output_snapshot": {
+          "draft": {
+            "body": "SEC accession number 0000320193-26-000020. [source:76c54502-ee6e-45b8-b078-24182fbe3ef3]",
+            "title": "Verified source facts:",
+            "summary": "This review draft contains only statements tied to the cited official source.",
+            "keywords": [
+              "Apple Inc. 10-Q filed 2026-07-31"
+            ],
+            "source_ids": [
+              "76c54502-ee6e-45b8-b078-24182fbe3ef3"
+            ]
+          },
+          "metrics": {
+            "elapsed_ms": 4206,
+            "model_calls": 1,
+            "naturalness": "human_review_required",
+            "inference_calls": [
+              {
+                "backend": "vulkan",
+                "succeeded": true,
+                "gpu_layers": 20,
+                "rss_peak_mib": 3527.6,
+                "wall_seconds": 4.204,
+                "prompt_tokens": 193,
+                "completion_tokens": 32,
+                "tokens_per_second_wall": 7.61,
+                "gpu_utilization_percent": 49.33,
+                "system_cpu_peak_percent": 45.2,
+                "process_cpu_mean_percent_machine": 14.47
+              }
+            ],
+            "semantic_accuracy": "human_review_required",
+            "localization_facts": 1,
+            "localization_checks": {
+              "60ce35395975d27159eb": {
+                "status": "machine_passed",
+                "no_added_urls": true,
+                "citation_linked": true,
+                "language_matches": true,
+                "numbers_preserved": true,
+                "entities_preserved": true,
+                "no_mass_direct_quote": true,
+                "no_repeated_sentences": true,
+                "no_unverified_entity_added": true,
+                "no_unapproved_translation_asserted": true
+              }
+            },
+            "localization_adapter": "per_fact_local_json_translation",
+            "fact_localization_elapsed_ms": 4206
+          }
+        }
+      },
+      {
+        "stage_name": "claim_verification",
+        "stage_attempt": 1,
+        "status": "succeeded",
+        "elapsed_ms": 74,
+        "error_category": null,
+        "validation": {
+          "passed": true
+        },
+        "output_snapshot": {
+          "rule_pass": true,
+          "naturalness": "human_review_required",
+          "rule_checks": {
+            "current_sources": true,
+            "rights_recorded": true,
+            "source_ids_valid": true,
+            "citation_ids_valid": true,
+            "no_fabricated_urls": true,
+            "no_mass_direct_quote": true,
+            "no_repeated_sentences": true,
+            "no_unverified_numbers": true,
+            "no_repeated_paragraphs": true,
+            "proper_names_preserved": true,
+            "language_script_present": true,
+            "source_urls_well_formed": true,
+            "factual_paragraphs_cited": true,
+            "language_metadata_matches": true,
+            "no_obvious_high_risk_claims": true,
+            "no_unsupported_proper_names": true
+          },
+          "publish_ready": false,
+          "language_fields": {
+            "body": true,
+            "title": true,
+            "summary": true,
+            "keywords": true
+          },
+          "script_fraction": 1.0,
+          "repeated_sentences": [],
+          "uncited_paragraphs": [],
+          "unexpected_numbers": [],
+          "invalid_source_urls": [],
+          "repeated_paragraphs": [],
+          "missing_proper_names": [],
+          "no_mass_direct_quote": true,
+          "proper_name_candidates": [
+            "Apple Inc",
+            "SEC Form"
+          ],
+          "unsupported_proper_names": [],
+          "semantic_fact_verification": "human_review_required",
+          "longest_source_overlap_words": 16,
+          "source_url_network_existence": "not_rechecked_by_quality_gate",
+          "model_self_score_used_for_approval": false
+        }
+      },
+      {
+        "stage_name": "seo_quality",
+        "stage_attempt": 1,
+        "status": "succeeded",
+        "elapsed_ms": 76,
+        "error_category": null,
+        "validation": {
+          "passed": true
+        },
+        "output_snapshot": {
+          "mock": false,
+          "checks": {
+            "metadata": true,
+            "structure": true,
+            "as_of_date": true,
+            "source_ids_valid": true,
+            "limited_repetition": true,
+            "keyword_in_title_and_body": true,
+            "no_obvious_hype_or_fake_experience": true
+          },
+          "grounding": {
+            "rule_pass": true,
+            "naturalness": "human_review_required",
+            "rule_checks": {
+              "current_sources": true,
+              "rights_recorded": true,
+              "source_ids_valid": true,
+              "citation_ids_valid": true,
+              "no_fabricated_urls": true,
+              "no_mass_direct_quote": true,
+              "no_repeated_sentences": true,
+              "no_unverified_numbers": true,
+              "no_repeated_paragraphs": true,
+              "proper_names_preserved": true,
+              "language_script_present": true,
+              "source_urls_well_formed": true,
+              "factual_paragraphs_cited": true,
+              "language_metadata_matches": true,
+              "no_obvious_high_risk_claims": true,
+              "no_unsupported_proper_names": true
+            },
+            "publish_ready": false,
+            "language_fields": {
+              "body": true,
+              "title": true,
+              "summary": true,
+              "keywords": true
+            },
+            "script_fraction": 1.0,
+            "repeated_sentences": [],
+            "uncited_paragraphs": [],
+            "unexpected_numbers": [],
+            "invalid_source_urls": [],
+            "repeated_paragraphs": [],
+            "missing_proper_names": [],
+            "no_mass_direct_quote": true,
+            "proper_name_candidates": [
+              "Apple Inc",
+              "SEC Form"
+            ],
+            "unsupported_proper_names": [],
+            "semantic_fact_verification": "human_review_required",
+            "longest_source_overlap_words": 16,
+            "source_url_network_existence": "not_rechecked_by_quality_gate",
+            "model_self_score_used_for_approval": false
+          },
+          "localization": {
+            "37ec392c847b4023be5f": {
+              "status": "machine_passed",
+              "no_added_urls": true,
+              "citation_linked": true,
+              "language_matches": true,
+              "numbers_preserved": true,
+              "entities_preserved": true,
+              "no_mass_direct_quote": true,
+              "no_repeated_sentences": true,
+              "no_unverified_entity_added": true,
+              "no_unapproved_translation_asserted": true
+            },
+            "60ce35395975d27159eb": {
+              "status": "machine_passed",
+              "no_added_urls": true,
+              "citation_linked": true,
+              "language_matches": true,
+              "numbers_preserved": true,
+              "entities_preserved": true,
+              "no_mass_direct_quote": true,
+              "no_repeated_sentences": true,
+              "no_unverified_entity_added": true,
+              "no_unapproved_translation_asserted": true
+            },
+            "d80fd6abeae9063202bd": {
+              "status": "machine_passed",
+              "no_added_urls": true,
+              "citation_linked": true,
+              "language_matches": true,
+              "numbers_preserved": true,
+              "entities_preserved": true,
+              "no_mass_direct_quote": true,
+              "no_repeated_sentences": true,
+              "no_unverified_entity_added": true,
+              "no_unapproved_translation_asserted": true
+            },
+            "e4abce8f39418f69032d": {
+              "status": "machine_passed",
+              "no_added_urls": true,
+              "citation_linked": true,
+              "language_matches": true,
+              "numbers_preserved": true,
+              "entities_preserved": true,
+              "no_mass_direct_quote": true,
+              "no_repeated_sentences": true,
+              "no_unverified_entity_added": true,
+              "no_unapproved_translation_asserted": true
+            }
+          },
+          "publish_ready": false,
+          "internal_score": 100,
+          "structural_pass": true,
+          "localization_pass": true,
+          "human_review_required": true,
+          "model_quality_verified": false
+        }
+      },
+      {
+        "stage_name": "draft_persistence",
+        "stage_attempt": 1,
+        "status": "succeeded",
+        "elapsed_ms": 72,
+        "error_category": null,
+        "validation": {
+          "passed": true
+        },
+        "output_snapshot": {
+          "version": 2,
+          "content_version_id": "6844c74a-0888-4e50-82fc-5b343bcc0a64"
+        }
+      }
+    ],
+    "audit_event_types": [
+      "research.evaluation.model.override",
+      "research.queued",
+      "research.started",
+      "research.generation.started",
+      "research.facts.checked",
+      "research.stage.started",
+      "research.stage.succeeded",
+      "research.stage.started",
+      "research.stage.succeeded",
+      "research.stage.started",
+      "research.stage.succeeded",
+      "research.stage.started",
+      "research.stage.succeeded",
+      "research.stage.started",
+      "research.stage.succeeded",
+      "research.stage.started",
+      "research.stage.succeeded",
+      "research.stage.started",
+      "research.stage.succeeded",
+      "research.stage.started",
+      "research.stage.succeeded",
+      "research.stage.started",
+      "research.stage.succeeded",
+      "research.planning.completed",
+      "research.stage.started",
+      "research.stage.succeeded",
+      "research.stage.started",
+      "research.stage.succeeded",
+      "research.generation.saved",
+      "research.seo.checked",
+      "research.stage.started",
+      "research.stage.succeeded",
+      "research.completed"
+    ],
+    "worker_process_exit_code": 0
+  },
+  "safety": {
+    "paid_api_calls": 0,
+    "external_data_calls": 0,
+    "blogger_writes": 0,
+    "publish_ready": false
+  }
+}

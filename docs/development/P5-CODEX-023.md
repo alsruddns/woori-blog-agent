@@ -1,0 +1,21 @@
+# P5-CODEX-023 — KST daily publication dashboard
+
+- 작업 일시: 2026-10-29 (Asia/Seoul)
+- 작업 ID: P5-CODEX-023
+- 브랜치: develop
+- 변경 사유 / 기존 문제: Dashboard에는 Blogger `publishing_records` 전체 수만 있었고 KST 일일 전역·언어별 사용량, 대기 점유량, 게시 원고 목록이 없었다. 저장된 내부 원장만으로 원격 Blogger 수동 게시 전체를 확정할 수도 없었다.
+- 변경 목적: Auto OFF를 유지하면서 실제 내부 게시 원장과 예약 점유량을 KST 날짜 기준으로 보수 집계하고 Dashboard에 노출한다.
+- 변경 전 상태: Worker는 모의 발행 전용이며 실제 Blogger 공개 쓰기는 비활성. Auto는 차단됨. 스키마 48 기준. 운영 설정은 기존 global manual/daily limit 1; 이 작업은 운영 설정값을 수정하지 않았다.
+- 변경 후 상태: 일일 정책 read model에 전체 상한 50, ko/ja 10, zh-CN 5, en 동적 잔여량, 영어 시간당 20을 표시한다. 기록된 실제 게시와 queued/running 예약을 분리한다. Dashboard는 KST 오늘의 내부 게시 원장 최대 100건을 보여주며 Auto OFF 및 미동기화 원격 수동 게시물 경고를 표시한다. 공개 URL이나 Blogger 원격 상태를 만들어내지 않는다.
+- 수정 파일:
+  - `services/api/woori/publication_daily.py`
+  - `services/api/woori/operations_dashboard.py`
+  - `services/api/tests/test_publication_daily.py`
+  - `services/api/tests/test_dashboard_read_models.py`
+  - `apps/dashboard/app/page.tsx`
+  - `apps/dashboard/app/style.css`
+- 테스트 결과: `pytest services/api/tests/test_publication_daily.py services/api/tests/test_dashboard_read_models.py -q` — 9 passed. Dashboard `npm run lint` — 통과. Dashboard `npm run build` — 통과.
+- DB 마이그레이션: 없음. DB 원고·OAuth·발행 원장·과거 감사 레코드 변경 없음. 실행 감사 시작 이벤트는 `job_runs` run `8667eb6e-7fff-41c8-a6de-00d99f08e94b`에 연결.
+- 외부 호출: 없음. Blogger 실제 쓰기/조회 및 Trends 요청 없음.
+- 남은 문제: 날짜 선택, 어제/7일, 언어·블로그·상태 필터, 페이지네이션, 원격 게시 URL/상태 조회, 수동 Blogger 게시 동기화, 출처/Research Package 표시를 구현하지 않았다. KST 50/언어별 수치는 코드 read model이며 현재 DB의 기존 `publication_mode_settings` 정책을 변경하거나 Auto 허용하지 않는다. 계정별 실제 2분/블로그별 5분 발행 조정은 이번에 구현하지 않았다. 운영 API 프로세스가 재시작되지 않아 변경 API 런타임 반영은 미확인이다.
+- 커밋 / 원격: 작업 완료 후 `git log`와 `origin/develop`으로 기록한다.

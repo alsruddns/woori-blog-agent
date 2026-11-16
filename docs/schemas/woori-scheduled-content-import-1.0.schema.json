@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://woori.local/schemas/scheduled-content-import/1.0",
+  "title": "Woori scheduled content import envelope",
+  "description": "Local file handoff metadata plus the unchanged woori-content-import/1.0 item. Provenance is self-reported and never grants approval or publication rights.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "submitted_by", "item", "scheduled_origin"],
+  "properties": {
+    "schema_version": {"const": "woori-scheduled-content-import/1.0"},
+    "submitted_by": {"type": "string", "minLength": 2, "maxLength": 100},
+    "item": {
+      "$ref": "./woori-content-import-1.0.schema.json#/properties/item",
+      "allOf": [{"properties": {"generation_method": {"const": "chatgpt_scheduled_export"}}}]
+    },
+    "scheduled_origin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["task_type", "task_id", "occurrence_id", "executed_at", "market_date", "target_language_code", "target_blog_id", "target_blog_url", "source_as_of"],
+      "properties": {
+        "task_type": {"enum": ["market_close_kr", "market_close_jp", "market_close_cn", "market_close_us", "weekly_finance", "trends_major_issue", "scheduled_article"]},
+        "task_id": {"type": "string", "minLength": 3, "maxLength": 128, "pattern": "^[A-Za-z0-9_.:-]+$"},
+        "occurrence_id": {"type": "string", "minLength": 8, "maxLength": 160, "pattern": "^[A-Za-z0-9_.:-]+$"},
+        "occurrence_id_source": {"enum": ["scheduler_issued", "project_derived_kst_slot"]},
+        "scheduler_occurrence_id": {"type": ["string", "null"], "minLength": 8, "maxLength": 160, "pattern": "^[A-Za-z0-9_.:-]+$"},
+        "automation_id": {"type": ["string", "null"], "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9_.:-]+$"},
+        "scheduled_slot": {"type": ["string", "null"], "format": "date-time"},
+        "local_duplicate_status": {"enum": ["already_published", "already_imported", "failed_only", "not_found", "unknown"]},
+        "remote_duplicate_status": {"enum": ["not_checked", "clear", "found", "unknown", "database_verified"]},
+        "remote_failure_code": {"type": "string", "minLength": 1, "maxLength": 120},
+        "draft_import_allowed": {"type": "boolean"},
+        "publication_recheck_required": {"type": "boolean"},
+        "publication_retry_status": {"enum": ["not_started", "not_required", "required_before_publication", "pending"]},
+        "executed_at": {"type": "string", "format": "date-time"},
+        "market_date": {"type": ["string", "null"], "format": "date"},
+        "target_language_code": {"type": "string", "minLength": 2, "maxLength": 35},
+        "target_blog_id": {"type": "string", "minLength": 5, "maxLength": 32, "pattern": "^[0-9]+$"},
+        "target_blog_url": {"type": "string", "format": "uri", "pattern": "^https://[a-z0-9][a-z0-9-]*\\.blogspot\\.com/?$"},
+        "source_as_of": {"type": "string", "format": "date-time"},
+        "inbox_file_name": {"type": "string", "minLength": 1, "maxLength": 180, "pattern": "^[A-Za-z0-9_.-]+$"},
+        "inbox_file_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"occurrence_id_source": {"const": "scheduler_issued"}}, "required": ["occurrence_id_source"]},
+          "then": {"required": ["scheduler_occurrence_id"], "properties": {"scheduler_occurrence_id": {"type": "string"}}}
+        },
+        {
+          "if": {"properties": {"occurrence_id_source": {"const": "project_derived_kst_slot"}}, "required": ["occurrence_id_source"]},
+          "then": {"required": ["automation_id", "scheduled_slot"], "properties": {"automation_id": {"type": "string"}, "scheduled_slot": {"type": "string"}}}
+        }
+      ]
+    }
+  }
+}

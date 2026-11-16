@@ -1,0 +1,328 @@
+{
+  "phase": "4-L",
+  "kind": "append_only_deterministic_recheck",
+  "batch_id": "0d45118e-d2e0-40ea-91f0-09dcf96d1039",
+  "database": "woori_blog_agent_eval",
+  "recorded_at": "2026-10-27T03:45:52.254504+00:00",
+  "elapsed_seconds": 0.965,
+  "ai_calls": 0,
+  "results": [
+    {
+      "evaluation_id": "0dd70337-6083-4d0e-8b4a-89ad80b03f00",
+      "source_run_id": "9afab489-3628-463a-9c0d-f61ee426f176",
+      "source_content_version_id": "35e30c7f-33ec-4ee5-8d45-660c8dc4a18f",
+      "topic": "Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026",
+      "language": "en",
+      "model": "Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+      "status": "quality_held",
+      "machine_passed": false,
+      "checks": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": false
+      },
+      "details": {
+        "numeric_values_missing": [],
+        "numeric_values_added": [],
+        "proper_name_candidates": [
+          "Federal Open Market Committee",
+          "Federal Reserve Board"
+        ],
+        "missing_proper_names": [],
+        "unsupported_proper_names": [],
+        "source_overlap_words_max": 28,
+        "source_ids": [
+          "873093a8-085e-42b5-8bb2-657f62f8df94"
+        ],
+        "fact_ids": [
+          "03cd3abc-ae35-49c8-b2eb-82b6872fa4c4",
+          "be9de8b6-7b07-4e95-a682-36e702afcd84",
+          "bd8bf8c0-bda7-4d13-b199-7e52d54251e8",
+          "5a9afa07-567c-483f-aece-b117a4c6cc15",
+          "85184003-7d9f-412a-9b38-cb60b33d02a5"
+        ]
+      },
+      "elapsed_ms": 85,
+      "ai_calls": 0,
+      "human_review_required": true,
+      "publish_ready": false
+    },
+    {
+      "evaluation_id": "e34b196b-da39-4df6-b2f3-9a6088260033",
+      "source_run_id": "ea3d0ef8-6b0a-4668-8563-786d0c25959a",
+      "source_content_version_id": "f0d52644-7a9b-4d1c-b7c5-a01548e4ca84",
+      "topic": "Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026",
+      "language": "en",
+      "model": "Qwen3-4B-Q4_K_M.gguf",
+      "status": "machine_passed_review_required",
+      "machine_passed": true,
+      "checks": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "details": {
+        "numeric_values_missing": [],
+        "numeric_values_added": [],
+        "proper_name_candidates": [
+          "Federal Open Market Committee",
+          "Federal Reserve Board"
+        ],
+        "missing_proper_names": [],
+        "unsupported_proper_names": [],
+        "source_overlap_words_max": 17,
+        "source_ids": [
+          "873093a8-085e-42b5-8bb2-657f62f8df94"
+        ],
+        "fact_ids": [
+          "03cd3abc-ae35-49c8-b2eb-82b6872fa4c4",
+          "be9de8b6-7b07-4e95-a682-36e702afcd84",
+          "bd8bf8c0-bda7-4d13-b199-7e52d54251e8",
+          "5a9afa07-567c-483f-aece-b117a4c6cc15",
+          "85184003-7d9f-412a-9b38-cb60b33d02a5"
+        ]
+      },
+      "elapsed_ms": 72,
+      "ai_calls": 0,
+      "human_review_required": true,
+      "publish_ready": false
+    },
+    {
+      "evaluation_id": "4137302b-475c-4825-9555-5ee24968307b",
+      "source_run_id": "a2434d90-4357-4870-88a9-fd480be090c7",
+      "source_content_version_id": "dedd68e3-1829-4d2c-8ec2-c783911b765f",
+      "topic": "Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026",
+      "language": "ja",
+      "model": "Qwen3-4B-Q4_K_M.gguf",
+      "status": "machine_passed_review_required",
+      "machine_passed": true,
+      "checks": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "details": {
+        "numeric_values_missing": [],
+        "numeric_values_added": [],
+        "proper_name_candidates": [
+          "Federal Open Market Committee",
+          "Federal Reserve Board"
+        ],
+        "missing_proper_names": [],
+        "unsupported_proper_names": [],
+        "source_overlap_words_max": 4,
+        "source_ids": [
+          "873093a8-085e-42b5-8bb2-657f62f8df94"
+        ],
+        "fact_ids": [
+          "03cd3abc-ae35-49c8-b2eb-82b6872fa4c4",
+          "be9de8b6-7b07-4e95-a682-36e702afcd84",
+          "bd8bf8c0-bda7-4d13-b199-7e52d54251e8",
+          "5a9afa07-567c-483f-aece-b117a4c6cc15",
+          "85184003-7d9f-412a-9b38-cb60b33d02a5"
+        ]
+      },
+      "elapsed_ms": 75,
+      "ai_calls": 0,
+      "human_review_required": true,
+      "publish_ready": false
+    },
+    {
+      "evaluation_id": "49e401bb-0104-4e42-9315-96e99ac742e2",
+      "source_run_id": "37e40f06-3653-46c1-a861-50d1d089b19d",
+      "source_content_version_id": "57a0f484-48cc-40c5-92f5-b6365000b284",
+      "topic": "Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026",
+      "language": "ko",
+      "model": "Qwen3-4B-Q4_K_M.gguf",
+      "status": "machine_passed_review_required",
+      "machine_passed": true,
+      "checks": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "details": {
+        "numeric_values_missing": [],
+        "numeric_values_added": [],
+        "proper_name_candidates": [
+          "Federal Open Market Committee",
+          "Federal Reserve Board"
+        ],
+        "missing_proper_names": [],
+        "unsupported_proper_names": [],
+        "source_overlap_words_max": 4,
+        "source_ids": [
+          "873093a8-085e-42b5-8bb2-657f62f8df94"
+        ],
+        "fact_ids": [
+          "03cd3abc-ae35-49c8-b2eb-82b6872fa4c4",
+          "be9de8b6-7b07-4e95-a682-36e702afcd84",
+          "bd8bf8c0-bda7-4d13-b199-7e52d54251e8",
+          "5a9afa07-567c-483f-aece-b117a4c6cc15",
+          "85184003-7d9f-412a-9b38-cb60b33d02a5"
+        ]
+      },
+      "elapsed_ms": 88,
+      "ai_calls": 0,
+      "human_review_required": true,
+      "publish_ready": false
+    },
+    {
+      "evaluation_id": "987a0c6e-f986-4310-a40a-38fe424df2b8",
+      "source_run_id": "ee2a4dbe-2c29-4006-a981-b4b4efa693a6",
+      "source_content_version_id": "35615057-3e01-490f-8234-0e7d9684c65c",
+      "topic": "Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026",
+      "language": "zh-CN",
+      "model": "Qwen3-4B-Q4_K_M.gguf",
+      "status": "machine_passed_review_required",
+      "machine_passed": true,
+      "checks": {
+        "source_ids_valid": true,
+        "no_fabricated_urls": true,
+        "source_urls_well_formed": true,
+        "citation_ids_valid": true,
+        "factual_paragraphs_cited": true,
+        "no_unverified_numbers": true,
+        "proper_names_preserved": true,
+        "no_unsupported_proper_names": true,
+        "no_repeated_paragraphs": true,
+        "no_repeated_sentences": true,
+        "rights_recorded": true,
+        "current_sources": true,
+        "language_script_present": true,
+        "language_metadata_matches": true,
+        "no_obvious_high_risk_claims": true,
+        "article_structure": true,
+        "title_body_alignment": true,
+        "keyword_search_intent_coverage": true,
+        "keywords_are_search_terms_not_internal_ids": true,
+        "no_internal_ids_in_user_text": true,
+        "keyword_list_is_bounded_and_unique": true,
+        "no_forbidden_foreign_script_mixing": true,
+        "target_writing_system_present": true,
+        "legal_access_claims_grounded_in_supplied_source": true,
+        "no_mass_direct_quote": true
+      },
+      "details": {
+        "numeric_values_missing": [],
+        "numeric_values_added": [],
+        "proper_name_candidates": [
+          "Federal Open Market Committee",
+          "Federal Reserve Board"
+        ],
+        "missing_proper_names": [],
+        "unsupported_proper_names": [],
+        "source_overlap_words_max": 4,
+        "source_ids": [
+          "873093a8-085e-42b5-8bb2-657f62f8df94"
+        ],
+        "fact_ids": [
+          "03cd3abc-ae35-49c8-b2eb-82b6872fa4c4",
+          "be9de8b6-7b07-4e95-a682-36e702afcd84",
+          "bd8bf8c0-bda7-4d13-b199-7e52d54251e8",
+          "5a9afa07-567c-483f-aece-b117a4c6cc15",
+          "85184003-7d9f-412a-9b38-cb60b33d02a5"
+        ]
+      },
+      "elapsed_ms": 84,
+      "ai_calls": 0,
+      "human_review_required": true,
+      "publish_ready": false
+    }
+  ],
+  "summary": {
+    "drafts_rechecked": 5,
+    "machine_passed_review_required": 4,
+    "quality_held": 1,
+    "human_review_pending": 5,
+    "publish_ready_true": 0
+  }
+}

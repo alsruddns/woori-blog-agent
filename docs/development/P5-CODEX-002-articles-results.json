@@ -1,0 +1,327 @@
+{
+  "task_id": "P5-CODEX-002-articles-continuation",
+  "recorded_at_kst": "2026-10-28",
+  "status": "private_evaluation_articles_written; human_review_required; not_publishable",
+  "continuation_note": "Supersedes neither the earlier blocked-attempt record nor its result JSON; this file records the later user-directed article-writing completion.",
+  "research_package": {
+    "id": "de118f17-ab50-46b7-b99f-4aba51f240ce",
+    "topic_id": "e6424812-46e2-5833-aebd-48a630a0c4a7",
+    "version": 1,
+    "sha256": "81bb85afa4e7d0d3ce2de03d6a5ed06268ff0ba770ad34aba703334c14ca0676",
+    "state": "evidence_collected_pending_human_review",
+    "generation_ready": false,
+    "publish_ready": false,
+    "facts": 8,
+    "sources": 3
+  },
+  "authoring_session": {
+    "channel": "current Codex conversation",
+    "exact_model_id": "not independently queried, per user instruction",
+    "separate_codex_subprocesses": 0,
+    "openai_api_calls": 0,
+    "other_paid_ai_api_calls": 0,
+    "blogger_api_calls": 0
+  },
+  "cost_safety": {
+    "user_reported_plus_quota_remaining": true,
+    "user_reported_auto_reload_disabled": true,
+    "account_credit_balance_or_consumption_independently_verified": false,
+    "paid_credit_prompt_observed_in_this_task": false,
+    "zero_cost_guarantee": "not asserted; account-side credit use is not independently observable here"
+  },
+  "articles": [
+    {
+      "language": "ko",
+      "path": "docs/development/P5-CODEX-002-article-ko.md",
+      "title": "대만 군공교 처우 개선안, ‘2천 대만달러’와 4% 인상은 다른 일정이다",
+      "characters": 2425,
+      "body_characters": 1917,
+      "utf8_bytes": 5162,
+      "sha256": "6211b5a00281be0bce0bde7dfc1c004ebe490b8e7d5b6bbe36f6e10117d638d0",
+      "h2_sections": 4,
+      "package_references": [
+        1,
+        2,
+        3
+      ],
+      "source_urls": [
+        "https://www.ey.gov.tw/Page/448DE008087A1971/5020ed44-2196-4da0-9dbe-fe6ae7f44afc",
+        "https://www.ey.gov.tw/Page/9277F759E41CCD91/e6b90fcf-0d42-40e3-b001-1c790c076657",
+        "https://www.ly.gov.tw/Pages/List.aspx?nodeid=56728"
+      ],
+      "deterministic_content_checks": {
+        "required_values_present": true,
+        "three_package_source_urls_present": true,
+        "internal_fact_marker_absent": true,
+        "no_direct_substantial_quote_overlap": true
+      },
+      "project_article_quality_evaluator": {
+        "machine_passed": false,
+        "checks": {
+          "source_ids_valid": true,
+          "no_fabricated_urls": true,
+          "source_urls_well_formed": true,
+          "citation_ids_valid": true,
+          "factual_paragraphs_cited": true,
+          "no_unverified_numbers": false,
+          "proper_names_preserved": false,
+          "no_unsupported_proper_names": true,
+          "no_repeated_paragraphs": true,
+          "no_repeated_sentences": true,
+          "rights_recorded": true,
+          "current_sources": true,
+          "language_script_present": true,
+          "language_metadata_matches": true,
+          "no_obvious_high_risk_claims": true,
+          "no_internal_fact_markers": true,
+          "article_structure": true,
+          "title_body_alignment": true,
+          "keyword_search_intent_coverage": true,
+          "keywords_are_search_terms_not_internal_ids": true,
+          "no_internal_ids_in_user_text": true,
+          "keyword_list_is_bounded_and_unique": true,
+          "no_forbidden_foreign_script_mixing": true,
+          "target_writing_system_present": true,
+          "legal_access_claims_grounded_in_supplied_source": true,
+          "no_mass_direct_quote": true
+        },
+        "failed_checks": [
+          "no_unverified_numbers",
+          "proper_names_preserved"
+        ],
+        "source_overlap_tokens": 2,
+        "unexpected_numbers": [
+          "10.7",
+          "2.0",
+          "2026.0",
+          "2027.0",
+          "607.6"
+        ],
+        "missing_proper_names": [
+          "Executive Yuan",
+          "Legislative Yuan Budget Center"
+        ],
+        "unsupported_proper_names": [],
+        "uncited_paragraph_count": 0,
+        "interpretation": "Diagnostic evaluation on reconstructed Draft and mapped package source IDs; not an approval gate. Full machine gate did not pass."
+      }
+    },
+    {
+      "language": "en",
+      "path": "docs/development/P5-CODEX-002-article-en.md",
+      "title": "Taiwan’s Public-Sector Pay Plan Hinges on Budget Process, Not One Headline Rate",
+      "characters": 5580,
+      "body_characters": 4677,
+      "utf8_bytes": 5618,
+      "sha256": "13bc13aec0487ee7520a7dbe22d0d156a1a203ce441bf9d4a3c201b2e3747747",
+      "h2_sections": 4,
+      "package_references": [
+        1,
+        2,
+        3
+      ],
+      "source_urls": [
+        "https://www.ey.gov.tw/Page/448DE008087A1971/5020ed44-2196-4da0-9dbe-fe6ae7f44afc",
+        "https://www.ey.gov.tw/Page/9277F759E41CCD91/e6b90fcf-0d42-40e3-b001-1c790c076657",
+        "https://www.ly.gov.tw/Pages/List.aspx?nodeid=56728"
+      ],
+      "deterministic_content_checks": {
+        "required_values_present": true,
+        "three_package_source_urls_present": true,
+        "internal_fact_marker_absent": true,
+        "no_direct_substantial_quote_overlap": true
+      },
+      "project_article_quality_evaluator": {
+        "machine_passed": false,
+        "checks": {
+          "source_ids_valid": true,
+          "no_fabricated_urls": true,
+          "source_urls_well_formed": true,
+          "citation_ids_valid": true,
+          "factual_paragraphs_cited": true,
+          "no_unverified_numbers": false,
+          "proper_names_preserved": false,
+          "no_unsupported_proper_names": false,
+          "no_repeated_paragraphs": true,
+          "no_repeated_sentences": true,
+          "rights_recorded": true,
+          "current_sources": true,
+          "language_script_present": true,
+          "language_metadata_matches": true,
+          "no_obvious_high_risk_claims": true,
+          "no_internal_fact_markers": true,
+          "article_structure": true,
+          "title_body_alignment": true,
+          "keyword_search_intent_coverage": true,
+          "keywords_are_search_terms_not_internal_ids": true,
+          "no_internal_ids_in_user_text": true,
+          "keyword_list_is_bounded_and_unique": true,
+          "no_forbidden_foreign_script_mixing": true,
+          "target_writing_system_present": true,
+          "legal_access_claims_grounded_in_supplied_source": true,
+          "no_mass_direct_quote": true
+        },
+        "failed_checks": [
+          "no_unverified_numbers",
+          "proper_names_preserved",
+          "no_unsupported_proper_names"
+        ],
+        "source_overlap_tokens": 2,
+        "unexpected_numbers": [
+          "0.0",
+          "10.7",
+          "2.0",
+          "2026.0",
+          "2027.0",
+          "24.0",
+          "6.0",
+          "607.6",
+          "73.0"
+        ],
+        "missing_proper_names": [
+          "Legislative Yuan Budget Center"
+        ],
+        "unsupported_proper_names": [
+          "Budget Process",
+          "Not One Headline Rate",
+          "Public-Sector Pay Plan Hinges"
+        ],
+        "uncited_paragraph_count": 0,
+        "interpretation": "Diagnostic evaluation on reconstructed Draft and mapped package source IDs; not an approval gate. Full machine gate did not pass."
+      }
+    }
+  ],
+  "fact_review": [
+    {
+      "fact": "professional allowance (including teacher academic-research allowance) and supervisory-duty allowance each proposed to increase by NT$2,000",
+      "source_fact_ids": [
+        "0450e1d3-9ffe-45cf-a104-2472f3c56514",
+        "ac673c11-7072-47e4-9b6f-89a42405dbed"
+      ],
+      "ko": "supported; proposal language retained",
+      "en": "supported; proposal language retained"
+    },
+    {
+      "fact": "separate 4% general-pay adjustment planned for fiscal 2027",
+      "source_fact_ids": [
+        "0450e1d3-9ffe-45cf-a104-2472f3c56514",
+        "ac673c11-7072-47e4-9b6f-89a42405dbed"
+      ],
+      "ko": "supported; separated from allowances",
+      "en": "supported; separated from allowances"
+    },
+    {
+      "fact": "July 1, 2026 proposed earlier effective date for allowance adjustments through supplementary-budget process",
+      "source_fact_ids": [
+        "d7974ad7-1444-4199-9a38-b3577a92e5d2"
+      ],
+      "ko": "supported as proposal, not payment evidence",
+      "en": "supported as proposal, not payment evidence"
+    },
+    {
+      "fact": "NT$607.6 billion total proposal across six areas; referred for Legislative Yuan consideration",
+      "source_fact_ids": [
+        "65d80576-7219-4c13-bb83-481929d7783b"
+      ],
+      "ko": "supported; not characterized as compensation-only",
+      "en": "supported; not characterized as compensation-only"
+    },
+    {
+      "fact": "NT$10.7 billion compensation-improvement line and associated allowance plan",
+      "source_fact_ids": [
+        "a66cf1de-a0c4-4aa6-8af6-d14595ea22ba"
+      ],
+      "ko": "supported; distinct from total package",
+      "en": "supported; distinct from total package"
+    },
+    {
+      "fact": "Legislative Budget Center review raised supplementary-budget legality/procedure questions",
+      "source_fact_ids": [
+        "80367ecb-190a-47fd-9683-997a33e95bb6"
+      ],
+      "ko": "qualified as review issue, not ruling",
+      "en": "qualified as review issue, not ruling"
+    },
+    {
+      "fact": "review discussed implementation capacity within limited timing",
+      "source_fact_ids": [
+        "6d66f51e-c248-4651-82a3-71324db2679f"
+      ],
+      "ko": "supported",
+      "en": "supported"
+    },
+    {
+      "fact": "review recommended clearer objective standards for compensation adjustments",
+      "source_fact_ids": [
+        "e0ce1ed1-8002-4d07-9d11-ee729128d0e9"
+      ],
+      "ko": "supported",
+      "en": "supported"
+    },
+    {
+      "fact": "later enactment, implementation and individual payment evidence",
+      "source_fact_ids": [],
+      "ko": "not present in package; explicitly described as unconfirmed",
+      "en": "not present in package; explicitly described as unconfirmed"
+    }
+  ],
+  "source_independence": "The two Executive Yuan documents are from the same institution and are not counted as independent corroboration. The Legislative Yuan Budget Center report is a distinct institutional assessment of budget process, not proof of implementation/payment. Package independence review remains pending.",
+  "qwen3_baseline": {
+    "path": "docs/development/P5-AI-002-article-0fa0c8e4-a84f-45b1-94e0-8d23ab9ebdda.md",
+    "result_path": "docs/development/P5-AI-002-results-0fa0c8e4-a84f-45b1-94e0-8d23ab9ebdda.json",
+    "machine_checks_passed": 21,
+    "machine_checks_total": 25,
+    "failed_checks": [
+      "factual_paragraphs_cited",
+      "no_unverified_numbers",
+      "article_structure",
+      "no_mass_direct_quote"
+    ],
+    "internal_FACT_Fn_occurrences": 8,
+    "source_overlap_tokens": 30,
+    "comparison_caveat": "The baseline is zh-CN against zh-TW excerpts, while new articles are ko/en. The lexical overlap count is not a like-for-like semantic plagiarism comparison."
+  },
+  "comparison": {
+    "ko_en_articles": "Each uses headings, numbered source links and paragraph citations; no FACT-Fn markers. The proposed schedule, budget proposal and confirmed payment are separated. The English and Korean texts are independently composed, not sentence-by-sentence translations.",
+    "quality_conclusion": "The draft quality is clearer in structure and status attribution by editorial review, but no overall machine-gate pass or human editorial approval is claimed. The generated-evaluator diagnostic still has failed checks; see each language record."
+  },
+  "persistence_and_safety": {
+    "operational_database_writes": 0,
+    "research_package_state_changes": 0,
+    "generation_ready_changed": false,
+    "publish_ready_changed": false,
+    "existing_qwen_article_modified": false,
+    "blogger_calls": 0,
+    "external_ai_api_calls": 0,
+    "existing_audit_rows_modified_or_deleted": 0,
+    "new_postgres_audit_event": true,
+    "audit_note": "One append-only audit event was added to the isolated evaluation database after verifying database and role identity. No package/content evaluation row or operational database was changed.",
+    "audit_event": {
+      "database": "woori_blog_agent_eval",
+      "role": "woori_eval_app",
+      "id": 85091,
+      "event_type": "research.codex.private_articles.completed",
+      "append_only": true,
+      "created_at_kst": "2026-10-28T16:21:15.981200+09:00"
+    }
+  },
+  "validation": {
+    "custom_deterministic_checks": "passed for both language files: required figures/date presence, three exact package URLs, no internal FACT marker, no substantial exact quote according to project tokenizer",
+    "project_article_quality_evaluator": "executed with stored package excerpts, source IDs, source titles and recorded rights notice; both results did not pass the full machine gate",
+    "json_round_trip": "passed",
+    "git_diff_check": "passed for tracked diff; dedicated whitespace scan also run for new artifacts",
+    "application_test_suites": "not run; documentation/article-only change, no application source changed"
+  },
+  "human_review": {
+    "required": true,
+    "areas": [
+      "semantic accuracy",
+      "Korean editorial naturalness",
+      "English editorial naturalness",
+      "reader value",
+      "legal/current procedural status",
+      "source rights confirmation"
+    ],
+    "auto_approved": false
+  }
+}

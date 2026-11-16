@@ -1,0 +1,77 @@
+{
+  "phase": "P5-AI-006",
+  "date": "2026-10-28",
+  "timezone": "Asia/Seoul",
+  "branch": "develop",
+  "baseline_commit": "3c81bb041fd0e757687e86ba2ba56dc703dd2d792",
+  "server": {
+    "pid": 39500,
+    "executable": ".local/llama-b11889-vulkan/llama-server.exe",
+    "port": 11435,
+    "listener_confirmed_after_check": true,
+    "process_confirmed_after_check": true,
+    "legacy_arguments": {
+      "threads": 4,
+      "threads_batch": 4,
+      "gpu_layers": 20,
+      "parallel": 1,
+      "backend": "vulkan"
+    },
+    "legacy_runtime_metadata_complete": false,
+    "managed_stop_attempt_exit_code": 2,
+    "managed_stop_action": "refused_without_signaling_process",
+    "process_sample": {
+      "cpu_percent": 0.0,
+      "rss_mib": 2439.1,
+      "note": "Point-in-time idle observation, not inference measurement"
+    }
+  },
+  "host_sample": {
+    "logical_cpu_count": 12,
+    "system_cpu_percent_short_sample": 31.6,
+    "available_ram_mib": 12277.0,
+    "note": "Point-in-time diagnostic, not inference measurement"
+  },
+  "resource_guard": {
+    "system_cpu_limit_percent": 80.0,
+    "limit_changed": false,
+    "process_cpu_recorded_separately": true,
+    "process_cpu_normalization": "percent of total logical CPU capacity",
+    "cancel_action": "close active HTTP response/client and fail request",
+    "partial_draft_returned_on_cancel": false,
+    "monitor_failure_fails_closed": true,
+    "real_llama_cancellation_verified": false,
+    "gpu_utilization_during_request": "not measured"
+  },
+  "probe": {
+    "requested_configuration": "-t 2 -tb 2 -ngl 20 -np 1",
+    "actual_run_count": 0,
+    "status": "blocked",
+    "reason": "Existing PID 39500 has incomplete legacy runtime identity metadata; safe stop refused and port 11435 remains occupied"
+  },
+  "verification": {
+    "scripts_verify_exit_code": 0,
+    "ruff": "passed",
+    "mypy": "passed",
+    "pytest_full_suite": "passed; detailed count not retained in final tool output",
+    "targeted_regression_tests": 7,
+    "wheel_build": "passed",
+    "dashboard_eslint": "passed",
+    "dashboard_production_build": "passed",
+    "dashboard_typecheck": "passed",
+    "git_diff_check": "passed"
+  },
+  "safety": {
+    "database_or_manuscript_changes": 0,
+    "blogger_write_requests": 0,
+    "paid_api_calls": 0,
+    "model_downloads": 0,
+    "other_processes_stopped": 0,
+    "playwright_directory_preserved": true,
+    "publish_ready_changed": false
+  },
+  "git": {
+    "commit": null,
+    "push": "pending"
+  }
+}

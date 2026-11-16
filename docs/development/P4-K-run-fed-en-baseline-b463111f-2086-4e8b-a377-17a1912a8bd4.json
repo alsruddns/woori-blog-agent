@@ -1,0 +1,1022 @@
+{
+  "phase": "4-K",
+  "evaluation_id": "b463111f-2086-4e8b-a377-17a1912a8bd4",
+  "created_at": "2026-10-27T02:18:02.313673+00:00",
+  "source": {
+    "adapter": "fed_rss",
+    "source_id": "873093a8-085e-42b5-8bb2-657f62f8df94",
+    "source_name": "Federal Reserve Board press releases",
+    "url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20261013a.htm",
+    "keyword_id": "08c47279-652f-4dd6-89ce-9b5bfcc41973"
+  },
+  "comparison_key": "phase4k:fed_rss:08c47279-652f-4dd6-89ce-9b5bfcc41973:en",
+  "language": "en",
+  "model": {
+    "name": "Qwen3-4B-Q4_K_M.gguf",
+    "runtime": {
+      "pid": 40364,
+      "model": "Qwen3-4B-Q4_K_M.gguf",
+      "engine": "llama.cpp b11889",
+      "threads": 4,
+      "backend": "vulkan",
+      "engine_directory": "llama-b11889-vulkan",
+      "gpu_layers": 20
+    },
+    "revision": "bc640142c66e1fdd12af0bd68f40445458f3869b",
+    "repo": "Qwen/Qwen3-4B-GGUF",
+    "sha256": "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5",
+    "license": "Apache-2.0",
+    "size_bytes": 2497280256,
+    "quantization": "Q4_K_M"
+  },
+  "isolation": {
+    "database": "woori_blog_agent_eval",
+    "evaluation_only": true,
+    "worker_exit_code": 0
+  },
+  "quota": {
+    "used_before": 3,
+    "used_after": 4,
+    "limit": 10,
+    "count_policy": "target counted at creation; failures and cancellation remain counted; retries reuse target"
+  },
+  "resources": {
+    "before": {
+      "cpu_percent": 46.9,
+      "memory_percent": 68.3,
+      "memory_available_bytes": 10843930624,
+      "disk_free_bytes": 199209205760,
+      "resource_gate_passed": true
+    },
+    "after": {
+      "cpu_percent": 9.1,
+      "memory_percent": 67.4,
+      "memory_available_bytes": 11183927296,
+      "disk_free_bytes": 199207546880,
+      "resource_gate_passed": true
+    },
+    "worker_max_rss_bytes_observed_in_job_events": 57196544,
+    "cpu_percent_during_run_sampled": 0.0,
+    "gpu_engine_percent": null
+  },
+  "run": {
+    "id": "579e7ac5-6d3b-427d-921f-f01b2a5170a6",
+    "status": "failed",
+    "error_type": "duplicate_content",
+    "attempts": 1,
+    "created_at": "2026-10-27 11:17:34.625088+09:00",
+    "updated_at": "2026-10-27 11:18:02.099032+09:00"
+  },
+  "draft": null,
+  "checks": {
+    "machine_quality_passed": false,
+    "quality": {},
+    "grounding": {},
+    "human_review_required": true,
+    "publish_ready": false
+  },
+  "metrics": {
+    "elapsed_seconds": 27.74,
+    "model_metrics": {},
+    "model_call_count": 0,
+    "completion_tokens": 0,
+    "tokens_per_second_aggregate": null,
+    "rss_peak_mib": null,
+    "process_cpu_mean_percent_machine_samples": [],
+    "gpu_utilization_percent_samples": [],
+    "stage_runs": [
+      {
+        "stage_name": "source_collection",
+        "stage_attempt": 1,
+        "status": "succeeded",
+        "elapsed_ms": 76,
+        "error_category": null,
+        "validation": {
+          "passed": true,
+          "source_count": 1
+        },
+        "output_snapshot": [
+          {
+            "id": "873093a8-085e-42b5-8bb2-657f62f8df94",
+            "url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20261013a.htm",
+            "revision": 3
+          }
+        ]
+      },
+      {
+        "stage_name": "evidence_extraction",
+        "stage_attempt": 1,
+        "status": "succeeded",
+        "elapsed_ms": 70,
+        "error_category": null,
+        "validation": {
+          "passed": true,
+          "fact_count": 5
+        },
+        "output_snapshot": [
+          {
+            "text": "Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026.",
+            "fact_id": "aa68c18312f6972b6916",
+            "entities": [],
+            "source_id": "873093a8-085e-42b5-8bb2-657f62f8df94",
+            "entity_ids": [],
+            "date_values": [
+              "DATE:2026-08-17",
+              "DATE:2026-09-09",
+              "DATE:2026-09-16"
+            ],
+            "registry_id": "5a9afa07-567c-483f-aece-b117a4c6cc15",
+            "citation_ids": [
+              "873093a8-085e-42b5-8bb2-657f62f8df94"
+            ],
+            "numeric_values": [
+              "DATE:2026-08-17",
+              "DATE:2026-09-09",
+              "DATE:2026-09-16"
+            ],
+            "source_language": "en"
+          },
+          {
+            "text": "The Federal Reserve Board on Tuesday released the minutes from its recent meetings to review and determine the discount rates provided to depository institutions through the discount window.",
+            "fact_id": "f9ae6848c43ac7d43601",
+            "entities": [
+              "Federal Reserve Board"
+            ],
+            "source_id": "873093a8-085e-42b5-8bb2-657f62f8df94",
+            "entity_ids": [
+              "5edd3e13243f2ea85f74"
+            ],
+            "date_values": [],
+            "registry_id": "85184003-7d9f-412a-9b38-cb60b33d02a5",
+            "citation_ids": [
+              "873093a8-085e-42b5-8bb2-657f62f8df94"
+            ],
+            "numeric_values": [],
+            "source_language": "en"
+          },
+          {
+            "text": "Today's minutes cover the Board meetings that occurred on August 17, September 9, and September 16, 2026.",
+            "fact_id": "1bc600ffb89ca18f8823",
+            "entities": [],
+            "source_id": "873093a8-085e-42b5-8bb2-657f62f8df94",
+            "entity_ids": [],
+            "date_values": [
+              "DATE:2026-08-17",
+              "DATE:2026-09-09",
+              "DATE:2026-09-16"
+            ],
+            "registry_id": "be9de8b6-7b07-4e95-a682-36e702afcd84",
+            "citation_ids": [
+              "873093a8-085e-42b5-8bb2-657f62f8df94"
+            ],
+            "numeric_values": [
+              "DATE:2026-08-17",
+              "DATE:2026-09-09",
+              "DATE:2026-09-16"
+            ],
+            "source_language": "en"
+          },
+          {
+            "text": "The Board's process for setting the discount rate is distinct from the process the Federal Open Market Committee follows in setting the target range for the federal funds rate.",
+            "fact_id": "08ea19ea53d7dc7734e4",
+            "entities": [
+              "Federal Open Market Committee"
+            ],
+            "source_id": "873093a8-085e-42b5-8bb2-657f62f8df94",
+            "entity_ids": [
+              "20f45d7d5179b47ac5b0"
+            ],
+            "date_values": [],
+            "registry_id": "03cd3abc-ae35-49c8-b2eb-82b6872fa4c4",
+            "citation_ids": [
+              "873093a8-085e-42b5-8bb2-657f62f8df94"
+            ],
+            "numeric_values": [],
+            "source_language": "en"
+          },
+          {
+            "text": "For media inquiries, please email [email protected] or call 202-452-2955.",
+            "fact_id": "4d9e353ff6a798986ea4",
+            "entities": [],
+            "source_id": "873093a8-085e-42b5-8bb2-657f62f8df94",
+            "entity_ids": [],
+            "date_values": [],
+            "registry_id": "bd8bf8c0-bda7-4d13-b199-7e52d54251e8",
+            "citation_ids": [
+              "873093a8-085e-42b5-8bb2-657f62f8df94"
+            ],
+            "numeric_values": [
+              "202.0",
+              "2955.0",
+              "452.0"
+            ],
+            "source_language": "en"
+          }
+        ]
+      },
+      {
+        "stage_name": "fact_registry",
+        "stage_attempt": 1,
+        "status": "succeeded",
+        "elapsed_ms": 74,
+        "error_category": null,
+        "validation": {
+          "passed": true,
+          "fact_count": 5,
+          "source_span_verified": true
+        },
+        "output_snapshot": [
+          {
+            "text": "Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026.",
+            "fact_id": "aa68c18312f6972b6916",
+            "entities": [],
+            "source_id": "873093a8-085e-42b5-8bb2-657f62f8df94",
+            "entity_ids": [],
+            "date_values": [
+              "DATE:2026-08-17",
+              "DATE:2026-09-09",
+              "DATE:2026-09-16"
+            ],
+            "registry_id": "5a9afa07-567c-483f-aece-b117a4c6cc15",
+            "citation_ids": [
+              "873093a8-085e-42b5-8bb2-657f62f8df94"
+            ],
+            "numeric_values": [
+              "DATE:2026-08-17",
+              "DATE:2026-09-09",
+              "DATE:2026-09-16"
+            ],
+            "source_language": "en"
+          },
+          {
+            "text": "The Federal Reserve Board on Tuesday released the minutes from its recent meetings to review and determine the discount rates provided to depository institutions through the discount window.",
+            "fact_id": "f9ae6848c43ac7d43601",
+            "entities": [
+              "Federal Reserve Board"
+            ],
+            "source_id": "873093a8-085e-42b5-8bb2-657f62f8df94",
+            "entity_ids": [
+              "5edd3e13243f2ea85f74"
+            ],
+            "date_values": [],
+            "registry_id": "85184003-7d9f-412a-9b38-cb60b33d02a5",
+            "citation_ids": [
+              "873093a8-085e-42b5-8bb2-657f62f8df94"
+            ],
+            "numeric_values": [],
+            "source_language": "en"
+          },
+          {
+            "text": "Today's minutes cover the Board meetings that occurred on August 17, September 9, and September 16, 2026.",
+            "fact_id": "1bc600ffb89ca18f8823",
+            "entities": [],
+            "source_id": "873093a8-085e-42b5-8bb2-657f62f8df94",
+            "entity_ids": [],
+            "date_values": [
+              "DATE:2026-08-17",
+              "DATE:2026-09-09",
+              "DATE:2026-09-16"
+            ],
+            "registry_id": "be9de8b6-7b07-4e95-a682-36e702afcd84",
+            "citation_ids": [
+              "873093a8-085e-42b5-8bb2-657f62f8df94"
+            ],
+            "numeric_values": [
+              "DATE:2026-08-17",
+              "DATE:2026-09-09",
+              "DATE:2026-09-16"
+            ],
+            "source_language": "en"
+          },
+          {
+            "text": "The Board's process for setting the discount rate is distinct from the process the Federal Open Market Committee follows in setting the target range for the federal funds rate.",
+            "fact_id": "08ea19ea53d7dc7734e4",
+            "entities": [
+              "Federal Open Market Committee"
+            ],
+            "source_id": "873093a8-085e-42b5-8bb2-657f62f8df94",
+            "entity_ids": [
+              "20f45d7d5179b47ac5b0"
+            ],
+            "date_values": [],
+            "registry_id": "03cd3abc-ae35-49c8-b2eb-82b6872fa4c4",
+            "citation_ids": [
+              "873093a8-085e-42b5-8bb2-657f62f8df94"
+            ],
+            "numeric_values": [],
+            "source_language": "en"
+          },
+          {
+            "text": "For media inquiries, please email [email protected] or call 202-452-2955.",
+            "fact_id": "4d9e353ff6a798986ea4",
+            "entities": [],
+            "source_id": "873093a8-085e-42b5-8bb2-657f62f8df94",
+            "entity_ids": [],
+            "date_values": [],
+            "registry_id": "bd8bf8c0-bda7-4d13-b199-7e52d54251e8",
+            "citation_ids": [
+              "873093a8-085e-42b5-8bb2-657f62f8df94"
+            ],
+            "numeric_values": [
+              "202.0",
+              "2955.0",
+              "452.0"
+            ],
+            "source_language": "en"
+          }
+        ]
+      },
+      {
+        "stage_name": "evidence_validation",
+        "stage_attempt": 1,
+        "status": "succeeded",
+        "elapsed_ms": 76,
+        "error_category": null,
+        "validation": {
+          "method": "exact_source_span",
+          "passed": true
+        },
+        "output_snapshot": {
+          "08ea19ea53d7dc7734e4": true,
+          "1bc600ffb89ca18f8823": true,
+          "4d9e353ff6a798986ea4": true,
+          "aa68c18312f6972b6916": true,
+          "f9ae6848c43ac7d43601": true
+        }
+      },
+      {
+        "stage_name": "content_outline",
+        "stage_attempt": 1,
+        "status": "succeeded",
+        "elapsed_ms": 73,
+        "error_category": null,
+        "validation": {
+          "method": "evidence_only_bounded_outline",
+          "passed": true
+        },
+        "output_snapshot": [
+          {
+            "heading": "Evidence 1",
+            "fact_ids": [
+              "aa68c18312f6972b6916",
+              "f9ae6848c43ac7d43601"
+            ],
+            "source_ids": [
+              "873093a8-085e-42b5-8bb2-657f62f8df94"
+            ]
+          },
+          {
+            "heading": "Evidence 2",
+            "fact_ids": [
+              "1bc600ffb89ca18f8823"
+            ],
+            "source_ids": [
+              "873093a8-085e-42b5-8bb2-657f62f8df94"
+            ]
+          },
+          {
+            "heading": "Evidence 3",
+            "fact_ids": [
+              "08ea19ea53d7dc7734e4"
+            ],
+            "source_ids": [
+              "873093a8-085e-42b5-8bb2-657f62f8df94"
+            ]
+          },
+          {
+            "heading": "Evidence 4",
+            "fact_ids": [
+              "4d9e353ff6a798986ea4"
+            ],
+            "source_ids": [
+              "873093a8-085e-42b5-8bb2-657f62f8df94"
+            ]
+          }
+        ]
+      },
+      {
+        "stage_name": "section_generation",
+        "stage_attempt": 1,
+        "status": "succeeded",
+        "elapsed_ms": 9606,
+        "error_category": null,
+        "validation": {
+          "checks": {
+            "citations_allowed": true,
+            "source_ids_allowed": true,
+            "no_repeated_sentences": true,
+            "numbers_from_evidence": true,
+            "proper_names_preserved": true,
+            "no_unsupported_proper_names": true
+          },
+          "passed": true,
+          "localization": {
+            "passed": true,
+            "ai_calls": 2,
+            "fact_checks": {
+              "aa68c18312f6972b6916": {
+                "status": "machine_passed",
+                "no_added_urls": true,
+                "citation_linked": true,
+                "language_matches": true,
+                "numbers_preserved": true,
+                "entities_preserved": true,
+                "no_mass_direct_quote": true,
+                "no_repeated_sentences": true,
+                "no_unverified_entity_added": true,
+                "no_unapproved_translation_asserted": true
+              },
+              "f9ae6848c43ac7d43601": {
+                "status": "machine_passed",
+                "no_added_urls": true,
+                "citation_linked": true,
+                "language_matches": true,
+                "numbers_preserved": true,
+                "entities_preserved": true,
+                "no_mass_direct_quote": true,
+                "no_repeated_sentences": true,
+                "no_unverified_entity_added": true,
+                "no_unapproved_translation_asserted": true
+              }
+            }
+          },
+          "missing_proper_names": [],
+          "unsupported_proper_names": []
+        },
+        "output_snapshot": {
+          "draft": {
+            "body": "Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026. [source:873093a8-085e-42b5-8bb2-657f62f8df94]\n\nThe Federal Reserve Board issued the meeting minutes on Tuesday to review and decide on the discount rates offered to depository institutions via the discount window. [source:873093a8-085e-42b5-8bb2-657f62f8df94]",
+            "title": "Verified source facts: Minutes of the Board's discount rate meetings",
+            "summary": "This review draft contains only statements tied to the cited official source.",
+            "keywords": [
+              "Minutes of the Board's discount rate meetings"
+            ],
+            "source_ids": [
+              "873093a8-085e-42b5-8bb2-657f62f8df94"
+            ]
+          },
+          "metrics": {
+            "elapsed_ms": 9534,
+            "model_calls": 2,
+            "naturalness": "human_review_required",
+            "inference_calls": [
+              {
+                "backend": "vulkan",
+                "succeeded": true,
+                "gpu_layers": 20,
+                "rss_peak_mib": 3783.59,
+                "wall_seconds": 4.655,
+                "prompt_tokens": 202,
+                "completion_tokens": 37,
+                "tokens_per_second_wall": 7.95,
+                "gpu_utilization_percent": 45.81,
+                "system_cpu_peak_percent": 53.5,
+                "process_cpu_mean_percent_machine": 13.46
+              },
+              {
+                "backend": "vulkan",
+                "succeeded": true,
+                "gpu_layers": 20,
+                "rss_peak_mib": 3762.37,
+                "wall_seconds": 4.868,
+                "prompt_tokens": 219,
+                "completion_tokens": 42,
+                "tokens_per_second_wall": 8.63,
+                "gpu_utilization_percent": 48.09,
+                "system_cpu_peak_percent": 46.8,
+                "process_cpu_mean_percent_machine": 14.05
+              }
+            ],
+            "semantic_accuracy": "human_review_required",
+            "localization_facts": 2,
+            "localization_checks": {
+              "aa68c18312f6972b6916": {
+                "status": "machine_passed",
+                "no_added_urls": true,
+                "citation_linked": true,
+                "language_matches": true,
+                "numbers_preserved": true,
+                "entities_preserved": true,
+                "no_mass_direct_quote": true,
+                "no_repeated_sentences": true,
+                "no_unverified_entity_added": true,
+                "no_unapproved_translation_asserted": true
+              },
+              "f9ae6848c43ac7d43601": {
+                "status": "machine_passed",
+                "no_added_urls": true,
+                "citation_linked": true,
+                "language_matches": true,
+                "numbers_preserved": true,
+                "entities_preserved": true,
+                "no_mass_direct_quote": true,
+                "no_repeated_sentences": true,
+                "no_unverified_entity_added": true,
+                "no_unapproved_translation_asserted": true
+              }
+            },
+            "localization_adapter": "per_fact_local_json_translation",
+            "fact_localization_elapsed_ms": 9533
+          }
+        }
+      },
+      {
+        "stage_name": "section_generation",
+        "stage_attempt": 1,
+        "status": "succeeded",
+        "elapsed_ms": 5025,
+        "error_category": null,
+        "validation": {
+          "checks": {
+            "citations_allowed": true,
+            "source_ids_allowed": true,
+            "no_repeated_sentences": true,
+            "numbers_from_evidence": true,
+            "proper_names_preserved": true,
+            "no_unsupported_proper_names": true
+          },
+          "passed": true,
+          "localization": {
+            "passed": true,
+            "ai_calls": 1,
+            "fact_checks": {
+              "1bc600ffb89ca18f8823": {
+                "status": "machine_passed",
+                "no_added_urls": true,
+                "citation_linked": true,
+                "language_matches": true,
+                "numbers_preserved": true,
+                "entities_preserved": true,
+                "no_mass_direct_quote": true,
+                "no_repeated_sentences": true,
+                "no_unverified_entity_added": true,
+                "no_unapproved_translation_asserted": true
+              }
+            }
+          },
+          "missing_proper_names": [],
+          "unsupported_proper_names": []
+        },
+        "output_snapshot": {
+          "draft": {
+            "body": "The minutes from today cover the Board meetings that took place on August 17, September 9, and September 16, 2026. [source:873093a8-085e-42b5-8bb2-657f62f8df94]",
+            "title": "Verified source facts:",
+            "summary": "This review draft contains only statements tied to the cited official source.",
+            "keywords": [
+              "Minutes of the Board's discount rate meetings"
+            ],
+            "source_ids": [
+              "873093a8-085e-42b5-8bb2-657f62f8df94"
+            ]
+          },
+          "metrics": {
+            "elapsed_ms": 4951,
+            "model_calls": 1,
+            "naturalness": "human_review_required",
+            "inference_calls": [
+              {
+                "backend": "vulkan",
+                "succeeded": true,
+                "gpu_layers": 20,
+                "rss_peak_mib": 3764.92,
+                "wall_seconds": 4.948,
+                "prompt_tokens": 203,
+                "completion_tokens": 40,
+                "tokens_per_second_wall": 8.08,
+                "gpu_utilization_percent": 47.42,
+                "system_cpu_peak_percent": 51.2,
+                "process_cpu_mean_percent_machine": 13.44
+              }
+            ],
+            "semantic_accuracy": "human_review_required",
+            "localization_facts": 1,
+            "localization_checks": {
+              "1bc600ffb89ca18f8823": {
+                "status": "machine_passed",
+                "no_added_urls": true,
+                "citation_linked": true,
+                "language_matches": true,
+                "numbers_preserved": true,
+                "entities_preserved": true,
+                "no_mass_direct_quote": true,
+                "no_repeated_sentences": true,
+                "no_unverified_entity_added": true,
+                "no_unapproved_translation_asserted": true
+              }
+            },
+            "localization_adapter": "per_fact_local_json_translation",
+            "fact_localization_elapsed_ms": 4951
+          }
+        }
+      },
+      {
+        "stage_name": "section_generation",
+        "stage_attempt": 1,
+        "status": "succeeded",
+        "elapsed_ms": 5025,
+        "error_category": null,
+        "validation": {
+          "checks": {
+            "citations_allowed": true,
+            "source_ids_allowed": true,
+            "no_repeated_sentences": true,
+            "numbers_from_evidence": true,
+            "proper_names_preserved": true,
+            "no_unsupported_proper_names": true
+          },
+          "passed": true,
+          "localization": {
+            "passed": true,
+            "ai_calls": 1,
+            "fact_checks": {
+              "08ea19ea53d7dc7734e4": {
+                "status": "machine_passed",
+                "no_added_urls": true,
+                "citation_linked": true,
+                "language_matches": true,
+                "numbers_preserved": true,
+                "entities_preserved": true,
+                "no_mass_direct_quote": true,
+                "no_repeated_sentences": true,
+                "no_unverified_entity_added": true,
+                "no_unapproved_translation_asserted": true
+              }
+            }
+          },
+          "missing_proper_names": [],
+          "unsupported_proper_names": []
+        },
+        "output_snapshot": {
+          "draft": {
+            "body": "The process used by the Board to set the discount rate is different from the process followed by Federal Open Market Committee in setting the target range for the federal funds rate. [source:873093a8-085e-42b5-8bb2-657f62f8df94]",
+            "title": "Verified source facts:",
+            "summary": "This review draft contains only statements tied to the cited official source.",
+            "keywords": [
+              "Minutes of the Board's discount rate meetings"
+            ],
+            "source_ids": [
+              "873093a8-085e-42b5-8bb2-657f62f8df94"
+            ]
+          },
+          "metrics": {
+            "elapsed_ms": 4940,
+            "model_calls": 1,
+            "naturalness": "human_review_required",
+            "inference_calls": [
+              {
+                "backend": "vulkan",
+                "succeeded": true,
+                "gpu_layers": 20,
+                "rss_peak_mib": 3762.43,
+                "wall_seconds": 4.937,
+                "prompt_tokens": 219,
+                "completion_tokens": 46,
+                "tokens_per_second_wall": 9.32,
+                "gpu_utilization_percent": 49.28,
+                "system_cpu_peak_percent": 50.2,
+                "process_cpu_mean_percent_machine": 14.2
+              }
+            ],
+            "semantic_accuracy": "human_review_required",
+            "localization_facts": 1,
+            "localization_checks": {
+              "08ea19ea53d7dc7734e4": {
+                "status": "machine_passed",
+                "no_added_urls": true,
+                "citation_linked": true,
+                "language_matches": true,
+                "numbers_preserved": true,
+                "entities_preserved": true,
+                "no_mass_direct_quote": true,
+                "no_repeated_sentences": true,
+                "no_unverified_entity_added": true,
+                "no_unapproved_translation_asserted": true
+              }
+            },
+            "localization_adapter": "per_fact_local_json_translation",
+            "fact_localization_elapsed_ms": 4940
+          }
+        }
+      },
+      {
+        "stage_name": "section_generation",
+        "stage_attempt": 1,
+        "status": "succeeded",
+        "elapsed_ms": 4569,
+        "error_category": null,
+        "validation": {
+          "checks": {
+            "citations_allowed": true,
+            "source_ids_allowed": true,
+            "no_repeated_sentences": true,
+            "numbers_from_evidence": true,
+            "proper_names_preserved": true,
+            "no_unsupported_proper_names": true
+          },
+          "passed": true,
+          "localization": {
+            "passed": true,
+            "ai_calls": 1,
+            "fact_checks": {
+              "4d9e353ff6a798986ea4": {
+                "status": "machine_passed",
+                "no_added_urls": true,
+                "citation_linked": true,
+                "language_matches": true,
+                "numbers_preserved": true,
+                "entities_preserved": true,
+                "no_mass_direct_quote": true,
+                "no_repeated_sentences": true,
+                "no_unverified_entity_added": true,
+                "no_unapproved_translation_asserted": true
+              }
+            }
+          },
+          "missing_proper_names": [],
+          "unsupported_proper_names": []
+        },
+        "output_snapshot": {
+          "draft": {
+            "body": "For media inquiries, please email [email protected] or call 202-452-2955. [source:873093a8-085e-42b5-8bb2-657f62f8df94]",
+            "title": "Verified source facts:",
+            "summary": "This review draft contains only statements tied to the cited official source.",
+            "keywords": [
+              "Minutes of the Board's discount rate meetings"
+            ],
+            "source_ids": [
+              "873093a8-085e-42b5-8bb2-657f62f8df94"
+            ]
+          },
+          "metrics": {
+            "elapsed_ms": 4488,
+            "model_calls": 1,
+            "naturalness": "human_review_required",
+            "inference_calls": [
+              {
+                "backend": "vulkan",
+                "succeeded": true,
+                "gpu_layers": 20,
+                "rss_peak_mib": 3762.5,
+                "wall_seconds": 4.479,
+                "prompt_tokens": 198,
+                "completion_tokens": 33,
+                "tokens_per_second_wall": 7.37,
+                "gpu_utilization_percent": 48.05,
+                "system_cpu_peak_percent": 54.7,
+                "process_cpu_mean_percent_machine": 12.91
+              }
+            ],
+            "semantic_accuracy": "human_review_required",
+            "localization_facts": 1,
+            "localization_checks": {
+              "4d9e353ff6a798986ea4": {
+                "status": "machine_passed",
+                "no_added_urls": true,
+                "citation_linked": true,
+                "language_matches": true,
+                "numbers_preserved": true,
+                "entities_preserved": true,
+                "no_mass_direct_quote": true,
+                "no_repeated_sentences": true,
+                "no_unverified_entity_added": true,
+                "no_unapproved_translation_asserted": true
+              }
+            },
+            "localization_adapter": "per_fact_local_json_translation",
+            "fact_localization_elapsed_ms": 4487
+          }
+        }
+      },
+      {
+        "stage_name": "claim_verification",
+        "stage_attempt": 1,
+        "status": "succeeded",
+        "elapsed_ms": 70,
+        "error_category": null,
+        "validation": {
+          "passed": true
+        },
+        "output_snapshot": {
+          "rule_pass": true,
+          "naturalness": "human_review_required",
+          "rule_checks": {
+            "current_sources": true,
+            "rights_recorded": true,
+            "source_ids_valid": true,
+            "citation_ids_valid": true,
+            "no_fabricated_urls": true,
+            "no_mass_direct_quote": true,
+            "no_repeated_sentences": true,
+            "no_unverified_numbers": true,
+            "no_repeated_paragraphs": true,
+            "proper_names_preserved": true,
+            "language_script_present": true,
+            "source_urls_well_formed": true,
+            "factual_paragraphs_cited": true,
+            "language_metadata_matches": true,
+            "no_obvious_high_risk_claims": true,
+            "no_unsupported_proper_names": true
+          },
+          "publish_ready": false,
+          "language_fields": {
+            "body": true,
+            "title": true,
+            "summary": true,
+            "keywords": true
+          },
+          "script_fraction": 1.0,
+          "repeated_sentences": [],
+          "uncited_paragraphs": [],
+          "unexpected_numbers": [],
+          "invalid_source_urls": [],
+          "repeated_paragraphs": [],
+          "missing_proper_names": [],
+          "no_mass_direct_quote": true,
+          "proper_name_candidates": [
+            "Federal Open Market Committee",
+            "Federal Reserve Board"
+          ],
+          "unsupported_proper_names": [],
+          "semantic_fact_verification": "human_review_required",
+          "longest_source_overlap_words": 17,
+          "source_url_network_existence": "not_rechecked_by_quality_gate",
+          "model_self_score_used_for_approval": false
+        }
+      },
+      {
+        "stage_name": "seo_quality",
+        "stage_attempt": 1,
+        "status": "succeeded",
+        "elapsed_ms": 76,
+        "error_category": null,
+        "validation": {
+          "passed": true
+        },
+        "output_snapshot": {
+          "mock": false,
+          "checks": {
+            "metadata": true,
+            "structure": true,
+            "as_of_date": true,
+            "source_ids_valid": true,
+            "limited_repetition": true,
+            "keyword_in_title_and_body": true,
+            "no_obvious_hype_or_fake_experience": true
+          },
+          "grounding": {
+            "rule_pass": true,
+            "naturalness": "human_review_required",
+            "rule_checks": {
+              "current_sources": true,
+              "rights_recorded": true,
+              "source_ids_valid": true,
+              "citation_ids_valid": true,
+              "no_fabricated_urls": true,
+              "no_mass_direct_quote": true,
+              "no_repeated_sentences": true,
+              "no_unverified_numbers": true,
+              "no_repeated_paragraphs": true,
+              "proper_names_preserved": true,
+              "language_script_present": true,
+              "source_urls_well_formed": true,
+              "factual_paragraphs_cited": true,
+              "language_metadata_matches": true,
+              "no_obvious_high_risk_claims": true,
+              "no_unsupported_proper_names": true
+            },
+            "publish_ready": false,
+            "language_fields": {
+              "body": true,
+              "title": true,
+              "summary": true,
+              "keywords": true
+            },
+            "script_fraction": 1.0,
+            "repeated_sentences": [],
+            "uncited_paragraphs": [],
+            "unexpected_numbers": [],
+            "invalid_source_urls": [],
+            "repeated_paragraphs": [],
+            "missing_proper_names": [],
+            "no_mass_direct_quote": true,
+            "proper_name_candidates": [
+              "Federal Open Market Committee",
+              "Federal Reserve Board"
+            ],
+            "unsupported_proper_names": [],
+            "semantic_fact_verification": "human_review_required",
+            "longest_source_overlap_words": 17,
+            "source_url_network_existence": "not_rechecked_by_quality_gate",
+            "model_self_score_used_for_approval": false
+          },
+          "localization": {
+            "08ea19ea53d7dc7734e4": {
+              "status": "machine_passed",
+              "no_added_urls": true,
+              "citation_linked": true,
+              "language_matches": true,
+              "numbers_preserved": true,
+              "entities_preserved": true,
+              "no_mass_direct_quote": true,
+              "no_repeated_sentences": true,
+              "no_unverified_entity_added": true,
+              "no_unapproved_translation_asserted": true
+            },
+            "1bc600ffb89ca18f8823": {
+              "status": "machine_passed",
+              "no_added_urls": true,
+              "citation_linked": true,
+              "language_matches": true,
+              "numbers_preserved": true,
+              "entities_preserved": true,
+              "no_mass_direct_quote": true,
+              "no_repeated_sentences": true,
+              "no_unverified_entity_added": true,
+              "no_unapproved_translation_asserted": true
+            },
+            "4d9e353ff6a798986ea4": {
+              "status": "machine_passed",
+              "no_added_urls": true,
+              "citation_linked": true,
+              "language_matches": true,
+              "numbers_preserved": true,
+              "entities_preserved": true,
+              "no_mass_direct_quote": true,
+              "no_repeated_sentences": true,
+              "no_unverified_entity_added": true,
+              "no_unapproved_translation_asserted": true
+            },
+            "aa68c18312f6972b6916": {
+              "status": "machine_passed",
+              "no_added_urls": true,
+              "citation_linked": true,
+              "language_matches": true,
+              "numbers_preserved": true,
+              "entities_preserved": true,
+              "no_mass_direct_quote": true,
+              "no_repeated_sentences": true,
+              "no_unverified_entity_added": true,
+              "no_unapproved_translation_asserted": true
+            },
+            "f9ae6848c43ac7d43601": {
+              "status": "machine_passed",
+              "no_added_urls": true,
+              "citation_linked": true,
+              "language_matches": true,
+              "numbers_preserved": true,
+              "entities_preserved": true,
+              "no_mass_direct_quote": true,
+              "no_repeated_sentences": true,
+              "no_unverified_entity_added": true,
+              "no_unapproved_translation_asserted": true
+            }
+          },
+          "publish_ready": false,
+          "internal_score": 100,
+          "structural_pass": true,
+          "localization_pass": true,
+          "human_review_required": true,
+          "model_quality_verified": false
+        }
+      }
+    ],
+    "audit_event_types": [
+      "research.evaluation.model.override",
+      "research.queued",
+      "research.started",
+      "research.generation.started",
+      "research.facts.checked",
+      "research.stage.started",
+      "research.stage.succeeded",
+      "research.stage.started",
+      "research.stage.succeeded",
+      "research.stage.started",
+      "research.stage.succeeded",
+      "research.stage.started",
+      "research.stage.succeeded",
+      "research.stage.started",
+      "research.stage.succeeded",
+      "research.stage.started",
+      "research.stage.succeeded",
+      "research.stage.started",
+      "research.stage.succeeded",
+      "research.stage.started",
+      "research.stage.succeeded",
+      "research.stage.started",
+      "research.stage.succeeded",
+      "research.planning.completed",
+      "research.stage.started",
+      "research.stage.succeeded",
+      "research.stage.started",
+      "research.stage.succeeded",
+      "research.failed"
+    ],
+    "worker_process_exit_code": 0
+  },
+  "safety": {
+    "paid_api_calls": 0,
+    "external_data_calls": 0,
+    "blogger_writes": 0,
+    "publish_ready": false
+  }
+}

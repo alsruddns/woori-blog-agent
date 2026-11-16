@@ -1,0 +1,21 @@
+# P5-CODEX-090 — Keyword authoring default professional prompt
+
+- Work ID: P5-CODEX-090
+- Work date: 2026-10-31 (Asia/Seoul)
+- Branch/base: `develop`, initial HEAD `6e832d1ecc1ad279262136c362bb4286644cf144`
+- Reason: initialize the keyword authoring direction with the requested TrendJournal editorial prompt and ensure the editable direction reaches the official Codex Runner without overriding fixed research, evidence, schema, rights, or import requirements.
+- Prior state: `/keyword-authoring` started with an empty direction. The API stored the request direction, but the Runner included it only inside generic options JSON rather than explicitly applying it as editorial guidance. The direction limit was 2,000 characters and there was no prompt version or reset control.
+- After state: a single editable Dashboard constant `DEFAULT_KEYWORD_AUTHORING_DIRECTION` is shown on first load. The prompt carries version `trendjournal-professional-article-v1`; users can edit it, restore the default, or start a new request (which restores the default). Blogger/category/length changes do not modify the controlled direction. Each request stores the exact direction and version in `codex_authoring_jobs.options`; the immutable request audit records the version and SHA-256 of the direction. The Runner explicitly supplies the user text as untrusted editorial guidance, excludes it from the generic options snapshot, and keeps the existing JSON/Pydantic, source opening, claim-unverified, rights, `article`/`insufficient_evidence`, import, and no-auto-publication contracts. The direction input ceiling is 10,000 characters to fit the default prompt.
+- Security: user directions cannot change evidence rules, mark claims verified, skip rights/schema/import checks, access local files, invoke publishing, or alter the output contract. Existing requests and prompt snapshots are unchanged. No Codex model was run and no publication job or Blogger post was created.
+- Modified files:
+  - `apps/dashboard/app/keyword-authoring/default-prompt.ts`
+  - `apps/dashboard/app/keyword-authoring/workspace.tsx`
+  - `apps/dashboard/app/style.css`
+  - `apps/dashboard/e2e/P5-CODEX-090-keyword-authoring-prompt.spec.ts`
+  - `services/api/woori/keyword_jobs.py`
+  - `services/api/tests/test_keyword_authoring.py`
+  - `docs/development/P5-CODEX-090.md`
+- Verification: `services/api/tests/test_keyword_authoring.py` passed (12 tests); Ruff and mypy passed for the changed API module; Dashboard ESLint and TypeScript typecheck passed; Playwright ran the new test at desktop 1440px and mobile 390px (2/2 passed), covering initial prompt, user editing, Blogger change preservation, restore, submit payload/version, new-request reset, no public publication request, and horizontal overflow. Commit-scoped validation through `scripts/apply-verified-changes.ps1` passed Pester 31, API 150, Ruff, mypy, wheel build, Dashboard lint/typecheck, and the production build.
+- Runtime: a temporary local Next dev server on 13100 was used for Playwright and stopped after the run. Production reflection did not complete. Safe stop refused Dashboard PID 62692 because a live Chrome network-service connection (PID 40652) remained established to port 3100; the script did not stop any service or force-kill a process. API PID 63296 likewise remains on its old runtime. No Codex generation, Research Worker Import, Publishing Job, or Blogger write occurred.
+- Remaining: close the active browser connection to the local Dashboard and rerun the safe API/Dashboard reflection; then verify `/keyword-authoring` and service health. Commit `c7c4498ad0d1142313dee59d35345fd4c19802dc` contains the feature; follow-up record commit and push status are available in `git log`.
+- Related contracts: `services/api/woori/keyword_jobs.py` (`AuthoringRequest`, `generate`, `make_envelope`); P5-CODEX-080 keyword authoring and import.

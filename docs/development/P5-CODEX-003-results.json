@@ -1,0 +1,308 @@
+{
+  "task_id": "P5-CODEX-003",
+  "recorded_at_local_date": "2026-10-28",
+  "status": "editorial_revision_complete; deterministic_gate_passed; human_review_required; not_publishable",
+  "scope": "Revise the existing private evaluation ko/en articles and make expert-column guidance persistent in repository and local generation prompts. No new article generation run, dashboard work, database write, or Blogger operation.",
+  "research_package": {
+    "id": "de118f17-ab50-46b7-b99f-4aba51f240ce",
+    "version": 1,
+    "sha256": "81bb85afa4e7d0d3ce2de03d6a5ed06268ff0ba770ad34aba703334c14ca0676",
+    "state": "evidence_collected_pending_human_review",
+    "generation_ready": false,
+    "publish_ready": false,
+    "facts": 8,
+    "sources": 3
+  },
+  "authoring_session": {
+    "channel": "current Codex conversation",
+    "exact_model_id": "not independently exposed to repository process",
+    "separate_codex_subprocesses": 0,
+    "OpenAI_API_calls": 0,
+    "other_paid_AI_API_calls": 0,
+    "blogger_api_calls": 0,
+    "account_credit_consumption_independently_verified": false
+  },
+  "articles": [
+    {
+      "language": "ko",
+      "path": "docs/development/P5-CODEX-002-article-ko.md",
+      "title": "\ub300\ub9cc \uad70\uc778\u00b7\uacf5\ubb34\uc6d0\u00b7\uad50\uc9c1\uc6d0 \ubcf4\uc218\uc548, \uc218\ub2f9 \uc870\uc815\uacfc 4% \uacc4\ud68d\uc740 \ubcc4\uac1c\ub2e4",
+      "labels": [
+        "\uc774\uc288"
+      ],
+      "label_scope": "article metadata only; not sent to Blogger",
+      "characters": 2096,
+      "body_characters": 1908,
+      "utf8_bytes": 4245,
+      "sha256": "05b5dafe41087a5df4973f93cee52a8d3042669acc1b52367194ff00e9e1784a",
+      "h2_sections": 3,
+      "paragraph_count": 10,
+      "word_count_project_tokenizer": 733,
+      "citations": 9,
+      "source_urls": [
+        "https://www.ey.gov.tw/Page/448DE008087A1971/5020ed44-2196-4da0-9dbe-fe6ae7f44afc",
+        "https://www.ey.gov.tw/Page/9277F759E41CCD91/e6b90fcf-0d42-40e3-b001-1c790c076657",
+        "https://www.ly.gov.tw/Pages/List.aspx?nodeid=56728"
+      ],
+      "before": {
+        "machine_passed": false,
+        "checks_passed": 24,
+        "checks_total": 26,
+        "failed_checks": [
+          "no_unverified_numbers",
+          "proper_names_preserved"
+        ],
+        "unexpected_numbers": [
+          "10.7",
+          "2.0",
+          "2026.0",
+          "2027.0",
+          "607.6"
+        ],
+        "missing_proper_names": [
+          "Executive Yuan",
+          "Legislative Yuan Budget Center"
+        ],
+        "unsupported_proper_names": [],
+        "source_overlap_tokens": 2
+      },
+      "after": {
+        "checks": {
+          "source_ids_valid": true,
+          "no_fabricated_urls": true,
+          "source_urls_well_formed": true,
+          "citation_ids_valid": true,
+          "factual_paragraphs_cited": true,
+          "no_unverified_numbers": true,
+          "proper_names_preserved": true,
+          "no_unsupported_proper_names": true,
+          "no_repeated_paragraphs": true,
+          "no_repeated_sentences": true,
+          "rights_recorded": true,
+          "current_sources": true,
+          "language_script_present": true,
+          "language_metadata_matches": true,
+          "no_obvious_high_risk_claims": true,
+          "no_internal_fact_markers": true,
+          "article_structure": true,
+          "title_body_alignment": true,
+          "keyword_search_intent_coverage": true,
+          "keywords_are_search_terms_not_internal_ids": true,
+          "no_internal_ids_in_user_text": true,
+          "keyword_list_is_bounded_and_unique": true,
+          "no_forbidden_foreign_script_mixing": true,
+          "target_writing_system_present": true,
+          "legal_access_claims_grounded_in_supplied_source": true,
+          "no_mass_direct_quote": true
+        },
+        "machine_passed": true,
+        "grounding_details": {
+          "proper_name_candidates": [
+            "Executive Yuan",
+            "Legislative Yuan Budget Center"
+          ],
+          "missing_proper_names": [],
+          "unsupported_proper_names": [],
+          "unexpected_numbers": [],
+          "uncited_paragraphs": [],
+          "invalid_source_urls": []
+        },
+        "human_review_required": true,
+        "semantic_accuracy": "human_review_required",
+        "naturalness": "human_review_required",
+        "rights_review": "human_review_required",
+        "publish_ready": false,
+        "word_count": 733,
+        "section_count": 3,
+        "paragraph_count": 10,
+        "source_overlap_words_max": 4,
+        "fact_count": 8,
+        "script_counts": {
+          "hangul": 1131,
+          "kana": 0,
+          "cyrillic": 0,
+          "arabic": 0
+        },
+        "search_intent": "Summarize and explain the supplied official filing/release; not investment advice"
+      },
+      "fact_lifecycle_review": "proposal, planned fiscal-year adjustment, proposed effective date, budget referral/review, and actual payment evidence are distinguished; no implementation/payment confirmation invented."
+    },
+    {
+      "language": "en",
+      "path": "docs/development/P5-CODEX-002-article-en.md",
+      "title": "Taiwan\u2019s pay proposal involves two different raises\u2014and a budget decision",
+      "labels": [
+        "Issues"
+      ],
+      "label_scope": "article metadata only; not sent to Blogger",
+      "characters": 4208,
+      "body_characters": 3677,
+      "utf8_bytes": 4238,
+      "sha256": "bb19cbb1889a43bc2671b1cee67a70a7dbf898fa96182db49f94bc628e91008b",
+      "h2_sections": 3,
+      "paragraph_count": 10,
+      "word_count_project_tokenizer": 555,
+      "citations": 9,
+      "source_urls": [
+        "https://www.ey.gov.tw/Page/448DE008087A1971/5020ed44-2196-4da0-9dbe-fe6ae7f44afc",
+        "https://www.ey.gov.tw/Page/9277F759E41CCD91/e6b90fcf-0d42-40e3-b001-1c790c076657",
+        "https://www.ly.gov.tw/Pages/List.aspx?nodeid=56728"
+      ],
+      "before": {
+        "machine_passed": false,
+        "checks_passed": 23,
+        "checks_total": 26,
+        "failed_checks": [
+          "no_unverified_numbers",
+          "proper_names_preserved",
+          "no_unsupported_proper_names"
+        ],
+        "unexpected_numbers": [
+          "0.0",
+          "10.7",
+          "2.0",
+          "2026.0",
+          "2027.0",
+          "24.0",
+          "6.0",
+          "607.6",
+          "73.0"
+        ],
+        "missing_proper_names": [
+          "Legislative Yuan Budget Center"
+        ],
+        "unsupported_proper_names": [
+          "Budget Process",
+          "Not One Headline Rate",
+          "Public-Sector Pay Plan Hinges"
+        ],
+        "source_overlap_tokens": 2
+      },
+      "after": {
+        "checks": {
+          "source_ids_valid": true,
+          "no_fabricated_urls": true,
+          "source_urls_well_formed": true,
+          "citation_ids_valid": true,
+          "factual_paragraphs_cited": true,
+          "no_unverified_numbers": true,
+          "proper_names_preserved": true,
+          "no_unsupported_proper_names": true,
+          "no_repeated_paragraphs": true,
+          "no_repeated_sentences": true,
+          "rights_recorded": true,
+          "current_sources": true,
+          "language_script_present": true,
+          "language_metadata_matches": true,
+          "no_obvious_high_risk_claims": true,
+          "no_internal_fact_markers": true,
+          "article_structure": true,
+          "title_body_alignment": true,
+          "keyword_search_intent_coverage": true,
+          "keywords_are_search_terms_not_internal_ids": true,
+          "no_internal_ids_in_user_text": true,
+          "keyword_list_is_bounded_and_unique": true,
+          "no_forbidden_foreign_script_mixing": true,
+          "target_writing_system_present": true,
+          "legal_access_claims_grounded_in_supplied_source": true,
+          "no_mass_direct_quote": true
+        },
+        "machine_passed": true,
+        "grounding_details": {
+          "proper_name_candidates": [
+            "Executive Yuan",
+            "Legislative Yuan Budget Center"
+          ],
+          "missing_proper_names": [],
+          "unsupported_proper_names": [],
+          "unexpected_numbers": [],
+          "uncited_paragraphs": [],
+          "invalid_source_urls": []
+        },
+        "human_review_required": true,
+        "semantic_accuracy": "human_review_required",
+        "naturalness": "human_review_required",
+        "rights_review": "human_review_required",
+        "publish_ready": false,
+        "word_count": 555,
+        "section_count": 3,
+        "paragraph_count": 10,
+        "source_overlap_words_max": 4,
+        "fact_count": 8,
+        "script_counts": {
+          "hangul": 0,
+          "kana": 0,
+          "cyrillic": 0,
+          "arabic": 0
+        },
+        "search_intent": "Summarize and explain the supplied official filing/release; not investment advice"
+      },
+      "fact_lifecycle_review": "proposal, planned fiscal-year adjustment, proposed effective date, budget referral/review, and actual payment evidence are distinguished; no implementation/payment confirmation invented."
+    }
+  ],
+  "persistent_rules": {
+    "repository_guidance": "AGENTS.md Phase 5 editorial writing standard",
+    "architecture_guidance": "docs/architecture/editorial-writing-standard.md",
+    "runtime_prompt": "LlamaCppProvider full-draft prompt plus localized_translation editorial phrasing",
+    "regression_tests": [
+      "expert-column instructions present in full-draft system prompt",
+      "localized paraphrase prompt requires idiomatic non-bureaucratic prose",
+      "Taiwan billion/yi currency magnitude equivalence while amount changes remain detectable",
+      "ROC 115/116 fiscal years normalize to Gregorian 2026/2027"
+    ]
+  },
+  "historical_qwen3_comparison": {
+    "path": "docs/development/P5-AI-002-article-0fa0c8e4-a84f-45b1-94e0-8d23ab9ebdda.md",
+    "model": "Qwen3-4B-Q4_K_M.gguf",
+    "checks_passed": 21,
+    "checks_total": 25,
+    "failed_checks": [
+      "factual_paragraphs_cited",
+      "no_unverified_numbers",
+      "article_structure",
+      "no_mass_direct_quote"
+    ],
+    "internal_FACT_Fn_occurrences": 8,
+    "source_overlap_tokens": 30,
+    "caveat": "Qwen benchmark is a zh-CN draft compared with zh-TW evidence; new targets are ko/en. This is historical context, not a controlled like-for-like quality score."
+  },
+  "semantic_review_limits": {
+    "machine_gate": "structure and traceability only; semantic accuracy, editorial merit, naturalness, rights and expert-column quality remain human review",
+    "human_reviewed": false,
+    "generation_ready_changed": false,
+    "publish_ready_changed": false
+  },
+  "safety": {
+    "operational_database_written": false,
+    "research_package_state_changed": false,
+    "blogger_api_calls": 0,
+    "publish_ready": false,
+    "generation_ready": false,
+    "external_paid_api_calls": 0,
+    "additional_credit_use_independently_verified": false,
+    "note": "No separate provider/API request was made by this task; account-side subscription or credit consumption is not observable from repository validation."
+  },
+  "validation": {
+    "targeted_tests": "7 passed; 60 deselected",
+    "scripts_verify_ps1": "passed",
+    "ruff": "passed",
+    "mypy": "passed (33 source files)",
+    "pytest": "241 passed",
+    "wheel": "passed; isolated artifact verified",
+    "dashboard_eslint": "passed",
+    "dashboard_production_build": "passed",
+    "dashboard_typecheck": "passed",
+    "git_diff_check": "passed"
+  },
+  "qwen3_or_nvidia_new_inference_calls": 0,
+  "human_review_items": [
+    "Verify policy terminology and factual interpretation against the original source pages.",
+    "Assess whether the contextual explanations are sufficiently useful and natural for Korean and English readers.",
+    "Confirm source rights and editorial standards before any operational reuse."
+  ],
+  "limitations": [
+    "The local full-draft prompt is improved, but fact-first deterministic rendering still constrains analytical depth when a Research Package lacks reviewed context.",
+    "A deterministic pass is not human editorial approval.",
+    "Codex subscription credit consumption is not independently observable."
+  ]
+}

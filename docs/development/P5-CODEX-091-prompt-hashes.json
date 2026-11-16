@@ -1,0 +1,173 @@
+{
+  "work_id": "P5-CODEX-091",
+  "recorded_at": "2026-10-30T17:06:23.252088+00:00",
+  "automation_ui_crosscheck": "unavailable_native_control_pipe",
+  "automations": [
+    {
+      "id": "ai",
+      "name": "주간 AI 연구 분석 원고 작성",
+      "status": "ACTIVE",
+      "rrule": "RRULE:FREQ=WEEKLY;BYDAY=FR;BYHOUR=16;BYMINUTE=30",
+      "model": "gpt-6-luna",
+      "prompt_sha256_before": "e9357677e6617c9f7ac3c30630572d440b30f341a1327abd27b2de1ef9e62ef0",
+      "prompt_sha256_after": "a5aa09a68cbf2d7089e052a95472e0627b7454cf441202fde51bd01bede3287b",
+      "prompt_chars_before": 21386,
+      "prompt_chars_after": 23731
+    },
+    {
+      "id": "automation",
+      "name": "한국 증시 마감 원고 작성",
+      "status": "ACTIVE",
+      "rrule": "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=18;BYMINUTE=30",
+      "model": "gpt-6-luna",
+      "prompt_sha256_before": "5e6d1a814986dc2e2c3e995146f46632b4fe306f5437d5080341cf8b503722ef",
+      "prompt_sha256_after": "38ffee14a56f58dfca5e476ffdf137d0962a056675a1653a0008c7c4bd930323",
+      "prompt_chars_before": 24753,
+      "prompt_chars_after": 27098
+    },
+    {
+      "id": "automation-2",
+      "name": "일본 증시 마감 원고 작성",
+      "status": "ACTIVE",
+      "rrule": "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=17;BYMINUTE=30",
+      "model": "gpt-6-luna",
+      "prompt_sha256_before": "b2faa181af0d896bfafeabe7734982fdb9e833eb803d4bc1a9db2f56851e7de3",
+      "prompt_sha256_after": "1382caeec30c21d473a8b9617de6fead0045af8c1dc5698dd6cc26ee0e5c4fb4",
+      "prompt_chars_before": 24965,
+      "prompt_chars_after": 27310
+    },
+    {
+      "id": "automation-3",
+      "name": "암호화폐 주요 이슈 원고 작성",
+      "status": "ACTIVE",
+      "rrule": "RRULE:FREQ=DAILY;BYHOUR=10;BYMINUTE=30",
+      "model": "gpt-6-luna",
+      "prompt_sha256_before": "52e0836e92ac1a0a3b838bbb5f74fcf947a636ed9f64cf393ad463de2ee712de",
+      "prompt_sha256_after": "2c1f81c1ef8b391c91d30cea4c061d421abd626d6ae74003286b8e9fdb6b84bb",
+      "prompt_chars_before": 21317,
+      "prompt_chars_after": 23662
+    },
+    {
+      "id": "automation-4",
+      "name": "한국 여행·관광 원고 작성",
+      "status": "ACTIVE",
+      "rrule": "RRULE:FREQ=WEEKLY;BYDAY=MO,TH;BYHOUR=16;BYMINUTE=30",
+      "model": "gpt-6-luna",
+      "prompt_sha256_before": "129751058104889f8cdac819aaa645f7b32856d380946c1e649c5fe5240b822e",
+      "prompt_sha256_after": "1ff207aa19e26c84f01b7ed4995112e7333d457366e7ffe20326952a98e3429d",
+      "prompt_chars_before": 21362,
+      "prompt_chars_after": 23707
+    },
+    {
+      "id": "automation-5",
+      "name": "주간 글로벌 금융 분석 원고 작성",
+      "status": "ACTIVE",
+      "rrule": "RRULE:FREQ=WEEKLY;BYDAY=SA;BYHOUR=12;BYMINUTE=0",
+      "model": "gpt-6-luna",
+      "prompt_sha256_before": "6ce2ed210b9d04901e36e4532e07c7987243ad3a30e53f1ebca804446984985c",
+      "prompt_sha256_after": "b87a158fef9e39eaa05bb3a9e7385aaefe0c2e65c4192138e0cd083b91d6067a",
+      "prompt_chars_before": 21382,
+      "prompt_chars_after": 23727
+    },
+    {
+      "id": "automation-6",
+      "name": "미국 증시 마감 원고 작성",
+      "status": "ACTIVE",
+      "rrule": "RRULE:FREQ=WEEKLY;BYDAY=TU,WE,TH,FR,SA;BYHOUR=7;BYMINUTE=0",
+      "model": "gpt-6-luna",
+      "prompt_sha256_before": "39eeb1bab7447c76fcd313c58bc3b6353e855224a74b2ee5d24685e2ff409459",
+      "prompt_sha256_after": "8a93699e2d83065a67cffeefd85f08d7f70795420abc475ade955e1583fd84ed",
+      "prompt_chars_before": 23884,
+      "prompt_chars_after": 26229
+    },
+    {
+      "id": "automation-7",
+      "name": "미국 정치·정책 원고 작성",
+      "status": "ACTIVE",
+      "rrule": "RRULE:FREQ=WEEKLY;BYDAY=TU,WE,TH,FR,SA;BYHOUR=9;BYMINUTE=0",
+      "model": "gpt-6-luna",
+      "prompt_sha256_before": "497dfc089ae75b29820526ea29ef24575a9d7c9fb0b268308f47ca1e6324be7f",
+      "prompt_sha256_after": "70de39b3431af85ee65df5b9decc043494b8924a91e670cb8ac804e4ab626e7c",
+      "prompt_chars_before": 21336,
+      "prompt_chars_after": 23681
+    },
+    {
+      "id": "automation-8",
+      "name": "한국 정치·정책 원고 작성",
+      "status": "ACTIVE",
+      "rrule": "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=20;BYMINUTE=0",
+      "model": "gpt-6-luna",
+      "prompt_sha256_before": "d421c4a356c159c501fd898c224d0a3413710304302b2423a9e7a0d990d9894b",
+      "prompt_sha256_after": "cff59fdfe78cec7e61b18c3e2315268f5d68806f642d88f158a5d618c64c3a61",
+      "prompt_chars_before": 21789,
+      "prompt_chars_after": 24134
+    },
+    {
+      "id": "automation-9",
+      "name": "일본 정치·정책 원고 작성",
+      "status": "ACTIVE",
+      "rrule": "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=16;BYMINUTE=0",
+      "model": "gpt-6-luna",
+      "prompt_sha256_before": "962a54f516f2ec62c65cc8cbb0b75fba43fc1a56a5ae3f2e8502738c58ce4cdd",
+      "prompt_sha256_after": "1cb6a6ac7f5445f2f967ba2bfc2c5a4bc8388488ae5fa4920f0af3a0d099e3ac",
+      "prompt_chars_before": 21669,
+      "prompt_chars_after": 24014
+    },
+    {
+      "id": "automation-10",
+      "name": "중국 정치·정책 원고 작성",
+      "status": "ACTIVE",
+      "rrule": "RRULE:FREQ=WEEKLY;BYDAY=TU,WE,TH,FR,SA;BYHOUR=17;BYMINUTE=0",
+      "model": "gpt-6-luna",
+      "prompt_sha256_before": "bbd1bf92cd3c3a95b8a2e05602317330285841b1f2ed9cca4457ceace63d5e4d",
+      "prompt_sha256_after": "68158afd11c84a5f922d6e4ccf2a288cd3d6627e14be9e054a19552ed9d8aa62",
+      "prompt_chars_before": 22008,
+      "prompt_chars_after": 24353
+    },
+    {
+      "id": "fed-sec",
+      "name": "Fed·SEC 공식 자료 원고 작성",
+      "status": "ACTIVE",
+      "rrule": "RRULE:FREQ=WEEKLY;BYDAY=TU,WE,TH,FR,SA;BYHOUR=11;BYMINUTE=0",
+      "model": "gpt-6-luna",
+      "prompt_sha256_before": "c583ebab04481b6f0e26da04ecf56186ed0146c948c894865a9e10b8e6e611ed",
+      "prompt_sha256_after": "e4239a1f3f3b6ba784980b618a443146c83f3d2344a94ebd9a526ee79ac2ce26",
+      "prompt_chars_before": 21844,
+      "prompt_chars_after": 24189
+    },
+    {
+      "id": "it-ai",
+      "name": "글로벌 IT·AI 원고 작성",
+      "status": "ACTIVE",
+      "rrule": "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=12;BYMINUTE=0",
+      "model": "gpt-6-luna",
+      "prompt_sha256_before": "e81c6543a42709558be2e58d2eb07323a8a810b29a0311349ac24fde2152f77a",
+      "prompt_sha256_after": "9adab8e1aa17f77395912ad5cc49d7247245826fee16b8ee0b0016da080ce354",
+      "prompt_chars_before": 21401,
+      "prompt_chars_after": 23746
+    },
+    {
+      "id": "k-beauty",
+      "name": "K-Beauty 트렌드 원고 작성",
+      "status": "ACTIVE",
+      "rrule": "RRULE:FREQ=WEEKLY;BYDAY=TU,FR;BYHOUR=13;BYMINUTE=30",
+      "model": "gpt-6-luna",
+      "prompt_sha256_before": "20a33b7ccdd3b328ebe7e933e1fea1804a94e7666f7db17f1cde3fe3a7191441",
+      "prompt_sha256_after": "daa5f6a3eafeeccbf0dfc0c323baf79be41857663eff7687b5df16ebb6ded27c",
+      "prompt_chars_before": 21335,
+      "prompt_chars_after": 23680
+    },
+    {
+      "id": "k-pop",
+      "name": "K-POP 주요 이슈 원고 작성",
+      "status": "ACTIVE",
+      "rrule": "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=15;BYMINUTE=0",
+      "model": "gpt-6-luna",
+      "prompt_sha256_before": "dfa3f89fd8584bba360387a3488282e2181b0b87d5cf3b4553a7612ec06d0885",
+      "prompt_sha256_after": "b8e254885061ce5c7ae1e6bdd72f176a2d5aa5421293fae7e9afd46d383fd571",
+      "prompt_chars_before": 21366,
+      "prompt_chars_after": 23711
+    }
+  ],
+  "backup_directory": "C:\\Users\\achie\\.codex\\automation-backups\\P5-CODEX-091-20261030T170623Z"
+}

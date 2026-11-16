@@ -1,0 +1,804 @@
+{
+  "run_id": "5aa6e62c-3a65-4792-b75e-aa6afe463aa0",
+  "manifest": {
+    "engine": "llama.cpp b11889",
+    "engine_license": "MIT",
+    "engine_sha256": "bf563dffb502a230ae06c9dc455b54cbc079e7e0bc270cd4d6191209b28d175d",
+    "models": [
+      {
+        "name": "Qwen3-0.6B-Q8_0.gguf",
+        "revision": "23749fefcc72300e3a2ad315e1317431b06b590a",
+        "sha256": "9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031",
+        "license": "Apache-2.0",
+        "repo": "Qwen/Qwen3-0.6B-GGUF"
+      },
+      {
+        "name": "Qwen3-1.7B-Q8_0.gguf",
+        "revision": "90862c4b9d2787eaed51d12237eafdfe7c5f6077",
+        "sha256": "061b54daade076b5d3362dac252678d17da8c68f07560be70818cace6590cb1a",
+        "license": "Apache-2.0",
+        "repo": "Qwen/Qwen3-1.7B-GGUF"
+      }
+    ]
+  },
+  "benchmark_protocol": "v2-explicit-language",
+  "benchmarks": [
+    {
+      "id": "34c05055-15b6-4ee2-bda8-e3ec5489ce56",
+      "model": "Qwen3-0.6B-Q8_0.gguf",
+      "revision": "23749fefcc72300e3a2ad315e1317431b06b590a",
+      "language_code": "en",
+      "material_hash": "2376f311ce3f128ec30c43850c9f5df537d0057cd416e72c35fbfc141200fa39",
+      "status": "succeeded",
+      "checks": {
+        "protocol": "v2-explicit-language",
+        "sections": 3,
+        "grounding": {
+          "rule_pass": false,
+          "naturalness": "human_review_required",
+          "rule_checks": {
+            "current_sources": true,
+            "rights_recorded": false,
+            "source_ids_valid": true,
+            "no_fabricated_urls": true,
+            "no_unverified_numbers": false,
+            "language_script_present": true,
+            "no_obvious_high_risk_claims": true
+          },
+          "publish_ready": false,
+          "script_fraction": 1.0,
+          "unexpected_numbers": [
+            "20261016.0"
+          ],
+          "semantic_fact_verification": "human_review_required",
+          "model_self_score_used_for_approval": false
+        },
+        "publish_ready": false,
+        "real_inference": true,
+        "body_characters": 941,
+        "source_ids_valid": true,
+        "json_schema_valid": true,
+        "human_review_required": true
+      },
+      "metrics": {
+        "engine": "llama.cpp b11889",
+        "backend": "CPU-only binary",
+        "gpu_layers": 0,
+        "rss_peak_mib": 1620.0,
+        "wall_seconds": 14.382,
+        "completion_tokens": 495,
+        "tokens_per_second_wall": 34.42,
+        "gpu_utilization_percent": null,
+        "system_cpu_peak_percent": 63.0,
+        "process_cpu_mean_percent_machine": 33.19
+      },
+      "error_category": null
+    },
+    {
+      "id": "15693900-ca0a-42bc-8fe0-053996fa79e6",
+      "model": "Qwen3-0.6B-Q8_0.gguf",
+      "revision": "23749fefcc72300e3a2ad315e1317431b06b590a",
+      "language_code": "ja",
+      "material_hash": "2376f311ce3f128ec30c43850c9f5df537d0057cd416e72c35fbfc141200fa39",
+      "status": "failed",
+      "checks": {
+        "protocol": "v2-explicit-language",
+        "publish_ready": false,
+        "real_inference": true,
+        "human_review_required": true
+      },
+      "metrics": {},
+      "error_category": "invalid_local_model_response"
+    },
+    {
+      "id": "3c3b5ae6-5457-4953-b316-e95b3a53d6c0",
+      "model": "Qwen3-0.6B-Q8_0.gguf",
+      "revision": "23749fefcc72300e3a2ad315e1317431b06b590a",
+      "language_code": "ko",
+      "material_hash": "2376f311ce3f128ec30c43850c9f5df537d0057cd416e72c35fbfc141200fa39",
+      "status": "failed",
+      "checks": {
+        "protocol": "v2-explicit-language",
+        "publish_ready": false,
+        "real_inference": true,
+        "human_review_required": true
+      },
+      "metrics": {},
+      "error_category": "invalid_local_model_response"
+    },
+    {
+      "id": "367d2259-fc40-4fa7-91dc-0d8e913b8512",
+      "model": "Qwen3-0.6B-Q8_0.gguf",
+      "revision": "23749fefcc72300e3a2ad315e1317431b06b590a",
+      "language_code": "zh-CN",
+      "material_hash": "2376f311ce3f128ec30c43850c9f5df537d0057cd416e72c35fbfc141200fa39",
+      "status": "succeeded",
+      "checks": {
+        "protocol": "v2-explicit-language",
+        "sections": 1,
+        "grounding": {
+          "rule_pass": false,
+          "naturalness": "human_review_required",
+          "rule_checks": {
+            "current_sources": true,
+            "rights_recorded": false,
+            "source_ids_valid": true,
+            "no_fabricated_urls": true,
+            "no_unverified_numbers": true,
+            "language_script_present": false,
+            "no_obvious_high_risk_claims": true
+          },
+          "publish_ready": false,
+          "script_fraction": 0.0,
+          "unexpected_numbers": [],
+          "semantic_fact_verification": "human_review_required",
+          "model_self_score_used_for_approval": false
+        },
+        "publish_ready": false,
+        "real_inference": true,
+        "body_characters": 486,
+        "source_ids_valid": true,
+        "json_schema_valid": true,
+        "human_review_required": true
+      },
+      "metrics": {
+        "engine": "llama.cpp b11889",
+        "backend": "CPU-only binary",
+        "gpu_layers": 0,
+        "rss_peak_mib": 2176.94,
+        "wall_seconds": 12.236,
+        "completion_tokens": 416,
+        "tokens_per_second_wall": 34.0,
+        "gpu_utilization_percent": null,
+        "system_cpu_peak_percent": 56.9,
+        "process_cpu_mean_percent_machine": 32.7
+      },
+      "error_category": null
+    },
+    {
+      "id": "151c2d63-c002-4e88-a87e-06a56d2563db",
+      "model": "Qwen3-1.7B-Q8_0.gguf",
+      "revision": "90862c4b9d2787eaed51d12237eafdfe7c5f6077",
+      "language_code": "en",
+      "material_hash": "2376f311ce3f128ec30c43850c9f5df537d0057cd416e72c35fbfc141200fa39",
+      "status": "succeeded",
+      "checks": {
+        "protocol": "v2-explicit-language",
+        "sections": 5,
+        "grounding": {
+          "rule_pass": false,
+          "naturalness": "human_review_required",
+          "rule_checks": {
+            "current_sources": true,
+            "rights_recorded": false,
+            "source_ids_valid": true,
+            "no_fabricated_urls": true,
+            "no_unverified_numbers": false,
+            "language_script_present": true,
+            "no_obvious_high_risk_claims": true
+          },
+          "publish_ready": false,
+          "script_fraction": 1.0,
+          "unexpected_numbers": [
+            "2.0",
+            "3.0",
+            "4.0"
+          ],
+          "semantic_fact_verification": "human_review_required",
+          "model_self_score_used_for_approval": false
+        },
+        "publish_ready": false,
+        "real_inference": true,
+        "body_characters": 1898,
+        "source_ids_valid": true,
+        "json_schema_valid": true,
+        "human_review_required": true
+      },
+      "metrics": {
+        "engine": "llama.cpp b11889",
+        "backend": "CPU-only binary",
+        "gpu_layers": 0,
+        "rss_peak_mib": 3098.18,
+        "wall_seconds": 40.58,
+        "completion_tokens": 611,
+        "tokens_per_second_wall": 15.06,
+        "gpu_utilization_percent": null,
+        "system_cpu_peak_percent": 69.2,
+        "process_cpu_mean_percent_machine": 32.6
+      },
+      "error_category": null
+    },
+    {
+      "id": "784fea1c-a5ce-4e90-8807-ad71b401834e",
+      "model": "Qwen3-1.7B-Q8_0.gguf",
+      "revision": "90862c4b9d2787eaed51d12237eafdfe7c5f6077",
+      "language_code": "ja",
+      "material_hash": "2376f311ce3f128ec30c43850c9f5df537d0057cd416e72c35fbfc141200fa39",
+      "status": "succeeded",
+      "checks": {
+        "protocol": "v2-explicit-language",
+        "sections": 5,
+        "grounding": {
+          "rule_pass": false,
+          "naturalness": "human_review_required",
+          "rule_checks": {
+            "current_sources": true,
+            "rights_recorded": false,
+            "source_ids_valid": true,
+            "no_fabricated_urls": true,
+            "no_unverified_numbers": false,
+            "language_script_present": true,
+            "no_obvious_high_risk_claims": true
+          },
+          "publish_ready": false,
+          "script_fraction": 0.574,
+          "unexpected_numbers": [
+            "2.0",
+            "20261016.0",
+            "3.0",
+            "4.0"
+          ],
+          "semantic_fact_verification": "human_review_required",
+          "model_self_score_used_for_approval": false
+        },
+        "publish_ready": false,
+        "real_inference": true,
+        "body_characters": 884,
+        "source_ids_valid": true,
+        "json_schema_valid": true,
+        "human_review_required": true
+      },
+      "metrics": {
+        "engine": "llama.cpp b11889",
+        "backend": "CPU-only binary",
+        "gpu_layers": 0,
+        "rss_peak_mib": 3229.1,
+        "wall_seconds": 70.518,
+        "completion_tokens": 1100,
+        "tokens_per_second_wall": 15.6,
+        "gpu_utilization_percent": null,
+        "system_cpu_peak_percent": 74.0,
+        "process_cpu_mean_percent_machine": 32.83
+      },
+      "error_category": null
+    },
+    {
+      "id": "2c25ff53-db2f-4be5-95a2-b48e71f82c78",
+      "model": "Qwen3-1.7B-Q8_0.gguf",
+      "revision": "90862c4b9d2787eaed51d12237eafdfe7c5f6077",
+      "language_code": "ko",
+      "material_hash": "2376f311ce3f128ec30c43850c9f5df537d0057cd416e72c35fbfc141200fa39",
+      "status": "succeeded",
+      "checks": {
+        "protocol": "v2-explicit-language",
+        "sections": 5,
+        "grounding": {
+          "rule_pass": false,
+          "naturalness": "human_review_required",
+          "rule_checks": {
+            "current_sources": true,
+            "rights_recorded": false,
+            "source_ids_valid": true,
+            "no_fabricated_urls": true,
+            "no_unverified_numbers": false,
+            "language_script_present": true,
+            "no_obvious_high_risk_claims": true
+          },
+          "publish_ready": false,
+          "script_fraction": 0.748,
+          "unexpected_numbers": [
+            "2.0",
+            "3.0",
+            "4.0"
+          ],
+          "semantic_fact_verification": "human_review_required",
+          "model_self_score_used_for_approval": false
+        },
+        "publish_ready": false,
+        "real_inference": true,
+        "body_characters": 1226,
+        "source_ids_valid": true,
+        "json_schema_valid": true,
+        "human_review_required": true
+      },
+      "metrics": {
+        "engine": "llama.cpp b11889",
+        "backend": "CPU-only binary",
+        "gpu_layers": 0,
+        "rss_peak_mib": 3401.59,
+        "wall_seconds": 73.194,
+        "completion_tokens": 1137,
+        "tokens_per_second_wall": 15.53,
+        "gpu_utilization_percent": null,
+        "system_cpu_peak_percent": 99.5,
+        "process_cpu_mean_percent_machine": 32.69
+      },
+      "error_category": null
+    },
+    {
+      "id": "153f26dd-9768-40f5-b664-02ea354c617c",
+      "model": "Qwen3-1.7B-Q8_0.gguf",
+      "revision": "90862c4b9d2787eaed51d12237eafdfe7c5f6077",
+      "language_code": "zh-CN",
+      "material_hash": "2376f311ce3f128ec30c43850c9f5df537d0057cd416e72c35fbfc141200fa39",
+      "status": "succeeded",
+      "checks": {
+        "protocol": "v2-explicit-language",
+        "sections": 9,
+        "grounding": {
+          "rule_pass": false,
+          "naturalness": "human_review_required",
+          "rule_checks": {
+            "current_sources": true,
+            "rights_recorded": false,
+            "source_ids_valid": true,
+            "no_fabricated_urls": true,
+            "no_unverified_numbers": true,
+            "language_script_present": true,
+            "no_obvious_high_risk_claims": true
+          },
+          "publish_ready": false,
+          "script_fraction": 0.546,
+          "unexpected_numbers": [],
+          "semantic_fact_verification": "human_review_required",
+          "model_self_score_used_for_approval": false
+        },
+        "publish_ready": false,
+        "real_inference": true,
+        "body_characters": 1404,
+        "source_ids_valid": true,
+        "json_schema_valid": true,
+        "human_review_required": true
+      },
+      "metrics": {
+        "engine": "llama.cpp b11889",
+        "backend": "CPU-only binary",
+        "gpu_layers": 0,
+        "rss_peak_mib": 3573.96,
+        "wall_seconds": 76.648,
+        "completion_tokens": 1228,
+        "tokens_per_second_wall": 16.02,
+        "gpu_utilization_percent": null,
+        "system_cpu_peak_percent": 95.2,
+        "process_cpu_mean_percent_machine": 32.99
+      },
+      "error_category": null
+    }
+  ],
+  "drafts": [
+    {
+      "id": "149d51ac-0bc0-4807-883c-eeb27c35f93f",
+      "group_id": "b9075faf-f4ec-4a7b-8968-25f460231d45",
+      "language": "en",
+      "version": 2,
+      "title": "Federal Reserve Board Announces Termination of Enforcement Actions with Gardner Bancshares, Inc. and Small Business Bank",
+      "source_version_id": null,
+      "state": "quality_held",
+      "model": "Qwen3-1.7B-Q8_0.gguf",
+      "result_metadata": {
+        "metrics": {
+          "engine": "llama.cpp b11889",
+          "backend": "CPU-only binary",
+          "gpu_layers": 0,
+          "rss_peak_mib": 3169.99,
+          "wall_seconds": 34.287,
+          "completion_tokens": 523,
+          "tokens_per_second_wall": 15.25,
+          "gpu_utilization_percent": null,
+          "system_cpu_peak_percent": 61.8,
+          "process_cpu_mean_percent_machine": 32.77
+        },
+        "quality": {
+          "mock": false,
+          "checks": {
+            "metadata": true,
+            "structure": true,
+            "as_of_date": false,
+            "source_ids_valid": true,
+            "limited_repetition": true,
+            "keyword_in_title_and_body": false,
+            "no_obvious_hype_or_fake_experience": true
+          },
+          "grounding": {
+            "rule_pass": true,
+            "naturalness": "human_review_required",
+            "rule_checks": {
+              "current_sources": true,
+              "rights_recorded": true,
+              "source_ids_valid": true,
+              "no_fabricated_urls": true,
+              "no_unverified_numbers": true,
+              "language_script_present": true,
+              "no_obvious_high_risk_claims": true
+            },
+            "publish_ready": false,
+            "script_fraction": 1.0,
+            "unexpected_numbers": [],
+            "semantic_fact_verification": "human_review_required",
+            "model_self_score_used_for_approval": false
+          },
+          "publish_ready": false,
+          "internal_score": 71,
+          "structural_pass": false,
+          "human_review_required": true,
+          "model_quality_verified": false
+        },
+        "summary": "The Federal Reserve Board has terminated enforcement actions against Gardner Bancshares, Inc. and Small Business Bank, both based in Lenexa, Kansas. The actions were taken on October 13, 2026, and the termination was announced on October 17, 2026.",
+        "keywords": [
+          "Federal Reserve Board",
+          "Gardner Bancshares, Inc.",
+          "Small Business Bank",
+          "Enforcement actions",
+          "Lenexa, Kansas",
+          "2026-10-26",
+          "Termination",
+          "Bank supervision",
+          "Financial regulations",
+          "Bank enforcement",
+          "Banking industry",
+          "United States",
+          "Banking enforcement",
+          "Banking supervision",
+          "Banking regulation",
+          "Banking enforcement actions",
+          "Banking enforcement termination",
+          "Banking enforcement termination date",
+          "Banking enforcement termination date 2026",
+          "Banking enforcement termination date 2026-10-26"
+        ]
+      },
+      "latest_checks": {
+        "rule_pass": true,
+        "naturalness": "human_review_required",
+        "rule_checks": {
+          "current_sources": true,
+          "rights_recorded": true,
+          "source_ids_valid": true,
+          "no_fabricated_urls": true,
+          "no_unverified_numbers": true,
+          "language_script_present": true,
+          "language_metadata_matches": true,
+          "no_obvious_high_risk_claims": true
+        },
+        "publish_ready": false,
+        "language_fields": {
+          "body": true,
+          "title": true,
+          "summary": true,
+          "keywords": true
+        },
+        "script_fraction": 1.0,
+        "unexpected_numbers": [],
+        "input_revision_current": true,
+        "semantic_fact_verification": "human_review_required",
+        "model_self_score_used_for_approval": false
+      }
+    },
+    {
+      "id": "6ee572d9-5c12-4bf8-abb0-c0657c859367",
+      "group_id": "b9075faf-f4ec-4a7b-8968-25f460231d45",
+      "language": "ja",
+      "version": 1,
+      "title": "Federal Reserve Board Announces Termination of Enforcement Actions with Gardner Bancshares, Inc. and Small Business Bank",
+      "source_version_id": "149d51ac-0bc0-4807-883c-eeb27c35f93f",
+      "state": "quality_held",
+      "model": "Qwen3-1.7B-Q8_0.gguf",
+      "result_metadata": {
+        "metrics": {
+          "engine": "llama.cpp b11889",
+          "backend": "CPU-only binary",
+          "gpu_layers": 0,
+          "rss_peak_mib": 3488.14,
+          "wall_seconds": 56.193,
+          "completion_tokens": 640,
+          "tokens_per_second_wall": 11.39,
+          "gpu_utilization_percent": null,
+          "system_cpu_peak_percent": 100.0,
+          "process_cpu_mean_percent_machine": 32.15
+        },
+        "quality": {
+          "mock": false,
+          "checks": {
+            "metadata": true,
+            "structure": true,
+            "as_of_date": false,
+            "source_ids_valid": true,
+            "limited_repetition": true,
+            "keyword_in_title_and_body": false,
+            "no_obvious_hype_or_fake_experience": true
+          },
+          "grounding": {
+            "rule_pass": true,
+            "naturalness": "human_review_required",
+            "rule_checks": {
+              "current_sources": true,
+              "rights_recorded": true,
+              "source_ids_valid": true,
+              "no_fabricated_urls": true,
+              "no_unverified_numbers": true,
+              "language_script_present": true,
+              "no_obvious_high_risk_claims": true
+            },
+            "publish_ready": false,
+            "script_fraction": 0.274,
+            "unexpected_numbers": [],
+            "semantic_fact_verification": "human_review_required",
+            "model_self_score_used_for_approval": false
+          },
+          "publish_ready": false,
+          "internal_score": 71,
+          "structural_pass": false,
+          "human_review_required": true,
+          "model_quality_verified": false
+        },
+        "summary": "Federal Reserve Boardは、2026年10月13日にGardner Bancshares, Inc.およびSmall Business Bankに対する強制行動の終了を発表しました。この強制行動には、2023年9月1日、2024年11月13日、2026年6月29日発表のいくつかの命令が含まれており、すべてが2026年10月13日に終了しました。",
+        "keywords": [
+          "Federal Reserve Board",
+          "Gardner Bancshares, Inc.",
+          "Small Business Bank",
+          "enforcement actions",
+          "termination",
+          "2026-10-13",
+          "2026-10-26",
+          "press release",
+          "enforcement",
+          "bank supervision",
+          "United States",
+          "financial regulations",
+          "Cease and Desist Order",
+          "Prompt Corrective Action",
+          "Small Business Bank",
+          "Lenexa, Kansas",
+          "enforcement actions termination",
+          "enforcement action termination",
+          "enforcement action termination date",
+          "enforcement action termination date 2026-10-13"
+        ]
+      },
+      "latest_checks": {
+        "rule_pass": false,
+        "naturalness": "human_review_required",
+        "rule_checks": {
+          "current_sources": true,
+          "rights_recorded": true,
+          "source_ids_valid": true,
+          "no_fabricated_urls": true,
+          "no_unverified_numbers": true,
+          "language_script_present": true,
+          "language_metadata_matches": false,
+          "no_obvious_high_risk_claims": true
+        },
+        "publish_ready": false,
+        "language_fields": {
+          "body": true,
+          "title": false,
+          "summary": true,
+          "keywords": false
+        },
+        "script_fraction": 0.274,
+        "unexpected_numbers": [],
+        "input_revision_current": true,
+        "semantic_fact_verification": "human_review_required",
+        "model_self_score_used_for_approval": false
+      }
+    },
+    {
+      "id": "fea19545-0399-44a9-a391-b9838d4a8e59",
+      "group_id": "b9075faf-f4ec-4a7b-8968-25f460231d45",
+      "language": "ko",
+      "version": 2,
+      "title": "Federal Reserve Board Announces Termination of Enforcement Actions with Gardner Bancshares, Inc. and Small Business Bank",
+      "source_version_id": "149d51ac-0bc0-4807-883c-eeb27c35f93f",
+      "state": "quality_held",
+      "model": "Qwen3-1.7B-Q8_0.gguf",
+      "result_metadata": {
+        "metrics": {
+          "engine": "llama.cpp b11889",
+          "backend": "CPU-only binary",
+          "gpu_layers": 0,
+          "rss_peak_mib": 3303.16,
+          "wall_seconds": 50.927,
+          "completion_tokens": 638,
+          "tokens_per_second_wall": 12.53,
+          "gpu_utilization_percent": null,
+          "system_cpu_peak_percent": 96.1,
+          "process_cpu_mean_percent_machine": 32.63
+        },
+        "quality": {
+          "mock": false,
+          "checks": {
+            "metadata": true,
+            "structure": true,
+            "as_of_date": false,
+            "source_ids_valid": true,
+            "limited_repetition": true,
+            "keyword_in_title_and_body": false,
+            "no_obvious_hype_or_fake_experience": true
+          },
+          "grounding": {
+            "rule_pass": true,
+            "naturalness": "human_review_required",
+            "rule_checks": {
+              "current_sources": true,
+              "rights_recorded": true,
+              "source_ids_valid": true,
+              "no_fabricated_urls": true,
+              "no_unverified_numbers": true,
+              "language_script_present": true,
+              "no_obvious_high_risk_claims": true
+            },
+            "publish_ready": false,
+            "script_fraction": 0.365,
+            "unexpected_numbers": [],
+            "semantic_fact_verification": "human_review_required",
+            "model_self_score_used_for_approval": false
+          },
+          "publish_ready": false,
+          "internal_score": 71,
+          "structural_pass": false,
+          "human_review_required": true,
+          "model_quality_verified": false
+        },
+        "summary": "Federal Reserve Board는 2026년 10월 13일에 Gardner Bancshares, Inc.와 Small Business Bank에 대해 강제 조치를 종료했다. 이 조치는 2023년 9월, 2024년 11월, 2026년 6월에 발부된 세 가지 조치로, 모두 2026년 10월 13일에 종료되었다.",
+        "keywords": [
+          "Federal Reserve Board",
+          "Gardner Bancshares, Inc.",
+          "Small Business Bank",
+          "enforcement actions",
+          "termination",
+          "2026-10-13",
+          "Lenexa, Kansas",
+          "United States",
+          "financial regulations",
+          "bank supervision",
+          "Cease and Desist Order",
+          "Prompt Corrective Action",
+          "as-of date",
+          "press release",
+          "Federal Reserve Board press release",
+          "enforcement actions termination",
+          "enforcement actions termination date",
+          "enforcement actions termination date 2026-10-13",
+          "enforcement actions termination date 2026-10-13",
+          "enforcement actions termination date 2026-10-13"
+        ]
+      },
+      "latest_checks": {
+        "rule_pass": false,
+        "naturalness": "human_review_required",
+        "rule_checks": {
+          "current_sources": true,
+          "rights_recorded": true,
+          "source_ids_valid": true,
+          "no_fabricated_urls": true,
+          "no_unverified_numbers": true,
+          "language_script_present": true,
+          "language_metadata_matches": false,
+          "no_obvious_high_risk_claims": true
+        },
+        "publish_ready": false,
+        "language_fields": {
+          "body": true,
+          "title": false,
+          "summary": true,
+          "keywords": false
+        },
+        "script_fraction": 0.365,
+        "unexpected_numbers": [],
+        "input_revision_current": true,
+        "semantic_fact_verification": "human_review_required",
+        "model_self_score_used_for_approval": false
+      }
+    },
+    {
+      "id": "7e43379b-f9f8-42ea-a369-2b38fce3f7ca",
+      "group_id": "b9075faf-f4ec-4a7b-8968-25f460231d45",
+      "language": "zh-CN",
+      "version": 1,
+      "title": "联邦储备委员会宣布终止对Gardner Bancshares, Inc.和Small Business Bank的执法行动",
+      "source_version_id": "149d51ac-0bc0-4807-883c-eeb27c35f93f",
+      "state": "quality_held",
+      "model": "Qwen3-1.7B-Q8_0.gguf",
+      "result_metadata": {
+        "metrics": {
+          "engine": "llama.cpp b11889",
+          "backend": "CPU-only binary",
+          "gpu_layers": 0,
+          "rss_peak_mib": 3662.1,
+          "wall_seconds": 46.236,
+          "completion_tokens": 510,
+          "tokens_per_second_wall": 11.03,
+          "gpu_utilization_percent": null,
+          "system_cpu_peak_percent": 82.4,
+          "process_cpu_mean_percent_machine": 32.43
+        },
+        "quality": {
+          "mock": false,
+          "checks": {
+            "metadata": true,
+            "structure": true,
+            "as_of_date": false,
+            "source_ids_valid": true,
+            "limited_repetition": true,
+            "keyword_in_title_and_body": false,
+            "no_obvious_hype_or_fake_experience": true
+          },
+          "grounding": {
+            "rule_pass": true,
+            "naturalness": "human_review_required",
+            "rule_checks": {
+              "current_sources": true,
+              "rights_recorded": true,
+              "source_ids_valid": true,
+              "no_fabricated_urls": true,
+              "no_unverified_numbers": true,
+              "language_script_present": true,
+              "no_obvious_high_risk_claims": true
+            },
+            "publish_ready": false,
+            "script_fraction": 0.665,
+            "unexpected_numbers": [],
+            "semantic_fact_verification": "human_review_required",
+            "model_self_score_used_for_approval": false
+          },
+          "publish_ready": false,
+          "internal_score": 71,
+          "structural_pass": false,
+          "human_review_required": true,
+          "model_quality_verified": false
+        },
+        "summary": "联邦储备委员会宣布终止对Gardner Bancshares, Inc.和Small Business Bank的执法行动，这些行动包括2023年9月1日、2024年11月13日和2026年6月29日的法律令。所有行动于2026年10月13日终止。",
+        "keywords": [
+          "联邦储备委员会",
+          "Gardner Bancshares, Inc.",
+          "Small Business Bank",
+          "执法行动",
+          "终止",
+          "堪萨斯州",
+          "莱诺克斯",
+          "金融监管",
+          "美国",
+          "2026年10月13日",
+          "新闻稿",
+          "截止日期",
+          "证据",
+          "联邦储备委员会公告",
+          "终止执法行动",
+          "金融监管机构",
+          "银行监督",
+          "法律令",
+          "2026年10月17日",
+          "2026年10月26日"
+        ]
+      },
+      "latest_checks": {
+        "rule_pass": true,
+        "naturalness": "human_review_required",
+        "rule_checks": {
+          "current_sources": true,
+          "rights_recorded": true,
+          "source_ids_valid": true,
+          "no_fabricated_urls": true,
+          "no_unverified_numbers": true,
+          "language_script_present": true,
+          "language_metadata_matches": true,
+          "no_obvious_high_risk_claims": true
+        },
+        "publish_ready": false,
+        "language_fields": {
+          "body": true,
+          "title": true,
+          "summary": true,
+          "keywords": true
+        },
+        "script_fraction": 0.665,
+        "unexpected_numbers": [],
+        "input_revision_current": true,
+        "semantic_fact_verification": "human_review_required",
+        "model_self_score_used_for_approval": false
+      }
+    }
+  ],
+  "quality_approved": false,
+  "publishing_enabled": false
+}

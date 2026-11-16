@@ -1,0 +1,96 @@
+{
+  "phase": "3.9-T",
+  "evaluation_id": "64de43dc-46d4-4db0-81cc-f3b9d7135bf9",
+  "created_at": "2026-10-26T15:00:48.987513+00:00",
+  "source": {
+    "adapter": "fed_rss",
+    "source_id": "873093a8-085e-42b5-8bb2-657f62f8df94",
+    "source_name": "Federal Reserve Board press releases",
+    "url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20261013a.htm",
+    "keyword_id": "08c47279-652f-4dd6-89ce-9b5bfcc41973"
+  },
+  "language": "en",
+  "model": {
+    "name": "Qwen3-4B-Q4_K_M.gguf",
+    "runtime": {
+      "pid": 35948,
+      "model": "Qwen3-4B-Q4_K_M.gguf",
+      "engine": "llama.cpp b11889",
+      "threads": 4,
+      "backend": "vulkan",
+      "engine_directory": "llama-b11889-vulkan",
+      "gpu_layers": 20
+    },
+    "sha256": "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5",
+    "license": "Apache-2.0",
+    "size_bytes": 2497280256
+  },
+  "isolation": {
+    "database": "woori_blog_agent_eval",
+    "evaluation_only": true,
+    "worker_exit_code": 1
+  },
+  "quota": {
+    "used_before": 0,
+    "used_after": 1,
+    "limit": 2,
+    "count_policy": "target counted at creation; failures and cancellation remain counted; retries reuse target"
+  },
+  "resources": {
+    "before": {
+      "cpu_percent": 19.9,
+      "memory_percent": 69.2,
+      "memory_available_bytes": 10562146304,
+      "disk_free_bytes": 203912728576,
+      "resource_gate_passed": true
+    },
+    "after": {
+      "cpu_percent": 22.1,
+      "memory_percent": 69.3,
+      "memory_available_bytes": 10523009024,
+      "disk_free_bytes": 203912491008,
+      "resource_gate_passed": true
+    },
+    "worker_max_rss_bytes_observed_in_job_events": null,
+    "cpu_percent_during_run_sampled": 0.0,
+    "gpu_engine_percent": null
+  },
+  "run": {
+    "id": "6810d716-66f8-497c-a9d2-01f4bb152510",
+    "status": "queued",
+    "error_type": null,
+    "attempts": 0,
+    "created_at": "2026-10-27 00:00:48.169598+09:00",
+    "updated_at": "2026-10-27 00:00:48.169598+09:00"
+  },
+  "draft": null,
+  "checks": {
+    "machine_quality_passed": false,
+    "quality": {},
+    "grounding": {},
+    "human_review_required": true,
+    "publish_ready": false
+  },
+  "metrics": {
+    "elapsed_seconds": 0.8,
+    "model_metrics": {},
+    "model_call_count": 0,
+    "completion_tokens": 0,
+    "tokens_per_second_aggregate": null,
+    "rss_peak_mib": null,
+    "process_cpu_mean_percent_machine_samples": [],
+    "gpu_utilization_percent_samples": [],
+    "stage_runs": [],
+    "audit_event_types": [
+      "research.evaluation.model.override",
+      "research.queued"
+    ],
+    "worker_process_exit_code": 1
+  },
+  "safety": {
+    "paid_api_calls": 0,
+    "external_data_calls": 0,
+    "blogger_writes": 0,
+    "publish_ready": false
+  }
+}

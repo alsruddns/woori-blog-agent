@@ -1,0 +1,76 @@
+{
+  "task_id": "P5-CODEX-012",
+  "recorded_at": "2026-10-29T01:16:47+09:00",
+  "branch": "develop",
+  "base_commit": "1a71681",
+  "status": "partial_readiness_review_only",
+  "implemented_in_this_phase": [],
+  "verified_existing": {
+    "google_trends": {
+      "allowed_regions": ["KR", "US", "JP", "TW", "HK", "SG"],
+      "max_items_per_region_request": 20,
+      "source_rank_fabricated": false,
+      "durable_hourly_call_cap": 12,
+      "hourly_worker_schedule": false,
+      "actual_requests_this_run": 0
+    },
+    "scheduled_content_import": {
+      "contract": "woori-scheduled-content-import/1.0",
+      "local_atomic_inbox": true,
+      "actual_files_this_run": 0,
+      "admin_import_database_writes_this_run": 0,
+      "generation_ready": false,
+      "publish_ready": false
+    },
+    "production_generation_provider": false,
+    "real_blogger_writer": false,
+    "mock_publisher_only": true
+  },
+  "official_scheduled_task_review": {
+    "sources": [
+      "https://help.openai.com/en/articles/10291617-scheduled-tasks-in-chatgpt",
+      "https://help.openai.com/en/articles/20001275-chatgpt-work-and-codex",
+      "https://developers.openai.com/training/walkthroughs/scheduled-tasks"
+    ],
+    "plus_active_task_limit_documented": 5,
+    "project_tasks_can_access_project_files": false,
+    "desktop_work_can_use_local_files_with_permission": true,
+    "scheduled_task_reliable_local_inbox_delivery_verified_for_this_account": false,
+    "account_tasks_created_or_run": 0
+  },
+  "market_reports": {
+    "market_close_providers_and_reuse_rights_reviewed": false,
+    "official_exchange_holiday_early_close_calendars_connected": false,
+    "reports_generated": 0,
+    "block_reason": "No reviewed official market data adapter, exchange calendar adapter, or redistribution-rights record is connected."
+  },
+  "weekly_finance": {
+    "existing_fed_sec_collection_reused_as_candidate_input": true,
+    "weekly_selection_and_publication_pipeline": false,
+    "reports_generated": 0
+  },
+  "side_effects": {
+    "operations_database_connected": false,
+    "operations_database_mutations": 0,
+    "migrations_applied": 0,
+    "blogger_requests": 0,
+    "blogger_posts_created_or_modified": 0,
+    "paid_ai_api_calls": 0,
+    "paid_data_calls": 0
+  },
+  "tests": {
+    "run": false,
+    "reason": "Documentation-only change; no runtime or code changed."
+  },
+  "files": [
+    "docs/development/P5-CODEX-012.md",
+    "docs/development/P5-CODEX-012-results.json",
+    "docs/operations/P5-CODEX-012-scheduled-work-recipes.md"
+  ],
+  "git": {
+    "commit": null,
+    "origin_develop_push": null,
+    "main_changed": false,
+    "untracked_playwright_directory_preserved": true
+  }
+}

@@ -1,0 +1,123 @@
+{
+  "task_id": "P5-CODEX-002",
+  "recorded_at_kst": "2026-10-28T15:49:33+09:00",
+  "branch": "develop",
+  "baseline_commit": "b90a8282978d7effa60889838ce5768d3ec6a397",
+  "status": "blocked_before_article_generation",
+  "requested_articles": [
+    {
+      "language": "ko",
+      "path": "docs/development/P5-CODEX-002-article-ko.md",
+      "created": false
+    },
+    {
+      "language": "en",
+      "path": "docs/development/P5-CODEX-002-article-en.md",
+      "created": false
+    }
+  ],
+  "model": {
+    "requested": "GPT-6 Luna High",
+    "active_session_model_verified": false,
+    "switched": false,
+    "reason": "Active session model cannot be changed or independently verified through an authorized control in this run."
+  },
+  "cost_safety": {
+    "plan_included_usage_only_requested": true,
+    "automatic_credit_reload_user_reported_off": true,
+    "account_credit_balance_verified": false,
+    "credit_usage_disabled_verified": false,
+    "dedicated_article_generation_request_submitted": false,
+    "codex_cli_subprocesses": 0,
+    "openai_api_requests": 0,
+    "other_paid_ai_requests": 0,
+    "account_wide_credit_spend_verified": false
+  },
+  "research_package": {
+    "id": "de118f17-ab50-46b7-b99f-4aba51f240ce",
+    "topic_id": "e6424812-46e2-5833-aebd-48a630a0c4a7",
+    "version": 1,
+    "sha256": "81bb85afa4e7d0d3ce2de03d6a5ed06268ff0ba770ad34aba703334c14ca0676",
+    "status": "evidence_collected_pending_human_review",
+    "topic_decision": "held",
+    "verified_fact_count": 8,
+    "source_count": 3,
+    "human_verified_independent_source_groups": 0,
+    "generation_ready": false,
+    "publish_ready": false,
+    "changed": false,
+    "facts_reviewed": [
+      "Executive Yuan proposed NT$2,000 increases to specified professional and supervisory allowances.",
+      "The general 4% pay adjustment is planned for FY2027 (ROC year 116); it is distinct from the allowance proposal.",
+      "The 2026-07-01 date is a proposed earlier effective date for the allowance increases tied to a supplementary-budget procedure; actual enactment/payment was not established by this package.",
+      "NT$607.6 billion is the overall supplementary expenditure proposal across six policy areas.",
+      "NT$10.7 billion is the amount identified under the treatment-improvement area, not the overall package.",
+      "Executive Yuan sources describe referral of the supplementary budget proposal for Legislative Yuan consideration.",
+      "The Legislative Yuan Budget Center report raises procedural/legal, execution-capacity, and objective pay-adjustment-criteria issues; it is not independent confirmation of actual payments.",
+      "Public-service salary example percentages must not be generalized to military personnel."
+    ],
+    "sources": [
+      {
+        "institution": "Executive Yuan",
+        "published_date": "2026-07-02",
+        "url": "https://www.ey.gov.tw/Page/448DE008087A1971/5020ed44-2196-4da0-9dbe-fe6ae7f44afc",
+        "independent_group_count": 1
+      },
+      {
+        "institution": "Executive Yuan",
+        "published_date": "2026-09-03",
+        "url": "https://www.ey.gov.tw/Page/9277F759E41CCD91/e6b90fcf-0d42-40e3-b001-1c790c076657",
+        "independent_group_count": 0
+      },
+      {
+        "institution": "Legislative Yuan Budget Center",
+        "published_date": "2026-09",
+        "url": "https://www.ly.gov.tw/Pages/List.aspx?nodeid=56728",
+        "independent_group_count": 1,
+        "independence_for_pay_proposal": "not_established"
+      }
+    ]
+  },
+  "qwen3_baseline": {
+    "article_path": "docs/development/P5-AI-002-article-0fa0c8e4-a84f-45b1-94e0-8d23ab9ebdda.md",
+    "evaluation_status": "quality_held",
+    "machine_checks_passed": 21,
+    "machine_checks_failed": 4,
+    "observed_issues": [
+      "proposal/effective-date certainty overstatement",
+      "8 internal FACT-Fn markers exposed",
+      "no section headings",
+      "no paragraph-level citations",
+      "30 comparison-token maximum source overlap",
+      "traditional Chinese source text copied into the Simplified Chinese article"
+    ],
+    "modified": false
+  },
+  "safety": {
+    "blogger_api_calls": 0,
+    "operational_database_writes": 0,
+    "research_package_writes": 0,
+    "readiness_state_changes": 0,
+    "article_generation_calls": 0,
+    "additional_credit_usage_for_article_generation": "not_verified; generation was not requested",
+    "existing_playwright_directory_preserved": true
+  },
+  "audit": {
+    "database": "woori_blog_agent_eval",
+    "role": "woori_eval_app",
+    "isolation_verified": true,
+    "immutable_trigger_verified": true,
+    "event_id": 85090,
+    "event_type": "evaluation.p5_codex_002.preflight_blocked",
+    "run_id": "2684e7c3-96eb-41b7-9c24-e5d0c65f4b73"
+  },
+  "validation": {
+    "json_parse": "passed",
+    "git_diff_check": "passed",
+    "application_tests": "not_run_no_application_code_changed"
+  },
+  "blocking_conditions": [
+    "GPT-6 Luna High could not be selected or verified in the active session.",
+    "The account's Codex credit balance or credit-use setting could not be verified; automatic reload being off does not establish that existing credits cannot be used."
+  ]
+}

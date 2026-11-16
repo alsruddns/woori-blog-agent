@@ -1,0 +1,28 @@
+{
+  "assessment_id": "6cbafc6d-b7f4-425b-a93f-a01540a2ed18",
+  "captured_at": "2026-10-27T06:53:44.900958+09:00",
+  "supersedes": "P4-E-assessment-20261027.json safety-field semantics only",
+  "reason": "The first summary mapped blogger_write_operations from the publishing_records count and omitted auto_publish_policies because that field was absent in the API snapshot. This append-only correction reports direct database counts.",
+  "operations": {
+    "database": "woori_blog_agent",
+    "schema_version": 28,
+    "audit_immutable": true,
+    "blogger_write_operations": 0,
+    "publishing_records": 0,
+    "non_mock_publication_jobs": 0,
+    "publish_ready_evaluations": 0,
+    "auto_publish_policies": 0
+  },
+  "evaluation": {
+    "database": "woori_blog_agent_eval",
+    "schema_version": 26,
+    "audit_immutable": true,
+    "blogger_write_operations": 0,
+    "publishing_records": 0,
+    "non_mock_publication_jobs": 0,
+    "publish_ready_evaluations": 0,
+    "auto_publish_policies": 0
+  },
+  "no_data_or_audit_rows_changed": true,
+  "operations_audit_event_id": 122924
+}

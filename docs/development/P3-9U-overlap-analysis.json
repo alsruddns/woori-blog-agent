@@ -1,0 +1,67 @@
+{
+  "phase": "3.9-U",
+  "recorded_at": "2026-10-26T15:25:56.846909+00:00",
+  "source_run_id": "6810d716-66f8-497c-a9d2-01f4bb152510",
+  "content_version_id": "1aa1a9f1-5614-490f-aeb5-58a3973c75aa",
+  "title": "Verified source facts: Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026",
+  "source": {
+    "source_name": "Federal Reserve Board press releases",
+    "url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20261013a.htm",
+    "evidence": "Minutes of the Board's discount rate meetings on August 17, September 9, and September 16, 2026. The Federal Reserve Board on Tuesday released the minutes from its recent meetings to review and determine the discount rates provided to depository institutions through the discount window. Today's minutes cover the Board meetings that occurred on August 17, September 9, and September 16, 2026. The Board's process for setting the discount rate is distinct from the process the Federal Open Market Committee follows in setting the target range for the federal funds rate. For media inquiries, please email [email protected] or call 202-452-2955.",
+    "revision": 3,
+    "collected_at": "2026-10-26 17:36:37.674289+09:00",
+    "rights": "Board-authored text public domain unless indicated; cite Board; exclude third-party material"
+  },
+  "overlap_analysis": {
+    "algorithm": "longest contiguous normalized token run within one source excerpt; no article-wide aggregation",
+    "matched_token_count": 30,
+    "matched_text": "the board s process for setting the discount rate is distinct from the process the federal open market committee follows in setting the target range for the federal funds rate",
+    "cause": "AI-generated English section reproduced the source sentence; it was not a summed-token false positive or proper-name-only match",
+    "generation_stage": "section_generation",
+    "verifier_false_positive": false
+  },
+  "append_only_rechecks": [
+    {
+      "evaluation_id": "7e2997e8-dc0c-478c-a4a4-e3fc9d173e08",
+      "batch_id": "e2010e5d-ce4c-4971-8bae-c274ab75af90",
+      "status": "quality_held",
+      "machine_passed": false,
+      "failed_checks": [
+        "no_mass_direct_quote",
+        "keyword_list_is_bounded_and_unique"
+      ],
+      "created_at": "2026-10-27 00:23:57.598821+09:00",
+      "model_calls": 0
+    },
+    {
+      "evaluation_id": "2fc2f986-3465-4015-864c-ddf5149f8661",
+      "batch_id": "11849c4b-8fe3-498e-a4d2-6148b016a84f",
+      "status": "quality_held",
+      "machine_passed": false,
+      "failed_checks": [
+        "no_mass_direct_quote",
+        "keyword_list_is_bounded_and_unique"
+      ],
+      "created_at": "2026-10-27 00:25:20.609282+09:00",
+      "model_calls": 0
+    }
+  ],
+  "audit_event_ids": [
+    "84470",
+    "84471"
+  ],
+  "preserved_original_version": true,
+  "quality_policy_changes": {
+    "direct_quote_threshold_before": 25,
+    "direct_quote_threshold_after": 25,
+    "gate_weakened": false
+  },
+  "code_changes": {
+    "paraphrase_prompt_strengthened": true,
+    "fact_localization_early_overlap_check": true,
+    "bounded_keyword_phrase_from_long_date_qualified_label": true
+  },
+  "actual_ai_rerun_in_this_phase": false,
+  "actual_rerun_deferred_to_phase_3_9_V": true,
+  "publish_ready": false
+}

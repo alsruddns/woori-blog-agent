@@ -1,0 +1,15 @@
+# SCHEDULE-CODEX-003 follow-up — generic scheduled export contract
+
+- Work ID: `SCHEDULE-CODEX-003` follow-up
+- Date: 2026-10-29 KST
+- Branch: `develop`
+- Reason: The scheduled envelope contract only named market-close, weekly-finance, and Trends tasks. Other existing scheduled topics could not be honestly represented without falsely labeling them as Trends-originated.
+- Existing problem: `ScheduledImportOrigin.task_type` and the JSON Schema enum had six values. The live definitions of the user's 15 Codex Desktop tasks are not stored in this repository, and no supported task-management connector is available in this session.
+- Goal: Provide a truthful generic task type for scheduled topics outside the existing named categories and a common, paste-ready instruction block that preserves each task's current schedule and purpose.
+- Before: Non-market, non-finance, non-Trends scheduled topics had no truthful `task_type`; operational docs described the supported duplicate preflight and intake path but no common instructions file was provided in this follow-up.
+- After: Added `scheduled_article` as a backward-compatible generic enum value in the scheduled envelope schema and Pydantic model. Added a common instruction file that calls the existing duplicate CLI, branches fail-closed on its statuses, validates using the Worker Pydantic validator, and atomically moves only valid envelopes from `incoming/*.part` to `ready/*.ready.json`.
+- Settings: No Codex Scheduled task definition was edited or registered. The live UI is the supported management surface, and the computer-use instructions available here prohibit automating the Codex desktop UI. Therefore the 15 task prompt save state and an actual scheduled execution remain unverified. This boundary follows OpenAI's [Scheduled tasks guide](https://developers.openai.com/training/walkthroughs/scheduled-tasks), which directs users to manage tasks in Scheduled and notes that local-file work requires the desktop app/computer to remain available.
+- Files: `services/api/woori/content_imports.py`, `docs/schemas/woori-scheduled-content-import-1.0.schema.json`, `services/api/tests/test_scheduled_import_inbox.py`, `docs/operations/SCHEDULE-CODEX-003-common-instructions.md`, this development record.
+- Validation: `.venv/Scripts/python.exe -m pytest services/api/tests/test_scheduled_import_inbox.py::test_scheduled_envelope_requires_self_reported_task_and_consistent_target services/api/tests/test_scheduled_duplicate_cli.py -q` — 4 passed. Ruff passed for changed Python files; both JSON schemas parse; `git diff --check` passed. No actual scheduled task was triggered and no Blogger API call was made.
+- Commit: To be linked by `git log` after commit.
+- Remaining: In Codex Desktop Scheduled, append the common block to each of the 15 existing tasks while preserving their schedule/model/topic/language/blog, verify each saved prompt, then trigger one genuine scheduled run and confirm ready-file intake and Import. Do not call task modification complete before this check.
