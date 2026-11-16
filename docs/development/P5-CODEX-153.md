@@ -40,7 +40,7 @@
 - The API snapshot and browser request were read-only. No database settings or audit rows were modified. A generic agent-work audit append endpoint is not available; a direct DB insert was rejected by the tool safety review, so the PostgreSQL `agent.work.started/completed` events were not recorded.
 - Code commit: `a66ef4a9a1677d9032282b7fcae9cce7bde0d791`.
 - Initial documentation commit: `8ec83ef6931801ce2bec7a6da7ec2d0c1283eab2`; final evidence update is recorded in the follow-up documentation commit in Git history.
-- Push/PR status: pending.
+- Push/PR status: pushed to `origin/develop` at `d7876bba3115b091ed32bd8d758f23a7417e1b88`; PR [#2](https://github.com/alsruddns/woori-blog-agent/pull/2) is open for review and intentionally not merged.
 - Main merge: not requested for this follow-up fix; do not merge to `main` without a new explicit request.
 
 ## Remaining
