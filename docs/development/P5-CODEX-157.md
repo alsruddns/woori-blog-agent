@@ -48,10 +48,12 @@
 - 운영 UI에서 Trends Auto를 OFF로 저장한 설정 변경은 테스트 글이나 Blogger write를 만들지 않았다. 사용되지 않은 두 실제 auto queue 후보는 0이었으며 저장 후 두 Worker ACK를 확인했다.
 - 첫 공식 서비스 반영은 Dashboard production build에서 멈췄다. Next.js 16.4.3의 보안 차단으로 서비스는 중지되지 않았다. 공식 Next.js November 2026 Security Release의 수정 버전 16.4.5로 `next`와 `eslint-config-next`를 함께 고정했다. [Next.js November 2026 Security Release](https://nextjs.org/blog/november-2026-security-release).
 - 의존성 설치가 moderate audit findings 7건과 `eslint@9.39.5` deprecated 알림을 표시했다. broad `npm audit fix`는 실행하지 않았으며, 의존성 audit 검토는 미완료다.
+- 수정 버전으로 공식 반영 검증에서 API 회귀 (**19 passed**), Ruff, Mypy, isolated Python wheel, Dashboard ESLint, TypeScript 및 Next.js production build를 모두 통과했다.
+- 이후 service reflection은 서비스를 멈추기 전에 안전하게 중단됐다. API PID `23592`/`24364`가 manifest 소유 runner 없이 원래 terminal에서 실행 중이어서 저장소 stop manager는 해당 터미널에서 Ctrl+C를 요구하며 프로세스를 종료하지 않았다. 어떤 서비스도 중지·재시작되지 않았다. API와 Research Worker는 `54f462ca89fe0a9bfb0863b51057a1ef50ecdd01`, Dashboard는 `8ec83ef6931801ce2bec7a6da7ec2d0c1283eab2`, Publication Worker는 `236c880204cf10182f7cb70697e2f96751a1ac6a` 적용 상태로 남았다. 수정 코드는 push됐지만 현재 실행 중인 API/Research Worker에는 아직 반영되지 않았다.
 
 ## 커밋, 원격 및 후속 확인
 
-- 구현 커밋 `bf7d553` 및 package/build follow-up 커밋은 `git log --grep=P5-CODEX-157`로 확인한다. main 병합·배포는 하지 않는다.
+- 구현 커밋 `bf7d553` 및 package/build follow-up `964e75a`는 `origin/develop`에 push됐다. main 병합은 하지 않았다. PostgreSQL 완료 감사 `agent.p5_codex_157.completed`, ID `693444`는 runtime reflection 차단과 검증 결과를 기록한다.
 - 실제 Desktop 예약은 current verified turn에서만 실행한다. 2026-11-17 09:00 KST의 occurrence는 완료/재실행하지 않았다.
 - 다음 자연 예약에서 Resolver, evidence package, envelope handoff, Import Receipt, source capture, Scheduled Auto Queue, Worker wire result를 각 단계별로 확인해야 한다. 원문·권리·중복·LIVE gate 중 하나라도 실패하면 발행되지 않는 것이 정상 동작이다.
-- 미해결: 열린 Codex Desktop prompt가 최신 로컬 TOML을 읽었는지, 다음 예약의 실제 원고/Import/LIVE 결과, 7개 moderate dependency audit findings 및 ESLint deprecation 검토.
+- 미해결: 원래 terminal에서 정상 종료한 뒤 실행 서비스에 코드 반영, 열린 Codex Desktop prompt가 최신 로컬 TOML을 읽었는지, 다음 예약의 실제 원고/Import/LIVE 결과, 7개 moderate dependency audit findings 및 ESLint deprecation 검토.
