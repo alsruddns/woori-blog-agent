@@ -380,14 +380,12 @@ def _gather_with_codex_search(
         if not opened_at:
             failures.append({"provider": "codex_cli_chatgpt_search", "reason": "source_page_not_opened"})
             continue
-        if " ".join(str(candidate.get("title", "")).split()).casefold() != " ".join(str(found.get("title", "")).split()).casefold():
-            failures.append({"provider": "codex_cli_chatgpt_search", "reason": "source_title_not_in_search_results"})
+        observed_title = " ".join(str(found.get("title", "")).split())
+        if not observed_title:
+            failures.append({"provider": "codex_cli_chatgpt_search", "reason": "search_result_title_missing"})
             continue
         excerpt = " ".join(str(candidate.get("evidence_excerpt", "")).split())
         snippet = " ".join(str(found.get("snippet", "")).split())
-        if len(snippet) < 30:
-            failures.append({"provider": "codex_cli_chatgpt_search", "reason": "search_result_evidence_too_short"})
-            continue
         if len(excerpt) < 30:
             failures.append({"provider": "codex_cli_chatgpt_search", "reason": "opened_source_evidence_too_short"})
             continue
@@ -396,7 +394,15 @@ def _gather_with_codex_search(
             failures.append({"provider": "codex_cli_chatgpt_search", "reason": "source_date_missing_future_or_stale"})
             continue
         sources.append({
-            "title": str(candidate["title"]).strip(),
+            # The emitted search result is the stable title record. The model's
+            # opened-page title can differ slightly (site title vs. headline),
+            # so keep it as a separate reported value instead of rejecting an
+            # otherwise URL-matched and opened source.
+            "title": observed_title,
+            "opened_page_title_reported": " ".join(str(candidate.get("title", "")).split())[:300],
+            "search_result_title_match": observed_title.casefold() == " ".join(
+                str(candidate.get("title", "")).split()
+            ).casefold(),
             "publisher": str(candidate["publisher"]).strip(),
             "url": url,
             "published_at": published,

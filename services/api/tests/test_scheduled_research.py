@@ -165,6 +165,41 @@ def test_codex_search_package_requires_real_search_url_exact_excerpt_and_fresh_d
     assert package["sources"][0]["source_evidence_method"] == "codex_cli_chatgpt_opened_page_model_excerpt"
 
 
+def test_codex_search_uses_observed_title_and_opened_excerpt_when_search_snippet_is_short(monkeypatch):
+    from woori import codex_runner
+
+    now = datetime(2026, 11, 17, 1, tzinfo=UTC)
+    url = "https://www.whitehouse.gov/briefing-room/2026/11/policy-update/"
+    excerpt = "The administration announced the policy update during the November 17 briefing."
+    monkeypatch.setattr(codex_runner, "execute", lambda *_args, **_kwargs: (
+        {"sources": [{
+            "title": "Policy update briefing transcript",
+            "publisher": "The White House",
+            "url": url,
+            "published_at": "2026-11-17",
+            "event_date": "2026-11-17",
+            "evidence_excerpt": excerpt,
+        }]},
+        {"model": "gpt-6-luna", "web_search_count": 2, "execution_id": "scheduled-cli-short-snippet",
+         "opened_urls": {url: "2026-11-17T00:59:00+00:00"},
+         "searched_sources": [{"url": url, "title": "Policy update", "domain": "www.whitehouse.gov",
+                               "snippet": "Official briefing."}]},
+    ))
+
+    package = scheduled_research.gather_with_codex_search(
+        "politics", "White House policy update", occurrence_id="codex-slot:automation-7:20261117T0900KST",
+        now=now,
+    )
+
+    assert package["status"] == "evidence_available"
+    assert package["failure_class"] is None
+    assert package["sources"][0]["title"] == "Policy update"
+    assert package["sources"][0]["opened_page_title_reported"] == "Policy update briefing transcript"
+    assert package["sources"][0]["search_result_title_match"] is False
+    assert package["sources"][0]["evidence_excerpt"] == excerpt
+    assert package["sources"][0]["search_result_snippet"] == "Official briefing."
+
+
 def test_codex_search_package_rejects_unobserved_urls_and_nonmatching_excerpt(monkeypatch):
     from woori import codex_runner
 
