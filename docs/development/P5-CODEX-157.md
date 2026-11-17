@@ -32,6 +32,8 @@
 - `services/api/woori/scheduled_research.py`
 - `services/api/tests/test_scheduled_research.py`
 - `docs/operations/zero-cost-policy.md`
+- `apps/dashboard/package.json`
+- `apps/dashboard/package-lock.json`
 - `docs/development/P5-CODEX-157.md`
 
 ## 검증 결과
@@ -44,10 +46,12 @@
 - 새 회귀는 실제 예약에서 관찰한 제목 불일치 및 30자 미만 검색 snippet 상황을 재현한다. URL/열린 페이지/충분한 원문 발췌/current date가 있으면 evidence는 사용 가능 상태가 되고, 원문 Import 검증·출판 승인은 별도로 유지된다.
 - 변경 검증은 mock/isolated DB 범위다. 새 공식 Desktop 예약→Research Package→원고 envelope→Import Receipt→Scheduled LIVE 종단 간 성공은 아직 관측되지 않았다.
 - 운영 UI에서 Trends Auto를 OFF로 저장한 설정 변경은 테스트 글이나 Blogger write를 만들지 않았다. 사용되지 않은 두 실제 auto queue 후보는 0이었으며 저장 후 두 Worker ACK를 확인했다.
+- 첫 공식 서비스 반영은 Dashboard production build에서 멈췄다. Next.js 16.4.3의 보안 차단으로 서비스는 중지되지 않았다. 공식 Next.js November 2026 Security Release의 수정 버전 16.4.5로 `next`와 `eslint-config-next`를 함께 고정했다. [Next.js November 2026 Security Release](https://nextjs.org/blog/november-2026-security-release).
+- 의존성 설치가 moderate audit findings 7건과 `eslint@9.39.5` deprecated 알림을 표시했다. broad `npm audit fix`는 실행하지 않았으며, 의존성 audit 검토는 미완료다.
 
 ## 커밋, 원격 및 후속 확인
 
-- 구현 커밋과 개발 기록 커밋은 `git log --grep=P5-CODEX-157`로 확인한다. main 병합·배포는 하지 않는다.
+- 구현 커밋 `bf7d553` 및 package/build follow-up 커밋은 `git log --grep=P5-CODEX-157`로 확인한다. main 병합·배포는 하지 않는다.
 - 실제 Desktop 예약은 current verified turn에서만 실행한다. 2026-11-17 09:00 KST의 occurrence는 완료/재실행하지 않았다.
 - 다음 자연 예약에서 Resolver, evidence package, envelope handoff, Import Receipt, source capture, Scheduled Auto Queue, Worker wire result를 각 단계별로 확인해야 한다. 원문·권리·중복·LIVE gate 중 하나라도 실패하면 발행되지 않는 것이 정상 동작이다.
-- 미해결: 열린 Codex Desktop prompt가 최신 로컬 TOML을 읽었는지, 다음 예약의 실제 원고/Import/LIVE 결과, Trends Auto 설정 불일치의 운영자 확인.
+- 미해결: 열린 Codex Desktop prompt가 최신 로컬 TOML을 읽었는지, 다음 예약의 실제 원고/Import/LIVE 결과, 7개 moderate dependency audit findings 및 ESLint deprecation 검토.
