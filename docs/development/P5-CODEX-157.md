@@ -57,3 +57,11 @@
 - 실제 Desktop 예약은 current verified turn에서만 실행한다. 2026-11-17 09:00 KST의 occurrence는 완료/재실행하지 않았다.
 - 다음 자연 예약에서 Resolver, evidence package, envelope handoff, Import Receipt, source capture, Scheduled Auto Queue, Worker wire result를 각 단계별로 확인해야 한다. 원문·권리·중복·LIVE gate 중 하나라도 실패하면 발행되지 않는 것이 정상 동작이다.
 - 미해결: 원래 terminal에서 정상 종료한 뒤 실행 서비스에 코드 반영, 열린 Codex Desktop prompt가 최신 로컬 TOML을 읽었는지, 다음 예약의 실제 원고/Import/LIVE 결과, 7개 moderate dependency audit findings 및 ESLint deprecation 검토.
+
+## 재기동 요청 후속 (2026-11-17)
+
+- 사용자 요청에 따라 최신 `develop` 코드 반영을 위한 상태 확인 및 공식 정상 종료 절차를 다시 시도했다.
+- 확인 당시 API PID `23592`, Dashboard PID `35260`, Research Worker PID `3180`, Publication Worker PID `29080`은 모두 실행 중이었으며 API/Dashboard/Research 적용 revision은 여전히 이전 코드였다. Publication Worker의 당시 상태는 queued/due 0건, `no_queued_job_in_enabled_lane`이었다.
+- `scripts/stop.ps1 -Service api`는 API PID `23592`/`24364`가 검증된 checkout 프로세스지만 manifest 소유 runner가 아니므로 원래 API 터미널에서 Ctrl+C가 필요하다고 반환했다. 어떤 서비스도 중지되지 않았다.
+- 감사: `agent.p5_codex_157.restart_started` ID `694103`; `agent.p5_codex_157.restart_blocked` ID `694104`.
+- 재개 조건: 사용자가 API 원래 terminal에서 Ctrl+C로 정상 종료한 다음, 같은 develop 반영 절차를 다시 실행한다. 강제 종료하지 않는다.
