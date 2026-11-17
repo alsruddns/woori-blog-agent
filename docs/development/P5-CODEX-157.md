@@ -65,3 +65,12 @@
 - `scripts/stop.ps1 -Service api`는 API PID `23592`/`24364`가 검증된 checkout 프로세스지만 manifest 소유 runner가 아니므로 원래 API 터미널에서 Ctrl+C가 필요하다고 반환했다. 어떤 서비스도 중지되지 않았다.
 - 감사: `agent.p5_codex_157.restart_started` ID `694103`; `agent.p5_codex_157.restart_blocked` ID `694104`.
 - 재개 조건: 사용자가 API 원래 terminal에서 Ctrl+C로 정상 종료한 다음, 같은 develop 반영 절차를 다시 실행한다. 강제 종료하지 않는다.
+
+### 실행 중이던 API 터미널이 보이지 않는 문제 및 최종 재기동
+
+- 사용자가 API 실행 terminal이 보이지 않는다고 알려와 service identity와 실행 트리를 점검했다. 기존 API(23592), Dashboard(35260)는 프로젝트의 identity-bound local stop 파일을 감시하는 검증된 서비스였고 활성 연결이 없었다. 해당 정상 종료 신호로 종료했으며 강제 종료는 사용하지 않았다. 오래된 manifest 항목은 프로세스/리스너가 사라졌음을 확인한 뒤 정리했다.
+- Research Worker는 `research_import` stage lock을 보유하고 있어 즉시 종료하지 않았다. 공식 Worker stop 신호를 보내 현재 동기 작업 사이클이 끝난 뒤 정상 종료됐음을 확인했다. Publication Worker PID `29080`은 변경 대상이 아니어서 계속 실행 중이다.
+- `scripts/apply-verified-changes.ps1 -Apply -Confirm:$false` 최종 실행은 검증 후 API, Dashboard, Research Worker를 commit `b2e48fe5ef15da06f963dc86a367842ef91dfd90`으로 재기동했다. API PID `25564`의 `/health`와 Dashboard PID `39804`의 `/research`가 HTTP 200을 반환했고, Research Worker PID `25144`의 fresh heartbeat와 같은 applied commit을 확인했다. Publication Worker PID `29080`은 기존 commit에서 유지됐다.
+- 확인 결과 서비스는 사용자에게 보이는 터미널 창이 아니라 숨김 background runner와 `.runtime/logs/` 파일로 실행된다. API 로그는 `.runtime/logs/api.stdout.log`, `.runtime/logs/api.stderr.log`; Dashboard 로그는 `.runtime/logs/dashboard.stdout.log`, `.runtime/logs/dashboard.stderr.log`; Research Worker 로그는 `.runtime/logs/research-worker.stdout.log`에서 확인할 수 있다.
+- 최종 반영 검증: 예약 조사 회귀 **19 passed**, Ruff, Mypy, isolated Python wheel, Dashboard ESLint, TypeScript 및 Next.js production build 통과. PostgreSQL 감사는 `agent.p5_codex_157.restart_started` ID `695001`, `agent.p5_codex_157.restart_completed` ID `695002`이다. 재기동 작업 중 Blogger 쓰기와 유료 외부 호출은 없었다.
+- 재기동은 런타임 코드 반영을 확인한 것이며 새 예약 원고 생성, Import Receipt 또는 실제 LIVE 발행의 종단 간 성공은 아직 관측되지 않았다. 다음 자연 예약 실행에서 각 단계와 발행 gate를 확인해야 한다.
