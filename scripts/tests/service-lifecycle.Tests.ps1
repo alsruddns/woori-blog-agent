@@ -65,6 +65,14 @@ Describe 'Windows service lifecycle ownership and startup policy' {
     (Test-TaskOwnedByProject $task) | Should Be $false
   }
 
+  It 'repairs the owned hidden login task with the all-service Trends-capable launch mode' {
+    $autostart = Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\manage-autostart.ps1') -Raw
+    $autostart | Should Match 'startupArguments = .*WindowStyle Hidden'
+    $autostart | Should Match '\$scriptPath.*PublicationMode scheduled-auto-manual-trends'
+    $autostart | Should Match 'Update the existing hidden login task to start all four services'
+    $autostart | Should Match 'AtLogOn'
+  }
+
   It 'keeps startup detached from per-save triggers and gates scheduled Auto explicitly' {
     $bootstrap = Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\start-services.ps1') -Raw
     $bootstrap | Should Match 'start-publication-worker\.ps1|start\.ps1'
@@ -137,6 +145,19 @@ Describe 'Windows service lifecycle ownership and startup policy' {
     $stopper | Should Match 'AllowVerifiedLegacyFallback'
     $stopper | Should Match 'verified_legacy_fallback_started'
     $stopper | Should Match 'Get-ProcessOwner'
+    $stopper | Should Match 'runner=unmanaged'
+    $stopper | Should Match 'identity-bound graceful-stop path'
+  }
+
+  It 'allows unmanaged API and Dashboard processes to stop only through verified identity files' {
+    $stopper = Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\stop.ps1') -Raw
+    $stopAll = Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\stop-services.ps1') -Raw
+    $stopper | Should Match 'Select-HttpServiceSnapshot \$Name \$candidates \$listenerPids'
+    $stopper | Should Match 'Write-HttpServiceStopRequest \$serviceSnapshot \$Name'
+    $stopper | Should Match 'established_connections=\$active runner=unmanaged'
+    $stopAll | Should Match 'service-identity-\$Name-\$\(\$listener\.Id\)\.json'
+    $stopAll | Should Match 'runner=unmanaged established_external_connections=0'
+    $stopAll | Should Match 'instance_id -notmatch'
   }
 
   It 'stops workers before HTTP services and only starts after verified full shutdown' {

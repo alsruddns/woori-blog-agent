@@ -352,10 +352,36 @@ function Invoke-ProjectStop {
 
   if ($Name -in @('api','dashboard')) {
     if ($candidates.Count -and -not $runner) {
-      foreach ($candidate in $candidates) {
-        Write-Warning "$Name PID $($candidate.Id) is a verified checkout service process but not a manifest-owned runner. Parent PID $($candidate.ParentId), executable '$($candidate.Path)'. Use Ctrl+C in its original verified terminal; this script will not terminate it."
+      $listenerPids = @(Get-Listeners ([int]$script:Services[$Name].Port) | ForEach-Object { [int]$_ })
+      $serviceSnapshot = Select-HttpServiceSnapshot $Name $candidates $listenerPids
+      $supportsStopFile = $serviceSnapshot -and (
+        ($Name -eq 'api' -and [string]$serviceSnapshot.CommandLine -match '(?i)scripts[\\/]api-service\.py(?:\s|$)') -or
+        ($Name -eq 'dashboard' -and [string]$serviceSnapshot.CommandLine -match '(?i)scripts[\\/]dashboard-service\.js(?:\s|$)')
+      )
+      $owner = if ($serviceSnapshot) { Get-ProcessOwner ([int]$serviceSnapshot.Id) } else { $null }
+      $active = if ($serviceSnapshot) { Get-EstablishedConnectionCount @([int]$serviceSnapshot.Id) } else { 1 }
+      if (-not $serviceSnapshot -or -not $supportsStopFile -or -not $owner -or
+          $owner -ine "$env:USERDOMAIN\$env:USERNAME" -or $active -gt 0) {
+        foreach ($candidate in $candidates) {
+          Write-Warning "$Name PID $($candidate.Id) is a checkout process without a verified identity-bound graceful-stop path, current-user ownership, or zero active connections. It was left running."
+        }
+        return $false
       }
-      return $false
+      $snapshots = @($serviceSnapshot)
+      $targetText = "PID $($serviceSnapshot.Id) [$Name] $($serviceSnapshot.Path) :: $($serviceSnapshot.CommandLine)"
+      if (-not $PSCmdlet.ShouldProcess($targetText,"Request identity-bound graceful shutdown of $Name")) { return $false }
+      $stopRequest = Write-HttpServiceStopRequest $serviceSnapshot $Name
+      Write-LifecycleLog $Name 'graceful_stop_requested' "pid=$($serviceSnapshot.Id) channel=identity_bound_local_file owner=$owner established_connections=$active runner=unmanaged"
+      $remaining = @(Wait-ForSnapshotsExit $snapshots $TimeoutSeconds)
+      if ($remaining.Count) {
+        Write-LifecycleLog $Name 'graceful_stop_pending' "remaining_pids=$($remaining.Id -join ',') runner=unmanaged"
+        Write-Warning "$Name did not stop gracefully within $TimeoutSeconds seconds. PID(s) $($remaining.Id -join ', ') were left running; no force termination was attempted."
+        return $false
+      }
+      Remove-HttpServiceStopRequest $stopRequest
+      Write-LifecycleLog $Name 'stopped' "pid=$($serviceSnapshot.Id) channel=identity_bound_local_file runner=unmanaged"
+      Write-Host "$Name stopped gracefully through its matching local identity channel."
+      return $true
     }
     if (-not $runner) {
       if ($manifest.services.ContainsKey($Name)) {
