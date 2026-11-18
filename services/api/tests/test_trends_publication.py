@@ -192,8 +192,9 @@ class _TrendsEnqueueConnection:
         self.import_id = uuid4()
         self.request_id = uuid4()
         self.topic_id = uuid4()
+        self.candidate_params: Any = None
 
-    def execute(self, query: str, _params: Any = None):
+    def execute(self, query: str, params: Any = None):
         self.statements.append(query)
         if "pg_advisory_xact_lock" in query:
             return _Result()
@@ -206,7 +207,11 @@ class _TrendsEnqueueConnection:
                                  "blogger_id": "123456", "enabled": True,
                                  "allowed_geos": ["JP"], "daily_limit": 3, "publication_mode": "publish",
                                  "created_at": datetime.fromisoformat("2026-10-31T08:00:00+09:00")}])
-        if "FROM external_content_imports i" in query:
+        if "SELECT DISTINCT i.id AS import_id" in query:
+            return _Result(rows=[])
+        if "SELECT i.*,iv.title,iv.body_markdown" in query:
+            if "q.contract->>'target_blog_id'=%s" in query:
+                self.candidate_params = params
             return _Result(rows=[{
                 "id": self.import_id, "external_content_id": "trend-test-1",
                 "generation_method": "codex_trends_export", "claims": self.claims,
@@ -251,6 +256,7 @@ def test_unverified_trends_import_is_held_without_creating_job(monkeypatch) -> N
                    "verification_status": "unverified", "factual_state": "unverified"}
                   for index in range(7)]
     fake = _TrendsEnqueueConnection(claim_list)
+    activation_time = datetime.fromisoformat("2026-10-31T08:30:00+09:00")
 
     @contextmanager
     def transaction():
@@ -261,11 +267,12 @@ def test_unverified_trends_import_is_held_without_creating_job(monkeypatch) -> N
         "auto_publishing_enabled": True, "trends_auto_publishing_enabled": True,
         "emergency_stop": False, "blogger_api_restricted": False,
         "auto_enabled_at": datetime.fromisoformat("2026-10-30T08:30:00+09:00"),
-        "trends_auto_enabled_at": datetime.fromisoformat("2026-10-31T08:30:00+09:00"),
+        "trends_auto_enabled_at": activation_time,
         "auto_mode": "publish", "auto_epoch": uuid4(), "trends_auto_epoch": uuid4(),
     })
     monkeypatch.setattr(publication_operation, "blogger_writes_allowed", lambda: False)
     result = enqueue_trends_auto_jobs()
     assert result == {"created": 0, "held": 1}
+    assert fake.candidate_params == (fake.blog_id, activation_time, str(fake.blog_id), "ja")
     assert any("publication.auto_failure.recorded" in query for query in fake.statements)
     assert not any("INSERT INTO publishing_jobs" in query for query in fake.statements)

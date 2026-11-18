@@ -559,7 +559,7 @@ def enqueue_trends_auto_jobs() -> dict[str, int]:
                   AND iv.version_number=(SELECT max(i2.version_number) FROM external_content_import_versions i2 WHERE i2.import_id=i.id)
                   AND q.contract->>'target_blog_id'=%s
                   AND q.contract->>'target_language'=%s
-                ORDER BY i.received_at,i.id""", (blog_id, str(blog_id), policy["language_code"], controls["trends_auto_enabled_at"]),
+                ORDER BY i.received_at,i.id""", (blog_id, controls["trends_auto_enabled_at"], str(blog_id), policy["language_code"]),
             ).fetchall()
             for item in candidates:
                 if not collection_after_activation(item["contract"].get("collection_slot"), policy["created_at"]):
