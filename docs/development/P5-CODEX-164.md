@@ -8,3 +8,10 @@
 - Related: `docs/operations/scheduled-outage-recovery.md`, P5-CODEX-106, P5-CODEX-162.
 - Commit: see git log for this record and follow-up.
 - Remaining: Actual future scheduled execution, evidence validation, Import, remote duplicate and Blogger wire admission must succeed independently. A search or read-only policy check does not prove public publication. Existing failed occurrences are not replayed.
+
+## Verification and service reflection
+
+- The strengthened exact-URL prompt was exercised in a separate authenticated diagnostic: two searches completed and `evidence_available` was returned with no collection failures. This was a diagnostic only, not a scheduled occurrence or publication.
+- Applied code commit `972a193e4cedda3a21e56725f4c2b0dc84171771`: related API tests 62 passed; Pester 35 passed; Ruff, changed-module mypy, isolated wheel and Dashboard production build passed. Pytest reported a cache write permission warning.
+- API, Research Worker, and Publication Worker were gracefully restarted and reported the code commit; both Workers acknowledged control revision 29. Master Auto, scheduled Auto and authoring were enabled and emergency stop was false. No settings were changed. Publication Worker reported the scheduled/manual/Trends execution mode and active policy. Its status also displayed `automatic_publication_suspended` for at least one paused queue item; this does not establish that a future scheduled manuscript has passed all publication gates.
+- Start and completion audit events were appended to PostgreSQL. A real scheduled Import and LIVE write remain unverified; no old occurrence was replayed.
