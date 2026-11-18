@@ -1,7 +1,7 @@
 param(
   [ValidateRange(30,900)][int]$DatabaseTimeoutSeconds = 300,
   [ValidateRange(1,10)][int]$ServiceAttempts = 3,
-  [ValidateSet('mock-only','scheduled-auto','manual-confirmed','scheduled-auto-manual','scheduled-auto-manual-trends')][string]$PublicationMode = 'manual-confirmed',
+  [ValidateSet('mock-only','scheduled-auto','manual-confirmed','scheduled-auto-manual','scheduled-auto-manual-trends')][string]$PublicationMode = 'scheduled-auto-manual-trends',
   [switch]$ExplicitUserStart,
   [switch]$FunctionsOnly
 )
