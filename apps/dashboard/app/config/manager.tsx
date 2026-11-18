@@ -233,8 +233,7 @@ export default function Manager({ config }: { config: Config }) {
       </fieldset>
       <h2>발행 스케줄</h2>
       <p>
-        예약 설정만 저장합니다. Phase 1에서는 스케줄 실행과 자동 발행이
-        차단됩니다.
+        언어·국가별 Trends 자동 발행 권한은 자동화 운영 제어센터에서 승인된 Blogger 범위에 한해 관리합니다. 실제 발행에는 전역 제어와 원고별 안전 게이트가 계속 적용됩니다.
       </p>
       <ul>
         {config.policies.map((p) => (
@@ -243,7 +242,7 @@ export default function Manager({ config }: { config: Config }) {
             {config.profiles.find((r) => r.id === p.profile_id)
               ?.target_country || "공통"}{" "}
             · {p.schedule_cron} ({p.timezone}) ·{" "}
-            {p.active ? "정책 활성" : "정책 비활성"} · 자동 발행 차단
+            {p.active ? "정책 활성" : "정책 비활성"} · Trends 자동 발행 {p.trends_auto_publish_allowed ? "허용" : "차단"}
           </li>
         ))}
       </ul>

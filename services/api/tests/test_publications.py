@@ -661,17 +661,18 @@ def test_manual_confirmed_lane_is_opt_in_and_kept_separate_from_scheduled_auto(
 
 def test_publication_mode_defaults_manual_and_auto_requires_allowlist() -> None:
     assert ModeSettingsInput().configured_mode == "manual"
+    assert ModeSettingsInput().minimum_interval_minutes == 10
     with pytest.raises(ValidationError, match="category_allowlist"):
         ModeSettingsInput(configured_mode="auto")
     auto = ModeSettingsInput(configured_mode="auto", allowed_categories=["policy"])
     assert auto.daily_auto_limit == 100
-    assert auto.minimum_interval_minutes == 15
+    assert auto.minimum_interval_minutes == 10
     assert auto.retry_limit == 0
     assert ModeSettingsInput(daily_auto_limit=100, minimum_interval_minutes=15)
     with pytest.raises(ValidationError):
         ModeSettingsInput(daily_auto_limit=101)
     with pytest.raises(ValidationError):
-        ModeSettingsInput(minimum_interval_minutes=14)
+        ModeSettingsInput(minimum_interval_minutes=9)
 
 
 def test_scheduled_policy_accepts_six_blogs_and_daily_cap_100() -> None:

@@ -112,7 +112,7 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
   const [scopeType,setScopeType]=useState<"global"|"language"|"blog">("global");
   const [scopeKey,setScopeKey]=useState("");
   const [selectedMode,setSelectedMode]=useState<"manual"|"auto">((initialGlobalMode?.configured_mode as "manual"|"auto")??"manual");
-  const [dailyLimit,setDailyLimit]=useState(initialGlobalMode?.daily_auto_limit??100); const [minimumInterval,setMinimumInterval]=useState(initialGlobalMode?.minimum_interval_minutes??15);
+  const [dailyLimit,setDailyLimit]=useState(initialGlobalMode?.daily_auto_limit??100); const [minimumInterval,setMinimumInterval]=useState(initialGlobalMode?.minimum_interval_minutes??10);
   const [startHour,setStartHour]=useState(initialGlobalMode?.allowed_start_hour??9); const [endHour,setEndHour]=useState(initialGlobalMode?.allowed_end_hour??17);
   const [maxAge,setMaxAge]=useState(initialGlobalMode?.max_source_age_hours??24); const [retryLimit,setRetryLimit]=useState(initialGlobalMode?.retry_limit??0);
   const [categories,setCategories]=useState(initialGlobalMode?.allowed_categories?.join(", ")??""); const [excludedTopics,setExcludedTopics]=useState(initialGlobalMode?.excluded_topics?.join(", ")??"");
@@ -251,7 +251,7 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
     setScopeType(type);setScopeKey(key);
     const saved=data.mode_policy.settings.find(item=>item.scope_type===type&&item.scope_key===key);
     setSelectedMode((saved?.configured_mode as "manual"|"auto")??"manual");setDailyLimit(saved?.daily_auto_limit??100);
-    setMinimumInterval(saved?.minimum_interval_minutes??15);setStartHour(saved?.allowed_start_hour??9);setEndHour(saved?.allowed_end_hour??17);
+    setMinimumInterval(saved?.minimum_interval_minutes??10);setStartHour(saved?.allowed_start_hour??9);setEndHour(saved?.allowed_end_hour??17);
     setMaxAge(saved?.max_source_age_hours??24);setRetryLimit(saved?.retry_limit??0);
     setCategories(saved?.allowed_categories?.join(", ")??"");setExcludedTopics(saved?.excluded_topics?.join(", ")??"");
   }
@@ -300,7 +300,7 @@ export default function PublicationManager({ initial,initialFilters={} }: { init
           <label>승인 기록 표시 이름<input value={scheduledActor} onChange={event=>setScheduledActor(event.target.value)} maxLength={120}/></label>
           <button className="secondary-button" disabled={scheduledConnectionBusy||scheduledBusy||scheduledBlogs.length===0} onClick={()=>void verifyScheduledConnections()}>{scheduledConnectionBusy?"연결 확인 중…":"선택 블로그 읽기 연결 확인"}</button>
         </article>
-        <article><h3>2. 예약 원고 Auto 정책</h3><p>승인된 예약 Blogger 범위에만 적용합니다. 모든 활성 블로그는 KST 기준 하루 100건의 공통 LIVE 상한과 15분 글로벌 간격을 공유합니다.</p>
+        <article><h3>2. 예약 원고 Auto 정책</h3><p>승인된 예약 Blogger 범위에만 적용합니다. 모든 활성 블로그는 KST 기준 하루 100건의 공통 LIVE 상한과 10분 글로벌 간격을 공유합니다.</p>
           <p>승인 범위: {(data.mode_policy.scheduled_auto_policy?.policy_event?.approved_blog_ids ?? []).map(id=>data.mode_policy.blogs.find(item=>item.id===id)?.display_name ?? id).join(", ") || "없음"}</p>
           <div className="scheduled-policy-actions">
             <button className="secondary-button" disabled={scheduledBusy||!data.mode_policy.scheduled_auto_policy?.enabled} onClick={()=>void setScheduledAuto("disable")}>{scheduledBusy?"기록 중…":"예약 원고 자동 게시 중지"}</button>

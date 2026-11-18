@@ -4,6 +4,10 @@ Reviewed on 2026-10-27. The application has a zero currency budget for external 
 
 ## Shared outbound gate
 
+## P5-CODEX-159 current publication controls (2026-11-18)
+
+The shared minimum interval for Blogger writes is 10 minutes, with a 10-minute database and API default. The same value is enforced by the operations control, publication mode settings, and the final write guard. Trends automatic publication has a separate per-active-language/blog permission, default OFF. Its operator control is limited to the exact six already approved EN, KO, JA, DE, pt-BR, and VI Bloggers; activation rotates the Trends epoch and cutoff so pre-activation Imports and existing Jobs remain ineligible. Existing LIVE, Blogger write, zero-cost, emergency-stop, duplicate, rights, quality, and interval checks remain required. No provider, paid service, quota basis, or fallback is added, and changing this control makes no Blogger write call.
+
 All backend HTTP clients for remote services use `woori.external_policy.client`. The gate checks the provider and operation allowlist, HTTPS, exact host, method, path prefix, proxy-free environment, local per-provider call cap, suspicious credential names, and a terms review expiry. Redirects are disabled by default; the explicitly invoked artifact installer follows redirects through the same host/path gate. Unknown providers, custom live transports, expired reviews, suspicious billing credentials, audit write failures, and disallowed destinations fail closed.
 
 Each outbound request appends metadata-only `external.call.started` and `external.call.completed` events. Quota stops append `external.call.quota_stopped`. Events omit query strings, headers, request/response bodies, tokens and credentials. The runtime dashboard reports only suspicious variable names, never values. Local model inference has been retired; there is no fixed loopback model endpoint or active inference runtime.

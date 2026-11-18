@@ -137,6 +137,15 @@ def snapshot() -> dict[str, Any]:
         blogs = conn.execute(
             "SELECT id,display_name,language_code,url FROM blogger_blogs WHERE active ORDER BY language_code,display_name"
         ).fetchall()
+        trends_language_policies = conn.execute(
+            """SELECT p.id AS policy_id,p.blog_id,b.display_name,b.language_code,
+            profile.target_country,p.active,p.trends_auto_publish_allowed
+            FROM publishing_policies p JOIN blogger_blogs b ON b.id=p.blog_id
+            JOIN language_profiles profile ON profile.id=p.profile_id
+            WHERE b.active AND p.active AND p.blog_id=ANY(%s::uuid[])
+            ORDER BY b.language_code,profile.target_country,p.active DESC,p.id""",
+            (state["auto_blog_ids"],),
+        ).fetchall()
         recent = conn.execute("""SELECT
             (SELECT max(collected_at) FROM trend_observations) AS last_collection,
             (SELECT max(received_at) FROM external_content_imports) AS last_import,
@@ -251,6 +260,7 @@ def snapshot() -> dict[str, Any]:
         "workers": workers,
         "history": history,
         "blogs": blogs,
+        "trends_language_policies": trends_language_policies,
         "recent": recent,
         "eligible_jobs": job_count["n"]
         if job_count and not blocked and applied.get("publication_worker")
@@ -293,7 +303,7 @@ class Change(BaseModel):
     trends_auto_publishing_enabled: bool | None = None
     scheduled_auto_publishing_enabled: bool | None = None
     automatic_publication_operator_approved: bool | None = None
-    global_publish_min_interval_minutes: int | None = Field(default=None, ge=15, le=1440)
+    global_publish_min_interval_minutes: int | None = Field(default=None, ge=10, le=1440)
     trends_authoring_min_volume: int | None = Field(default=None, ge=1, le=1_000_000_000)
     emergency_stop: bool | None = None
     auto_mode: Literal["draft", "publish"] | None = None
@@ -315,6 +325,43 @@ class Change(BaseModel):
     @field_validator("reason")
     @classmethod
     def normalize_reason(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 10:
+            raise ValueError("reason_must_contain_at_least_ten_characters")
+        return value
+
+
+class TrendsLanguagePolicyChange(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    expected_revision: int = Field(ge=1)
+    blog_ids: list[UUID] = Field(min_length=6, max_length=6)
+    actor: str = Field(min_length=2, max_length=100)
+    reason: str = Field(min_length=10, max_length=500)
+    enabled: bool
+    confirm_auto: bool = False
+    confirm_live: bool = False
+
+    @field_validator("blog_ids", mode="before")
+    @classmethod
+    def normalize_blog_ids(cls, value: Any) -> Any:
+        if isinstance(value, list):
+            try:
+                return sorted({UUID(str(item)) for item in value}, key=str)
+            except ValueError:
+                raise ValueError("invalid_blogger_id") from None
+        return value
+
+    @field_validator("actor")
+    @classmethod
+    def normalize_language_policy_actor(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 2:
+            raise ValueError("actor_must_contain_at_least_two_characters")
+        return value
+
+    @field_validator("reason")
+    @classmethod
+    def normalize_language_policy_reason(cls, value: str) -> str:
         value = value.strip()
         if len(value) < 10:
             raise ValueError("reason_must_contain_at_least_ten_characters")
@@ -410,8 +457,8 @@ def approve_public_live(request: PublicLiveApproval) -> dict[str, Any]:
             raise HTTPException(409, "Existing global, LIVE, scheduled and Trends controls must already be enabled")
         if before["emergency_stop"] or before["blogger_api_restricted"]:
             raise HTTPException(409, "Emergency stop or Blogger API restriction is active")
-        if before["global_publish_min_interval_minutes"] != 15 or before["global_daily_live_publish_limit"] != 100:
-            raise HTTPException(409, "Required 15-minute and 100/day LIVE limits are not in effect")
+        if before["global_publish_min_interval_minutes"] != 10 or before["global_daily_live_publish_limit"] != 100:
+            raise HTTPException(409, "Required 10-minute and 100/day LIVE limits are not in effect")
         scheduled_policy = conn.execute(
             "SELECT action,approved_blog_ids,daily_limit FROM scheduled_publication_policy_events ORDER BY id DESC LIMIT 1"
         ).fetchone()
@@ -450,7 +497,7 @@ def approve_public_live(request: PublicLiveApproval) -> dict[str, Any]:
             "languages": sorted(PUBLIC_LIVE_LANGUAGES),
             "publication_mode": "auto",
             "daily_live_limit_kst": 100,
-            "minimum_interval_minutes": 15,
+            "minimum_interval_minutes": 10,
             "scheduled_daily_limit": 100,
             "priority": ["scheduled", "manual", "trends"],
             "zh-CN": "denied",
@@ -478,7 +525,7 @@ def approve_public_live(request: PublicLiveApproval) -> dict[str, Any]:
         )
         mode = conn.execute(
             """UPDATE publication_mode_settings SET configured_mode='auto',daily_auto_limit=100,
-            minimum_interval_minutes=15,timezone='Asia/Seoul',allowed_categories=%s,
+            minimum_interval_minutes=10,timezone='Asia/Seoul',allowed_categories=%s,
             operations_auto_approved=true,blogger_write_mode='public_write_approved',updated_at=clock_timestamp()
             WHERE scope_type='global' AND scope_key=''
             RETURNING configured_mode,daily_auto_limit,minimum_interval_minutes,operations_auto_approved,blogger_write_mode""",
@@ -503,7 +550,7 @@ def approve_public_live(request: PublicLiveApproval) -> dict[str, Any]:
                 "worker_ack_pending": True, "real_writes_enabled": False, "operations_auto_approved": True,
                 "blogger_write_mode": "public_write_approved", "allowed_blog_ids": target_ids,
                 "allowed_categories": categories, "daily_live_limit_kst": 100,
-                "minimum_interval_minutes": 15, "migration_version": 91}),),
+                "minimum_interval_minutes": 10, "migration_version": 91}),),
         )
         conn.execute(
             "INSERT INTO audit_events(event_type,payload) VALUES('automation.controls.changed',%s)",
@@ -675,6 +722,12 @@ def change(request: Change) -> dict[str, Any]:
                 request.google_account_available,
             ),
         )
+        if request.global_publish_min_interval_minutes is not None:
+            conn.execute(
+                "UPDATE publication_mode_settings SET minimum_interval_minutes=%s,updated_at=clock_timestamp() "
+                "WHERE scope_type='global' AND scope_key=''",
+                (after["global_publish_min_interval_minutes"],),
+            )
         conn.execute(
             "UPDATE trend_collection_settings SET enabled=%s WHERE id=1",
             (after["trends_collection_enabled"],),
@@ -751,6 +804,103 @@ def change(request: Change) -> dict[str, Any]:
                 ),
             )
     return {"saved": True, "revision": saved["revision"], "application": "pending_worker_ack"}
+
+
+@router.post("/language-policy")
+def update_trends_language_policy(request: TrendsLanguagePolicyChange) -> dict[str, Any]:
+    """Change Trends auto permission only for the currently approved six-blog scope."""
+    from . import external_policy
+
+    target_ids = sorted(str(value) for value in request.blog_ids)
+    with connection() as conn:
+        conn.execute("SELECT pg_advisory_xact_lock(20261102,103)")
+        before = read(conn, lock=True)
+        if int(before["revision"]) != request.expected_revision:
+            raise HTTPException(409, "Automation controls changed; reload the current revision")
+        current_ids = sorted(str(value) for value in before["auto_blog_ids"])
+        if target_ids != current_ids or len(target_ids) != 6:
+            raise HTTPException(422, "Trends language policy scope must match the six currently approved Bloggers")
+        if request.enabled:
+            if not (request.confirm_auto and request.confirm_live):
+                raise HTTPException(422, "Trends LIVE language-policy confirmation is required")
+            if not (before["auto_publishing_enabled"] and before["trends_auto_publishing_enabled"]
+                    and before["automatic_publication_operator_approved"] and before["auto_mode"] == "publish"):
+                raise HTTPException(409, "Global Auto, Trends Auto, operator approval, and LIVE mode must already be enabled")
+            if before["emergency_stop"] or before["blogger_api_restricted"]:
+                raise HTTPException(409, "Emergency stop or Blogger API restriction is active")
+            if before["configured_mode"] != "auto" or before["blogger_write_mode"] != "public_write_approved":
+                raise HTTPException(409, "Public Blogger write mode is not currently approved")
+            if external_policy._blogger_policy_approval() is None:
+                raise HTTPException(409, "Blogger zero-cost policy approval is unavailable")
+            approval = external_policy._blogger_public_publish_approval()
+            if not approval or sorted(approval["approved_blog_ids"]) != target_ids:
+                raise HTTPException(409, "Existing Blogger public-write approval does not match the six-blog scope")
+        target_rows = conn.execute(
+            """SELECT p.id,p.blog_id,b.language_code,profile.language_code AS profile_language,
+            b.active AS blog_active,p.active AS policy_active,
+            p.trends_auto_publish_allowed
+            FROM publishing_policies p JOIN blogger_blogs b ON b.id=p.blog_id
+            JOIN language_profiles profile ON profile.id=p.profile_id
+            WHERE p.blog_id=ANY(%s::uuid[]) AND p.active
+            ORDER BY p.blog_id,p.id FOR UPDATE OF p""",
+            (request.blog_ids,),
+        ).fetchall()
+        if (len(target_rows) != 6 or {str(row["blog_id"]) for row in target_rows} != set(target_ids)
+                or {row["language_code"] for row in target_rows} != PUBLIC_LIVE_LANGUAGES
+                or any(not row["blog_active"] or row["profile_language"] != row["language_code"] for row in target_rows)):
+            raise HTTPException(409, "Each approved active Blogger must have exactly one active language-country publication policy")
+        pending = conn.execute(
+            """SELECT count(*)::int AS n FROM publishing_jobs
+            WHERE blog_id=ANY(%s::uuid[]) AND publication_lane='trends_auto'
+              AND status IN ('queued','running','uncertain') AND NOT simulation_only""",
+            (request.blog_ids,),
+        ).fetchone()
+        if request.enabled and pending and int(pending["n"]) > 0:
+            raise HTTPException(409, "Resolve existing Trends Auto jobs before enabling language policy; they are not reauthorized")
+        changed = [row for row in target_rows if bool(row["trends_auto_publish_allowed"]) != request.enabled]
+        if not changed:
+            return {"saved": True, "changed": False, "revision": before["revision"], "application": "already_current"}
+        policy_ids = [row["id"] for row in changed]
+        conn.execute(
+            "UPDATE publishing_policies SET trends_auto_publish_allowed=%s WHERE id=ANY(%s::uuid[])",
+            (request.enabled, policy_ids),
+        )
+        if request.enabled:
+            conn.execute(
+                """UPDATE automation_controls SET trends_auto_epoch=gen_random_uuid(),
+                trends_auto_enabled_at=clock_timestamp(),revision=revision+1,updated_at=clock_timestamp()
+                WHERE id=1"""
+            )
+        else:
+            conn.execute(
+                "UPDATE automation_controls SET revision=revision+1,updated_at=clock_timestamp() WHERE id=1"
+            )
+        saved = read(conn)
+        changes = [
+            {"policy_id": str(row["id"]), "blog_id": str(row["blog_id"]),
+             "language_code": row["language_code"], "before": bool(row["trends_auto_publish_allowed"]),
+             "after": request.enabled}
+            for row in changed
+        ]
+        payload = {
+            "actor": request.actor,
+            "reason": request.reason,
+            "changes": changes,
+            "revision": saved["revision"],
+            "trends_auto_epoch_rotated": bool(request.enabled),
+            "existing_jobs_reauthorized": False,
+            "preactivation_imports_eligible": False,
+            "result": "persisted_worker_ack_pending",
+        }
+        conn.execute(
+            "INSERT INTO audit_events(event_type,payload) VALUES('automation.trends_language_policy.changed',%s)",
+            (Jsonb(payload),),
+        )
+        conn.execute(
+            "INSERT INTO audit_events(event_type,payload) VALUES('automation.controls.changed',%s)",
+            (Jsonb({**payload, "changed_fields": ["trends_language_policies", "trends_auto_epoch"]}),),
+        )
+    return {"saved": True, "changed": True, "revision": saved["revision"], "application": "pending_worker_ack"}
 
 
 @router.post("/verify-google-readonly")

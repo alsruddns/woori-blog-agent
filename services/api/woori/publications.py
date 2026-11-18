@@ -3073,13 +3073,13 @@ def publication_worker_status() -> dict[str, Any]:
             and mode["operations_auto_approved"]
             and mode["blogger_write_mode"] == "public_write_approved"
             and mode["daily_auto_limit"] == 100
-            and mode["minimum_interval_minutes"] == 15
+            and mode["minimum_interval_minutes"] >= 10
             and controls["auto_publishing_enabled"]
             and controls["automatic_publication_operator_approved"]
             and controls["auto_mode"] == "publish"
             and controls["trends_auto_publishing_enabled"]
             and controls["scheduled_auto_publishing_enabled"]
-            and controls["global_publish_min_interval_minutes"] == 15
+            and controls["global_publish_min_interval_minutes"] >= 10
             and controls["global_daily_live_publish_limit"] == 100
             and not mode["emergency_stopped"]
             and not mode["blogger_api_restricted"]

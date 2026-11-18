@@ -165,7 +165,7 @@ def enqueue(conn: Any, state: dict[str, Any], *, origin_filter: str | None = Non
     if external_policy._blogger_policy_approval() is None:
         return 0
     rows = conn.execute(
-        """SELECT v.id,b.id AS blog_id FROM content_versions v
+        """SELECT v.id,v.created_at,b.id AS blog_id FROM content_versions v
         JOIN content_localizations l ON l.id=v.localization_id
         JOIN blogger_blogs b ON b.language_code=l.language_code AND b.active
         WHERE b.id=ANY(%s::uuid[]) AND v.created_at>%s
@@ -183,6 +183,34 @@ def enqueue(conn: Any, state: dict[str, Any], *, origin_filter: str | None = Non
         if origin_filter is not None and origin["kind"] != origin_filter:
             continue
         route = publication_origin.ROUTES.get(origin["kind"])
+        source_cutoff = state.get(str(route) + "_auto_enabled_at") if route else None
+        if not source_cutoff or item["created_at"] <= source_cutoff:
+            # Source-route activation never retroactively admits older imports.
+            continue
+        if route == "trends":
+            if not origin.get("received_at") or origin["received_at"] <= source_cutoff:
+                publication_origin.record_block(
+                    conn, item["id"], item["blog_id"], state["revision"],
+                    {"allowed": False, "reasons": ["trends_import_predates_language_policy_activation"],
+                     "origin": "google_trends"}, "enqueue",
+                )
+                continue
+            language_policy = conn.execute(
+                """SELECT p.active,p.trends_auto_publish_allowed FROM content_versions cv
+                JOIN content_localizations locale ON locale.id=cv.localization_id
+                JOIN language_profiles profile ON profile.language_code=locale.language_code
+                  AND profile.target_country=locale.target_country
+                JOIN publishing_policies p ON p.profile_id=profile.id AND p.blog_id=%s
+                WHERE cv.id=%s ORDER BY p.active DESC,p.id LIMIT 1""",
+                (item["blog_id"], item["id"]),
+            ).fetchone()
+            if not language_policy or not language_policy["active"] or not language_policy["trends_auto_publish_allowed"]:
+                publication_origin.record_block(
+                    conn, item["id"], item["blog_id"], state["revision"],
+                    {"allowed": False, "reasons": ["trends_language_auto_publication_disabled_or_unavailable"],
+                     "origin": "google_trends"}, "enqueue",
+                )
+                continue
         grant = {
             "epoch": state["auto_epoch"],
             "publication_mode": state["auto_mode"],

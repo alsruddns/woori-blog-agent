@@ -342,7 +342,7 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
             "write_scope":"https://www.googleapis.com/auth/blogger" in scopes,
             "last_access_verification_at":blog["last_checked_at"] or blog["connection_verified_at"],"has_connection_error":bool(blog["has_connection_error"]),
             "configured_mode":selected.get("configured_mode","manual"),"daily_limit":selected.get("daily_auto_limit",100),"hourly_limit":None,
-            "minimum_interval_minutes":selected.get("minimum_interval_minutes",15),"live_auto_enabled":False,"live_writes_enabled":False,
+            "minimum_interval_minutes":selected.get("minimum_interval_minutes",10),"live_auto_enabled":False,"live_writes_enabled":False,
             "recent_success_at":None,"recent_failure_reason":None,"last_mock_success_at":mock_state.get("last_success"),
             "last_mock_failure_at":mock_state.get("last_failure"),"last_mock_failure_reason":mock_state.get("failure_reason"),
             "recent_public_url":None,"public_url_note":"게시 URL이 실제 게시 기록에 저장되지 않아 표시할 수 없습니다."})
@@ -447,7 +447,7 @@ def dashboard_snapshot(conn: Any) -> dict[str, Any]:
             "language_hourly": LANGUAGE_HOURLY_LIMITS,
             "english_daily_policy": "remaining_global_capacity",
             "configured_auto_daily": int(global_config.get("daily_auto_limit", 100)),
-            "configured_auto_minimum_interval_minutes": int(global_config.get("minimum_interval_minutes", 15)),
+            "configured_auto_minimum_interval_minutes": int(global_config.get("minimum_interval_minutes", 10)),
         },
     }
     monitoring = {

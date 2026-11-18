@@ -199,6 +199,8 @@ class _TrendsEnqueueConnection:
             return _Result()
         if "SELECT emergency_stopped FROM publication_mode_settings" in query:
             return _Result({"emergency_stopped": False})
+        if "SELECT trends_auto_enabled_at FROM automation_controls" in query:
+            return _Result({"trends_auto_enabled_at": datetime.fromisoformat("2026-10-31T08:30:00+09:00")})
         if "FROM trends_publication_policy_events p JOIN blogger_blogs" in query:
             return _Result(rows=[{"blog_id": self.blog_id, "language_code": "ja",
                                  "blogger_id": "123456", "enabled": True,
@@ -212,6 +214,7 @@ class _TrendsEnqueueConnection:
                 "seo_metadata": {"search_description": "A valid Japanese search description for this article."},
                 "import_version_id": uuid4(), "version_number": 1,
                 "import_hash": "a" * 64, "content_version_id": self.version_id,
+                "received_at": datetime.fromisoformat("2026-10-31T09:30:00+09:00"),
                 "group_id": uuid4(), "localization_id": uuid4(), "content_version": 1,
                 "authoring_job_id": uuid4(), "job_type": "google_trends",
                 "authoring_state": "imported_review", "authoring_evidence": {},
@@ -257,7 +260,8 @@ def test_unverified_trends_import_is_held_without_creating_job(monkeypatch) -> N
     monkeypatch.setattr(automation_controls, "read", lambda *_args, **_kwargs: {
         "auto_publishing_enabled": True, "trends_auto_publishing_enabled": True,
         "emergency_stop": False, "blogger_api_restricted": False,
-        "auto_enabled_at": "active", "trends_auto_enabled_at": "active",
+        "auto_enabled_at": datetime.fromisoformat("2026-10-30T08:30:00+09:00"),
+        "trends_auto_enabled_at": datetime.fromisoformat("2026-10-31T08:30:00+09:00"),
         "auto_mode": "publish", "auto_epoch": uuid4(), "trends_auto_epoch": uuid4(),
     })
     monkeypatch.setattr(publication_operation, "blogger_writes_allowed", lambda: False)

@@ -63,4 +63,18 @@ def test_dashboard_automation_proxy_exposes_scoped_live_approval_only_as_admin_p
     root = Path(__file__).resolve().parents[3]
     proxy = (root / "apps/dashboard/app/api/automation-controls/[[...path]]/route.ts").read_text(encoding="utf-8")
     assert 'path.join("/") === "approve-public-live" && request.method === "POST"' in proxy
+    assert 'path.join("/") === "language-policy" && request.method === "POST"' in proxy
     assert "localRequest(request, true)" in proxy
+
+
+def test_ten_minute_interval_and_trends_language_policy_migration_is_additive() -> None:
+    root = Path(__file__).resolve().parents[3]
+    migration = (root / "scripts/093_ten_minute_interval_and_trends_language_policy.sql").read_text(encoding="utf-8").casefold()
+    runner = (root / "scripts/migrate.py").read_text(encoding="utf-8")
+    assert "global_publish_min_interval_minutes set default 10" in migration
+    assert "minimum_interval_minutes set default 10" in migration
+    assert "between 10 and 1440" in migration and "between 10 and 10080" in migration
+    assert "add column trends_auto_publish_allowed boolean not null default false" in migration
+    assert "version) values(93)" in migration and "093_ten_minute_interval_and_trends_language_policy.sql" in runner
+    assert "max_supported_schema_version = 93" in runner.casefold()
+    assert "drop table" not in migration and "delete from" not in migration

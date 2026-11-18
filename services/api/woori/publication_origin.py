@@ -34,6 +34,7 @@ def classify(conn: Any, version_id: Any, blog_id: Any, *, verify_execution_recei
         **unknown,
         "import_id": str(link["import_id"]),
         "import_version_id": str(link["import_version_id"]),
+        "received_at": link["received_at"],
     }
     if link["language_code"] != link["blog_language"]:
         return base | {"reason": "origin_target_language_mismatch"}

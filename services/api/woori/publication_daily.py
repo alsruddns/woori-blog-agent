@@ -10,7 +10,7 @@ KST = ZoneInfo("Asia/Seoul")
 GLOBAL_DAILY_PUBLISH_LIMIT = 100
 LANGUAGE_DAILY_LIMITS = {"ko": 10, "ja": 10, "zh-CN": 5}
 # New active Blogger locales inherit a conservative four-per-hour ceiling,
-# matching the shared 15-minute global writer interval. The global KST cap
+# matching the shared 10-minute global writer interval. The global KST cap
 # remains the controlling aggregate limit across all six active blogs.
 LANGUAGE_HOURLY_LIMITS = {
     "en": 20, "ko": 10, "ja": 10, "zh-CN": 10,

@@ -289,9 +289,11 @@ def test_revision_conflict_and_strict_boolean(center):
 def test_global_publish_interval_change_is_persisted_and_audited(center):
     conn, api, h = center
     before = api.get(BASE, headers=h).json()["settings"]
-    assert update(center, global_publish_min_interval_minutes=14).status_code == 422
-    minimum = update(center, global_publish_min_interval_minutes=15)
+    assert update(center, global_publish_min_interval_minutes=9).status_code == 422
+    minimum = update(center, global_publish_min_interval_minutes=10)
     assert minimum.status_code == 200, minimum.text
+    mode_minimum = conn.execute("SELECT minimum_interval_minutes FROM publication_mode_settings WHERE scope_type='global' AND scope_key=''").fetchone()["minimum_interval_minutes"]
+    assert mode_minimum == 10
     before = api.get(BASE, headers=h).json()["settings"]
     response = update(center, global_publish_min_interval_minutes=60)
     assert response.status_code == 200, response.text
@@ -304,7 +306,85 @@ def test_global_publish_interval_change_is_persisted_and_audited(center):
     change = next(item for item in event["changes"] if item["key"] == "global_publish_min_interval_minutes")
     assert (change["before"], change["after"]) == (before["global_publish_min_interval_minutes"], 60)
     assert event["reason"] == "Isolated explicit operator control change"
-    assert update(center, global_publish_min_interval_minutes=14).status_code == 422
+    assert conn.execute("SELECT minimum_interval_minutes FROM publication_mode_settings WHERE scope_type='global' AND scope_key=''").fetchone()["minimum_interval_minutes"] == 60
+    assert update(center, global_publish_min_interval_minutes=9).status_code == 422
+
+
+def test_trends_language_policy_requires_exact_confirmed_scope_and_never_reauthorizes_old_jobs(center):
+    from uuid import uuid4
+
+    conn, api, h = center
+    revision = api.get(BASE, headers=h).json()["settings"]["revision"]
+    request = {
+        "expected_revision": revision,
+        "blog_ids": [str(uuid4()) for _ in range(6)],
+        "actor": "isolated operator",
+        "reason": "Explicit Trends language policy enable",
+        "enabled": True,
+        "confirm_auto": True,
+        "confirm_live": True,
+    }
+    rejected = api.post(BASE + "/language-policy", headers=h, json=request)
+    assert rejected.status_code == 422
+    request["blog_ids"] = [str(uuid4()) for _ in range(5)]
+    assert api.post(BASE + "/language-policy", headers=h, json=request).status_code == 422
+    assert conn.execute("SELECT count(*)::int AS n FROM audit_events WHERE event_type='automation.trends_language_policy.changed'").fetchone()["n"] == 0
+
+
+def test_trends_language_policy_enables_only_exact_six_and_rotates_cutoff(center, monkeypatch):
+    from woori import external_policy
+
+    conn, api, h = center
+    languages = [("de", "DE"), ("en", "US"), ("ja", "JP"), ("ko", "KR"), ("pt-BR", "BR"), ("vi", "VN")]
+    blog_ids = []
+    for language, country in languages:
+        conn.execute(
+            "INSERT INTO languages(code,display_name) VALUES(%s,%s) ON CONFLICT(code) DO NOTHING",
+            (language, language),
+        )
+        profile = conn.execute(
+            "INSERT INTO language_profiles(language_code,target_country) VALUES(%s,%s) "
+            "ON CONFLICT(language_code,target_country) DO UPDATE SET search_intent=language_profiles.search_intent RETURNING id",
+            (language, country),
+        ).fetchone()["id"]
+        blog = conn.execute(
+            "INSERT INTO blogger_blogs(language_code,url,blog_id,display_name,active) VALUES(%s,%s,%s,%s,true) RETURNING id",
+            (language, f"https://trends-policy-{uuid4().hex}.blogspot.com", str(uuid4().int)[:16], f"Policy {language}"),
+        ).fetchone()["id"]
+        conn.execute(
+            "INSERT INTO publishing_policies(language_code,blog_id,profile_id,active,trends_auto_publish_allowed) "
+            "VALUES(%s,%s,%s,true,false)",
+            (language, blog, profile),
+        )
+        blog_ids.append(blog)
+    blog_ids = sorted(blog_ids, key=str)
+    conn.execute(
+        "UPDATE automation_controls SET auto_blog_ids=%s::uuid[],auto_publishing_enabled=true,"
+        "trends_auto_publishing_enabled=true,automatic_publication_operator_approved=true,"
+        "automatic_publication_approval_actor='isolated fixture',automatic_publication_approval_reason='Isolated fixture approval',"
+        "automatic_publication_approval_changed_at=clock_timestamp(),auto_mode='publish' WHERE id=1",
+        (blog_ids,),
+    )
+    conn.execute(
+        "UPDATE publication_mode_settings SET configured_mode='auto',blogger_write_mode='public_write_approved',emergency_stopped=false,blogger_api_restricted=false "
+        "WHERE scope_type='global' AND scope_key=''")
+    monkeypatch.setattr(external_policy, "_blogger_policy_approval", lambda: {"approved": True})
+    monkeypatch.setattr(external_policy, "_blogger_public_publish_approval", lambda: {"approved_blog_ids": [str(value) for value in blog_ids]})
+    before = conn.execute("SELECT revision,trends_auto_epoch FROM automation_controls WHERE id=1").fetchone()
+    response = api.post(
+        BASE + "/language-policy",
+        headers=h,
+        json={"expected_revision": before["revision"], "blog_ids": [str(value) for value in blog_ids],
+              "actor": "isolated operator", "reason": "Explicit Trends language policy enable",
+              "enabled": True, "confirm_auto": True, "confirm_live": True},
+    )
+    assert response.status_code == 200, response.text
+    state = conn.execute("SELECT revision,trends_auto_epoch,trends_auto_enabled_at FROM automation_controls WHERE id=1").fetchone()
+    assert state["revision"] == before["revision"] + 1
+    assert state["trends_auto_epoch"] != before["trends_auto_epoch"] and state["trends_auto_enabled_at"] is not None
+    assert conn.execute("SELECT count(*)::int AS n FROM publishing_policies WHERE blog_id=ANY(%s::uuid[]) AND active AND trends_auto_publish_allowed", (blog_ids,)).fetchone()["n"] == 6
+    audit = conn.execute("SELECT payload FROM audit_events WHERE event_type='automation.trends_language_policy.changed' ORDER BY id DESC LIMIT 1").fetchone()["payload"]
+    assert audit["actor"] == "isolated operator" and audit["existing_jobs_reauthorized"] is False and audit["preactivation_imports_eligible"] is False
 
 
 def test_live_mode_and_scope_save_while_master_is_off(center):
@@ -669,7 +749,7 @@ def test_wire_guard_serializes_with_other_policy_writers(monkeypatch):
         )
 
 
-def test_auto_enqueue_only_new_versions_and_never_reauthorize_backlog(center, monkeypatch):
+def test_auto_enqueue_never_reauthorizes_pre_activation_trends_import_revisions(center, monkeypatch):
     conn, _, _ = center
     job, blog, version = make_job(center, method="codex_trends_export")
     update(
@@ -711,15 +791,73 @@ def test_auto_enqueue_only_new_versions_and_never_reauthorize_backlog(center, mo
         (original_link["import_id"], import_version, newer),
     )
     link_trends(conn, version, blog)
-    assert automation_auto.enqueue(conn, controls.read(conn)) == 1
-    newjob = conn.execute(
-        "SELECT id FROM publishing_jobs WHERE content_version_id=%s", (newer,)
-    ).fetchone()["id"]
-    assert controls.job_permitted(conn, newjob) is True
+    assert automation_auto.enqueue(conn, controls.read(conn)) == 0
+    assert conn.execute("SELECT 1 FROM publishing_jobs WHERE content_version_id=%s", (newer,)).fetchone() is None
+    blocked = conn.execute(
+        "SELECT payload FROM audit_events WHERE event_type='automation.origin_publication.blocked' "
+        "AND payload->>'content_version_id'=%s ORDER BY id DESC LIMIT 1",
+        (str(newer),),
+    ).fetchone()["payload"]
+    assert "trends_import_predates_language_policy_activation" in blocked["reasons"]
     update(center, auto_publishing_enabled=False)
     update(center, auto_publishing_enabled=True, auto_blog_ids=[str(blog)], confirm_auto=True)
-    assert controls.job_permitted(conn, newjob) is False
+    assert controls.job_permitted(conn, job) is False
     assert automation_auto.enqueue(conn, controls.read(conn)) == 0
+
+
+def test_auto_enqueue_requires_active_trends_language_policy(center, monkeypatch):
+    conn, _, _ = center
+    _job, blog, version = make_job(center, method="codex_trends_export")
+    update(
+        center,
+        auto_publishing_enabled=True,
+        trends_auto_publishing_enabled=True,
+        automatic_publication_operator_approved=True,
+        auto_blog_ids=[str(blog)],
+        confirm_auto=True,
+        confirm_operator_auto_approval=True,
+        google_account_available=True,
+        emergency_stop=False,
+        confirm_emergency_release=True,
+    )
+    conn.execute(
+        "UPDATE automation_controls SET auto_enabled_at=clock_timestamp()-interval '1 hour',"
+        "trends_auto_enabled_at=clock_timestamp()-interval '1 hour' WHERE id=1"
+    )
+    newer = conn.execute(
+        """INSERT INTO content_versions(group_id,language,localization_id,version,title,body,created_at)
+        SELECT group_id,language,localization_id,version+1,title,body,clock_timestamp() FROM content_versions WHERE id=%s RETURNING id""",
+        (version,),
+    ).fetchone()["id"]
+    original_link = conn.execute(
+        "SELECT * FROM external_content_import_content_links WHERE content_version_id=%s", (version,)
+    ).fetchone()
+    import_version = conn.execute(
+        """INSERT INTO external_content_import_versions(import_id,version_number,parent_version_id,title,body_markdown,seo_metadata,blogger_labels,content_sha256,author_label,change_reason)
+        SELECT import_id,version_number+1,id,title||' revised',body_markdown,seo_metadata,blogger_labels,%s,author_label,'Isolated new version'
+        FROM external_content_import_versions WHERE id=%s RETURNING id""",
+        (uuid4().hex + uuid4().hex, original_link["import_version_id"]),
+    ).fetchone()["id"]
+    conn.execute(
+        "INSERT INTO external_content_import_content_links(import_id,import_version_id,content_version_id) VALUES(%s,%s,%s)",
+        (original_link["import_id"], import_version, newer),
+    )
+    link_trends(conn, version, blog)
+    monkeypatch.setattr(external_policy, "_blogger_policy_approval", lambda: {"approved": True})
+    selected = conn.execute("SELECT policy_id,oauth_connection_id FROM publishing_jobs WHERE id=%s", (_job,)).fetchone()
+    monkeypatch.setattr(automation_auto, "readiness", lambda *args: (dict(selected), {}, []))
+    conn.execute("UPDATE publishing_policies SET trends_auto_publish_allowed=false WHERE blog_id=%s", (blog,))
+    assert automation_auto.enqueue(conn, controls.read(conn)) == 0
+    blocked = conn.execute(
+        "SELECT payload FROM audit_events WHERE event_type='automation.origin_publication.blocked' "
+        "AND payload->>'content_version_id'=%s ORDER BY id DESC LIMIT 1", (str(newer),)
+    ).fetchone()["payload"]
+    assert "trends_language_auto_publication_disabled_or_unavailable" in blocked["reasons"]
+    conn.execute("UPDATE publishing_policies SET trends_auto_publish_allowed=true WHERE blog_id=%s", (blog,))
+    assert automation_auto.enqueue(conn, controls.read(conn)) == 1
+    assert conn.execute(
+        "SELECT 1 FROM publishing_jobs WHERE content_version_id=%s AND publication_lane='trends_auto'", (newer,)
+    ).fetchone() is not None
 
 
 def test_authoring_policy_does_not_depend_on_dashboard_and_fails_closed(center, monkeypatch):
