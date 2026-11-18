@@ -30,8 +30,24 @@ def test_safe_database_error_hint_omits_unrecognized_message_and_non_undefined_e
         sqlstate = "23514"
         diag = Diagnostic()
 
-    assert safe_database_error_hint(UndefinedError()) == "undefined_operator_or_function"
+    assert safe_database_error_hint(UndefinedError()) == (
+        "undefined_operator_or_function:invalid input value: possible article title"
+    )
     assert safe_database_error_hint(OtherError()) is None
+
+
+def test_safe_database_error_hint_redacts_quoted_values() -> None:
+    class Diagnostic:
+        message_primary = "operator does not exist: unusual 'private title' = text"
+
+    class DatabaseError(Exception):
+        sqlstate = "42883"
+        diag = Diagnostic()
+
+    hint = safe_database_error_hint(DatabaseError())
+    assert hint is not None
+    assert "private title" not in hint
+    assert "<redacted>" in hint
 
 
 def test_research_worker_session_lock_blocks_duplicate_process_and_releases() -> None:

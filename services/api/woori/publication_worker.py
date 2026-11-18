@@ -114,7 +114,13 @@ def safe_database_error_hint(exc: Exception) -> str | None:
     function = re.search(r"^function ([\w.]+)\(([^()]*)\) does not exist$", message)
     if function:
         return f"undefined_function:{function.group(1)}({function.group(2)})"
-    return "undefined_operator_or_function"
+    # Retain only a constrained diagnostic alphabet and redact quoted values.
+    # PostgreSQL's primary 42883 message is an operator/function signature,
+    # but this fallback also covers server-version wording differences.
+    sanitized = re.sub(r"(['\"])[^'\"]*\1", "<redacted>", message)
+    sanitized = re.sub(r"[^A-Za-z0-9_. :<>=!~+*/%()\-]+", " ", sanitized)
+    sanitized = " ".join(sanitized.split())[:180]
+    return f"undefined_operator_or_function:{sanitized}" if sanitized else "undefined_operator_or_function"
 
 
 def _append_audit(conn: Any, event_type: str, payload: dict[str, Any]) -> None:
