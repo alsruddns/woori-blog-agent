@@ -394,6 +394,33 @@ def test_scheduled_search_infrastructure_errors_do_not_use_category_feed(monkeyp
         )
 
 
+def test_scheduled_search_schema_uses_strict_supported_url_type():
+    url_schema = scheduled_research.CODEX_RESEARCH_SCHEMA["properties"]["sources"]["items"]["properties"]["url"]
+    assert url_schema == {"type": "string", "maxLength": 2048}
+    assert scheduled_research._research_url_key("http://example.com/") == ""
+    assert scheduled_research._research_url_key("https://user@example.com/") == ""
+
+
+def test_scheduled_search_preserves_safe_codex_failure_code(monkeypatch):
+    from woori import codex_runner
+
+    invocation = {"automation_id": "automation-8", "execution_mode": "scheduled",
+                  "occurrence_id": "codex-slot:automation-8:20261105T2000KST",
+                  "scheduled_slot": "2026-11-05T20:00:00+09:00"}
+    monkeypatch.setattr(automation_invocation, "resolve_current_invocation", lambda *_a, **_k: invocation)
+    monkeypatch.setattr(automation_controls, "authoring_permission", lambda: {"allowed": True})
+    monkeypatch.setattr(scheduled_research, "_record_codex_search_failure", lambda *_a, **_k: None)
+    def fail(*_args, **_kwargs):
+        raise codex_runner.CodexFailure("codex_usage_limit")
+    monkeypatch.setattr(scheduled_research, "gather_with_codex_search", fail)
+    preflight = {"local_status": "not_found", "draft_import_allowed": True,
+                 "automation_execution": {"invocation": invocation}}
+    with pytest.raises(ValueError, match="scheduled_codex_search_blocked:codex_usage_limit"):
+        scheduled_research.run_authorized_research(
+            automation_id="automation-8", category="economy", topic="test", preflight=preflight,
+        )
+
+
 def test_manual_codex_search_package_is_bound_to_manual_run_id(monkeypatch):
     from woori import codex_runner
 

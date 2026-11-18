@@ -46,7 +46,7 @@ CODEX_RESEARCH_SCHEMA = {
                 "properties": {
                     "title": {"type": "string", "minLength": 5, "maxLength": 300},
                     "publisher": {"type": "string", "minLength": 2, "maxLength": 160},
-                    "url": {"type": "string", "format": "uri", "maxLength": 2048},
+                    "url": {"type": "string", "maxLength": 2048},
                     "published_at": {"type": "string", "minLength": 10, "maxLength": 80},
                     "event_date": {"type": ["string", "null"], "maxLength": 80},
                     "evidence_excerpt": {"type": "string", "minLength": 30, "maxLength": 700},
@@ -338,8 +338,9 @@ def _gather_with_codex_search(
         "Research this article topic using live web search: " + topic.strip() + "\n"
         "Category: " + category + ". Prefer current primary sources, then reputable news sources. "
         "Open the source pages before selecting them. Return at most three sources that you actually opened "
-        "and that are present in your live web search results. For each, give the exact result title, publisher, "
-        "canonical result URL, publication date as ISO-8601, event date if stated, and a 30-300 character "
+        "and that are present in your live web search results. For each, copy the exact URL emitted by the "
+        "search/open tool, character for character; do not substitute a page's canonical URL or add a headline slug. "
+        "Give the exact result title, publisher, publication date as ISO-8601, event date if stated, and a 30-300 character "
         "evidence excerpt copied exactly from the opened source page. Do not select a search result whose "
         "page you did not open, and do not claim that the excerpt was independently verified. "
         "Do not invent a source, date, URL, or excerpt. Exclude results whose publication date is unclear or older than 14 days. "
@@ -504,7 +505,8 @@ def run_authorized_research(
             audit_run_id="scheduled:" + occurrence_id,
         )
     except (RuntimeError, OSError, ValueError) as exc:
-        reason = str(exc) if isinstance(exc, ValueError) else type(exc).__name__
+        from .codex_runner import CodexFailure
+        reason = str(exc) if isinstance(exc, (ValueError, CodexFailure)) else type(exc).__name__
         _record_codex_search_failure(automation_id, occurrence_id, reason)
         # A category feed cannot establish country/topic relevance. Scheduled
         # Codex research therefore fails closed on every live-search error;
