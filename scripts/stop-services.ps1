@@ -46,7 +46,10 @@ function Assert-HttpTreeOwned([string]$Name) {
         (Get-ProcessOwner ([int]$_.Id)) -ieq "$env:USERDOMAIN\$env:USERNAME"
       } | ForEach-Object { [int]$_.Id }
     )
-    $connections = Get-EstablishedConnectionCount @(([int]$listener.Id) + $peerPids)
+    $connectionPids = [System.Collections.Generic.List[int]]::new()
+    $connectionPids.Add([int]$listener.Id)
+    foreach ($peerPid in $peerPids) { $connectionPids.Add([int]$peerPid) }
+    $connections = Get-EstablishedConnectionCount $connectionPids.ToArray()
     if ($connections -gt 0) { throw "$Name has $connections active external connection(s) outside verified HTTP peer PID(s) $($peerPids -join ','); no service was stopped." }
     Write-LifecycleLog $Name 'shutdown_preflight_verified' "listener_pid=$($listener.Id) owner=$owner channel=identity_bound_local_file runner=unmanaged verified_http_peer_pids=$($peerPids -join ',') established_external_connections=0"
     return

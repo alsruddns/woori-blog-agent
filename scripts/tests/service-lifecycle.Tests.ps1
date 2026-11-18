@@ -156,9 +156,12 @@ Describe 'Windows service lifecycle ownership and startup policy' {
     $stopper | Should Match 'Write-HttpServiceStopRequest \$serviceSnapshot \$Name'
     $stopper | Should Match 'established_connections=\$active .*runner=unmanaged'
     $stopper | Should Match 'verified_http_peer_pids='
+    $stopper | Should Match 'List\[int\]\]::new\(\)'
+    $stopper | Should Match 'connectionPids\.ToArray\(\)'
     $stopAll | Should Match 'service-identity-\$Name-\$\(\$listener\.Id\)\.json'
     $stopAll | Should Match 'runner=unmanaged .*established_external_connections=0'
     $stopAll | Should Match 'verified_http_peer_pids'
+    $stopAll | Should Match 'connectionPids\.ToArray\(\)'
     $stopAll | Should Match 'instance_id -notmatch'
   }
 

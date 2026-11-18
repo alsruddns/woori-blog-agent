@@ -366,8 +366,10 @@ function Invoke-ProjectStop {
           (Get-ProcessOwner ([int]$_.Id)) -ieq "$env:USERDOMAIN\$env:USERNAME"
         } | ForEach-Object { [int]$_.Id }
       )
-      $connectionPids = @(([int]$serviceSnapshot.Id) + $peerPids)
-      $active = if ($serviceSnapshot) { Get-EstablishedConnectionCount $connectionPids } else { 1 }
+      $connectionPids = [System.Collections.Generic.List[int]]::new()
+      if ($serviceSnapshot) { $connectionPids.Add([int]$serviceSnapshot.Id) }
+      foreach ($peerPid in $peerPids) { $connectionPids.Add([int]$peerPid) }
+      $active = if ($serviceSnapshot) { Get-EstablishedConnectionCount $connectionPids.ToArray() } else { 1 }
       if (-not $serviceSnapshot -or -not $supportsStopFile -or -not $owner -or
           $owner -ine "$env:USERDOMAIN\$env:USERNAME" -or $active -gt 0) {
         foreach ($candidate in $candidates) {
