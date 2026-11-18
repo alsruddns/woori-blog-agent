@@ -39,9 +39,16 @@ function Assert-HttpTreeOwned([string]$Name) {
       Write-LifecycleLog $Name 'shutdown_preflight_blocked' 'checkout_listener_without_verified_runtime_runner_or_identity'
       throw "$Name listener has neither a matching runtime runner nor a valid identity-bound graceful-stop channel. No service was stopped."
     }
-    $connections = Get-EstablishedConnectionCount @([int]$listener.Id)
-    if ($connections -gt 0) { throw "$Name has $connections active external connection(s); no service was stopped." }
-    Write-LifecycleLog $Name 'shutdown_preflight_verified' "listener_pid=$($listener.Id) owner=$owner channel=identity_bound_local_file runner=unmanaged established_external_connections=0"
+    $peerName = if ($Name -eq 'api') { 'dashboard' } else { 'api' }
+    $peerPids = @(
+      Get-CheckoutServiceProcesses $table $peerName | Where-Object {
+        (Test-ExactCheckoutServiceProcess $_ $peerName) -and
+        (Get-ProcessOwner ([int]$_.Id)) -ieq "$env:USERDOMAIN\$env:USERNAME"
+      } | ForEach-Object { [int]$_.Id }
+    )
+    $connections = Get-EstablishedConnectionCount @(([int]$listener.Id) + $peerPids)
+    if ($connections -gt 0) { throw "$Name has $connections active external connection(s) outside verified HTTP peer PID(s) $($peerPids -join ','); no service was stopped." }
+    Write-LifecycleLog $Name 'shutdown_preflight_verified' "listener_pid=$($listener.Id) owner=$owner channel=identity_bound_local_file runner=unmanaged verified_http_peer_pids=$($peerPids -join ',') established_external_connections=0"
     return
   }
   $tree = Get-ManagedTree $Name $runner $table

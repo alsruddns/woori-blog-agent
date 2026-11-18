@@ -154,9 +154,11 @@ Describe 'Windows service lifecycle ownership and startup policy' {
     $stopAll = Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\stop-services.ps1') -Raw
     $stopper | Should Match 'Select-HttpServiceSnapshot \$Name \$candidates \$listenerPids'
     $stopper | Should Match 'Write-HttpServiceStopRequest \$serviceSnapshot \$Name'
-    $stopper | Should Match 'established_connections=\$active runner=unmanaged'
+    $stopper | Should Match 'established_connections=\$active .*runner=unmanaged'
+    $stopper | Should Match 'verified_http_peer_pids='
     $stopAll | Should Match 'service-identity-\$Name-\$\(\$listener\.Id\)\.json'
-    $stopAll | Should Match 'runner=unmanaged established_external_connections=0'
+    $stopAll | Should Match 'runner=unmanaged .*established_external_connections=0'
+    $stopAll | Should Match 'verified_http_peer_pids'
     $stopAll | Should Match 'instance_id -notmatch'
   }
 
@@ -188,6 +190,7 @@ Describe 'Windows service lifecycle ownership and startup policy' {
     $stopper | Should Not Match 'stop\.ps1.*-Service api'
     $reflection=Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\apply-verified-changes.ps1') -Raw
     $reflection | Should Match 'restart_suppressed_after_intentional_stop'
+    $reflection | Should Match '\$stopOrder = .*dashboard.*api.*research_worker.*publication_worker'
   }
 
   It 'verifies full shutdown and new PID replacement before restart success' {

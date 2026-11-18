@@ -359,7 +359,15 @@ function Invoke-ProjectStop {
         ($Name -eq 'dashboard' -and [string]$serviceSnapshot.CommandLine -match '(?i)scripts[\\/]dashboard-service\.js(?:\s|$)')
       )
       $owner = if ($serviceSnapshot) { Get-ProcessOwner ([int]$serviceSnapshot.Id) } else { $null }
-      $active = if ($serviceSnapshot) { Get-EstablishedConnectionCount @([int]$serviceSnapshot.Id) } else { 1 }
+      $peerName = if ($Name -eq 'api') { 'dashboard' } else { 'api' }
+      $peerPids = @(
+        Get-CheckoutServiceProcesses $table $peerName | Where-Object {
+          (Test-ExactCheckoutServiceProcess $_ $peerName) -and
+          (Get-ProcessOwner ([int]$_.Id)) -ieq "$env:USERDOMAIN\$env:USERNAME"
+        } | ForEach-Object { [int]$_.Id }
+      )
+      $connectionPids = @(([int]$serviceSnapshot.Id) + $peerPids)
+      $active = if ($serviceSnapshot) { Get-EstablishedConnectionCount $connectionPids } else { 1 }
       if (-not $serviceSnapshot -or -not $supportsStopFile -or -not $owner -or
           $owner -ine "$env:USERDOMAIN\$env:USERNAME" -or $active -gt 0) {
         foreach ($candidate in $candidates) {
@@ -371,7 +379,7 @@ function Invoke-ProjectStop {
       $targetText = "PID $($serviceSnapshot.Id) [$Name] $($serviceSnapshot.Path) :: $($serviceSnapshot.CommandLine)"
       if (-not $PSCmdlet.ShouldProcess($targetText,"Request identity-bound graceful shutdown of $Name")) { return $false }
       $stopRequest = Write-HttpServiceStopRequest $serviceSnapshot $Name
-      Write-LifecycleLog $Name 'graceful_stop_requested' "pid=$($serviceSnapshot.Id) channel=identity_bound_local_file owner=$owner established_connections=$active runner=unmanaged"
+      Write-LifecycleLog $Name 'graceful_stop_requested' "pid=$($serviceSnapshot.Id) channel=identity_bound_local_file owner=$owner established_connections=$active verified_http_peer_pids=$($peerPids -join ',') runner=unmanaged"
       $remaining = @(Wait-ForSnapshotsExit $snapshots $TimeoutSeconds)
       if ($remaining.Count) {
         Write-LifecycleLog $Name 'graceful_stop_pending' "remaining_pids=$($remaining.Id -join ',') runner=unmanaged"
