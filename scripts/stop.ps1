@@ -369,7 +369,8 @@ function Invoke-ProjectStop {
       $connectionPids = [System.Collections.Generic.List[int]]::new()
       if ($serviceSnapshot) { $connectionPids.Add([int]$serviceSnapshot.Id) }
       foreach ($peerPid in $peerPids) { $connectionPids.Add([int]$peerPid) }
-      $active = if ($serviceSnapshot) { Get-EstablishedConnectionCount $connectionPids.ToArray() } else { 1 }
+      $ignoreLoopbackPorts = if (Test-LoopbackPostgresListener 5432) { @(5432) } else { @() }
+      $active = if ($serviceSnapshot) { Get-EstablishedConnectionCount $connectionPids.ToArray() -IgnoreLoopbackRemotePorts $ignoreLoopbackPorts } else { 1 }
       if (-not $serviceSnapshot -or -not $supportsStopFile -or -not $owner -or
           $owner -ine "$env:USERDOMAIN\$env:USERNAME" -or $active -gt 0) {
         foreach ($candidate in $candidates) {
@@ -381,7 +382,7 @@ function Invoke-ProjectStop {
       $targetText = "PID $($serviceSnapshot.Id) [$Name] $($serviceSnapshot.Path) :: $($serviceSnapshot.CommandLine)"
       if (-not $PSCmdlet.ShouldProcess($targetText,"Request identity-bound graceful shutdown of $Name")) { return $false }
       $stopRequest = Write-HttpServiceStopRequest $serviceSnapshot $Name
-      Write-LifecycleLog $Name 'graceful_stop_requested' "pid=$($serviceSnapshot.Id) channel=identity_bound_local_file owner=$owner established_connections=$active verified_http_peer_pids=$($peerPids -join ',') runner=unmanaged"
+      Write-LifecycleLog $Name 'graceful_stop_requested' "pid=$($serviceSnapshot.Id) channel=identity_bound_local_file owner=$owner established_connections=$active ignored_local_postgres_dependency=$($ignoreLoopbackPorts -join ',') verified_http_peer_pids=$($peerPids -join ',') runner=unmanaged"
       $remaining = @(Wait-ForSnapshotsExit $snapshots $TimeoutSeconds)
       if ($remaining.Count) {
         Write-LifecycleLog $Name 'graceful_stop_pending' "remaining_pids=$($remaining.Id -join ',') runner=unmanaged"

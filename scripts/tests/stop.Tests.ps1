@@ -86,6 +86,18 @@ Describe 'Safe stop process discovery' {
 
     (Get-EstablishedConnectionCount @(501,502)) | Should Be 1
   }
+
+  It 'ignores only explicitly allowed loopback dependency ports while retaining other clients' {
+    Mock Get-NetTCPConnection {
+      @(
+        [pscustomobject]@{ OwningProcess=501; LocalAddress='::1'; LocalPort=63804; RemoteAddress='::1'; RemotePort=5432 },
+        [pscustomobject]@{ OwningProcess=501; LocalAddress='127.0.0.1'; LocalPort=57855; RemoteAddress='127.0.0.1'; RemotePort=3100 },
+        [pscustomobject]@{ OwningProcess=501; LocalAddress='127.0.0.1'; LocalPort=57856; RemoteAddress='8.8.8.8'; RemotePort=443 }
+      )
+    }
+
+    (Get-EstablishedConnectionCount @(501) -IgnoreLoopbackRemotePorts @(5432)) | Should Be 2
+  }
 }
 
 Describe 'Worker stop behavior' {

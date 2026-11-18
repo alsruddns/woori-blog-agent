@@ -395,7 +395,21 @@ function Get-ManagedTree([string]$Name, $Runner, $ProcessTable) {
   return @{ items=@(); safe=$false; reason='process_start_time_unavailable' }
 }
 
-function Get-EstablishedConnectionCount($ProcessIds) {
+function Test-LoopbackPostgresListener([int]$Port = 5432) {
+  try {
+    $listeners = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction Stop)
+    foreach ($listener in $listeners) {
+      if ([string]$listener.LocalAddress -notin @('127.0.0.1','::1')) { continue }
+      $process = Get-CimInstance Win32_Process -Filter "ProcessId=$([int]$listener.OwningProcess)" -ErrorAction Stop
+      if ($process -and [string]$process.Name -ieq 'postgres.exe') { return $true }
+    }
+  } catch {
+    if ($_.FullyQualifiedErrorId -notlike 'CmdletizationQuery_NotFound,*') { return $false }
+  }
+  return $false
+}
+
+function Get-EstablishedConnectionCount($ProcessIds, [int[]]$IgnoreLoopbackRemotePorts = @()) {
   $ids = @($ProcessIds | ForEach-Object { [int]$_ })
   try { $all = @(Get-NetTCPConnection -State Established -ErrorAction Stop) }
   catch {
@@ -412,6 +426,8 @@ function Get-EstablishedConnectionCount($ProcessIds) {
   foreach ($connection in $managed) {
     $remoteKey = "{0}|{1}" -f ([string]$connection.RemoteAddress).ToLowerInvariant(),[int]$connection.RemotePort
     if ($managedLocalEndpoints.ContainsKey($remoteKey)) { continue }
+    $isLoopback = [string]$connection.RemoteAddress -in @('127.0.0.1','::1')
+    if ($isLoopback -and $IgnoreLoopbackRemotePorts -contains [int]$connection.RemotePort) { continue }
     $externalCount++
   }
   return $externalCount

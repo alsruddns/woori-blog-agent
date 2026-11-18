@@ -49,9 +49,10 @@ function Assert-HttpTreeOwned([string]$Name) {
     $connectionPids = [System.Collections.Generic.List[int]]::new()
     $connectionPids.Add([int]$listener.Id)
     foreach ($peerPid in $peerPids) { $connectionPids.Add([int]$peerPid) }
-    $connections = Get-EstablishedConnectionCount $connectionPids.ToArray()
+    $ignoreLoopbackPorts = if (Test-LoopbackPostgresListener 5432) { @(5432) } else { @() }
+    $connections = Get-EstablishedConnectionCount $connectionPids.ToArray() -IgnoreLoopbackRemotePorts $ignoreLoopbackPorts
     if ($connections -gt 0) { throw "$Name has $connections active external connection(s) outside verified HTTP peer PID(s) $($peerPids -join ','); no service was stopped." }
-    Write-LifecycleLog $Name 'shutdown_preflight_verified' "listener_pid=$($listener.Id) owner=$owner channel=identity_bound_local_file runner=unmanaged verified_http_peer_pids=$($peerPids -join ',') established_external_connections=0"
+    Write-LifecycleLog $Name 'shutdown_preflight_verified' "listener_pid=$($listener.Id) owner=$owner channel=identity_bound_local_file runner=unmanaged verified_http_peer_pids=$($peerPids -join ',') ignored_local_postgres_dependency=$($ignoreLoopbackPorts -join ',') established_external_connections=0"
     return
   }
   $tree = Get-ManagedTree $Name $runner $table

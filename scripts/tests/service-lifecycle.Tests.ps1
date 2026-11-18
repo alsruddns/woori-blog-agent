@@ -160,10 +160,12 @@ Describe 'Windows service lifecycle ownership and startup policy' {
     $stopper | Should Match 'verified_http_peer_pids='
     $stopper | Should Match 'List\[int\]\]::new\(\)'
     $stopper | Should Match 'connectionPids\.ToArray\(\)'
+    $stopper | Should Match 'IgnoreLoopbackRemotePorts \$ignoreLoopbackPorts'
     $stopAll | Should Match 'service-identity-\$Name-\$\(\$listener\.Id\)\.json'
     $stopAll | Should Match 'runner=unmanaged .*established_external_connections=0'
     $stopAll | Should Match 'verified_http_peer_pids'
     $stopAll | Should Match 'connectionPids\.ToArray\(\)'
+    $stopAll | Should Match 'IgnoreLoopbackRemotePorts \$ignoreLoopbackPorts'
     $stopAll | Should Match 'instance_id -notmatch'
   }
 
@@ -178,6 +180,8 @@ Describe 'Windows service lifecycle ownership and startup policy' {
     $common | Should Match 'function Get-ManagedRunner'
     $common | Should Match 'function Get-ManagedTree'
     $common | Should Match 'function Get-EstablishedConnectionCount'
+    $common | Should Match 'function Test-LoopbackPostgresListener'
+    $common | Should Match 'IgnoreLoopbackRemotePorts'
     $restarter.IndexOf('stop-services.ps1') | Should BeLessThan $restarter.IndexOf('start-services.ps1')
   }
 
