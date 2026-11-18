@@ -104,7 +104,7 @@ def safe_database_error_hint(exc: Exception) -> str | None:
     if getattr(exc, "sqlstate", None) != "42883":
         return None
     diag = getattr(exc, "diag", None)
-    message = str(getattr(diag, "message_primary", "") or "")
+    message = str(getattr(diag, "message_primary", "") or str(exc))
     operator = re.search(
         r"^operator does not exist:\s*([\w ]+?)\s+([^\w\s]+)\s+([\w ]+?)\s*$",
         message,

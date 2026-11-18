@@ -50,6 +50,18 @@ def test_safe_database_error_hint_redacts_quoted_values() -> None:
     assert "<redacted>" in hint
 
 
+def test_safe_database_error_hint_uses_exception_text_when_primary_is_missing() -> None:
+    class Diagnostic:
+        message_primary = None
+
+    class DatabaseError(Exception):
+        sqlstate = "42883"
+        diag = Diagnostic()
+
+    error = DatabaseError("operator does not exist: uuid = text")
+    assert safe_database_error_hint(error) == "undefined_operator:uuid = text"
+
+
 def test_research_worker_session_lock_blocks_duplicate_process_and_releases() -> None:
     # Verify the isolated test identity before taking a session lock. No row is written.
     with psycopg.connect(settings().database_url) as conn:
