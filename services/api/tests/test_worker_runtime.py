@@ -1,7 +1,37 @@
 import psycopg
 import pytest
 from woori.config import settings
+from woori.publication_worker import safe_database_error_hint
 from woori.worker import acquire_process_lock, release_process_lock
+
+
+def test_safe_database_error_hint_reports_only_undefined_operator_signature() -> None:
+    class Diagnostic:
+        message_primary = "operator does not exist: timestamp with time zone < text"
+
+    class DatabaseError(Exception):
+        sqlstate = "42883"
+        diag = Diagnostic()
+
+    assert safe_database_error_hint(DatabaseError()) == (
+        "undefined_operator:timestamp with time zone < text"
+    )
+
+
+def test_safe_database_error_hint_omits_unrecognized_message_and_non_undefined_errors() -> None:
+    class Diagnostic:
+        message_primary = "invalid input value: possible article title"
+
+    class UndefinedError(Exception):
+        sqlstate = "42883"
+        diag = Diagnostic()
+
+    class OtherError(Exception):
+        sqlstate = "23514"
+        diag = Diagnostic()
+
+    assert safe_database_error_hint(UndefinedError()) == "undefined_operator_or_function"
+    assert safe_database_error_hint(OtherError()) is None
 
 
 def test_research_worker_session_lock_blocks_duplicate_process_and_releases() -> None:

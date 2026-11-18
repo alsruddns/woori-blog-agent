@@ -99,6 +99,24 @@ def publication_count_limits_apply(lane: str) -> bool:
     return lane in {"manual", "scheduled_auto", "trends_auto"}
 
 
+def safe_database_error_hint(exc: Exception) -> str | None:
+    """Expose only PostgreSQL type/operator signatures, never values or SQL text."""
+    if getattr(exc, "sqlstate", None) != "42883":
+        return None
+    diag = getattr(exc, "diag", None)
+    message = str(getattr(diag, "message_primary", "") or "")
+    operator = re.search(
+        r"^operator does not exist:\s*([\w ]+?)\s+([^\w\s]+)\s+([\w ]+?)\s*$",
+        message,
+    )
+    if operator:
+        return f"undefined_operator:{operator.group(1).strip()} {operator.group(2)} {operator.group(3).strip()}"
+    function = re.search(r"^function ([\w.]+)\(([^()]*)\) does not exist$", message)
+    if function:
+        return f"undefined_function:{function.group(1)}({function.group(2)})"
+    return "undefined_operator_or_function"
+
+
 def _append_audit(conn: Any, event_type: str, payload: dict[str, Any]) -> None:
     conn.execute(
         "INSERT INTO audit_events(event_type,payload) VALUES (%s,%s)",
@@ -1786,6 +1804,7 @@ def run_forever(
                         "sqlstate": exc.sqlstate if isinstance(exc, psycopg.Error) else None,
                         "db_table": getattr(exc.diag, 'table_name', None) if isinstance(exc, psycopg.Error) else None,
                         "db_function": getattr(exc.diag, 'source_function', None) if isinstance(exc, psycopg.Error) else None,
+                        "db_hint": safe_database_error_hint(exc),
                         "retry_number": failures,
                     }),
                     flush=True,
