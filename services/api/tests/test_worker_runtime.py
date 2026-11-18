@@ -1,7 +1,7 @@
 import psycopg
 import pytest
 from woori.config import settings
-from woori.publication_worker import safe_database_error_hint
+from woori.publication_worker import safe_database_error_hint, safe_database_error_site
 from woori.worker import acquire_process_lock, release_process_lock
 
 
@@ -60,6 +60,19 @@ def test_safe_database_error_hint_uses_exception_text_when_primary_is_missing() 
 
     error = DatabaseError("operator does not exist: uuid = text")
     assert safe_database_error_hint(error) == "undefined_operator:uuid = text"
+
+
+def test_safe_database_error_site_returns_application_file_and_line_only() -> None:
+    class DatabaseError(psycopg.Error):
+        sqlstate = "42883"
+
+    try:
+        raise DatabaseError("private query text")
+    except DatabaseError as error:
+        site = safe_database_error_site(error)
+    assert site is not None
+    assert site.startswith("test_worker_runtime.py:")
+    assert "private query text" not in site
 
 
 def test_research_worker_session_lock_blocks_duplicate_process_and_releases() -> None:

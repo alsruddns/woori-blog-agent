@@ -7,6 +7,7 @@ import json
 import re
 import signal
 import threading
+import traceback
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -120,7 +121,21 @@ def safe_database_error_hint(exc: Exception) -> str | None:
     sanitized = re.sub(r"(['\"])[^'\"]*\1", "<redacted>", message)
     sanitized = re.sub(r"[^A-Za-z0-9_. :<>=!~+*/%()\-]+", " ", sanitized)
     sanitized = " ".join(sanitized.split())[:180]
+    signature = re.search(r"(\w[\w ]*?)\s*([<>=!~]+)\s*(\w[\w ]*?)$", sanitized.rsplit(":", 1)[-1].strip())
+    if signature:
+        return f"undefined_operator:{signature.group(1).strip()} {signature.group(2)} {signature.group(3).strip()}"
     return f"undefined_operator_or_function:{sanitized}" if sanitized else "undefined_operator_or_function"
+
+
+def safe_database_error_site(exc: Exception) -> str | None:
+    """Return the last application source location without SQL or values."""
+    if not isinstance(exc, psycopg.Error):
+        return None
+    for frame in reversed(traceback.extract_tb(exc.__traceback__)):
+        filename = frame.filename.replace("\\", "/")
+        if "/services/api/" in filename:
+            return f"{filename.rsplit('/', 1)[-1]}:{frame.lineno}:{frame.name}"
+    return None
 
 
 def _append_audit(conn: Any, event_type: str, payload: dict[str, Any]) -> None:
@@ -1811,6 +1826,7 @@ def run_forever(
                         "db_table": getattr(exc.diag, 'table_name', None) if isinstance(exc, psycopg.Error) else None,
                         "db_function": getattr(exc.diag, 'source_function', None) if isinstance(exc, psycopg.Error) else None,
                         "db_hint": safe_database_error_hint(exc),
+                        "db_site": safe_database_error_site(exc),
                         "retry_number": failures,
                     }),
                     flush=True,
