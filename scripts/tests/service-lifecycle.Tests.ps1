@@ -70,6 +70,8 @@ Describe 'Windows service lifecycle ownership and startup policy' {
     $autostart | Should Match 'startupArguments = .*WindowStyle Hidden'
     $autostart | Should Match '\$scriptPath.*PublicationMode scheduled-auto-manual-trends'
     $autostart | Should Match 'Update the existing hidden login task to start all four services'
+    $autostart | Should Match 'Set-ScheduledTask .* -ErrorAction Stop'
+    $autostart | Should Match 'Updated login task could not be verified'
     $autostart | Should Match 'AtLogOn'
   }
 

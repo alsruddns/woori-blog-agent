@@ -64,8 +64,13 @@ switch ($Action) {
         if ([string]$task.Actions[0].Arguments -notmatch '(?i)(^|\s)-PublicationMode\s+scheduled-auto-manual-trends(?:\s|$)') {
           if ($PSCmdlet.ShouldProcess($taskName,'Update the existing hidden login task to start all four services in the Trends-capable worker mode while preserving its trigger and settings')) {
             $actionObject = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $startupArguments -WorkingDirectory $script:ProjectRoot
-            Set-ScheduledTask -TaskName $taskName -Action $actionObject | Out-Null
-            Enable-ScheduledTask -TaskName $taskName | Out-Null
+            Set-ScheduledTask -TaskName $taskName -Action $actionObject -ErrorAction Stop | Out-Null
+            Enable-ScheduledTask -TaskName $taskName -ErrorAction Stop | Out-Null
+            $updatedTask = Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
+            if ([string]$updatedTask.Actions[0].Arguments -notmatch '(?i)(^|\s)-PublicationMode\s+scheduled-auto-manual-trends(?:\s|$)' -or
+                -not $updatedTask.Settings.Enabled -or -not (Test-TaskOwnedByProject $updatedTask)) {
+              throw 'Updated login task could not be verified; its state must be inspected before reporting success.'
+            }
             Write-Output "Updated existing project-owned task '$taskName' to launch the four services hidden after interactive logon; its trigger, principal, and retry settings were preserved."
           }
           break
@@ -76,8 +81,13 @@ switch ($Action) {
       }
       if ($PSCmdlet.ShouldProcess($taskName,'Replace the existing project-owned worker-only action with the four-service startup coordinator while preserving its login trigger and settings')) {
         $actionObject = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $startupArguments -WorkingDirectory $script:ProjectRoot
-        Set-ScheduledTask -TaskName $taskName -Action $actionObject | Out-Null
-        Enable-ScheduledTask -TaskName $taskName | Out-Null
+        Set-ScheduledTask -TaskName $taskName -Action $actionObject -ErrorAction Stop | Out-Null
+        Enable-ScheduledTask -TaskName $taskName -ErrorAction Stop | Out-Null
+        $updatedTask = Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
+        if ([string]$updatedTask.Actions[0].Arguments -notmatch '(?i)(^|\s)-PublicationMode\s+scheduled-auto-manual-trends(?:\s|$)' -or
+            -not $updatedTask.Settings.Enabled -or -not (Test-TaskOwnedByProject $updatedTask)) {
+          throw 'Updated login task could not be verified; its state must be inspected before reporting success.'
+        }
         Write-Output "Updated existing project-owned task '$taskName'; its user-logon trigger, principal, and retry settings were preserved."
       }
       break
@@ -88,7 +98,7 @@ switch ($Action) {
       $trigger = New-ScheduledTaskTrigger -AtLogOn -User $currentUser
       $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 5 -RestartInterval (New-TimeSpan -Minutes 2) -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
       $principal = New-ScheduledTaskPrincipal -UserId $currentUser -LogonType Interactive -RunLevel Limited
-      Register-ScheduledTask -TaskName $taskName -Action $actionObject -Trigger $trigger -Settings $settings -Principal $principal -Description 'Start the four local Woori Blog Agent services after the current user logs in.' | Out-Null
+      Register-ScheduledTask -TaskName $taskName -Action $actionObject -Trigger $trigger -Settings $settings -Principal $principal -Description 'Start the four local Woori Blog Agent services after the current user logs in.' -ErrorAction Stop | Out-Null
       Write-Output "Registered '$taskName' for interactive user logon."
     }
   }
