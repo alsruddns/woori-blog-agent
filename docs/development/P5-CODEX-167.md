@@ -9,3 +9,9 @@
 - Additional verification: `test_trends_post_edit.py` has six failures; an isolated archive of unchanged HEAD reproduced the same six failures (including an outdated fake preparation query and fixtures not satisfying current activation cutoffs). These failures are pre-existing and not reported as passing; Trends code was not modified.
 - Related: `docs/development/P5-CODEX-166.md`, `docs/operations/scheduled-outage-recovery.md`. Commit: see git log for this file.
 - Remaining: Vietnam old occurrence remains in incoming; its source rights and factual claims have not been verified, and one OCBC title says 2H26 while its URL contains 1h27. Do not alter or publish it on the basis of schema validation alone. K-pop next actual scheduled occurrence and publication remain unverified. Region alias data is bounded to the mapped .NET culture regions; unknown alpha-3 codes fail closed.
+
+## Service reflection
+
+- Applied code commit `c61023d2950981876e424fa2a4ada989a249742f` through graceful restart; API and both Workers reported the commit, and both Workers acknowledged revision 29. Master Auto, scheduled Auto, Trends Auto and manual publishing stayed enabled; emergency stop stayed off. The Publication Worker completed its in-flight job before exit.
+- Reflection checks passed: 251 selected API tests, 35 Pester tests, Ruff, mypy, isolated wheel and Dashboard production build. Pytest cache write warning only. Six additional pre-existing Trends test failures are documented above, not counted as passing.
+- PostgreSQL start/completion audit events were appended; no existing scheduled occurrence was replayed. The original Vietnam file remains unmodified in incoming and K-pop's next real scheduled Import is unverified.
