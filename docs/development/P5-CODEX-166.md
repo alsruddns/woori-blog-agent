@@ -8,3 +8,9 @@
 - Validation: 127 related tests passed, with pytest cache permission warning; Ruff and changed-module mypy passed. Read-only replay of the crypto transcript identified `automation-3` and its actual scheduled trigger. The original Fed/SEC incoming `.part` passed the shared validator without modification; its completed turn was not replayed and the file was not handed off or imported. Tests cover conflicting ID, post-start research, future source time and six-hour bound.
 - Related: `docs/operations/scheduled-outage-recovery.md`, `docs/development/P5-CODEX-165.md`. Commit: see git log for this record.
 - Remaining: Verify a new real Desktop scheduled occurrence through Import; neither failed historical occurrence was retried, and no Blogger write was performed as part of these diagnostics.
+
+## Service reflection
+
+- Applied `282a95281176ed3df74b9e8bd0b510c4d696e8b2` to API, Research Worker and Publication Worker using graceful restarts. Both Workers acknowledged control revision 29; master, scheduled, Trends and manual controls remained enabled and emergency stop remained off.
+- Reflection verification: 232 API tests and 35 Pester tests passed; Ruff, mypy, isolated wheel and Dashboard production build passed. Pytest cache write permission warning only. Start and completion audit events were appended.
+- The completed crypto and Fed/SEC occurrences were not replayed. The preserved Fed/SEC `.part` validates, but no handoff, Import or public publication was performed for it. The next actual scheduled run remains the end-to-end verification opportunity.
