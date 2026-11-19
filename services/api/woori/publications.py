@@ -1291,6 +1291,7 @@ def _candidate(conn: Any, version_id: UUID, blog_id: UUID) -> dict[str, Any] | N
 
 def _manual_publication_snapshot(
     conn: Any, row: dict[str, Any] | None, *, persist_search_description: bool = False,
+    scheduled_evidence_gaps_allowed: bool = False,
 ) -> dict[str, Any]:
     """Build the exact sanitized manual payload and post-publication follow-ups."""
     from .editorial_html import markdown_to_blogger_html, sanitize_editorial_html
@@ -1416,6 +1417,7 @@ def _manual_publication_snapshot(
             content_policy = evaluate_publication_content(
                 evidence["reasons"], safe_body_available=safe_body_available,
                 existing_followups=evidence["followups"],
+                scheduled_evidence_gaps_allowed=scheduled_evidence_gaps_allowed,
             )
             evidence_followups.extend(content_policy["remediation_items"])
             blockers.extend(content_policy["blockers"])

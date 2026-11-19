@@ -434,6 +434,18 @@ def test_scheduled_readiness_uses_existing_scheduled_evidence_gate(center, monke
     assert "scheduled_import_or_policy_unavailable" in reasons
 
 
+def test_trends_readiness_uses_trends_eligibility_instead_of_manual(center, monkeypatch):
+    from woori import publication_origin, trends_publication
+
+    _, blog, version = make_job(center)
+    monkeypatch.setattr(publication_origin, "classify", lambda *_: {"kind": "google_trends"})
+    monkeypatch.setattr(trends_publication, "validate_trends_job", lambda *_: {"reasons": []})
+    monkeypatch.setattr(publications, "_assess", lambda *_a, **_k: pytest.fail("manual eligibility used for Trends"))
+    with controls.connection() as conn:
+        _, _, reasons = automation_auto.readiness(conn, version, blog)
+    assert "human_review_pending" not in reasons
+
+
 def test_manual_worker_does_not_requeue_legacy_scheduled_imports(center, monkeypatch):
     update(center, google_account_available=True, emergency_stop=False,
            confirm_emergency_release=True)

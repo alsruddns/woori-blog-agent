@@ -256,9 +256,8 @@ def _scheduled_eligibility(conn: Any, imported: Any, version: Any, blog: Any) ->
     )
     removed_claim_ids = set(sanitizer.get("removed_claim_ids") or [])
     claims = [claim for claim in claims if str(claim.get("claim_id") or "") not in removed_claim_ids]
-    if sanitizer['changed']:
-        reasons.append('scheduled_sanitized_revision_required' if sanitizer['substantive_blocks_remaining'] >= 2
-                       else 'no_supported_body_after_sanitization')
+    if sanitizer['substantive_blocks_remaining'] < 2:
+        reasons.append('no_supported_body_after_sanitization')
     sanitized_body = sanitizer["body_markdown"]
     sanitized_source_ids = set(re.findall(r"\[source:([A-Za-z0-9_-]+)\]", sanitized_body))
     used_sources = [source for source in sources if str(source.get("source_id")) in sanitized_source_ids]
@@ -298,14 +297,14 @@ def _scheduled_eligibility(conn: Any, imported: Any, version: Any, blog: Any) ->
             reasons.append("same_event_already_queued_or_published")
     from .publication_policy import evaluate_publication_content
     safe_body_available = (
-        not sanitizer["changed"]
-        and sanitizer["substantive_blocks_remaining"] >= 2
+        sanitizer["substantive_blocks_remaining"] >= 2
         and bool(assessment and assessment.get("safe_html"))
         and "no_supported_body_after_sanitization" not in reasons
     )
     content_policy = evaluate_publication_content(
         reasons, safe_body_available=safe_body_available,
         existing_followups=evidence_result["followups"],
+        scheduled_evidence_gaps_allowed=True,
     )
     evidence_result["followups"] = content_policy["remediation_items"]
     unique_reasons = list(dict.fromkeys(content_policy["blockers"]))

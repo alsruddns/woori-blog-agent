@@ -111,9 +111,15 @@ def readiness(
                 )["reasons"]
                 if target else ["scheduled_target_unavailable"]
             )
+    elif origin["kind"] == "google_trends":
+        from .trends_publication import validate_trends_job
+
+        reasons = list(validate_trends_job(conn, blog, version)["reasons"])
     else:
         reasons = publications._assess(row, check_write_policy=False)["reasons"]
-    snapshot = publications._manual_publication_snapshot(conn, dict(row))
+    snapshot = publications._manual_publication_snapshot(
+        conn, dict(row), scheduled_evidence_gaps_allowed=origin["kind"] == "scheduled"
+    )
     reasons.extend(snapshot["blockers"])
     from .editorial_quality import VERSION as QUALITY_VERSION
 
@@ -122,7 +128,8 @@ def readiness(
         AND engine_version=%s AND stage='static' AND status='completed' ORDER BY created_at DESC LIMIT 1""",
         (version, QUALITY_VERSION),
     ).fetchone()
-    if not report or report["result"].get("checks", {}).get("safe_html") is False:
+    if ((not report and origin["kind"] != "scheduled")
+            or (report and report["result"].get("checks", {}).get("safe_html") is False)):
         reasons.append("quality_review_required")
     newest = conn.execute(
         "SELECT id FROM content_versions WHERE group_id=%s AND localization_id IS NOT DISTINCT FROM %s ORDER BY version DESC,created_at DESC LIMIT 1",
@@ -284,6 +291,13 @@ def enqueue(conn: Any, state: dict[str, Any], *, origin_filter: str | None = Non
                 ),
             ),
         )
+        if origin["kind"] == "scheduled":
+            conn.execute(
+                "INSERT INTO audit_events(event_type,payload) VALUES('publication.scheduled_auto.review_gaps_allowed',%s)",
+                (Jsonb({"job_id": str(job["id"]), "import_id": origin["import_id"],
+                        "content_version_id": str(item["id"]), "followups": _snapshot.get("followups", []),
+                        "evidence_promoted": False, "policy": "scheduled-evidence-gaps-20261119"}),),
+            )
         created += 1
     return created
 
