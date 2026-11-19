@@ -252,6 +252,10 @@ def test_codex_search_package_requires_opened_source_and_marks_unverified_excerp
 def test_scheduled_broker_writes_codex_sources_into_snapshot_package(monkeypatch, tmp_path):
     from woori import codex_runner
 
+    gather = scheduled_research.gather_with_codex_search
+    monkeypatch.setattr(scheduled_research, "gather_with_codex_search", lambda *args, **kwargs:
+                        gather(*args, **kwargs, now=datetime(2026, 11, 5, 1, tzinfo=UTC)))
+
     invocation = {
         "automation_id": "automation-7", "execution_mode": "scheduled",
         "occurrence_id": _occurrence(), "scheduled_slot": "2026-11-05T09:00:00+09:00",
