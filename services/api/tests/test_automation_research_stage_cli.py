@@ -66,6 +66,19 @@ def _package(path: Path, *, mode: str = "manual") -> None:
     path.write_text(json.dumps(data), encoding="utf-8")
 
 
+def test_unavailable_research_reports_concrete_failure_class(tmp_path):
+    def fake_run(command, **_kwargs):
+        if command[1].endswith("scheduled_duplicate_check.py"):
+            return SimpleNamespace(returncode=0, stdout=json.dumps(_preflight(mode="scheduled")), stderr="")
+        return SimpleNamespace(returncode=4, stdout=json.dumps({
+            "status": "evidence_unavailable", "failure_class": "no_current_sources",
+        }), stderr="")
+    result, code = stage.run_stage(**_args(tmp_path), command_runner=fake_run)
+    assert code == 4
+    assert result["reason"] == "research_no_current_sources"
+    assert result["article_created"] is False
+
+
 def test_manual_stage_runs_generation_preflight_then_manual_broker_and_preserves_unknown(tmp_path):
     exact_preflight = json.dumps(_preflight(), ensure_ascii=False) + "\n"
     package_path = tmp_path / "state" / "research-packages" / "automation-7-manual-123e4567-e89b-12d3-a456-426614174000.research.json"

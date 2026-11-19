@@ -270,6 +270,10 @@ def run_stage(
 
     if researched.returncode != 0 or broker_result.get("status") != "evidence_available":
         reason = broker_result.get("reason")
+        if not isinstance(reason, str) and broker_result.get("failure_class") in {
+            "no_current_sources", "source_validation_failed", "collection_failed", "no_fresh_source_items",
+        }:
+            reason = "research_" + str(broker_result["failure_class"])
         safe_reason = reason if isinstance(reason, str) else "research_evidence_unavailable"
         return _result(status="blocked", reason=safe_reason, mode=mode, identity=identity,
                        preflight=preflight, preflight_path=preflight_path), 4

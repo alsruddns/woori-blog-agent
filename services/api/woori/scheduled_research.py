@@ -336,7 +336,10 @@ def _gather_with_codex_search(
     captured_at = (now or datetime.now(UTC)).astimezone(UTC)
     prompt = (
         "Research this article topic using live web search: " + topic.strip() + "\n"
+        "Research time (UTC): " + captured_at.isoformat() + ". "
         "Category: " + category + ". Prefer current primary sources, then reputable news sources. "
+        "Search for specific recent developments and open individual dated reports or announcements, "
+        "not just news index pages. One relevant, current, opened source is enough for a limited draft. "
         "Open the source pages before selecting them. Return at most three sources that you actually opened "
         "and that are present in your live web search results. For each, copy the exact URL emitted by the "
         "search/open tool, character for character; do not substitute a page's canonical URL or add a headline slug. "
@@ -674,4 +677,7 @@ def write_package(package: dict[str, Any], *, automation_id: str) -> dict[str, A
             )
     except (OSError, psycopg.Error):
         raise ValueError("scheduled_research_audit_failed") from None
-    return {"status": package.get("status"), "path": str(destination), "sha256": saved_digest, "source_count": len(package.get("sources", [])), "collection_failure_count": len(package.get("collection_failures", []))}
+    return {"status": package.get("status"), "path": str(destination), "sha256": saved_digest,
+            "source_count": len(package.get("sources", [])),
+            "failure_class": package.get("failure_class"),
+            "collection_failure_count": len(package.get("collection_failures", []))}

@@ -325,6 +325,28 @@ def test_scheduled_origin_rejects_naive_time_and_unregistered_url_shape() -> Non
         ScheduledImportOrigin.model_validate(invalid_url)
 
 
+@pytest.mark.parametrize(("supplied", "expected"), [("VNM", "VN"), ("USA", "US"), ("BRA", "BR"), ("DE", "DE")])
+def test_target_region_normalizes_country_codes_for_localization(supplied, expected) -> None:
+    payload = scheduled_payload()
+    audience = payload["item"]["target_audiences"][0]
+    audience["target_region"] = supplied
+    envelope = ScheduledImportEnvelope.model_validate(payload)
+    assert envelope.item.target_audiences[0].target_region == expected
+    audience["target_region"] = "ZZZ"
+    with pytest.raises(ValidationError):
+        ScheduledImportEnvelope.model_validate(payload)
+
+
+def test_scheduled_source_evidence_can_remain_fact_unchecked() -> None:
+    payload = scheduled_payload()
+    payload["item"]["fact_checked_at"] = None
+    envelope = ScheduledImportEnvelope.model_validate(payload)
+    assert envelope.item.fact_checked_at is None
+    payload["item"]["sources"] = []
+    with pytest.raises(ValidationError, match="non_trends_evidence_required"):
+        ScheduledImportEnvelope.model_validate(payload)
+
+
 def test_scheduled_origin_allows_research_after_start_with_bounded_chronology() -> None:
     payload = scheduled_payload()["scheduled_origin"]
     assert isinstance(payload, dict)
