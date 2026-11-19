@@ -9,3 +9,9 @@
 - Related: `docs/development/P5-CODEX-164.md`; `docs/operations/scheduled-outage-recovery.md`. Commit identity: see git log for this file.
 - Remaining: The already imported 09:00 item has no execution receipt and remains unknown; no receipt is fabricated. Previously blocked Trends jobs remain blocked and are not automatically replayed. Future real scheduled and Trends publication needs independent runtime verification; no live write was performed by these diagnostics.
 - Reflection verification first stopped before service changes: 181 tests passed and one pre-existing scheduled research fixture failed because its November 4 publication date aged past the 14-day window. The test now fixes its research clock to November 5, matching its fixture; the validation is rerun before reflection.
+
+## Applied verification
+
+- Corrected-clock rerun: 182 API tests and 35 Pester tests passed; Ruff, mypy, isolated wheel, Dashboard production build and diff checks passed. Pytest cache access produced a warning.
+- API and both Workers were gracefully restarted on `08b0062a7354324c38a6976acde023f93c335053`; both Workers acknowledged revision 29. Master, scheduled, Trends and manual controls remained enabled and emergency stop remained off. Publication Worker reported active auto policy and `scheduled-auto-manual-trends` mode. Start and completion audit events were appended.
+- A Trends publication succeeded at 09:44 KST before this change was applied; it does not prove a future run through the corrected path. A post-deployment scheduled LIVE write remains unverified.
