@@ -49,7 +49,11 @@ the draft flag is true and remote status is only `not_checked`.
 5. Record actual progress (`researching`, `writing`) with the shared progress
    helper. On a real usage limit record `usage_limit_waiting`; never invent token
    balances/reset times or switch providers. Preserve complete existing files.
-6. For an eligible new article, write a complete UTF-8 envelope to a unique
+6. Preserve the resolver's actual `executed_at` as the run start. Record the
+   actual `source_as_of` time, which may occur during research after that start;
+   it must not be more than six hours after the start or more than five minutes
+   in the future at validation. Never backdate the source or execution time.
+   For an eligible new article, write a complete UTF-8 envelope to a unique
    `.local/gpt-scheduled-import/incoming/<name>.part`. Validate with
    `scripts/validate-scheduled-import.py`; it uses the importer's Pydantic union
    and accepts both `woori-scheduled-content-import/1.0` and
@@ -84,8 +88,11 @@ the draft flag is true and remote status is only `not_checked`.
    Desktop may append multiple turns to one session transcript. Resolve the
    latest unfinished `task_started` turn by its matching turn ID, accepted
    scheduler trigger (`automation_cron_scheduled` or the existing explicit
-   `automation_cron_run_now`), and the Automation ID prompt belonging to that
-   turn. Do not require the entire transcript to contain exactly one historical
+   `automation_cron_run_now`), and the Automation ID belonging to that turn.
+   Desktop may supply it in the `codex_app` `automation_update` tool result's
+   scheduler header instead of a user prompt. If both appear, they must agree;
+   automation memory and unrelated tool results are not identity evidence.
+   Do not require the entire transcript to contain exactly one historical
    start event, and never fall back to a completed or older turn. Multiple live
    starts, mismatched turn IDs, a composer/user trigger, or a prompt that cannot
    be associated with the selected start remains blocked.

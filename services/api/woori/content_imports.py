@@ -10,7 +10,7 @@ import hashlib
 import json
 import re
 from contextlib import nullcontext
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal, cast
 from urllib.parse import urlsplit
@@ -324,8 +324,10 @@ class ScheduledImportOrigin(BaseModel):
     def market_occurrence_has_session_date(self) -> ScheduledImportOrigin:
         if self.task_type.startswith("market_close_") and self.market_date is None:
             raise ValueError("market_close_requires_market_date")
-        if self.source_as_of > self.executed_at:
-            raise ValueError("source_as_of_cannot_follow_scheduled_execution")
+        if self.source_as_of > datetime.now(UTC) + timedelta(minutes=5):
+            raise ValueError("source_as_of_cannot_be_in_future")
+        if self.source_as_of > self.executed_at + timedelta(hours=6):
+            raise ValueError("source_as_of_exceeds_scheduled_execution_window")
         validate_occurrence_metadata(
             occurrence_id=self.occurrence_id,
             occurrence_id_source=self.occurrence_id_source,

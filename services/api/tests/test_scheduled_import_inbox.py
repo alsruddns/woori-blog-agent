@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
@@ -323,6 +323,21 @@ def test_scheduled_origin_rejects_naive_time_and_unregistered_url_shape() -> Non
     invalid_url = dict(payload, target_blog_url="https://example.org")
     with pytest.raises(ValidationError, match="registered_blogspot"):
         ScheduledImportOrigin.model_validate(invalid_url)
+
+
+def test_scheduled_origin_allows_research_after_start_with_bounded_chronology() -> None:
+    payload = scheduled_payload()["scheduled_origin"]
+    assert isinstance(payload, dict)
+    start = datetime.now(UTC) - timedelta(minutes=10)
+    assert ScheduledImportOrigin.model_validate({**payload, "executed_at": start,
+        "source_as_of": start + timedelta(minutes=5)}).source_as_of > start
+    with pytest.raises(ValidationError, match="source_as_of_cannot_be_in_future"):
+        ScheduledImportOrigin.model_validate({**payload, "executed_at": start,
+            "source_as_of": datetime.now(UTC) + timedelta(hours=1)})
+    old = datetime.now(UTC) - timedelta(hours=8)
+    with pytest.raises(ValidationError, match="source_as_of_exceeds_scheduled_execution_window"):
+        ScheduledImportOrigin.model_validate({**payload, "executed_at": old,
+            "source_as_of": old + timedelta(hours=7)})
 
 
 def test_scheduled_origin_records_deferred_remote_duplicate_check_consistently() -> None:
