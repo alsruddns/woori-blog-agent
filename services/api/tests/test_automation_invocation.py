@@ -122,6 +122,33 @@ def test_scheduled_trigger_keeps_existing_deterministic_occurrence(tmp_path: Pat
     assert result["scheduler_occurrence_id"] is None
 
 
+def test_scheduler_tool_header_identifies_current_turn_and_conflicts_fail(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    home = tmp_path / ".codex"
+    _write_automation(home / "automations", project)
+    sessions = home / "sessions"
+    sessions.mkdir(parents=True)
+    session_id = str(uuid4())
+    path = sessions / f"rollout-{session_id}.jsonl"
+    _session(path, session_id=session_id, project=project,
+             started_at=datetime(2026, 10, 30, 10, 58, 25, tzinfo=UTC),
+             trigger="automation_cron_scheduled")
+    records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    records.pop()  # Newer Desktop sessions have no user-message Automation ID.
+    records.append({"type": "response_item", "payload": {"type": "function_call_output",
+        "name": "automation_update", "namespace": "codex_app",
+        "output": "Automation: Test\nAutomation ID: automation-8\nAutomation memory: local\nLast run: none\n\nAutomation ID: untrusted-memory"}})
+    path.write_text("".join(json.dumps(x) + "\n" for x in records), encoding="utf-8")
+    env = {"CODEX_THREAD_ID": session_id, "CODEX_HOME": str(home)}
+    assert resolve_current_invocation("automation-8", project_root=project, environ=env)["execution_mode"] == "scheduled"
+    records.append({"type": "response_item", "payload": {"type": "message", "role": "user",
+        "content": [{"type": "input_text", "text": "Automation ID: automation-9"}]}})
+    path.write_text("".join(json.dumps(x) + "\n" for x in records), encoding="utf-8")
+    with pytest.raises(ValueError, match="missing_or_ambiguous"):
+        resolve_current_invocation("automation-8", project_root=project, environ=env)
+
+
 def test_weekday_noon_slot_matches_official_trigger_at_120502(tmp_path: Path) -> None:
     project = tmp_path / "project"
     project.mkdir()

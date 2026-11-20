@@ -10,7 +10,7 @@ import hashlib
 import json
 import re
 from contextlib import nullcontext
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal, cast
 from urllib.parse import urlsplit
@@ -101,6 +101,16 @@ class TargetAudience(BaseModel):
     target_region: str | None = Field(default=None, pattern=r"^[A-Z]{2}$")
     reader_relevance_reason: str = Field(min_length=10, max_length=1000)
 
+    @field_validator("target_region", mode="before")
+    @classmethod
+    def normalize_country_alpha3(cls, value: Any) -> Any:
+        # Source geography may use ISO alpha-3; localizations use alpha-2.
+        # Unknown values still fail the existing alpha-2 schema.
+        if isinstance(value, str) and re.fullmatch(r"[A-Z]{3}", value):
+            from .country_codes import ALPHA3_TO_ALPHA2
+            return ALPHA3_TO_ALPHA2.get(value, value)
+        return value
+
     @field_validator("language_code")
     @classmethod
     def canonical_language(cls, value: str) -> str:
@@ -176,7 +186,8 @@ class ContentImport(BaseModel):
             raise ValueError("insufficient_evidence_is_not_article")
         if trends and re.match(r"\s*(?:I (?:cannot|could not|am unable to) verify|Unable to verify|No sufficient evidence|검증 가능한 정보가 없습니다|근거를 확보하지 못했습니다)", self.body_markdown, re.IGNORECASE):
             raise ValueError("insufficient_evidence_is_not_article")
-        if not trends and (not self.sources or not self.claims or not self.source_ids or self.fact_checked_at is None
+        if not trends and (not self.sources or not self.claims or not self.source_ids
+                           or (self.fact_checked_at is None and self.generation_method != "chatgpt_scheduled_export")
                            or any(not c.source_ids or len(c.evidence_excerpt) < 8 for c in self.claims)):
             raise ValueError("non_trends_evidence_required")
         if self.generation_method == "codex_trends_export" and not self.google_trends_based:
@@ -324,8 +335,10 @@ class ScheduledImportOrigin(BaseModel):
     def market_occurrence_has_session_date(self) -> ScheduledImportOrigin:
         if self.task_type.startswith("market_close_") and self.market_date is None:
             raise ValueError("market_close_requires_market_date")
-        if self.source_as_of > self.executed_at:
-            raise ValueError("source_as_of_cannot_follow_scheduled_execution")
+        if self.source_as_of > datetime.now(UTC) + timedelta(minutes=5):
+            raise ValueError("source_as_of_cannot_be_in_future")
+        if self.source_as_of > self.executed_at + timedelta(hours=6):
+            raise ValueError("source_as_of_exceeds_scheduled_execution_window")
         validate_occurrence_metadata(
             occurrence_id=self.occurrence_id,
             occurrence_id_source=self.occurrence_id_source,

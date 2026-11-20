@@ -46,8 +46,12 @@ Describe 'Startup coordinator regressions' {
     Mock Test-ExactCheckoutServiceProcess { $true }
     Mock Get-PublicationStartupStatus { @{exit=0;value=@{heartbeat_fresh=$true;heartbeat=@{process_id=110}}} }
     Mock Invoke-StartupChild { throw 'must not run' }
-    Ensure-PublicationWorker
+    Ensure-PublicationWorker 'manual-confirmed'
     Assert-MockCalled Invoke-StartupChild -Times 0 -Exactly -Scope It
+  }
+
+  It 'defaults publication worker startup to the Trends-capable mode' {
+    $PublicationMode | Should Be 'scheduled-auto-manual-trends'
   }
 
   It 'refuses a stale existing Research Worker without starting another' {

@@ -1,4 +1,4 @@
-param([ValidateSet('mock-only','scheduled-auto','manual-confirmed','scheduled-auto-manual','scheduled-auto-manual-trends')][string]$Mode='mock-only')
+param([ValidateSet('mock-only','scheduled-auto','manual-confirmed','scheduled-auto-manual','scheduled-auto-manual-trends')][string]$Mode='scheduled-auto-manual-trends')
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'server-common.ps1')
 $worker = [IO.Path]::GetFullPath((Join-Path $script:ProjectRoot 'scripts\publication-worker.py'))

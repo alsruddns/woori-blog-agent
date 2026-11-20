@@ -172,6 +172,28 @@ def test_publication_read_model_uses_current_import_schema(lab: Any, monkeypatch
     assert {"queue", "review", "published", "held"} <= set(payload["summary"])
 
 
+def test_publication_read_model_does_not_repeat_manual_capability_check(lab: Any, monkeypatch: Any) -> None:
+    from contextlib import contextmanager
+
+    from woori import publication_operation
+
+    conn, api, headers = lab
+    @contextmanager
+    def shared_connection():
+        with conn.transaction():
+            yield conn
+    monkeypatch.setattr(publications, "connection", shared_connection)
+    monkeypatch.setattr(publications, "_live_write_capability", lambda *_args: {
+        "scheduled_auto": False, "manual_confirmed": True, "trends_auto": False,
+        "reason": None, "worker_fresh": True, "execution_mode": "test",
+    })
+    monkeypatch.setattr(publication_operation, "manual_requests_allowed",
+                        lambda: pytest.fail("read model repeated the capability check"))
+    response = api.get("/admin/publications", params={"view": "review", "compact": "true"}, headers=headers)
+    assert response.status_code == 200, response.text
+    assert response.json()["mode_policy"]["scoped_write_capability"]["manual_confirmed"] is True
+
+
 def test_trend_search_volume_attaches_only_to_verified_trends_items() -> None:
     request_id = str(uuid4())
     rows = [{
@@ -661,17 +683,18 @@ def test_manual_confirmed_lane_is_opt_in_and_kept_separate_from_scheduled_auto(
 
 def test_publication_mode_defaults_manual_and_auto_requires_allowlist() -> None:
     assert ModeSettingsInput().configured_mode == "manual"
+    assert ModeSettingsInput().minimum_interval_minutes == 10
     with pytest.raises(ValidationError, match="category_allowlist"):
         ModeSettingsInput(configured_mode="auto")
     auto = ModeSettingsInput(configured_mode="auto", allowed_categories=["policy"])
     assert auto.daily_auto_limit == 100
-    assert auto.minimum_interval_minutes == 15
+    assert auto.minimum_interval_minutes == 10
     assert auto.retry_limit == 0
     assert ModeSettingsInput(daily_auto_limit=100, minimum_interval_minutes=15)
     with pytest.raises(ValidationError):
         ModeSettingsInput(daily_auto_limit=101)
     with pytest.raises(ValidationError):
-        ModeSettingsInput(minimum_interval_minutes=14)
+        ModeSettingsInput(minimum_interval_minutes=9)
 
 
 def test_scheduled_policy_accepts_six_blogs_and_daily_cap_100() -> None:

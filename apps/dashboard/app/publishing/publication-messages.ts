@@ -4,6 +4,10 @@ export type PublicationReasonMessage = {
 };
 
 const messages: Record<string, PublicationReasonMessage> = {
+  high_impact_topic_requires_review: {
+    summary: "사망·범죄·건강·금융 등 영향이 큰 주제로 분류되어 자동발행이 보류됐습니다.",
+    nextStep: "원고와 근거를 검토하고 기존 수동 발행 절차에서 발행 가능 여부를 확인하세요.",
+  },
   automatic_quality_or_policy_blocked: {
     summary: "게시 전 품질 또는 운영 정책 검사에서 차단되었습니다.",
     nextStep: "아래 세부 사유를 확인하세요. 원고 수정이 필요한지, 발행 설정 확인이 필요한지 항목별 안내를 따르세요.",

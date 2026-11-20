@@ -103,6 +103,25 @@ def authorize() -> tuple[uuid.UUID, str, str]:
     return connection_id, state, binding
 
 
+def test_status_returns_latest_audit_per_connection(sandbox, monkeypatch) -> None:
+    google_mock(monkeypatch)
+    first, _, _ = authorize()
+    second, _, _ = authorize()
+    for event, payload in [
+        ("blogger.identity.verified", {"connection_id": str(first), "blogger_user_id": "old"}),
+        ("blogger.identity.verified", {"connection_id": str(second), "blogger_user_id": "other"}),
+        ("blogger.identity.verified", {"connection_id": str(first), "blogger_user_id": "new"}),
+        ("blogger.common_connection.verified", {"connection_id": str(first), "verified_blog_count": 2, "blogs": []}),
+    ]:
+        sandbox.execute("INSERT INTO audit_events(event_type,payload) VALUES (%s,%s)", (event, Jsonb(payload)))
+    result = blogger_routes.status()
+    rows = {str(row["id"]): row for row in result["connections"]}
+    assert rows[str(first)]["blogger_user_id"] == "new"
+    assert rows[str(first)]["verified_blog_count"] == 2
+    assert rows[str(second)]["blogger_user_id"] == "other"
+    assert rows[str(second)]["verified_blog_count"] == 0
+
+
 def test_oauth_state_encryption_refresh_and_disconnect(
     sandbox: psycopg.Connection[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
 ) -> None:

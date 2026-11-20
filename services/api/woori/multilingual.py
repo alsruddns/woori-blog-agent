@@ -322,8 +322,17 @@ def readiness(row: dict[str, Any]) -> dict[str, Any]:
         "blogger_connected": row["blog_id"] is not None
         and row["connection_verified_at"] is not None,
         "test_publish_verified": row["test_publish_verified_at"] is not None,
-        "automatic_publishing_allowed": False,
-        "blocked_reason": "Phase 1: external publishing and AI adapters are disabled",
+        "automatic_publishing_allowed": bool(
+            row.get("language_active") and row.get("blog_active")
+            and row.get("publication_policy_active")
+            and row.get("trends_auto_publish_allowed")
+        ),
+        "blocked_reason": (
+            "trends_language_policy_enabled; global controls and content gates still apply"
+            if row.get("language_active") and row.get("blog_active")
+            and row.get("publication_policy_active") and row.get("trends_auto_publish_allowed")
+            else "trends_language_auto_publication_disabled_or_unavailable"
+        ),
     }
     return result
 
@@ -347,10 +356,15 @@ def configuration() -> dict[str, Any]:
                 ).fetchall()
             rows = conn.execute("""SELECT p.id AS profile_id,p.language_code,p.target_country,
                 l.active AS language_active,c.*,b.id AS connection_id,b.active AS blog_active,
-                b.blog_id,b.connection_verified_at,b.test_publish_verified_at
+                b.blog_id,b.connection_verified_at,b.test_publish_verified_at,
+                publication_policy.active AS publication_policy_active,
+                publication_policy.trends_auto_publish_allowed
                 FROM language_profiles p JOIN languages l ON l.code=p.language_code
                 JOIN language_capabilities c ON c.profile_id=p.id
-                LEFT JOIN blogger_blogs b ON b.language_code=p.language_code ORDER BY p.language_code""").fetchall()
+                LEFT JOIN blogger_blogs b ON b.language_code=p.language_code
+                LEFT JOIN publishing_policies publication_policy
+                  ON publication_policy.profile_id=p.id AND publication_policy.blog_id=b.id
+                ORDER BY p.language_code,p.target_country,b.id""").fetchall()
             result["readiness"] = [readiness(row) for row in rows]
             result["performance"] = conn.execute("""SELECT b.language_code,s.country,
                 sum(s.clicks) AS clicks,sum(s.impressions) AS impressions

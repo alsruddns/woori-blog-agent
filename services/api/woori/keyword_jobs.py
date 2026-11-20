@@ -275,7 +275,9 @@ def trend_article_instructions(job:dict[str,Any], trend_contract:dict[str,Any]) 
         'D. Article Output Contract\n'
         'Return the required strict JSON schema. For an article, provide an event_focus summary naming the concrete development, parties, timing if established, and current status, with supporting source IDs. '
         'Write an original, reader-facing article with an accurate event-specific title and a concise lead, followed by only useful sections supported by the record. Do not force a fixed outline or pad length. '
-        'Every factual paragraph must contain valid [source:ID] markers. Claims stay unverified; source excerpts establish traceability, not truth. '
+        'Citation format is mandatory for every prose paragraph, including the lead, background, and conclusion: if a paragraph contains eight or more words, include at least one [source:ID] that refers to a source listed in this response. '
+        'Headings may be uncited. Before returning JSON, check each paragraph separately; add a marker only when an opened source supports that paragraph, otherwise remove the unsupported paragraph or return status="insufficient_evidence". Never invent a source ID or citation. '
+        'Claims stay unverified; source excerpts establish traceability, not truth. '
         'Return status="article" only when a concrete event is supported by opened sources and enough relevant facts for a useful article. Otherwise return status="insufficient_evidence", article=null, with a concise reason. '
         'Never convert the insufficient-evidence explanation into article text. No images or unsafe HTML.')
 

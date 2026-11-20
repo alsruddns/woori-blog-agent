@@ -11,7 +11,11 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services" / "api"))
 
 from woori.automation_invocation import resolve_current_invocation
-from woori.automation_ready_handoff import handoff_incoming
+from woori.automation_ready_handoff import (
+    handoff_incoming,
+    invocation_matches,
+    preflight_allows_import,
+)
 from woori.content_imports import ScheduledImportEnvelope
 from woori.scheduled_import_inbox import validate_envelope
 
@@ -41,6 +45,9 @@ def main() -> int:
         preflight = json.loads(args.preflight_json.read_text(encoding="utf-8"))
         if not isinstance(preflight, dict):
             raise TypeError("preflight_result_must_be_object")
+        if isinstance(envelope, ScheduledImportEnvelope) and invocation_matches(envelope, invocation) and preflight_allows_import(preflight):
+            from woori.scheduled_execution_receipts import record
+            record(invocation)
         result = handoff_incoming(
             ROOT / ".local" / "gpt-scheduled-import",
             source,

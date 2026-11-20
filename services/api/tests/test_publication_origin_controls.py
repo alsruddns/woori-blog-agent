@@ -269,7 +269,8 @@ def scheduled_identity(tmp_path, monkeypatch):
         )
 
     monkeypatch.setattr(receipts, "ROOT", project)
-    monkeypatch.setattr(receipts, "resolve_current_invocation", resolve)
+    from woori import automation_invocation
+    monkeypatch.setattr(automation_invocation, "_codex_home", lambda _env: tmp_path / ".codex")
     actual = resolve("automation-8", project_root=project, environ={"CODEX_THREAD_ID": session})
     return actual
 

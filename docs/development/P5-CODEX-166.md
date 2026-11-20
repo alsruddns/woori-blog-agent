@@ -1,0 +1,16 @@
+# P5-CODEX-166 Scheduled identity and research chronology
+
+- Work ID and date: P5-CODEX-166, 2026-11-19 Asia/Seoul.
+- Reason: The 10:30 crypto scheduled run stopped at `current_automation_start_event_pending`; the 11:00 Fed/SEC draft failed `source_as_of_cannot_follow_scheduled_execution` after current research.
+- Before: Invocation reader accepted an Automation ID only from a user-message prompt, while this actual Desktop transcript placed its scheduler header in the `codex_app` `automation_update` tool result. Source timestamp validation required research capture no later than run start even though research begins after the start.
+- After: For the same selected unfinished turn, accept the ID in the scheduler tool header or the existing user prompt; reject conflicting/ambiguous IDs and never treat free-form memory as identity. Keep Desktop session, trigger, project and configured slot checks. Preserve actual run-start and source times; permit source capture during the following six hours and reject timestamps over five minutes into the future. No scheduled policy or publication controls changed.
+- Files: `services/api/woori/automation_invocation.py`, `services/api/woori/content_imports.py`, `services/api/tests/test_automation_invocation.py`, `services/api/tests/test_scheduled_import_inbox.py`, `docs/operations/scheduled-outage-recovery.md`, this record.
+- Validation: 127 related tests passed, with pytest cache permission warning; Ruff and changed-module mypy passed. Read-only replay of the crypto transcript identified `automation-3` and its actual scheduled trigger. The original Fed/SEC incoming `.part` passed the shared validator without modification; its completed turn was not replayed and the file was not handed off or imported. Tests cover conflicting ID, post-start research, future source time and six-hour bound.
+- Related: `docs/operations/scheduled-outage-recovery.md`, `docs/development/P5-CODEX-165.md`. Commit: see git log for this record.
+- Remaining: Verify a new real Desktop scheduled occurrence through Import; neither failed historical occurrence was retried, and no Blogger write was performed as part of these diagnostics.
+
+## Service reflection
+
+- Applied `282a95281176ed3df74b9e8bd0b510c4d696e8b2` to API, Research Worker and Publication Worker using graceful restarts. Both Workers acknowledged control revision 29; master, scheduled, Trends and manual controls remained enabled and emergency stop remained off.
+- Reflection verification: 232 API tests and 35 Pester tests passed; Ruff, mypy, isolated wheel and Dashboard production build passed. Pytest cache write permission warning only. Start and completion audit events were appended.
+- The completed crypto and Fed/SEC occurrences were not replayed. The preserved Fed/SEC `.part` validates, but no handoff, Import or public publication was performed for it. The next actual scheduled run remains the end-to-end verification opportunity.

@@ -65,6 +65,7 @@ POLICY_BLOCKERS = {
 def evaluate_publication_content(
     reasons: Iterable[str], *, safe_body_available: bool,
     existing_followups: Iterable[dict[str, Any]] = (),
+    scheduled_evidence_gaps_allowed: bool = False,
 ) -> dict[str, Any]:
     """Separate remediation gaps from blockers shared by all publication lanes.
 
@@ -80,6 +81,11 @@ def evaluate_publication_content(
     for raw_reason in reasons:
         reason = str(raw_reason)
         mapping = CONTENT_REMEDIATIONS.get(reason)
+        if scheduled_evidence_gaps_allowed and reason in {
+            "source_live_verification_mismatch", "claim_span_not_found_in_live_source_evidence",
+            "claim_contains_unsupported_number_or_unit",
+        }:
+            mapping = ("source", "medium", "Scheduled source or claim evidence requires follow-up review.")
         if mapping and (safe_body_available or reason == "manual_supported_revision_required"):
             issue_type, severity, description = mapping
             coded_description = f"{reason}: {description}"

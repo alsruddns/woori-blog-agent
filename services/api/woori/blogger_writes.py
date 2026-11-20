@@ -122,9 +122,9 @@ class WriteIntervalWait(GoogleFailure):
         self.available_at = available_at
 
 
-def interval_deadline(last_write: datetime | None, now: datetime, minimum_minutes: int = 15) -> datetime:
-    if minimum_minutes < 15:
-        raise ValueError("global_publish_interval_must_be_at_least_15_minutes")
+def interval_deadline(last_write: datetime | None, now: datetime, minimum_minutes: int = 10) -> datetime:
+    if minimum_minutes < 10:
+        raise ValueError("global_publish_interval_must_be_at_least_10_minutes")
     return max(now, last_write + timedelta(minutes=minimum_minutes) if last_write else now)
 
 

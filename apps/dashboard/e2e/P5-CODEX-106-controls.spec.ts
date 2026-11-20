@@ -1,5 +1,47 @@
 import { expect, test } from "playwright/test";
 
+test("automation settings history renders both legacy changes and changed_fields audit events", async ({ page }) => {
+  const settings = {
+    revision: 23, updated_at: "2026-11-04T14:22:43Z",
+    trends_collection_enabled: true, auto_manuscript_enabled: true,
+    auto_publishing_enabled: true, trends_auto_publishing_enabled: true,
+    scheduled_auto_publishing_enabled: true, manual_publishing_enabled: true,
+    emergency_stop: false, blogger_api_restricted: false, interval_minutes: 30,
+    global_publish_min_interval_minutes: 15, global_daily_live_publish_limit: 100,
+    auto_mode: "publish", auto_blog_ids: [], google_account_report: "user_reported_available",
+    automatic_publication_operator_approved: true, read_check_result: {},
+  };
+  await page.route("**/api/automation-controls", route => route.fulfill({ json: {
+    settings,
+    effective: Object.fromEntries([
+      "trends_collection_enabled", "auto_manuscript_enabled", "auto_publishing_enabled",
+      "manual_publishing_enabled", "trends_auto_publishing_enabled", "scheduled_auto_publishing_enabled",
+      "automatic_publication_operator_approved",
+    ].map(key => [key, "정상"])),
+    workers: [],
+    history: [
+      { id: 101, created_at: "2026-11-04T14:22:43Z", payload: {
+        actor: "Project owner", reason: "Scoped automatic publication approval",
+        changed_fields: ["publication_mode_settings", "scheduled_auto_epoch"],
+      } },
+      { id: 100, created_at: "2026-11-03T10:00:00Z", payload: {
+        actor: "Operator", reason: "Legacy control update",
+        changes: [{ key: "manual_publishing_enabled", before: false, after: true }],
+      } },
+    ],
+    blogs: [], recent: { region_count: 14, last_collection: null, last_import: null, last_authoring: null, authoring_queued: 0, authoring_running: 0 },
+    eligible_jobs: 0, last_publication: null,
+  } }));
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+
+  await page.goto("/operations/automation");
+  const history = page.getByRole("table");
+  await expect(history).toContainText("scheduled_auto_epoch");
+  await expect(history).toContainText("manual_publishing_enabled: false → true");
+  expect(errors).toEqual([]);
+});
+
 test("all controls persist through the confirmation flow", async ({ page }, info) => {
   const settings = {
     revision: 9, updated_at: "2026-11-02T08:00:00Z",

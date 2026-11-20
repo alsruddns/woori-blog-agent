@@ -194,7 +194,8 @@ if (Test-IntentionalStopForCurrentSession) {
   return
 }
 
-foreach ($name in $targets) {
+$stopOrder = @($targets | Sort-Object { switch ($_) { 'dashboard' { 0 } 'api' { 1 } 'research_worker' { 2 } 'publication_worker' { 3 } default { 4 } } })
+foreach ($name in $stopOrder) {
   $stopName = $name
   try {
     & (Join-Path $PSScriptRoot 'stop.ps1') -Service $stopName -Confirm:$false -TimeoutSeconds 180

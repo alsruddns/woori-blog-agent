@@ -24,6 +24,7 @@ export type Policy = {
   schedule_cron: string;
   active: boolean;
   auto_publish_allowed: boolean;
+  trends_auto_publish_allowed: boolean;
 };
 export type Config = {
   languages: Language[];

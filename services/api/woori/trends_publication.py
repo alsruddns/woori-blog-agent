@@ -315,10 +315,27 @@ def validate_trends_job(conn: Any, blog_id: UUID, content_version_id: UUID) -> d
     if not row:
         return {"row": None, "assessment": None, "reasons": ["trends_provenance_or_import_link_missing"]}
     row = dict(row)
+    controls = conn.execute("SELECT trends_auto_enabled_at FROM automation_controls WHERE id=1").fetchone()
+    if (not controls or not controls["trends_auto_enabled_at"] or not row["received_at"]
+            or row["received_at"] <= controls["trends_auto_enabled_at"]):
+        reasons.append("trends_import_predates_language_policy_activation")
     policy = conn.execute(
         "SELECT id,enabled,allowed_geos,daily_limit,publication_mode FROM trends_publication_policy_events WHERE blog_id=%s ORDER BY id DESC LIMIT 1",
         (blog_id,),
     ).fetchone()
+    language_policy = conn.execute(
+        """SELECT p.active,p.trends_auto_publish_allowed FROM publishing_policies p
+        JOIN language_profiles profile ON profile.id=p.profile_id
+        WHERE p.blog_id=%s AND profile.language_code=%s AND profile.target_country=%s
+        ORDER BY p.active DESC,p.id LIMIT 1""",
+        (blog_id, row["content_language"], row["target_country"]),
+    ).fetchone()
+    if not language_policy:
+        reasons.append("trends_language_policy_missing")
+    elif not language_policy["active"]:
+        reasons.append("trends_language_policy_inactive")
+    elif not language_policy["trends_auto_publish_allowed"]:
+        reasons.append("trends_language_auto_publication_disabled")
     geo = str(row["contract"].get("source_country") or "")
     if not policy or not policy["enabled"] or geo not in set(policy["allowed_geos"] or []):
         reasons.append("trends_publication_policy_inactive_or_geo_not_allowed")
@@ -464,14 +481,23 @@ def enqueue_trends_auto_jobs() -> dict[str, int]:
                 JOIN trend_generation_requests q ON q.authoring_job_id=j.id AND q.state='imported'
                 JOIN blogger_blogs b ON b.active
                 JOIN google_connections g ON g.id=b.oauth_connection_id AND g.status='connected'
+                JOIN content_versions cv ON cv.id=link.content_version_id
+                JOIN content_localizations locale ON locale.id=cv.localization_id
+                JOIN language_profiles profile ON profile.language_code=locale.language_code
+                  AND profile.target_country=locale.target_country
+                JOIN publishing_policies language_policy ON language_policy.blog_id=b.id
+                  AND language_policy.profile_id=profile.id AND language_policy.active
+                  AND language_policy.trends_auto_publish_allowed
                 JOIN LATERAL (SELECT id,enabled,allowed_geos,created_at FROM trends_publication_policy_events
                   WHERE blog_id=b.id ORDER BY id DESC LIMIT 1) p ON p.enabled
                 JOIN trend_blog_geo_authoring m ON m.blog_id=b.id AND m.enabled
                 WHERE i.generation_method='codex_trends_export' AND j.job_type='google_trends'
+                  AND i.received_at>%s
                   AND j.state='imported_review' AND j.error_code IS NULL
                   AND q.contract->>'target_blog_id'=b.id::text
                   AND q.contract->>'target_language'=b.language_code
-                  AND q.contract->>'source_country'=m.geo AND m.geo=ANY(p.allowed_geos)"""
+                  AND q.contract->>'source_country'=m.geo AND m.geo=ANY(p.allowed_geos)""",
+                (controls_snapshot["trends_auto_enabled_at"],),
             ).fetchall()
         else:
             preparation_targets = []
@@ -528,11 +554,12 @@ def enqueue_trends_auto_jobs() -> dict[str, int]:
                   FROM external_content_import_assessments WHERE import_id=i.id AND version_id=iv.id
                   ORDER BY assessed_at DESC,id DESC LIMIT 1) a ON true
                 WHERE i.generation_method='codex_trends_export' AND j.job_type='google_trends'
+                  AND i.received_at>%s
                   AND j.state='imported_review' AND j.error_code IS NULL
                   AND iv.version_number=(SELECT max(i2.version_number) FROM external_content_import_versions i2 WHERE i2.import_id=i.id)
                   AND q.contract->>'target_blog_id'=%s
                   AND q.contract->>'target_language'=%s
-                ORDER BY i.received_at,i.id""", (blog_id, str(blog_id), policy["language_code"]),
+                ORDER BY i.received_at,i.id""", (blog_id, controls["trends_auto_enabled_at"], str(blog_id), policy["language_code"]),
             ).fetchall()
             for item in candidates:
                 if not collection_after_activation(item["contract"].get("collection_slot"), policy["created_at"]):

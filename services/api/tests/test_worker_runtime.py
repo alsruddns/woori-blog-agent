@@ -1,7 +1,78 @@
 import psycopg
 import pytest
 from woori.config import settings
+from woori.publication_worker import safe_database_error_hint, safe_database_error_site
 from woori.worker import acquire_process_lock, release_process_lock
+
+
+def test_safe_database_error_hint_reports_only_undefined_operator_signature() -> None:
+    class Diagnostic:
+        message_primary = "operator does not exist: timestamp with time zone < text"
+
+    class DatabaseError(Exception):
+        sqlstate = "42883"
+        diag = Diagnostic()
+
+    assert safe_database_error_hint(DatabaseError()) == (
+        "undefined_operator:timestamp with time zone < text"
+    )
+
+
+def test_safe_database_error_hint_omits_unrecognized_message_and_non_undefined_errors() -> None:
+    class Diagnostic:
+        message_primary = "invalid input value: possible article title"
+
+    class UndefinedError(Exception):
+        sqlstate = "42883"
+        diag = Diagnostic()
+
+    class OtherError(Exception):
+        sqlstate = "23514"
+        diag = Diagnostic()
+
+    assert safe_database_error_hint(UndefinedError()) == (
+        "undefined_operator_or_function:invalid input value: possible article title"
+    )
+    assert safe_database_error_hint(OtherError()) is None
+
+
+def test_safe_database_error_hint_redacts_quoted_values() -> None:
+    class Diagnostic:
+        message_primary = "operator does not exist: unusual 'private title' = text"
+
+    class DatabaseError(Exception):
+        sqlstate = "42883"
+        diag = Diagnostic()
+
+    hint = safe_database_error_hint(DatabaseError())
+    assert hint is not None
+    assert "private title" not in hint
+    assert "<redacted>" in hint
+
+
+def test_safe_database_error_hint_uses_exception_text_when_primary_is_missing() -> None:
+    class Diagnostic:
+        message_primary = None
+
+    class DatabaseError(Exception):
+        sqlstate = "42883"
+        diag = Diagnostic()
+
+    error = DatabaseError("operator does not exist: uuid = text")
+    assert safe_database_error_hint(error) == "undefined_operator:uuid = text"
+
+
+def test_safe_database_error_site_returns_application_file_and_line_only() -> None:
+    class DatabaseError(psycopg.Error):
+        sqlstate = "42883"
+
+    try:
+        raise DatabaseError("private query text")
+    except DatabaseError as error:
+        site = safe_database_error_site(error)
+    assert site is not None
+    assert site.startswith("test_worker_runtime.py:")
+    assert "private query text" not in site
 
 
 def test_research_worker_session_lock_blocks_duplicate_process_and_releases() -> None:
