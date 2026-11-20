@@ -12,7 +12,7 @@ export default async function Blogger({
     const response = await fetch(`${API_BASE}/admin/blogger/status`, {
       headers: headers(),
       cache: "no-store",
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(12000),
     });
     if (response.ok) status = await response.json();
   } catch {}
