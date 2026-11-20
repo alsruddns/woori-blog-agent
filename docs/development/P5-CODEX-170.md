@@ -8,3 +8,4 @@
 - Changed files: `services/api/woori/publications.py`, `apps/dashboard/app/publishing/page.tsx`, this record.
 - Validation: 63 publication and monitor tests passed, Ruff and mypy passed; pytest cache warning only. Direct read-only list timings after the change were 4.88 seconds for review and 3.37 seconds for auto-failure under concurrent tests. Related: `docs/development/P5-CODEX-169.md`; commit identity via git log.
 - Remaining: Verify actual page after deployment. Provider quota availability, exact Trends article identity and remote uniqueness remain unresolved; no public write or requeue is claimed. The separate scheduled Import DB constraint mismatch previously reported remains outside this fix.
+- Follow-up test: Added a regression check that the read-only list uses the computed capability snapshot without invoking a second manual permission check; it passed in the isolated test database.

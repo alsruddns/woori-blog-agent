@@ -172,6 +172,28 @@ def test_publication_read_model_uses_current_import_schema(lab: Any, monkeypatch
     assert {"queue", "review", "published", "held"} <= set(payload["summary"])
 
 
+def test_publication_read_model_does_not_repeat_manual_capability_check(lab: Any, monkeypatch: Any) -> None:
+    from contextlib import contextmanager
+
+    from woori import publication_operation
+
+    conn, api, headers = lab
+    @contextmanager
+    def shared_connection():
+        with conn.transaction():
+            yield conn
+    monkeypatch.setattr(publications, "connection", shared_connection)
+    monkeypatch.setattr(publications, "_live_write_capability", lambda *_args: {
+        "scheduled_auto": False, "manual_confirmed": True, "trends_auto": False,
+        "reason": None, "worker_fresh": True, "execution_mode": "test",
+    })
+    monkeypatch.setattr(publication_operation, "manual_requests_allowed",
+                        lambda: pytest.fail("read model repeated the capability check"))
+    response = api.get("/admin/publications", params={"view": "review", "compact": "true"}, headers=headers)
+    assert response.status_code == 200, response.text
+    assert response.json()["mode_policy"]["scoped_write_capability"]["manual_confirmed"] is True
+
+
 def test_trend_search_volume_attaches_only_to_verified_trends_items() -> None:
     request_id = str(uuid4())
     rows = [{
