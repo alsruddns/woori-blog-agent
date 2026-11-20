@@ -1861,9 +1861,10 @@ def list_publications(
         global_publish_interval = conn.execute(
             "SELECT global_publish_min_interval_minutes,global_daily_live_publish_limit FROM automation_controls WHERE id=1"
         ).fetchone()
-        from .publication_operation import manual_requests_allowed
         from .publication_read_state import failure_resolved_clause, pending_state
-        manual_permitted = manual_requests_allowed() and bool(mode_data.get("scoped_write_capability", {}).get("manual_confirmed"))
+        # _mode_settings already checked manual_requests_allowed when building
+        # this read-only capability snapshot. Avoid repeating its DB lookups.
+        manual_permitted = bool(mode_data.get("scoped_write_capability", {}).get("manual_confirmed"))
         cutoff_row = conn.execute("SELECT max(created_at) AS cutoff FROM audit_events WHERE event_type='publication.manual_only.activated'").fetchone()
         pause_cutoff = cutoff_row["cutoff"] if cutoff_row else None
         raw_latest_count_row = conn.execute(
