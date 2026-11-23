@@ -79,6 +79,28 @@ def test_unavailable_research_reports_concrete_failure_class(tmp_path):
     assert result["article_created"] is False
 
 
+def test_timestamp_guidance_preserves_source_observations_after_run_start():
+    invocation = {"executed_at": "2026-11-23T11:58:38+09:00"}
+    package = {"sources": [
+        {"source_opened_at": "2026-11-23T02:59:19.914742+00:00"},
+        {"source_opened_at": "2026-11-23T02:59:19.914756+00:00"},
+    ]}
+    guidance = stage._scheduled_timestamp_guidance(invocation, package)
+    assert guidance["executed_at"] == invocation["executed_at"]
+    assert guidance["source_as_of_after_execution_allowed"] is True
+    assert guidance["source_as_of_from_all_opened_sources"] == package["sources"][1]["source_opened_at"]
+    assert "Do not backdate" in guidance["instruction"]
+
+
+@pytest.mark.parametrize("source_time", [None, "invalid", "2026-11-23T19:00:00+09:00"])
+def test_timestamp_guidance_never_invents_invalid_or_out_of_window_time(source_time):
+    guidance = stage._scheduled_timestamp_guidance(
+        {"executed_at": "2026-11-23T11:58:38+09:00"},
+        {"sources": [{"source_opened_at": source_time}]},
+    )
+    assert "source_as_of_from_all_opened_sources" not in guidance
+
+
 def test_manual_stage_runs_generation_preflight_then_manual_broker_and_preserves_unknown(tmp_path):
     exact_preflight = json.dumps(_preflight(), ensure_ascii=False) + "\n"
     package_path = tmp_path / "state" / "research-packages" / "automation-7-manual-123e4567-e89b-12d3-a456-426614174000.research.json"
@@ -151,6 +173,7 @@ def test_scheduled_stage_selects_only_scheduled_broker(tmp_path):
     assert code == 0
     assert result["execution_mode"] == "scheduled"
     assert commands[-1].endswith("scheduled-research-broker.py")
+    assert result["scheduled_timestamp_guidance"]["source_as_of_after_execution_allowed"] is True
     saved_preflight = json.loads(Path(result["preflight_json_path"]).read_text(encoding="utf-8"))
     assert saved_preflight["scheduled_request"] == {
         "automation_id": "automation-7",
