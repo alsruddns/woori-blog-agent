@@ -8,3 +8,7 @@
 - Validation: 73 related tests passed, Ruff passed; pytest cache warning only. Read-only replay against the original run's existing research and preflight artifacts yielded `executed_at=2026-11-23T11:58:38+09:00` and observed `source_as_of=2026-11-23T02:59:19.914756+00:00` (11:59:19.914756 KST), without changing either. Tests cover later observation, invalid/missing observations, and the six-hour bound.
 - Related: `docs/development/P5-CODEX-166.md`, `docs/operations/scheduled-outage-recovery.md`. Commit: see git log for this record.
 - Remaining: This completed occurrence was not replayed and no envelope, Import or Blogger publication was created. The next actual scheduled run is required to verify end-to-end behavior. The separate P167 application/database fact-check constraint mismatch remains unresolved and may affect later Imports with `fact_checked_at=null`.
+
+## Service reflection
+
+- Committed `75ba4a3efacbd5437423e8921165f27dd80c6941`; reflection validation passed (18 changed-suite tests, Ruff, isolated wheel and Dashboard production build; pytest cache write warning). The shared research-stage script is read from the checkout by each new invocation, so no running service needed a restart. No task configuration, schedule or existing manuscript was changed. Start/completion audit events were appended.
