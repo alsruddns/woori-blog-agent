@@ -1,0 +1,10 @@
+# P5-CODEX-172: Reconcile uncertain Trends LIVE writes
+
+- Date: 2026-11-24 (Asia/Seoul)
+- Reason: A Trends auto publication returned a successful Blogger LIVE response, but its immediate verification hit the free quota limit. The resulting uncertain ledger entry blocked subsequent LIVE publication to prevent duplicate posts.
+- Before: The global LIVE guard correctly stopped writes, but there was no targeted, evidence-checked recovery path or actionable dashboard explanation.
+- After: An operator can reconcile a single eligible Trends auto job using the existing read-only Blogger client. The original request fingerprint and remote LIVE post identity and content must match. The job, ledger, publication record and audit event are updated atomically under the shared write lock. Quota recovery and credential checks fail closed. Failed historical jobs are not retried, and automation settings are not changed.
+- Incident outcome: The recorded post was independently read and matched; the original operation was reconciled without a Blogger write. The global unresolved LIVE count was zero after recovery. This does not establish that a later automatic publication has succeeded.
+- Files: `services/api/woori/publication_reconciliation.py`, `scripts/reconcile-trends-live.py`, `services/api/tests/test_publication_reconciliation.py`, `apps/dashboard/app/publishing/publication-messages.ts`, `docs/operations/uncertain-live-reconciliation.md`, and this record.
+- Validation: 14 targeted reconciliation tests passed, including matching and mismatch database transactions, quota and credential blocks. Related publication and worker suites passed (78 and 75 tests in the earlier runs). Ruff and mypy passed for the changed Python code. Service verification and commit identity are available in the deployment result and Git history.
+- Remaining: A subsequent eligible automatic publication must be observed to establish end-to-end operation. Other uncertain origins or mismatches require separate investigation; this command does not authorize a retry.
