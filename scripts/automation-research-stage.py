@@ -195,6 +195,7 @@ def run_stage(
         checked = command_runner(
             duplicate_command, cwd=root, capture_output=True, text=True,
             encoding="utf-8", timeout=360, check=False,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
         preflight_text = checked.stdout
         preflight = _json_object(
@@ -293,6 +294,7 @@ def run_stage(
         researched = command_runner(
             broker_command, cwd=root, input=preflight_text, capture_output=True,
             text=True, encoding="utf-8", timeout=620, check=False,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
         broker_result = _json_object(
             researched.stdout, limit=MAX_BROKER_BYTES,

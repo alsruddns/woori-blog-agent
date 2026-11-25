@@ -61,18 +61,25 @@ Describe 'Windows service lifecycle ownership and startup policy' {
       Triggers=@([pscustomobject]@{ UserId=$current; CimClass=[pscustomobject]@{ CimClassName='MSFT_TaskLogonTrigger' } })
     }
     (Test-TaskOwnedByProject $task) | Should Be $true
+    $task.Actions[0].Execute = 'wscript.exe'
+    $task.Actions[0].Arguments = "//B //Nologo `"$(Join-Path $script:ProjectRoot 'scripts\hidden-task-launcher.vbs')`" startup"
+    (Test-TaskOwnedByProject $task) | Should Be $true
+    $task.Actions[0].Execute = 'powershell.exe'
     $task.Actions[0].Arguments = '-File "C:\other\scripts\start-services.ps1"'
     (Test-TaskOwnedByProject $task) | Should Be $false
   }
 
   It 'repairs the owned hidden login task with the all-service Trends-capable launch mode' {
     $autostart = Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\manage-autostart.ps1') -Raw
-    $autostart | Should Match 'startupArguments = .*WindowStyle Hidden'
-    $autostart | Should Match '\$scriptPath.*PublicationMode scheduled-auto-manual-trends'
+    $autostart | Should Match 'hidden-task-launcher\.vbs'
+    $autostart | Should Match "New-ScheduledTaskAction -Execute 'wscript.exe'"
     $autostart | Should Match 'Update the existing hidden login task to start all four services'
     $autostart | Should Match 'Set-ScheduledTask .* -ErrorAction Stop'
     $autostart | Should Match 'Updated login task could not be verified'
     $autostart | Should Match 'AtLogOn'
+    $launcher = Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\hidden-task-launcher.vbs') -Raw
+    $launcher | Should Match 'shell.Run\(command, 0, True\)'
+    $launcher | Should Match 'PublicationMode scheduled-auto-manual-trends'
   }
 
   It 'keeps startup detached from per-save triggers and gates scheduled Auto explicitly' {

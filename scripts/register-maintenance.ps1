@@ -7,7 +7,9 @@ foreach ($kind in @('Worker','Backup')) {
     $script = if ($kind -eq 'Worker') { "$PSScriptRoot/run-worker.ps1" } else { "$PSScriptRoot/run-maintenance.ps1" }
     $existing = Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
     if ($existing) { throw "Task $name already exists; review it before changes" }
-    $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -NonInteractive -WindowStyle Hidden -File `"$script`"" -WorkingDirectory $root
+    $launcher = Join-Path $PSScriptRoot 'hidden-task-launcher.vbs'
+    $mode = if ($kind -eq 'Worker') { 'startup' } else { 'backup' }
+    $action = New-ScheduledTaskAction -Execute 'wscript.exe' -Argument "//B //Nologo `"$launcher`" $mode" -WorkingDirectory $root
     $triggers = @(New-ScheduledTaskTrigger -AtLogOn -User $user)
     if ($kind -eq 'Backup') { $triggers += New-ScheduledTaskTrigger -Daily -At '03:00' }
     $duration = if ($kind -eq 'Worker') { [TimeSpan]::Zero } else { New-TimeSpan -Hours 1 }

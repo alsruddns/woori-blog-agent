@@ -4,7 +4,8 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'server-common.ps1')
 $taskName = 'WooriBlogAgent-Worker'
 $scriptPath = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'start-services.ps1'))
-$startupArguments = "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$scriptPath`" -PublicationMode scheduled-auto-manual-trends"
+$hiddenLauncher = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'hidden-task-launcher.vbs'))
+$hiddenArguments = "//B //Nologo `"$hiddenLauncher`" startup"
 $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 
 function Test-TaskOwnedByProject($Task) {
@@ -17,12 +18,13 @@ function Test-TaskOwnedByProject($Task) {
     $normalizedArguments = $arguments.Replace('/','\')
     $pointsToProject = $normalizedArguments.IndexOf($expectedScript.Replace('/','\'),[StringComparison]::OrdinalIgnoreCase) -ge 0 -or
       $normalizedArguments.IndexOf($oldKnownScript.Replace('/','\'),[StringComparison]::OrdinalIgnoreCase) -ge 0
+    $hiddenOwned = [string]$action.Execute -match '(?i)(^|\\)wscript(?:\.exe)?$' -and $arguments -ieq $hiddenArguments
     $workingDirectoryMatches = [string]$action.WorkingDirectory -and ([IO.Path]::GetFullPath([string]$action.WorkingDirectory) -ieq $script:ProjectRoot)
     $principalMatches = [string]$Task.Principal.UserId -ieq $currentUser -or
       [string]$Task.Triggers[0].UserId -ieq $currentUser
     $hasLogonTrigger = @($Task.Triggers | Where-Object { $_.CimClass.CimClassName -like '*LogonTrigger*' }).Count -gt 0
   } catch { return $false }
-  return ([string]$action.Execute -match '(?i)(^|\\)powershell(?:\.exe)?$') -and $pointsToProject -and $workingDirectoryMatches -and $principalMatches -and $hasLogonTrigger
+  return (([string]$action.Execute -match '(?i)(^|\\)powershell(?:\.exe)?$' -and $pointsToProject) -or $hiddenOwned) -and $workingDirectoryMatches -and $principalMatches -and $hasLogonTrigger
 }
 
 function Get-ProjectAutoTasks {
@@ -30,7 +32,7 @@ function Get-ProjectAutoTasks {
   @($all | Where-Object {
     @($_.Actions | Where-Object {
       ([string]$_.Arguments).IndexOf($script:ProjectRoot,[StringComparison]::OrdinalIgnoreCase) -ge 0 -and
-      ([string]$_.Arguments -match '(?i)start-services\.ps1|run-worker\.ps1')
+      ([string]$_.Arguments -match '(?i)start-services\.ps1|run-worker\.ps1|hidden-task-launcher\.vbs')
     }).Count -gt 0
   })
 }
@@ -48,7 +50,7 @@ switch ($Action) {
     }
   }
   'install' {
-    foreach ($required in @('start-services.ps1','start.ps1','stop.ps1','status.ps1','start-research-worker.ps1','start-publication-worker.ps1','service-runtime-status.py')) {
+    foreach ($required in @('hidden-task-launcher.vbs','start-services.ps1','start.ps1','stop.ps1','status.ps1','start-research-worker.ps1','start-publication-worker.ps1','service-runtime-status.py')) {
       if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot $required) -PathType Leaf)) { throw "Required service lifecycle file is missing: $required" }
     }
     $validated = Read-ValidatedSource
@@ -60,41 +62,22 @@ switch ($Action) {
     $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
     if ($task -and -not (Test-TaskOwnedByProject $task)) { throw "Task '$taskName' exists but its ownership cannot be proved. No task was changed." }
     if ($task) {
-      if ($task.Actions[0].Arguments.IndexOf($scriptPath,[StringComparison]::OrdinalIgnoreCase) -ge 0) {
-        if ([string]$task.Actions[0].Arguments -notmatch '(?i)(^|\s)-PublicationMode\s+scheduled-auto-manual-trends(?:\s|$)') {
-          if ($PSCmdlet.ShouldProcess($taskName,'Update the existing hidden login task to start all four services in the Trends-capable worker mode while preserving its trigger and settings')) {
-            $actionObject = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $startupArguments -WorkingDirectory $script:ProjectRoot
-            Set-ScheduledTask -TaskName $taskName -Action $actionObject -ErrorAction Stop | Out-Null
-            Enable-ScheduledTask -TaskName $taskName -ErrorAction Stop | Out-Null
-            $updatedTask = Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
-            if ([string]$updatedTask.Actions[0].Arguments -notmatch '(?i)(^|\s)-PublicationMode\s+scheduled-auto-manual-trends(?:\s|$)' -or
-                -not $updatedTask.Settings.Enabled -or -not (Test-TaskOwnedByProject $updatedTask)) {
-              throw 'Updated login task could not be verified; its state must be inspected before reporting success.'
-            }
-            Write-Output "Updated existing project-owned task '$taskName' to launch the four services hidden after interactive logon; its trigger, principal, and retry settings were preserved."
-          }
-          break
+      if ([string]$task.Actions[0].Arguments -ine $hiddenArguments -or [string]$task.Actions[0].Execute -notmatch '(?i)(^|\\)wscript(?:\.exe)?$') {
+        if ($PSCmdlet.ShouldProcess($taskName,'Update the existing hidden login task to start all four services without a console window')) {
+          $actionObject = New-ScheduledTaskAction -Execute 'wscript.exe' -Argument $hiddenArguments -WorkingDirectory $script:ProjectRoot
+          Set-ScheduledTask -TaskName $taskName -Action $actionObject -ErrorAction Stop | Out-Null
+          $updatedTask = Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
+          if (-not (Test-TaskOwnedByProject $updatedTask)) { throw 'Updated login task could not be verified.' }
         }
-        if (-not $task.Settings.Enabled -and $PSCmdlet.ShouldProcess($taskName,'Enable the existing login auto-start task')) { Enable-ScheduledTask -TaskName $taskName | Out-Null }
-        Write-Output "Task '$taskName' already launches all four services hidden after interactive logon in the Trends-capable worker mode."
         break
       }
-      if ($PSCmdlet.ShouldProcess($taskName,'Replace the existing project-owned worker-only action with the four-service startup coordinator while preserving its login trigger and settings')) {
-        $actionObject = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $startupArguments -WorkingDirectory $script:ProjectRoot
-        Set-ScheduledTask -TaskName $taskName -Action $actionObject -ErrorAction Stop | Out-Null
-        Enable-ScheduledTask -TaskName $taskName -ErrorAction Stop | Out-Null
-        $updatedTask = Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
-        if ([string]$updatedTask.Actions[0].Arguments -notmatch '(?i)(^|\s)-PublicationMode\s+scheduled-auto-manual-trends(?:\s|$)' -or
-            -not $updatedTask.Settings.Enabled -or -not (Test-TaskOwnedByProject $updatedTask)) {
-          throw 'Updated login task could not be verified; its state must be inspected before reporting success.'
-        }
-        Write-Output "Updated existing project-owned task '$taskName'; its user-logon trigger, principal, and retry settings were preserved."
-      }
+      Write-Output "Task '$taskName' already uses the hidden launcher."
       break
+
     }
     if ($projectTasks.Count -eq 1) { throw "Project startup task '$($projectTasks[0].TaskName)' already exists under a different name; refusing duplicate registration." }
     if ($PSCmdlet.ShouldProcess($taskName,"Register a current-user interactive logon task for $scriptPath")) {
-      $actionObject = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $startupArguments -WorkingDirectory $script:ProjectRoot
+      $actionObject = New-ScheduledTaskAction -Execute 'wscript.exe' -Argument $hiddenArguments -WorkingDirectory $script:ProjectRoot
       $trigger = New-ScheduledTaskTrigger -AtLogOn -User $currentUser
       $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 5 -RestartInterval (New-TimeSpan -Minutes 2) -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
       $principal = New-ScheduledTaskPrincipal -UserId $currentUser -LogonType Interactive -RunLevel Limited
@@ -104,7 +87,7 @@ switch ($Action) {
   }
   'on' {
     $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-    if (-not (Test-TaskOwnedByProject $task) -or $task.Actions[0].Arguments.IndexOf($scriptPath,[StringComparison]::OrdinalIgnoreCase) -lt 0) { throw 'The verified four-service startup task is not installed; run -Action install first.' }
+    if (-not (Test-TaskOwnedByProject $task) -or ([string]$task.Actions[0].Arguments -ine $hiddenArguments -and $task.Actions[0].Arguments.IndexOf($scriptPath,[StringComparison]::OrdinalIgnoreCase) -lt 0)) { throw 'The verified four-service startup task is not installed; run -Action install first.' }
     if ($PSCmdlet.ShouldProcess($taskName,'Enable login auto-start')) {
       Enable-ScheduledTask -TaskName $taskName | Out-Null
       Write-Output "Login auto-start is enabled for '$taskName'."

@@ -67,7 +67,9 @@ def _package(path: Path, *, mode: str = "manual") -> None:
 
 
 def test_unavailable_research_reports_concrete_failure_class(tmp_path):
-    def fake_run(command, **_kwargs):
+    calls = []
+    def fake_run(command, **kwargs):
+        calls.append(kwargs)
         if command[1].endswith("scheduled_duplicate_check.py"):
             return SimpleNamespace(returncode=0, stdout=json.dumps(_preflight(mode="scheduled")), stderr="")
         return SimpleNamespace(returncode=4, stdout=json.dumps({
@@ -77,6 +79,10 @@ def test_unavailable_research_reports_concrete_failure_class(tmp_path):
     assert code == 4
     assert result["reason"] == "research_no_current_sources"
     assert result["article_created"] is False
+    import os
+    import subprocess
+    assert len(calls) == 2
+    assert all(call["creationflags"] == (subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0) for call in calls)
 
 
 def test_timestamp_guidance_preserves_source_observations_after_run_start():

@@ -135,6 +135,7 @@ def main(argv: list[str] | None = None) -> int:
                 text=True,
                 timeout=12,
                 check=False,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
             )
             policy = json.loads(check.stdout)
             if check.returncode != 0 or policy.get("allowed") is not True:
