@@ -3,6 +3,18 @@
 . (Join-Path $PSScriptRoot '..\manage-autostart.ps1') -Action status
 
 Describe 'Windows service lifecycle ownership and startup policy' {
+  It 'launches a real child without a Windows console and redirects its output' {
+    $logs = Get-ProjectLogDirectory
+    $name = [guid]::NewGuid().ToString('N')
+    $stdout = Join-Path $logs "console-test-$name.out"
+    $stderr = Join-Path $logs "console-test-$name.err"
+    $python = Join-Path $script:ProjectRoot '.venv\Scripts\python.exe'
+    $proc = Start-NoConsoleProcess $python @('-c','import ctypes,time; print(ctypes.windll.kernel32.GetConsoleWindow(),flush=True); time.sleep(8)') $stdout $stderr
+    $deadline = (Get-Date).AddSeconds(5)
+    do { Start-Sleep -Milliseconds 100 } while ((-not (Test-Path $stdout) -or -not (Get-Content $stdout -Raw)) -and (Get-Date) -lt $deadline)
+    (Get-Content $stdout -Raw).Trim() | Should Be '0'
+    $proc.HasExited | Should Be $false
+  }
   It 'classifies an exact project Python Worker and excludes a different checkout' {
     $python = Join-Path $script:ProjectRoot '.venv\Scripts\python.exe'
     $owned = [pscustomobject]@{ Id=410; ParentId=1; Path=$python; CommandLine="`"$python`" -m woori.worker" }

@@ -29,9 +29,7 @@ if ($matches.Count) {
   throw "A checkout-owned Research Worker process exists (PID $ids) but its heartbeat cannot be verified. No duplicate was started."
 }
 
-$proc = Start-Process -FilePath $python -ArgumentList @('-m','woori.worker') `
-  -WorkingDirectory $script:ProjectRoot -WindowStyle Hidden -PassThru `
-  -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+$proc = Start-NoConsoleProcess $python @('-m','woori.worker') $stdout $stderr
 $deadline = (Get-Date).AddSeconds($ReadyTimeoutSeconds)
 $verified = $false
 $worker = $null

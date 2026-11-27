@@ -28,11 +28,8 @@ function Invoke-StartupProcess([string]$ScriptPath, [string[]]$ChildArguments) {
   $requestId = [guid]::NewGuid().ToString('N')
   $stdout = Join-Path $logs "startup-child-$requestId.stdout.log"
   $stderr = Join-Path $logs "startup-child-$requestId.stderr.log"
-  $stdin = Join-Path $logs "startup-child-$requestId.stdin"
-  [IO.File]::WriteAllText($stdin,'')
-  $arguments = @('-NoProfile','-NonInteractive','-WindowStyle','Hidden','-ExecutionPolicy','Bypass','-File',('"'+$ScriptPath+'"')) + $ChildArguments
-  $child = Start-Process -FilePath 'powershell.exe' -ArgumentList $arguments -WindowStyle Hidden -PassThru `
-    -WorkingDirectory $script:ProjectRoot -RedirectStandardInput $stdin -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+  $arguments = @('-NoProfile','-NonInteractive','-WindowStyle','Hidden','-ExecutionPolicy','Bypass','-File',$ScriptPath) + $ChildArguments
+  $child = Start-NoConsoleProcess 'powershell.exe' $arguments $stdout $stderr
   $null = $child.Handle
   if (-not $child.WaitForExit(90000)) {
     throw "Startup child PID $($child.Id) did not exit within 90 seconds; left untouched. Inspect $stderr."

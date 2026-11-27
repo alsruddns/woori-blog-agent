@@ -65,10 +65,7 @@ $stdout = Join-Path $logs 'publication-worker.stdout.log'
 $stderr = Join-Path $logs 'publication-worker.stderr.log'
 $manifest = Read-ServerManifest
 $runner = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'start-publication-worker.ps1'))
-$proc = Start-Process -FilePath $python `
-  -ArgumentList (@("`"$worker`"") + $modeArgs) `
-  -WorkingDirectory $script:ProjectRoot -WindowStyle Hidden -PassThru `
-  -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+$proc = Start-NoConsoleProcess $python (@($worker) + $modeArgs) $stdout $stderr
 Start-Sleep -Milliseconds 500
 if ($proc.HasExited) {
   throw "Publication Worker exited during startup. Inspect $stderr; it was not restarted or force-stopped."

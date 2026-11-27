@@ -9,6 +9,27 @@ $script:Services = @{
   dashboard = @{ Port = 3100; Script = (Join-Path $PSScriptRoot 'run-dashboard.ps1') }
 }
 
+function Start-NoConsoleProcess([string]$Executable, [string[]]$Arguments, [string]$Stdout, [string]$Stderr) {
+  $pythonw = Join-Path $script:ProjectRoot '.venv\Scripts\pythonw.exe'
+  $helper = Join-Path $PSScriptRoot 'launch-no-console.py'
+  $logs = Get-ProjectLogDirectory
+  $request = Join-Path $logs ("launch-" + [guid]::NewGuid().ToString('N') + '.json')
+  try {
+    @{ executable=$Executable; arguments=@($Arguments); cwd=$script:ProjectRoot; stdout=$Stdout; stderr=$Stderr } |
+      ConvertTo-Json -Compress | Set-Content -LiteralPath $request -Encoding UTF8
+    $launcher = Start-Process -FilePath $pythonw -ArgumentList @(('"'+$helper+'"'),('"'+$request+'"')) `
+      -WorkingDirectory $script:ProjectRoot -WindowStyle Hidden -PassThru
+    $null = $launcher.Handle
+    if (-not $launcher.WaitForExit(15000)) { throw 'Console-free launcher did not finish; no process was terminated.' }
+    if ($launcher.ExitCode -ne 0) { throw 'Console-free launcher failed; inspect project logs.' }
+    $result = Get-Content -LiteralPath $request -Raw -Encoding UTF8 | ConvertFrom-Json
+    if (-not $result.pid -or [int]$result.pid -le 0) { throw 'Console-free launcher returned no process identity.' }
+    return Get-Process -Id ([int]$result.pid) -ErrorAction Stop
+  } finally {
+    Remove-Item -LiteralPath $request -ErrorAction SilentlyContinue
+  }
+}
+
 function Read-ServerManifest {
   if (-not (Test-Path -LiteralPath $script:ManifestPath)) { return @{ services = @{} } }
   try {
