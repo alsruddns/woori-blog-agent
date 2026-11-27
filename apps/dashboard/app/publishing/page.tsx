@@ -10,18 +10,20 @@ export default async function Page({searchParams}:{searchParams:Promise<Record<s
   const query=new URLSearchParams(Object.entries(filters).filter(([key,value])=>key!=="section"&&value));
   query.set("compact","true");
   let data: PublicationData | null = null;
-  let loadState: "ready" | "unauthenticated" | "unavailable" | "server_error" = "unavailable";
+  let loadState: "ready" | "unauthenticated" | "unavailable" | "server_error" | "timeout" = "unavailable";
   try {
     if (process.env.ADMIN_TOKEN) {
       const response = await fetch(`${API_BASE}/admin/publications?${query}`, {
-        headers: headers(), cache: "no-store", signal: AbortSignal.timeout(5000),
+        headers: headers(), cache: "no-store", signal: AbortSignal.timeout(20000),
       });
       if (response.ok) data = await response.json() as PublicationData;
       loadState = response.ok ? "ready" : response.status === 401 || response.status === 403 ? "unauthenticated" : "server_error";
     } else loadState = "unauthenticated";
-  } catch {}
+  } catch (error) {
+    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) loadState = "timeout";
+  }
   return <main className="workspace-main publication-workspace">
     <div className="page-heading"><div><p className="eyebrow">콘텐츠 배포</p><h1>발행 관리</h1><p>최신 원고의 발행 대기·검토·게시 결과와 실제 블로그 정책을 확인합니다.</p></div><Link className="secondary-button" href="/blogger">Blogger 연결 확인</Link></div>
-    {data ? <PublicationManager initial={data} initialFilters={filters} /> : <section className="workspace-panel"><p role="alert" className="quality-held">{loadState === "unauthenticated" ? "인증되지 않았습니다. 로컬 관리자 인증 설정을 확인하세요." : loadState === "server_error" ? "서버가 발행 정보를 불러오지 못했습니다. 잠시 후 다시 시도하거나 운영 진단을 확인하세요." : "로컬 API 서버에 연결할 수 없습니다. API 서버가 실행 중인지 확인하세요."}</p></section>}
+    {data ? <PublicationManager initial={data} initialFilters={filters} /> : <section className="workspace-panel"><p role="alert" className="quality-held">{loadState === "unauthenticated" ? "인증되지 않았습니다. 로컬 관리자 인증 설정을 확인하세요." : loadState === "server_error" ? "서버가 발행 정보를 불러오지 못했습니다. 잠시 후 다시 시도하거나 운영 진단을 확인하세요." : loadState === "timeout" ? "발행 정보 조회가 오래 걸려 시간 제한을 초과했습니다. 잠시 후 다시 시도하세요." : "로컬 API 서버에 연결할 수 없습니다. API 서버가 실행 중인지 확인하세요."}</p><Link href="/publishing" className="secondary-button">다시 불러오기</Link></section>}
   </main>;
 }

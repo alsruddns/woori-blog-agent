@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
@@ -119,6 +120,7 @@ def _broker(payload: dict[str, Any]) -> dict[str, Any]:
             [sys.executable, str(root / "scripts" / "scheduled-preflight-broker.py")],
             input=json.dumps(payload), text=True, capture_output=True, cwd=root,
             timeout=25, check=False,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
         result = json.loads(run.stdout)
         if run.returncode == 0 and isinstance(result, dict) and result.get("status") in KNOWN_STATUSES:

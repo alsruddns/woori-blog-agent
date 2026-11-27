@@ -46,7 +46,7 @@ CODEX_RESEARCH_SCHEMA = {
                 "properties": {
                     "title": {"type": "string", "minLength": 5, "maxLength": 300},
                     "publisher": {"type": "string", "minLength": 2, "maxLength": 160},
-                    "url": {"type": "string", "format": "uri", "maxLength": 2048},
+                    "url": {"type": "string", "maxLength": 2048},
                     "published_at": {"type": "string", "minLength": 10, "maxLength": 80},
                     "event_date": {"type": ["string", "null"], "maxLength": 80},
                     "evidence_excerpt": {"type": "string", "minLength": 30, "maxLength": 700},
@@ -336,10 +336,14 @@ def _gather_with_codex_search(
     captured_at = (now or datetime.now(UTC)).astimezone(UTC)
     prompt = (
         "Research this article topic using live web search: " + topic.strip() + "\n"
+        "Research time (UTC): " + captured_at.isoformat() + ". "
         "Category: " + category + ". Prefer current primary sources, then reputable news sources. "
+        "Search for specific recent developments and open individual dated reports or announcements, "
+        "not just news index pages. One relevant, current, opened source is enough for a limited draft. "
         "Open the source pages before selecting them. Return at most three sources that you actually opened "
-        "and that are present in your live web search results. For each, give the exact result title, publisher, "
-        "canonical result URL, publication date as ISO-8601, event date if stated, and a 30-300 character "
+        "and that are present in your live web search results. For each, copy the exact URL emitted by the "
+        "search/open tool, character for character; do not substitute a page's canonical URL or add a headline slug. "
+        "Give the exact result title, publisher, publication date as ISO-8601, event date if stated, and a 30-300 character "
         "evidence excerpt copied exactly from the opened source page. Do not select a search result whose "
         "page you did not open, and do not claim that the excerpt was independently verified. "
         "Do not invent a source, date, URL, or excerpt. Exclude results whose publication date is unclear or older than 14 days. "
@@ -380,14 +384,12 @@ def _gather_with_codex_search(
         if not opened_at:
             failures.append({"provider": "codex_cli_chatgpt_search", "reason": "source_page_not_opened"})
             continue
-        if " ".join(str(candidate.get("title", "")).split()).casefold() != " ".join(str(found.get("title", "")).split()).casefold():
-            failures.append({"provider": "codex_cli_chatgpt_search", "reason": "source_title_not_in_search_results"})
+        observed_title = " ".join(str(found.get("title", "")).split())
+        if not observed_title:
+            failures.append({"provider": "codex_cli_chatgpt_search", "reason": "search_result_title_missing"})
             continue
         excerpt = " ".join(str(candidate.get("evidence_excerpt", "")).split())
         snippet = " ".join(str(found.get("snippet", "")).split())
-        if len(snippet) < 30:
-            failures.append({"provider": "codex_cli_chatgpt_search", "reason": "search_result_evidence_too_short"})
-            continue
         if len(excerpt) < 30:
             failures.append({"provider": "codex_cli_chatgpt_search", "reason": "opened_source_evidence_too_short"})
             continue
@@ -396,7 +398,15 @@ def _gather_with_codex_search(
             failures.append({"provider": "codex_cli_chatgpt_search", "reason": "source_date_missing_future_or_stale"})
             continue
         sources.append({
-            "title": str(candidate["title"]).strip(),
+            # The emitted search result is the stable title record. The model's
+            # opened-page title can differ slightly (site title vs. headline),
+            # so keep it as a separate reported value instead of rejecting an
+            # otherwise URL-matched and opened source.
+            "title": observed_title,
+            "opened_page_title_reported": " ".join(str(candidate.get("title", "")).split())[:300],
+            "search_result_title_match": observed_title.casefold() == " ".join(
+                str(candidate.get("title", "")).split()
+            ).casefold(),
             "publisher": str(candidate["publisher"]).strip(),
             "url": url,
             "published_at": published,
@@ -498,7 +508,8 @@ def run_authorized_research(
             audit_run_id="scheduled:" + occurrence_id,
         )
     except (RuntimeError, OSError, ValueError) as exc:
-        reason = str(exc) if isinstance(exc, ValueError) else type(exc).__name__
+        from .codex_runner import CodexFailure
+        reason = str(exc) if isinstance(exc, (ValueError, CodexFailure)) else type(exc).__name__
         _record_codex_search_failure(automation_id, occurrence_id, reason)
         # A category feed cannot establish country/topic relevance. Scheduled
         # Codex research therefore fails closed on every live-search error;
@@ -666,4 +677,7 @@ def write_package(package: dict[str, Any], *, automation_id: str) -> dict[str, A
             )
     except (OSError, psycopg.Error):
         raise ValueError("scheduled_research_audit_failed") from None
-    return {"status": package.get("status"), "path": str(destination), "sha256": saved_digest, "source_count": len(package.get("sources", [])), "collection_failure_count": len(package.get("collection_failures", []))}
+    return {"status": package.get("status"), "path": str(destination), "sha256": saved_digest,
+            "source_count": len(package.get("sources", [])),
+            "failure_class": package.get("failure_class"),
+            "collection_failure_count": len(package.get("collection_failures", []))}

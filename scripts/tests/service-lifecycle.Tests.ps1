@@ -3,6 +3,18 @@
 . (Join-Path $PSScriptRoot '..\manage-autostart.ps1') -Action status
 
 Describe 'Windows service lifecycle ownership and startup policy' {
+  It 'launches a real child without a Windows console and redirects its output' {
+    $logs = Get-ProjectLogDirectory
+    $name = [guid]::NewGuid().ToString('N')
+    $stdout = Join-Path $logs "console-test-$name.out"
+    $stderr = Join-Path $logs "console-test-$name.err"
+    $python = Join-Path $script:ProjectRoot '.venv\Scripts\python.exe'
+    $proc = Start-NoConsoleProcess $python @('-c','import ctypes,time; print(ctypes.windll.kernel32.GetConsoleWindow(),flush=True); time.sleep(8)') $stdout $stderr
+    $deadline = (Get-Date).AddSeconds(5)
+    do { Start-Sleep -Milliseconds 100 } while ((-not (Test-Path $stdout) -or -not (Get-Content $stdout -Raw)) -and (Get-Date) -lt $deadline)
+    (Get-Content $stdout -Raw).Trim() | Should Be '0'
+    $proc.HasExited | Should Be $false
+  }
   It 'classifies an exact project Python Worker and excludes a different checkout' {
     $python = Join-Path $script:ProjectRoot '.venv\Scripts\python.exe'
     $owned = [pscustomobject]@{ Id=410; ParentId=1; Path=$python; CommandLine="`"$python`" -m woori.worker" }
@@ -61,8 +73,25 @@ Describe 'Windows service lifecycle ownership and startup policy' {
       Triggers=@([pscustomobject]@{ UserId=$current; CimClass=[pscustomobject]@{ CimClassName='MSFT_TaskLogonTrigger' } })
     }
     (Test-TaskOwnedByProject $task) | Should Be $true
+    $task.Actions[0].Execute = 'wscript.exe'
+    $task.Actions[0].Arguments = "//B //Nologo `"$(Join-Path $script:ProjectRoot 'scripts\hidden-task-launcher.vbs')`" startup"
+    (Test-TaskOwnedByProject $task) | Should Be $true
+    $task.Actions[0].Execute = 'powershell.exe'
     $task.Actions[0].Arguments = '-File "C:\other\scripts\start-services.ps1"'
     (Test-TaskOwnedByProject $task) | Should Be $false
+  }
+
+  It 'repairs the owned hidden login task with the all-service Trends-capable launch mode' {
+    $autostart = Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\manage-autostart.ps1') -Raw
+    $autostart | Should Match 'hidden-task-launcher\.vbs'
+    $autostart | Should Match "New-ScheduledTaskAction -Execute 'wscript.exe'"
+    $autostart | Should Match 'Update the existing hidden login task to start all four services'
+    $autostart | Should Match 'Set-ScheduledTask .* -ErrorAction Stop'
+    $autostart | Should Match 'Updated login task could not be verified'
+    $autostart | Should Match 'AtLogOn'
+    $launcher = Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\hidden-task-launcher.vbs') -Raw
+    $launcher | Should Match 'shell.Run\(command, 0, True\)'
+    $launcher | Should Match 'PublicationMode scheduled-auto-manual-trends'
   }
 
   It 'keeps startup detached from per-save triggers and gates scheduled Auto explicitly' {
@@ -94,16 +123,16 @@ Describe 'Windows service lifecycle ownership and startup policy' {
   $apply | Should Match 'schemaStatus\.schema_version'
   }
 
-  It 'keeps login startup in the current manual-confirmed worker mode' {
+  It 'defaults login startup to the Trends-capable publication worker mode' {
     $bootstrap = Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\start-services.ps1') -Raw
-    $bootstrap | Should Match "PublicationMode = 'manual-confirmed'"
+    $bootstrap | Should Match "PublicationMode = 'scheduled-auto-manual-trends'"
     $bootstrap | Should Match 'Ensure-PublicationWorker \$PublicationMode'
   }
 
   It 'lets an explicit all-service restart preserve the approved publication mode' {
     $bootstrap = Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\start-services.ps1') -Raw
     $restarter = Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\restart-services.ps1') -Raw
-    $bootstrap | Should Match "PublicationMode = 'manual-confirmed'"
+    $bootstrap | Should Match "PublicationMode = 'scheduled-auto-manual-trends'"
     $bootstrap | Should Match 'Ensure-PublicationWorker \$PublicationMode'
     $restarter | Should Match 'start-services\.ps1.*PublicationMode scheduled-auto-manual-trends'
   }
@@ -137,6 +166,26 @@ Describe 'Windows service lifecycle ownership and startup policy' {
     $stopper | Should Match 'AllowVerifiedLegacyFallback'
     $stopper | Should Match 'verified_legacy_fallback_started'
     $stopper | Should Match 'Get-ProcessOwner'
+    $stopper | Should Match 'runner=unmanaged'
+    $stopper | Should Match 'identity-bound graceful-stop path'
+  }
+
+  It 'allows unmanaged API and Dashboard processes to stop only through verified identity files' {
+    $stopper = Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\stop.ps1') -Raw
+    $stopAll = Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\stop-services.ps1') -Raw
+    $stopper | Should Match 'Select-HttpServiceSnapshot \$Name \$candidates \$listenerPids'
+    $stopper | Should Match 'Write-HttpServiceStopRequest \$serviceSnapshot \$Name'
+    $stopper | Should Match 'established_connections=\$active .*runner=unmanaged'
+    $stopper | Should Match 'verified_http_peer_pids='
+    $stopper | Should Match 'List\[int\]\]::new\(\)'
+    $stopper | Should Match 'connectionPids\.ToArray\(\)'
+    $stopper | Should Match 'IgnoreLoopbackRemotePorts \$ignoreLoopbackPorts'
+    $stopAll | Should Match 'service-identity-\$Name-\$\(\$listener\.Id\)\.json'
+    $stopAll | Should Match 'runner=unmanaged .*established_external_connections=0'
+    $stopAll | Should Match 'verified_http_peer_pids'
+    $stopAll | Should Match 'connectionPids\.ToArray\(\)'
+    $stopAll | Should Match 'IgnoreLoopbackRemotePorts \$ignoreLoopbackPorts'
+    $stopAll | Should Match 'instance_id -notmatch'
   }
 
   It 'stops workers before HTTP services and only starts after verified full shutdown' {
@@ -150,6 +199,8 @@ Describe 'Windows service lifecycle ownership and startup policy' {
     $common | Should Match 'function Get-ManagedRunner'
     $common | Should Match 'function Get-ManagedTree'
     $common | Should Match 'function Get-EstablishedConnectionCount'
+    $common | Should Match 'function Test-LoopbackPostgresListener'
+    $common | Should Match 'IgnoreLoopbackRemotePorts'
     $restarter.IndexOf('stop-services.ps1') | Should BeLessThan $restarter.IndexOf('start-services.ps1')
   }
 
@@ -167,6 +218,7 @@ Describe 'Windows service lifecycle ownership and startup policy' {
     $stopper | Should Not Match 'stop\.ps1.*-Service api'
     $reflection=Get-Content -LiteralPath (Join-Path $script:ProjectRoot 'scripts\apply-verified-changes.ps1') -Raw
     $reflection | Should Match 'restart_suppressed_after_intentional_stop'
+    $reflection | Should Match '\$stopOrder = .*dashboard.*api.*research_worker.*publication_worker'
   }
 
   It 'verifies full shutdown and new PID replacement before restart success' {

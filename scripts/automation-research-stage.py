@@ -9,6 +9,7 @@ import os
 import re
 import subprocess
 import sys
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -99,11 +100,43 @@ def _write_immutable(path: Path, raw: bytes) -> None:
         staging.unlink(missing_ok=True)
 
 
+def _scheduled_timestamp_guidance(invocation: dict[str, Any], package: dict[str, Any]) -> dict[str, Any]:
+    """Expose the current time contract without inventing observation times."""
+    guidance: dict[str, Any] = {
+        "executed_at": invocation.get("executed_at"),
+        "instruction": (
+            "Keep executed_at equal to the resolver's actual run start. source_as_of is the actual "
+            "latest source observation time and may be after executed_at. Do not backdate either time; "
+            "validate the completed envelope with scripts/validate-scheduled-import.py."
+        ),
+        "source_as_of_after_execution_allowed": True,
+    }
+    try:
+        start = datetime.fromisoformat(str(invocation["executed_at"]))
+        if start.utcoffset() is None:
+            return guidance
+        sources = package["sources"]
+        if not isinstance(sources, list) or not sources:
+            return guidance
+        raw_times = [source["source_opened_at"] for source in sources if isinstance(source, dict)]
+        if len(raw_times) != len(sources) or not all(isinstance(value, str) for value in raw_times):
+            return guidance
+        observed = [(datetime.fromisoformat(value), value) for value in raw_times]
+        if any(value.utcoffset() is None for value, _ in observed):
+            return guidance
+        latest, raw = max(observed, key=lambda item: item[0])
+        if latest <= start + timedelta(hours=6) and latest <= datetime.now(UTC) + timedelta(minutes=5):
+            guidance["source_as_of_from_all_opened_sources"] = raw
+    except (KeyError, TypeError, ValueError, OverflowError):
+        pass
+    return guidance
+
+
 def _result(
     *, status: str, reason: str | None = None, mode: str | None = None,
     identity: str | None = None, preflight: dict[str, Any] | None = None,
     preflight_path: Path | None = None, research_path: Path | None = None,
-    source_count: int | None = None,
+    source_count: int | None = None, timestamp_guidance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     result: dict[str, Any] = {"status": status}
     if reason:
@@ -125,6 +158,8 @@ def _result(
         result["research_package_path"] = str(research_path)
     if source_count is not None:
         result["source_count"] = source_count
+    if timestamp_guidance is not None:
+        result["scheduled_timestamp_guidance"] = timestamp_guidance
     result["article_created"] = False
     result["imported"] = False
     result["published"] = False
@@ -160,6 +195,7 @@ def run_stage(
         checked = command_runner(
             duplicate_command, cwd=root, capture_output=True, text=True,
             encoding="utf-8", timeout=360, check=False,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
         preflight_text = checked.stdout
         preflight = _json_object(
@@ -224,14 +260,16 @@ def run_stage(
                 preflight_path.read_text(encoding="utf-8"), limit=MAX_PREFLIGHT_BYTES,
                 failure="saved_preflight_invalid",
             )
-            saved_mode, saved_identity, _ = _identity(saved_preflight, automation_id)
+            saved_mode, saved_identity, saved_invocation = _identity(saved_preflight, automation_id)
             if (saved_mode, saved_identity) != (mode, identity):
                 raise ValueError("saved_preflight_identity_mismatch")
             if mode == "scheduled" and saved_preflight.get("scheduled_request") != preflight.get("scheduled_request"):
                 raise ValueError("saved_preflight_request_mismatch")
             return _result(status="evidence_available", mode=mode, identity=identity,
                            preflight=saved_preflight, preflight_path=preflight_path,
-                           research_path=package_path, source_count=len(package["sources"])), 0
+                           research_path=package_path, source_count=len(package["sources"]),
+                           timestamp_guidance=_scheduled_timestamp_guidance(saved_invocation, package)
+                           if mode == "scheduled" else None), 0
         except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
             reason = str(exc) if isinstance(exc, ValueError) else "existing_research_package_invalid"
             return _result(status="blocked", reason=reason, mode=mode, identity=identity,
@@ -256,6 +294,7 @@ def run_stage(
         researched = command_runner(
             broker_command, cwd=root, input=preflight_text, capture_output=True,
             text=True, encoding="utf-8", timeout=620, check=False,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
         broker_result = _json_object(
             researched.stdout, limit=MAX_BROKER_BYTES,
@@ -270,6 +309,10 @@ def run_stage(
 
     if researched.returncode != 0 or broker_result.get("status") != "evidence_available":
         reason = broker_result.get("reason")
+        if not isinstance(reason, str) and broker_result.get("failure_class") in {
+            "no_current_sources", "source_validation_failed", "collection_failed", "no_fresh_source_items",
+        }:
+            reason = "research_" + str(broker_result["failure_class"])
         safe_reason = reason if isinstance(reason, str) else "research_evidence_unavailable"
         return _result(status="blocked", reason=safe_reason, mode=mode, identity=identity,
                        preflight=preflight, preflight_path=preflight_path), 4
@@ -291,7 +334,9 @@ def run_stage(
                        identity=identity, preflight=preflight, preflight_path=preflight_path), 4
     return _result(status="evidence_available", mode=mode, identity=identity,
                    preflight=preflight, preflight_path=preflight_path,
-                   research_path=actual_path, source_count=len(package.get("sources", []))), 0
+                   research_path=actual_path, source_count=len(package.get("sources", [])),
+                   timestamp_guidance=_scheduled_timestamp_guidance(_invocation, package)
+                   if mode == "scheduled" else None), 0
 
 
 def main(argv: list[str] | None = None) -> int:

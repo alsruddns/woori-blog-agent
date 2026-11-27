@@ -1291,6 +1291,7 @@ def _candidate(conn: Any, version_id: UUID, blog_id: UUID) -> dict[str, Any] | N
 
 def _manual_publication_snapshot(
     conn: Any, row: dict[str, Any] | None, *, persist_search_description: bool = False,
+    scheduled_evidence_gaps_allowed: bool = False,
 ) -> dict[str, Any]:
     """Build the exact sanitized manual payload and post-publication follow-ups."""
     from .editorial_html import markdown_to_blogger_html, sanitize_editorial_html
@@ -1416,6 +1417,7 @@ def _manual_publication_snapshot(
             content_policy = evaluate_publication_content(
                 evidence["reasons"], safe_body_available=safe_body_available,
                 existing_followups=evidence["followups"],
+                scheduled_evidence_gaps_allowed=scheduled_evidence_gaps_allowed,
             )
             evidence_followups.extend(content_policy["remediation_items"])
             blockers.extend(content_policy["blockers"])
@@ -1859,9 +1861,10 @@ def list_publications(
         global_publish_interval = conn.execute(
             "SELECT global_publish_min_interval_minutes,global_daily_live_publish_limit FROM automation_controls WHERE id=1"
         ).fetchone()
-        from .publication_operation import manual_requests_allowed
         from .publication_read_state import failure_resolved_clause, pending_state
-        manual_permitted = manual_requests_allowed() and bool(mode_data.get("scoped_write_capability", {}).get("manual_confirmed"))
+        # _mode_settings already checked manual_requests_allowed when building
+        # this read-only capability snapshot. Avoid repeating its DB lookups.
+        manual_permitted = bool(mode_data.get("scoped_write_capability", {}).get("manual_confirmed"))
         cutoff_row = conn.execute("SELECT max(created_at) AS cutoff FROM audit_events WHERE event_type='publication.manual_only.activated'").fetchone()
         pause_cutoff = cutoff_row["cutoff"] if cutoff_row else None
         raw_latest_count_row = conn.execute(
@@ -3073,13 +3076,13 @@ def publication_worker_status() -> dict[str, Any]:
             and mode["operations_auto_approved"]
             and mode["blogger_write_mode"] == "public_write_approved"
             and mode["daily_auto_limit"] == 100
-            and mode["minimum_interval_minutes"] == 15
+            and mode["minimum_interval_minutes"] >= 10
             and controls["auto_publishing_enabled"]
             and controls["automatic_publication_operator_approved"]
             and controls["auto_mode"] == "publish"
             and controls["trends_auto_publishing_enabled"]
             and controls["scheduled_auto_publishing_enabled"]
-            and controls["global_publish_min_interval_minutes"] == 15
+            and controls["global_publish_min_interval_minutes"] >= 10
             and controls["global_daily_live_publish_limit"] == 100
             and not mode["emergency_stopped"]
             and not mode["blogger_api_restricted"]

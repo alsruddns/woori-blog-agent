@@ -32,11 +32,13 @@ result = subprocess.run(
     env=env,
     capture_output=True,
     check=False,
+    creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
 )
 if result.returncode:
     raise SystemExit("Backup failed; inspect PostgreSQL availability and backup disk access")
 verify = subprocess.run(
-    [str(bin_dir / "pg_restore.exe"), "--list", str(target)], capture_output=True, check=False
+    [str(bin_dir / "pg_restore.exe"), "--list", str(target)], capture_output=True, check=False,
+    creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
 )
 if verify.returncode:
     raise SystemExit("Backup archive validation failed")

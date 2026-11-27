@@ -111,9 +111,15 @@ def readiness(
                 )["reasons"]
                 if target else ["scheduled_target_unavailable"]
             )
+    elif origin["kind"] == "google_trends":
+        from .trends_publication import validate_trends_job
+
+        reasons = list(validate_trends_job(conn, blog, version)["reasons"])
     else:
         reasons = publications._assess(row, check_write_policy=False)["reasons"]
-    snapshot = publications._manual_publication_snapshot(conn, dict(row))
+    snapshot = publications._manual_publication_snapshot(
+        conn, dict(row), scheduled_evidence_gaps_allowed=origin["kind"] == "scheduled"
+    )
     reasons.extend(snapshot["blockers"])
     from .editorial_quality import VERSION as QUALITY_VERSION
 
@@ -122,7 +128,8 @@ def readiness(
         AND engine_version=%s AND stage='static' AND status='completed' ORDER BY created_at DESC LIMIT 1""",
         (version, QUALITY_VERSION),
     ).fetchone()
-    if not report or report["result"].get("checks", {}).get("safe_html") is False:
+    if ((not report and origin["kind"] != "scheduled")
+            or (report and report["result"].get("checks", {}).get("safe_html") is False)):
         reasons.append("quality_review_required")
     newest = conn.execute(
         "SELECT id FROM content_versions WHERE group_id=%s AND localization_id IS NOT DISTINCT FROM %s ORDER BY version DESC,created_at DESC LIMIT 1",
@@ -165,7 +172,7 @@ def enqueue(conn: Any, state: dict[str, Any], *, origin_filter: str | None = Non
     if external_policy._blogger_policy_approval() is None:
         return 0
     rows = conn.execute(
-        """SELECT v.id,b.id AS blog_id FROM content_versions v
+        """SELECT v.id,v.created_at,b.id AS blog_id FROM content_versions v
         JOIN content_localizations l ON l.id=v.localization_id
         JOIN blogger_blogs b ON b.language_code=l.language_code AND b.active
         WHERE b.id=ANY(%s::uuid[]) AND v.created_at>%s
@@ -183,6 +190,34 @@ def enqueue(conn: Any, state: dict[str, Any], *, origin_filter: str | None = Non
         if origin_filter is not None and origin["kind"] != origin_filter:
             continue
         route = publication_origin.ROUTES.get(origin["kind"])
+        source_cutoff = state.get(str(route) + "_auto_enabled_at") if route else None
+        if not source_cutoff or item["created_at"] <= source_cutoff:
+            # Source-route activation never retroactively admits older imports.
+            continue
+        if route == "trends":
+            if not origin.get("received_at") or origin["received_at"] <= source_cutoff:
+                publication_origin.record_block(
+                    conn, item["id"], item["blog_id"], state["revision"],
+                    {"allowed": False, "reasons": ["trends_import_predates_language_policy_activation"],
+                     "origin": "google_trends"}, "enqueue",
+                )
+                continue
+            language_policy = conn.execute(
+                """SELECT p.active,p.trends_auto_publish_allowed FROM content_versions cv
+                JOIN content_localizations locale ON locale.id=cv.localization_id
+                JOIN language_profiles profile ON profile.language_code=locale.language_code
+                  AND profile.target_country=locale.target_country
+                JOIN publishing_policies p ON p.profile_id=profile.id AND p.blog_id=%s
+                WHERE cv.id=%s ORDER BY p.active DESC,p.id LIMIT 1""",
+                (item["blog_id"], item["id"]),
+            ).fetchone()
+            if not language_policy or not language_policy["active"] or not language_policy["trends_auto_publish_allowed"]:
+                publication_origin.record_block(
+                    conn, item["id"], item["blog_id"], state["revision"],
+                    {"allowed": False, "reasons": ["trends_language_auto_publication_disabled_or_unavailable"],
+                     "origin": "google_trends"}, "enqueue",
+                )
+                continue
         grant = {
             "epoch": state["auto_epoch"],
             "publication_mode": state["auto_mode"],
@@ -256,6 +291,13 @@ def enqueue(conn: Any, state: dict[str, Any], *, origin_filter: str | None = Non
                 ),
             ),
         )
+        if origin["kind"] == "scheduled":
+            conn.execute(
+                "INSERT INTO audit_events(event_type,payload) VALUES('publication.scheduled_auto.review_gaps_allowed',%s)",
+                (Jsonb({"job_id": str(job["id"]), "import_id": origin["import_id"],
+                        "content_version_id": str(item["id"]), "followups": _snapshot.get("followups", []),
+                        "evidence_promoted": False, "policy": "scheduled-evidence-gaps-20261119"}),),
+            )
         created += 1
     return created
 

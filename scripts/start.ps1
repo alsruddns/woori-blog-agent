@@ -1,5 +1,5 @@
 param([ValidateSet('api','dashboard','worker','research_worker','publication_worker','all')][string]$Service='all',
-  [ValidateSet('mock-only','scheduled-auto','manual-confirmed','scheduled-auto-manual','scheduled-auto-manual-trends')][string]$PublicationMode='mock-only')
+  [ValidateSet('mock-only','scheduled-auto','manual-confirmed','scheduled-auto-manual','scheduled-auto-manual-trends')][string]$PublicationMode='scheduled-auto-manual-trends')
 . (Join-Path $PSScriptRoot 'server-common.ps1')
 if ($Service -eq 'publication_worker') {
   & (Join-Path $PSScriptRoot 'start-publication-worker.ps1') -Mode $PublicationMode
@@ -35,8 +35,8 @@ foreach ($name in $targets) {
   if ($listeners.Count) { throw "Port $port is already occupied. Run scripts/status.ps1 and stop only its verified project-owned process." }
   $runner = (Resolve-Path $script:Services[$name].Script).Path
   $logs = Get-ProjectLogDirectory
-  $arguments = @('-NoProfile','-ExecutionPolicy','Bypass','-WindowStyle','Hidden','-File',('"' + $runner + '"'))
-  $proc = Start-Process -FilePath 'powershell.exe' -ArgumentList $arguments -WorkingDirectory $script:ProjectRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $logs "$name.stdout.log") -RedirectStandardError (Join-Path $logs "$name.stderr.log")
+  $arguments = @('-NoProfile','-ExecutionPolicy','Bypass','-WindowStyle','Hidden','-File',$runner)
+  $proc = Start-NoConsoleProcess 'powershell.exe' $arguments (Join-Path $logs "$name.stdout.log") (Join-Path $logs "$name.stderr.log")
   Start-Sleep -Milliseconds 800
   if ($proc.HasExited) { throw "$name startup process exited; inspect its service window and application log." }
   $manifest.services[$name] = @{ pid=$proc.Id; runner=$runner; root=$script:ProjectRoot; started_utc=$proc.StartTime.ToUniversalTime().ToString('o'); applied_commit=(Get-CurrentGitCommit); log_path=(Join-Path $logs "$name.stdout.log") }

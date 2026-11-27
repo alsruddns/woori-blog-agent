@@ -4,6 +4,18 @@ export type PublicationReasonMessage = {
 };
 
 const messages: Record<string, PublicationReasonMessage> = {
+  unresolved_live_write_requires_reconciliation: {
+    summary: "이전 Blogger 공개 게시의 최종 상태가 확인되지 않아 새 발행이 보류됐습니다.",
+    nextStep: "이전 게시물의 원격 상태와 원고가 일치하는지 확인해 기록을 정리하세요. 확인 전에는 재발행하지 마세요.",
+  },
+  reconciliation_waiting_for_free_quota_recovery: {
+    summary: "Blogger 읽기 호출 한도가 회복됐는지 확인되지 않았습니다.",
+    nextStep: "한도 제한이 해소되고 읽기 성공이 확인될 때까지 원격 확인과 재발행을 중단하세요.",
+  },
+  high_impact_topic_requires_review: {
+    summary: "사망·범죄·건강·금융 등 영향이 큰 주제로 분류되어 자동발행이 보류됐습니다.",
+    nextStep: "원고와 근거를 검토하고 기존 수동 발행 절차에서 발행 가능 여부를 확인하세요.",
+  },
   automatic_quality_or_policy_blocked: {
     summary: "게시 전 품질 또는 운영 정책 검사에서 차단되었습니다.",
     nextStep: "아래 세부 사유를 확인하세요. 원고 수정이 필요한지, 발행 설정 확인이 필요한지 항목별 안내를 따르세요.",

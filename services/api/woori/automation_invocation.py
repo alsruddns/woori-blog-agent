@@ -83,6 +83,19 @@ def _read_invocation_events(path: Path) -> list[dict[str, Any]]:
                             "content": [{"text": f"Automation ID: {value}"} for value in ids],
                         },
                     })
+            elif (record.get("type") == "response_item" and isinstance(payload, dict)
+                  and payload.get("type") == "function_call_output"
+                  and payload.get("name") == "automation_update"
+                  and payload.get("namespace") == "codex_app"
+                  and isinstance(payload.get("output"), str)):
+                # The Desktop scheduler supplies this header as a tool result in
+                # newer sessions. Never parse the free-form automation memory.
+                header = "\n".join(payload["output"].splitlines()[:4])
+                ids = _AUTOMATION_LINE.findall(header)
+                if ids:
+                    events.append({"type": "response_item", "payload": {
+                        "type": "automation_scheduler_identity", "ids": ids,
+                    }})
     return events
 
 
@@ -194,6 +207,19 @@ def _current_automation_start(
         if index < message_index < segment_end
         for automation in _automation_id_from_message(record)
     ]
+    scheduler_ids = [
+        automation for message_index, record in enumerate(records)
+        if index < message_index < segment_end
+        and record.get("type") == "response_item"
+        and isinstance(record.get("payload"), dict)
+        and record["payload"].get("type") == "automation_scheduler_identity"
+        for automation in record["payload"].get("ids", [])
+    ]
+    if len(scheduler_ids) > 1 or len(prompt_ids) > 1:
+        raise ValueError("current_session_automation_id_missing_or_ambiguous")
+    if scheduler_ids and prompt_ids and scheduler_ids != prompt_ids:
+        raise ValueError("current_session_automation_id_missing_or_ambiguous")
+    prompt_ids = scheduler_ids or prompt_ids
     if not prompt_ids:
         raise ValueError("current_automation_start_event_pending")
     if len(prompt_ids) != 1:

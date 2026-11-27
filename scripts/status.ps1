@@ -141,7 +141,7 @@ if ($autoTask) {
     Service='windows_logon_autostart'; TaskName=$autoTask.TaskName; State=$autoTask.State
     Enabled=[bool]$autoTask.Settings.Enabled
     LogonTrigger=[bool](@($autoTask.Triggers | Where-Object { $_.CimClass.CimClassName -like '*LogonTrigger*' }).Count)
-    ActionMatchesProject=($actionPath.Replace('/','\').IndexOf($expected.Replace('/','\'),[StringComparison]::OrdinalIgnoreCase) -ge 0)
+    ActionMatchesProject=(($actionPath.Replace('/','\').IndexOf($expected.Replace('/','\'),[StringComparison]::OrdinalIgnoreCase) -ge 0) -or ($actionPath -ieq "//B //Nologo `"$(Join-Path $PSScriptRoot 'hidden-task-launcher.vbs')`" startup" -and [string]$autoTask.Actions[0].Execute -match '(?i)(^|\\)wscript(?:\.exe)?$'))
     LastRunTime=(Get-ScheduledTaskInfo -TaskName $autoTask.TaskName).LastRunTime
     LastTaskResult=(Get-ScheduledTaskInfo -TaskName $autoTask.TaskName).LastTaskResult
     LogPath=(Join-Path $script:RuntimeDir 'logs\service-lifecycle.log')

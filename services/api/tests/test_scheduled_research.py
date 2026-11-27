@@ -165,6 +165,41 @@ def test_codex_search_package_requires_real_search_url_exact_excerpt_and_fresh_d
     assert package["sources"][0]["source_evidence_method"] == "codex_cli_chatgpt_opened_page_model_excerpt"
 
 
+def test_codex_search_uses_observed_title_and_opened_excerpt_when_search_snippet_is_short(monkeypatch):
+    from woori import codex_runner
+
+    now = datetime(2026, 11, 17, 1, tzinfo=UTC)
+    url = "https://www.whitehouse.gov/briefing-room/2026/11/policy-update/"
+    excerpt = "The administration announced the policy update during the November 17 briefing."
+    monkeypatch.setattr(codex_runner, "execute", lambda *_args, **_kwargs: (
+        {"sources": [{
+            "title": "Policy update briefing transcript",
+            "publisher": "The White House",
+            "url": url,
+            "published_at": "2026-11-17",
+            "event_date": "2026-11-17",
+            "evidence_excerpt": excerpt,
+        }]},
+        {"model": "gpt-6-luna", "web_search_count": 2, "execution_id": "scheduled-cli-short-snippet",
+         "opened_urls": {url: "2026-11-17T00:59:00+00:00"},
+         "searched_sources": [{"url": url, "title": "Policy update", "domain": "www.whitehouse.gov",
+                               "snippet": "Official briefing."}]},
+    ))
+
+    package = scheduled_research.gather_with_codex_search(
+        "politics", "White House policy update", occurrence_id="codex-slot:automation-7:20261117T0900KST",
+        now=now,
+    )
+
+    assert package["status"] == "evidence_available"
+    assert package["failure_class"] is None
+    assert package["sources"][0]["title"] == "Policy update"
+    assert package["sources"][0]["opened_page_title_reported"] == "Policy update briefing transcript"
+    assert package["sources"][0]["search_result_title_match"] is False
+    assert package["sources"][0]["evidence_excerpt"] == excerpt
+    assert package["sources"][0]["search_result_snippet"] == "Official briefing."
+
+
 def test_codex_search_package_rejects_unobserved_urls_and_nonmatching_excerpt(monkeypatch):
     from woori import codex_runner
 
@@ -216,6 +251,10 @@ def test_codex_search_package_requires_opened_source_and_marks_unverified_excerp
 
 def test_scheduled_broker_writes_codex_sources_into_snapshot_package(monkeypatch, tmp_path):
     from woori import codex_runner
+
+    gather = scheduled_research.gather_with_codex_search
+    monkeypatch.setattr(scheduled_research, "gather_with_codex_search", lambda *args, **kwargs:
+                        gather(*args, **kwargs, now=datetime(2026, 11, 5, 1, tzinfo=UTC)))
 
     invocation = {
         "automation_id": "automation-7", "execution_mode": "scheduled",
@@ -356,6 +395,33 @@ def test_scheduled_search_infrastructure_errors_do_not_use_category_feed(monkeyp
         scheduled_research.run_authorized_research(
             automation_id="automation-8", category="economy",
             topic="Vietnam's recent economic developments", preflight=preflight,
+        )
+
+
+def test_scheduled_search_schema_uses_strict_supported_url_type():
+    url_schema = scheduled_research.CODEX_RESEARCH_SCHEMA["properties"]["sources"]["items"]["properties"]["url"]
+    assert url_schema == {"type": "string", "maxLength": 2048}
+    assert scheduled_research._research_url_key("http://example.com/") == ""
+    assert scheduled_research._research_url_key("https://user@example.com/") == ""
+
+
+def test_scheduled_search_preserves_safe_codex_failure_code(monkeypatch):
+    from woori import codex_runner
+
+    invocation = {"automation_id": "automation-8", "execution_mode": "scheduled",
+                  "occurrence_id": "codex-slot:automation-8:20261105T2000KST",
+                  "scheduled_slot": "2026-11-05T20:00:00+09:00"}
+    monkeypatch.setattr(automation_invocation, "resolve_current_invocation", lambda *_a, **_k: invocation)
+    monkeypatch.setattr(automation_controls, "authoring_permission", lambda: {"allowed": True})
+    monkeypatch.setattr(scheduled_research, "_record_codex_search_failure", lambda *_a, **_k: None)
+    def fail(*_args, **_kwargs):
+        raise codex_runner.CodexFailure("codex_usage_limit")
+    monkeypatch.setattr(scheduled_research, "gather_with_codex_search", fail)
+    preflight = {"local_status": "not_found", "draft_import_allowed": True,
+                 "automation_execution": {"invocation": invocation}}
+    with pytest.raises(ValueError, match="scheduled_codex_search_blocked:codex_usage_limit"):
+        scheduled_research.run_authorized_research(
+            automation_id="automation-8", category="economy", topic="test", preflight=preflight,
         )
 
 

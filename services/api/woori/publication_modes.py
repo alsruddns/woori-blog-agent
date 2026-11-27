@@ -19,7 +19,7 @@ class ModeSettingsInput(BaseModel):
     scope_key: str = Field(default="", max_length=100)
     configured_mode: Mode = "manual"
     daily_auto_limit: int = Field(default=100, ge=0, le=100)
-    minimum_interval_minutes: int = Field(default=15, ge=15, le=10080)
+    minimum_interval_minutes: int = Field(default=10, ge=10, le=10080)
     allowed_start_hour: int = Field(default=9, ge=0, le=23)
     allowed_end_hour: int = Field(default=17, ge=0, le=23)
     timezone: str = Field(default="Asia/Seoul", min_length=1, max_length=100)
@@ -126,7 +126,7 @@ def assess_auto_candidate(
         content_reasons.append("minimum_interval_not_verified")
     else:
         elapsed = ((now or datetime.now(UTC)) - last_published_at.astimezone(UTC)).total_seconds() / 60
-        if elapsed < int(policy.get("minimum_interval_minutes", 15)):
+        if elapsed < int(policy.get("minimum_interval_minutes", 10)):
             content_reasons.append("minimum_publication_interval_not_met")
     current = now or datetime.now(UTC)
     if current.tzinfo is None or current.utcoffset() is None:
@@ -186,7 +186,7 @@ def resolve_mode(settings: list[dict[str, Any]], language_code: str, blog_id: st
     )
     return dict(selected) if selected else {
         "scope_type": "global", "scope_key": "", "configured_mode": "authoring_only",
-        "daily_auto_limit": 100, "minimum_interval_minutes": 15,
+        "daily_auto_limit": 100, "minimum_interval_minutes": 10,
         "allowed_start_hour": 9, "allowed_end_hour": 17, "timezone": "Asia/Seoul",
         "allowed_categories": [], "excluded_topics": [], "max_source_age_hours": 24,
         "retry_limit": 0,

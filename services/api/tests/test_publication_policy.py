@@ -2,6 +2,18 @@ import pytest
 from woori.publication_policy import evaluate_publication_content
 
 
+def test_scheduled_evidence_gaps_become_followups_without_promoting_other_lanes():
+    reasons = ["claim_span_not_found_in_live_source_evidence", "claim_contains_unsupported_number_or_unit"]
+    scheduled = evaluate_publication_content(reasons, safe_body_available=True,
+                                             scheduled_evidence_gaps_allowed=True)
+    assert scheduled["blockers"] == []
+    assert set(scheduled["remediation_codes"]) == set(reasons)
+    assert evaluate_publication_content(reasons, safe_body_available=True)["blockers"] == reasons
+    assert evaluate_publication_content(["known_conflicting_claim", "source_rights_explicitly_restricted"],
+        safe_body_available=True, scheduled_evidence_gaps_allowed=True)["blockers"] == [
+            "known_conflicting_claim", "source_rights_explicitly_restricted"]
+
+
 @pytest.mark.parametrize("lane", ["manual", "scheduled_auto", "trends_auto"])
 @pytest.mark.parametrize("reason", [
     "source_original_review_required",

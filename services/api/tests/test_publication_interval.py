@@ -5,21 +5,21 @@ from woori.blogger_writes import interval_deadline
 
 
 @pytest.mark.parametrize(('age','wait'),[
-    (None,0),(30,870),(600,300),(899,1),(900,0),
+    (None,0),(30,570),(300,300),(599,1),(600,0),
 ])
-def test_deadline_uses_global_15_minimum(age,wait):
+def test_deadline_uses_global_10_minimum(age,wait):
     now=datetime(2026,10,30,7,tzinfo=UTC)
-    assert interval_deadline(now-timedelta(seconds=age) if age is not None else None, now, 15)==now+timedelta(seconds=wait)
+    assert interval_deadline(now-timedelta(seconds=age) if age is not None else None, now, 10)==now+timedelta(seconds=wait)
 
 
 def test_global_interval_cannot_fall_back_to_ten_minutes_after_restart():
     now = datetime(2026, 11, 3, 0, 0, tzinfo=UTC)
-    last_request = now - timedelta(minutes=10)
+    last_request = now - timedelta(minutes=5)
     # A restarted Worker reads the durable minimum; this is the same pure
     # deadline calculation used after every request and across all Blogger IDs.
-    assert interval_deadline(last_request, now, 15) == now + timedelta(minutes=5)
-    with pytest.raises(ValueError, match="at_least_15_minutes"):
-        interval_deadline(last_request, now, 14)
+    assert interval_deadline(last_request, now, 10) == now + timedelta(minutes=5)
+    with pytest.raises(ValueError, match="at_least_10_minutes"):
+        interval_deadline(last_request, now, 9)
 
 
 @pytest.mark.parametrize("blog_id", ["blog-en", "blog-ko", "blog-ja", "blog-zh"])
@@ -29,7 +29,7 @@ def test_durable_global_interval_is_shared_across_blog_targets(monkeypatch, blog
 
     from woori import blogger_writes
 
-    started_at = datetime.now(UTC) - timedelta(minutes=12)
+    started_at = datetime.now(UTC) - timedelta(minutes=5)
     queries = []
 
     class Result:
@@ -47,7 +47,7 @@ def test_durable_global_interval_is_shared_across_blog_targets(monkeypatch, blog
             if "SELECT max(a.created_at)" in query:
                 return Result({"last_write": started_at, "blog_hourly": 0})
             if "global_publish_min_interval_minutes" in query:
-                return Result({"global_publish_min_interval_minutes": 15})
+                return Result({"global_publish_min_interval_minutes": 10})
             return Result({"unlocked": True})
 
     @contextmanager
@@ -61,7 +61,7 @@ def test_durable_global_interval_is_shared_across_blog_targets(monkeypatch, blog
                  "language_code": "en"}
             ):
         pytest.fail("a different Blogger must not bypass the durable global interval")
-    assert exc.value.available_at == started_at + timedelta(minutes=15)
+    assert exc.value.available_at == started_at + timedelta(minutes=10)
     assert any("external.call.started" in query and "'POST','PATCH','PUT'" in query for query in queries)
 
 
@@ -114,5 +114,5 @@ def test_guard_stops_before_http_and_binds_spacing_to_selected_oauth(monkeypatch
     monkeypatch.setattr(blogger_writes,'connection',shared)
     with pytest.raises(WriteIntervalWait) as exc, blogger_writes.BloggerLivePublisher._account_write_guard({'oauth_connection_id':'selected-grant','blog_id':'selected-blog','language_code':'en'}):
         pytest.fail('write must not begin before its interval')
-    assert exc.value.available_at>=now+timedelta(minutes=14,seconds=59)
+    assert exc.value.available_at>=now+timedelta(minutes=9,seconds=59)
     assert ('blogger-global-publication-write',) in params_seen

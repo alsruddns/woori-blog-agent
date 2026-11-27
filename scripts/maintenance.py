@@ -1,6 +1,7 @@
 """Daily backup and local health status; no automatic retention deletion."""
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -13,7 +14,8 @@ from woori.db import connection
 
 root = Path(__file__).resolve().parents[1]
 result = subprocess.run(
-    [sys.executable, str(root / "scripts/backup.py")], cwd=root, capture_output=True, check=False
+    [sys.executable, str(root / "scripts/backup.py")], cwd=root, capture_output=True, check=False,
+    creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
 )
 free = shutil.disk_usage(root)
 free_percent = round(free.free / free.total * 100, 1)

@@ -24,8 +24,36 @@ function Assert-HttpTreeOwned([string]$Name) {
   }
   $runner = Get-ManagedRunner $Name $table $manifest
   if (-not $runner) {
-    Write-LifecycleLog $Name 'shutdown_preflight_blocked' 'checkout_listener_without_verified_runtime_runner'
-    throw "$Name listener has no matching runtime runner record. No service was stopped."
+    $supportsStopFile = ($Name -eq 'api' -and [string]$listener.CommandLine -match '(?i)scripts[\\/]api-service\.py(?:\s|$)') -or
+      ($Name -eq 'dashboard' -and [string]$listener.CommandLine -match '(?i)scripts[\\/]dashboard-service\.js(?:\s|$)')
+    $runtimeDir = Join-Path $script:ProjectRoot '.runtime'
+    $identityPath = Join-Path $runtimeDir "service-identity-$Name-$($listener.Id).json"
+    $identity = $null
+    if ($supportsStopFile -and (Test-Path -LiteralPath $identityPath -PathType Leaf) -and
+        -not ((Get-Item -LiteralPath $identityPath -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+      try { $identity = Get-Content -LiteralPath $identityPath -Raw -Encoding utf8 | ConvertFrom-Json } catch { $identity = $null }
+    }
+    if (-not $identity -or [int]$identity.pid -ne [int]$listener.Id -or
+        [string]$identity.service -cne $Name -or [string]$identity.checkout_root -ine $script:ProjectRoot -or
+        [string]$identity.instance_id -notmatch '^[a-f0-9]{32,64}$') {
+      Write-LifecycleLog $Name 'shutdown_preflight_blocked' 'checkout_listener_without_verified_runtime_runner_or_identity'
+      throw "$Name listener has neither a matching runtime runner nor a valid identity-bound graceful-stop channel. No service was stopped."
+    }
+    $peerName = if ($Name -eq 'api') { 'dashboard' } else { 'api' }
+    $peerPids = @(
+      Get-CheckoutServiceProcesses $table $peerName | Where-Object {
+        (Test-ExactCheckoutServiceProcess $_ $peerName) -and
+        (Get-ProcessOwner ([int]$_.Id)) -ieq "$env:USERDOMAIN\$env:USERNAME"
+      } | ForEach-Object { [int]$_.Id }
+    )
+    $connectionPids = [System.Collections.Generic.List[int]]::new()
+    $connectionPids.Add([int]$listener.Id)
+    foreach ($peerPid in $peerPids) { $connectionPids.Add([int]$peerPid) }
+    $ignoreLoopbackPorts = if (Test-LoopbackPostgresListener 5432) { @(5432) } else { @() }
+    $connections = Get-EstablishedConnectionCount $connectionPids.ToArray() -IgnoreLoopbackRemotePorts $ignoreLoopbackPorts
+    if ($connections -gt 0) { throw "$Name has $connections active external connection(s) outside verified HTTP peer PID(s) $($peerPids -join ','); no service was stopped." }
+    Write-LifecycleLog $Name 'shutdown_preflight_verified' "listener_pid=$($listener.Id) owner=$owner channel=identity_bound_local_file runner=unmanaged verified_http_peer_pids=$($peerPids -join ',') ignored_local_postgres_dependency=$($ignoreLoopbackPorts -join ',') established_external_connections=0"
+    return
   }
   $tree = Get-ManagedTree $Name $runner $table
   if (-not $tree.safe -or -not @($tree.items | Where-Object Id -eq ([int]$listener.Id)).Count) {

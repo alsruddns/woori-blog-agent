@@ -104,7 +104,11 @@ def status() -> dict[str, Any]:
             and bool(connected_writer and connected_writer["available"]),
             "publishing_enabled": False,
             "connections": conn.execute(
-                """SELECT g.id,g.label,g.status,g.scopes,g.created_at,g.expires_at,g.error_category,
+                """WITH connection_audits AS MATERIALIZED (
+                  SELECT id,event_type,payload,created_at FROM audit_events
+                  WHERE event_type IN ('blogger.identity.verified','blogger.common_connection.verified')
+                )
+                SELECT g.id,g.label,g.status,g.scopes,g.created_at,g.expires_at,g.error_category,
                 g.updated_at,(g.refresh_ciphertext IS NOT NULL) AS has_refresh_token,
                 auth.latest_auth_attempt_at,COALESCE(auth.auth_attempt_count,0)::int AS auth_attempt_count,
                 COALESCE(auth.active_auth_attempt,false) AS active_auth_attempt,
@@ -121,12 +125,12 @@ def status() -> dict[str, Any]:
                   FROM google_oauth_states s WHERE s.connection_id=g.id
                 ) auth ON true
                 LEFT JOIN LATERAL (
-                  SELECT payload,created_at FROM audit_events
+                  SELECT payload,created_at FROM connection_audits
                   WHERE event_type='blogger.identity.verified'
                     AND payload->>'connection_id'=g.id::text ORDER BY id DESC LIMIT 1
                 ) identity ON true
                 LEFT JOIN LATERAL (
-                  SELECT payload,created_at FROM audit_events
+                  SELECT payload,created_at FROM connection_audits
                   WHERE event_type='blogger.common_connection.verified'
                     AND payload->>'connection_id'=g.id::text ORDER BY id DESC LIMIT 1
                 ) access ON true

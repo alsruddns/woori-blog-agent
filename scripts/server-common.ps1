@@ -9,6 +9,27 @@ $script:Services = @{
   dashboard = @{ Port = 3100; Script = (Join-Path $PSScriptRoot 'run-dashboard.ps1') }
 }
 
+function Start-NoConsoleProcess([string]$Executable, [string[]]$Arguments, [string]$Stdout, [string]$Stderr) {
+  $pythonw = Join-Path $script:ProjectRoot '.venv\Scripts\pythonw.exe'
+  $helper = Join-Path $PSScriptRoot 'launch-no-console.py'
+  $logs = Get-ProjectLogDirectory
+  $request = Join-Path $logs ("launch-" + [guid]::NewGuid().ToString('N') + '.json')
+  try {
+    @{ executable=$Executable; arguments=@($Arguments); cwd=$script:ProjectRoot; stdout=$Stdout; stderr=$Stderr } |
+      ConvertTo-Json -Compress | Set-Content -LiteralPath $request -Encoding UTF8
+    $launcher = Start-Process -FilePath $pythonw -ArgumentList @(('"'+$helper+'"'),('"'+$request+'"')) `
+      -WorkingDirectory $script:ProjectRoot -WindowStyle Hidden -PassThru
+    $null = $launcher.Handle
+    if (-not $launcher.WaitForExit(15000)) { throw 'Console-free launcher did not finish; no process was terminated.' }
+    if ($launcher.ExitCode -ne 0) { throw 'Console-free launcher failed; inspect project logs.' }
+    $result = Get-Content -LiteralPath $request -Raw -Encoding UTF8 | ConvertFrom-Json
+    if (-not $result.pid -or [int]$result.pid -le 0) { throw 'Console-free launcher returned no process identity.' }
+    return Get-Process -Id ([int]$result.pid) -ErrorAction Stop
+  } finally {
+    Remove-Item -LiteralPath $request -ErrorAction SilentlyContinue
+  }
+}
+
 function Read-ServerManifest {
   if (-not (Test-Path -LiteralPath $script:ManifestPath)) { return @{ services = @{} } }
   try {
@@ -395,7 +416,21 @@ function Get-ManagedTree([string]$Name, $Runner, $ProcessTable) {
   return @{ items=@(); safe=$false; reason='process_start_time_unavailable' }
 }
 
-function Get-EstablishedConnectionCount($ProcessIds) {
+function Test-LoopbackPostgresListener([int]$Port = 5432) {
+  try {
+    $listeners = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction Stop)
+    foreach ($listener in $listeners) {
+      if ([string]$listener.LocalAddress -notin @('127.0.0.1','::1')) { continue }
+      $process = Get-CimInstance Win32_Process -Filter "ProcessId=$([int]$listener.OwningProcess)" -ErrorAction Stop
+      if ($process -and [string]$process.Name -ieq 'postgres.exe') { return $true }
+    }
+  } catch {
+    if ($_.FullyQualifiedErrorId -notlike 'CmdletizationQuery_NotFound,*') { return $false }
+  }
+  return $false
+}
+
+function Get-EstablishedConnectionCount($ProcessIds, [int[]]$IgnoreLoopbackRemotePorts = @()) {
   $ids = @($ProcessIds | ForEach-Object { [int]$_ })
   try { $all = @(Get-NetTCPConnection -State Established -ErrorAction Stop) }
   catch {
@@ -412,6 +447,8 @@ function Get-EstablishedConnectionCount($ProcessIds) {
   foreach ($connection in $managed) {
     $remoteKey = "{0}|{1}" -f ([string]$connection.RemoteAddress).ToLowerInvariant(),[int]$connection.RemotePort
     if ($managedLocalEndpoints.ContainsKey($remoteKey)) { continue }
+    $isLoopback = [string]$connection.RemoteAddress -in @('127.0.0.1','::1')
+    if ($isLoopback -and $IgnoreLoopbackRemotePorts -contains [int]$connection.RemotePort) { continue }
     $externalCount++
   }
   return $externalCount

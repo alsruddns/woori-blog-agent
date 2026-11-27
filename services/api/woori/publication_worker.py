@@ -7,6 +7,7 @@ import json
 import re
 import signal
 import threading
+import traceback
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -97,6 +98,44 @@ def execution_mode(*, private_drafts: bool = False, live: bool = False,
 def publication_count_limits_apply(lane: str) -> bool:
     """Every real publication lane shares the configured volume ceilings."""
     return lane in {"manual", "scheduled_auto", "trends_auto"}
+
+
+def safe_database_error_hint(exc: Exception) -> str | None:
+    """Expose only PostgreSQL type/operator signatures, never values or SQL text."""
+    if getattr(exc, "sqlstate", None) != "42883":
+        return None
+    diag = getattr(exc, "diag", None)
+    message = str(getattr(diag, "message_primary", "") or str(exc))
+    operator = re.search(
+        r"^operator does not exist:\s*([\w ]+?)\s+([^\w\s]+)\s+([\w ]+?)\s*$",
+        message,
+    )
+    if operator:
+        return f"undefined_operator:{operator.group(1).strip()} {operator.group(2)} {operator.group(3).strip()}"
+    function = re.search(r"^function ([\w.]+)\(([^()]*)\) does not exist$", message)
+    if function:
+        return f"undefined_function:{function.group(1)}({function.group(2)})"
+    # Retain only a constrained diagnostic alphabet and redact quoted values.
+    # PostgreSQL's primary 42883 message is an operator/function signature,
+    # but this fallback also covers server-version wording differences.
+    sanitized = re.sub(r"(['\"])[^'\"]*\1", "<redacted>", message)
+    sanitized = re.sub(r"[^A-Za-z0-9_. :<>=!~+*/%()\-]+", " ", sanitized)
+    sanitized = " ".join(sanitized.split())[:180]
+    signature = re.search(r"(\w[\w ]*?)\s*([<>=!~]+)\s*(\w[\w ]*?)$", sanitized.rsplit(":", 1)[-1].strip())
+    if signature:
+        return f"undefined_operator:{signature.group(1).strip()} {signature.group(2)} {signature.group(3).strip()}"
+    return f"undefined_operator_or_function:{sanitized}" if sanitized else "undefined_operator_or_function"
+
+
+def safe_database_error_site(exc: Exception) -> str | None:
+    """Return the last application source location without SQL or values."""
+    if not isinstance(exc, psycopg.Error):
+        return None
+    for frame in reversed(traceback.extract_tb(exc.__traceback__)):
+        filename = frame.filename.replace("\\", "/")
+        if "/services/api/" in filename:
+            return f"{filename.rsplit('/', 1)[-1]}:{frame.lineno}:{frame.name}"
+    return None
 
 
 def _append_audit(conn: Any, event_type: str, payload: dict[str, Any]) -> None:
@@ -217,9 +256,8 @@ def _scheduled_eligibility(conn: Any, imported: Any, version: Any, blog: Any) ->
     )
     removed_claim_ids = set(sanitizer.get("removed_claim_ids") or [])
     claims = [claim for claim in claims if str(claim.get("claim_id") or "") not in removed_claim_ids]
-    if sanitizer['changed']:
-        reasons.append('scheduled_sanitized_revision_required' if sanitizer['substantive_blocks_remaining'] >= 2
-                       else 'no_supported_body_after_sanitization')
+    if sanitizer['substantive_blocks_remaining'] < 2:
+        reasons.append('no_supported_body_after_sanitization')
     sanitized_body = sanitizer["body_markdown"]
     sanitized_source_ids = set(re.findall(r"\[source:([A-Za-z0-9_-]+)\]", sanitized_body))
     used_sources = [source for source in sources if str(source.get("source_id")) in sanitized_source_ids]
@@ -259,14 +297,14 @@ def _scheduled_eligibility(conn: Any, imported: Any, version: Any, blog: Any) ->
             reasons.append("same_event_already_queued_or_published")
     from .publication_policy import evaluate_publication_content
     safe_body_available = (
-        not sanitizer["changed"]
-        and sanitizer["substantive_blocks_remaining"] >= 2
+        sanitizer["substantive_blocks_remaining"] >= 2
         and bool(assessment and assessment.get("safe_html"))
         and "no_supported_body_after_sanitization" not in reasons
     )
     content_policy = evaluate_publication_content(
         reasons, safe_body_available=safe_body_available,
         existing_followups=evidence_result["followups"],
+        scheduled_evidence_gaps_allowed=True,
     )
     evidence_result["followups"] = content_policy["remediation_items"]
     unique_reasons = list(dict.fromkeys(content_policy["blockers"]))
@@ -1786,6 +1824,8 @@ def run_forever(
                         "sqlstate": exc.sqlstate if isinstance(exc, psycopg.Error) else None,
                         "db_table": getattr(exc.diag, 'table_name', None) if isinstance(exc, psycopg.Error) else None,
                         "db_function": getattr(exc.diag, 'source_function', None) if isinstance(exc, psycopg.Error) else None,
+                        "db_hint": safe_database_error_hint(exc),
+                        "db_site": safe_database_error_site(exc),
                         "retry_number": failures,
                     }),
                     flush=True,

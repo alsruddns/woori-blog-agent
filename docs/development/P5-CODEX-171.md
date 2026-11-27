@@ -1,0 +1,14 @@
+# P5-CODEX-171 Scheduled research timestamp guidance
+
+- Work ID/time: P5-CODEX-171, 2026-11-23 Asia/Seoul.
+- Reason: The 12:00 KST IT/AI Desktop scheduled run found two sources but did not create its envelope because it assumed source observations had to precede the actual run start. The prior P166 validator and outage contract already allow source observations after the start, bounded by the six-hour window and future tolerance. Neither the current task prompt nor the stage response supplied the exact corrected timestamp guidance; its automation memory retained previous failures.
+- Before: Research stage reported evidence available and paths but omitted any instruction or exact observed timestamp for `source_as_of`; the agent stopped despite the P166 validation rule.
+- After: For both fresh and reused scheduled research packages, include a structured current timestamp contract, retain the resolver's exact `executed_at`, explicitly permit later source observations, and provide the latest exact opened-source timestamp only if every source has a timezone-aware real observation within the existing bounds. Missing or invalid times are never invented. Manual-origin responses, schedule, publication and duplicate gates are unchanged.
+- Files: `scripts/automation-research-stage.py`, `services/api/tests/test_automation_research_stage_cli.py`, this record.
+- Validation: 73 related tests passed, Ruff passed; pytest cache warning only. Read-only replay against the original run's existing research and preflight artifacts yielded `executed_at=2026-11-23T11:58:38+09:00` and observed `source_as_of=2026-11-23T02:59:19.914756+00:00` (11:59:19.914756 KST), without changing either. Tests cover later observation, invalid/missing observations, and the six-hour bound.
+- Related: `docs/development/P5-CODEX-166.md`, `docs/operations/scheduled-outage-recovery.md`. Commit: see git log for this record.
+- Remaining: This completed occurrence was not replayed and no envelope, Import or Blogger publication was created. The next actual scheduled run is required to verify end-to-end behavior. The separate P167 application/database fact-check constraint mismatch remains unresolved and may affect later Imports with `fact_checked_at=null`.
+
+## Service reflection
+
+- Committed `75ba4a3efacbd5437423e8921165f27dd80c6941`; reflection validation passed (18 changed-suite tests, Ruff, isolated wheel and Dashboard production build; pytest cache write warning). The shared research-stage script is read from the checkout by each new invocation, so no running service needed a restart. No task configuration, schedule or existing manuscript was changed. Start/completion audit events were appended.

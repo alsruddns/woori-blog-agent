@@ -36,10 +36,10 @@ def main() -> int:
              "message": re.sub(r"\s+", " ", entry.get("msg", "Invalid value"))[:240]}
             for entry in exc.errors(include_input=False)[:8]
         ]
-        print(json.dumps({"valid": False, "reason": "invalid_envelope", "errors": errors}, ensure_ascii=False))
+        print(json.dumps({"valid": False, "reason": "invalid_envelope", "errors": errors}, ensure_ascii=True))
         return 1
     except (OSError, ValueError) as exc:
-        print(json.dumps({"valid": False, "reason": str(exc)[:200]}, ensure_ascii=False))
+        print(json.dumps({"valid": False, "reason": str(exc)[:200]}, ensure_ascii=True))
         return 1
     result = {"valid": True, "content_id": envelope.item.content_id,
               "relation": envelope.item.relation, "labels": envelope.item.blogger_labels}
@@ -48,7 +48,7 @@ def main() -> int:
                        "automation_id": envelope.manual_origin.automation_id})
     else:
         result.update({"execution_mode": "scheduled", "occurrence_id": envelope.scheduled_origin.occurrence_id})
-    print(json.dumps(result, ensure_ascii=False))
+    print(json.dumps(result, ensure_ascii=True))
     return 0
 
 
